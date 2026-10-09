@@ -3,7 +3,7 @@ import { promises as fs } from 'node:fs';
 import path from 'node:path';
 import { AppError } from '../shared/errors.ts';
 import { parseFrontmatter, patchHeaderLines, serializeFrontmatter } from '../shared/frontmatter.ts';
-import { atomicWrite, pathExists } from '../shared/fsx.ts';
+import { atomicWrite, pathExists, withFileLocks } from '../shared/fsx.ts';
 import { log } from '../shared/log.ts';
 import { nextTaskId } from '../shared/names.ts';
 import { TASK_STATES, TASK_KINDS, WORKSPACE_MODES, type NewTaskInput, type Step, type Task, type TaskPatch, type TaskState } from '../shared/types.ts';
@@ -34,8 +34,7 @@ export function parseSteps(body: string): Step[] {
 
 export class TaskLedger {
   private readonly ws: Workspace;
-  // 分配序列化並留下 reservation：封存後也不會重用，且同時建立不會互相覆蓋。
-  private allocation: Promise<unknown> = Promise.resolve();
+  // 專案檔的鎖也保護整個目錄封存，避免寫入時重新建立已搬走的目錄。
   constructor(ws: Workspace) { this.ws = ws; }
 
   async list(project: string): Promise<Task[]> {
@@ -60,13 +59,13 @@ export class TaskLedger {
   }
 
   async create(project: string, input: NewTaskInput): Promise<Task> {
-    if (!await pathExists(this.ws.projectFile(project))) throw new AppError('not_found', 'project_missing');
     if (typeof input.title !== 'string' || !input.title.trim()) throw new AppError('bad_request', 'title_required');
     if (input.kind !== undefined && !TASK_KINDS.includes(input.kind) || input.workspace !== undefined && !WORKSPACE_MODES.includes(input.workspace)) throw new AppError('bad_request', 'field_type');
     if (input.steps !== undefined && (!Array.isArray(input.steps) || input.steps.some(s => typeof s !== 'string'))) throw new AppError('bad_request', 'field_type', { field: 'steps' });
     for (const key of ['role','phase','parent','derivedFrom','cli','model','effort'] as const) if (input[key] !== undefined && (typeof input[key] !== 'string' || input[key]!.length > 2000)) throw new AppError('bad_request', 'field_type', { field: key });
     if (input.parent) await this.get(project, input.parent);
-    const run = this.allocation.then(async () => {
+    return withFileLocks([this.ws.projectFile(project)], async () => {
+      if (!await pathExists(this.ws.projectFile(project))) throw new AppError('not_found', 'project_missing');
       const reservations = path.join(this.ws.internalDir, 'task-ids', project);
       await fs.mkdir(reservations, { recursive: true });
       const dirs = [this.ws.tasksDir(project), path.join(this.ws.projectDir(project), '.ai', 'chat'), path.join(this.ws.workDir, project), reservations];
@@ -85,37 +84,39 @@ export class TaskLedger {
       await atomicWrite(this.ws.taskFile(project, id), serializeFrontmatter(patchHeaderLines(fm.headerLines, values), part.rows.join('\n')));
       return this.get(project, id);
     });
-    this.allocation = run.catch(() => undefined);
-    return run;
   }
 
   async update(project: string, id: string, patch: TaskPatch & { workdir?: string; mergeExcluded?: boolean }): Promise<Task> {
-    const fm = parseFrontmatter(await this.readRaw(project, id));
-    const values: Record<string, YamlValue> = {};
-    for (const k of STR_FIELDS) {
-      const v = patch[k]; if (v === undefined) continue;
-      if (typeof v !== 'string' || v.length > 2000) throw new AppError('bad_request', 'field_type', { field: k });
-      values[k] = v;
-    }
-    if (patch.state !== undefined) { if (!TASK_STATES.includes(patch.state)) throw new AppError('bad_request', 'invalid_state'); values['state'] = patch.state; }
-    if (patch.mergeExcluded !== undefined) { if (typeof patch.mergeExcluded !== 'boolean') throw new AppError('bad_request', 'field_type'); values['mergeExcluded'] = patch.mergeExcluded; }
-    if (patch.title !== undefined && !patch.title.trim()) throw new AppError('bad_request', 'title_required');
-    if (patch.parent) { if (patch.parent === id) throw new AppError('bad_request', 'field_type', { field: 'parent' }); await this.get(project, patch.parent); }
-    if (!Object.keys(values).length) throw new AppError('bad_request', 'no_updatable_fields');
-    values['updated'] = nowMinute();
-    await atomicWrite(this.ws.taskFile(project, id), serializeFrontmatter(patchHeaderLines(fm.headerLines, values), fm.body));
-    return this.get(project, id);
+    return withFileLocks([this.ws.projectFile(project), this.ws.taskFile(project, id)], async () => {
+      const fm = parseFrontmatter(await this.readRaw(project, id));
+      const values: Record<string, YamlValue> = {};
+      for (const k of STR_FIELDS) {
+        const v = patch[k]; if (v === undefined) continue;
+        if (typeof v !== 'string' || v.length > 2000) throw new AppError('bad_request', 'field_type', { field: k });
+        values[k] = v;
+      }
+      if (patch.state !== undefined) { if (!TASK_STATES.includes(patch.state)) throw new AppError('bad_request', 'invalid_state'); values['state'] = patch.state; }
+      if (patch.mergeExcluded !== undefined) { if (typeof patch.mergeExcluded !== 'boolean') throw new AppError('bad_request', 'field_type'); values['mergeExcluded'] = patch.mergeExcluded; }
+      if (patch.title !== undefined && !patch.title.trim()) throw new AppError('bad_request', 'title_required');
+      if (patch.parent) { if (patch.parent === id) throw new AppError('bad_request', 'field_type', { field: 'parent' }); await this.get(project, patch.parent); }
+      if (!Object.keys(values).length) throw new AppError('bad_request', 'no_updatable_fields');
+      values['updated'] = nowMinute();
+      await atomicWrite(this.ws.taskFile(project, id), serializeFrontmatter(patchHeaderLines(fm.headerLines, values), fm.body));
+      return this.get(project, id);
+    });
   }
 
   private async editSteps(project: string, id: string, change: (rows: string[], indices: number[], start: number, end: number) => void): Promise<Task> {
-    const fm = parseFrontmatter(await this.readRaw(project, id));
-    let part = section(fm.body, 'steps');
-    if (part.start < 0) { fm.body += '\n## 步驟\n'; part = section(fm.body, 'steps'); }
-    const indices: number[] = [];
-    for (let i = part.start + 1; i < part.end; i++) if (/^\s*[-*]\s*\[[ xX]\]\s*.+$/.test(part.rows[i]!)) indices.push(i);
-    change(part.rows, indices, part.start, part.end);
-    await atomicWrite(this.ws.taskFile(project, id), serializeFrontmatter(patchHeaderLines(fm.headerLines, { updated: nowMinute() }), part.rows.join('\n')));
-    return this.get(project, id);
+    return withFileLocks([this.ws.projectFile(project), this.ws.taskFile(project, id)], async () => {
+      const fm = parseFrontmatter(await this.readRaw(project, id));
+      let part = section(fm.body, 'steps');
+      if (part.start < 0) { fm.body += '\n## 步驟\n'; part = section(fm.body, 'steps'); }
+      const indices: number[] = [];
+      for (let i = part.start + 1; i < part.end; i++) if (/^\s*[-*]\s*\[[ xX]\]\s*.+$/.test(part.rows[i]!)) indices.push(i);
+      change(part.rows, indices, part.start, part.end);
+      await atomicWrite(this.ws.taskFile(project, id), serializeFrontmatter(patchHeaderLines(fm.headerLines, { updated: nowMinute() }), part.rows.join('\n')));
+      return this.get(project, id);
+    });
   }
   async setStep(project: string, id: string, index: number, done: boolean): Promise<Task> {
     if (!Number.isInteger(index) || typeof done !== 'boolean') throw new AppError('bad_request', 'field_type');
@@ -131,23 +132,28 @@ export class TaskLedger {
   }
   async appendMemo(project: string, id: string, text: string): Promise<Task> {
     if (typeof text !== 'string' || !text.trim() || text.length > 300) throw new AppError('bad_request', 'field_type', { field: 'text' });
-    const fm = parseFrontmatter(await this.readRaw(project, id));
-    let part = section(fm.body, 'memo');
-    if (part.start < 0) { fm.body += '\n## 備註\n'; part = section(fm.body, 'memo'); }
-    part.rows.splice(part.end, 0, `- ${nowMinute()} ${text.replace(/[\r\n]+/g, ' ').trim()}`);
-    await atomicWrite(this.ws.taskFile(project, id), serializeFrontmatter(patchHeaderLines(fm.headerLines, { updated: nowMinute() }), part.rows.join('\n')));
-    return this.get(project, id);
+    return withFileLocks([this.ws.projectFile(project), this.ws.taskFile(project, id)], async () => {
+      const fm = parseFrontmatter(await this.readRaw(project, id));
+      let part = section(fm.body, 'memo');
+      if (part.start < 0) { fm.body += '\n## 備註\n'; part = section(fm.body, 'memo'); }
+      part.rows.splice(part.end, 0, `- ${nowMinute()} ${text.replace(/[\r\n]+/g, ' ').trim()}`);
+      await atomicWrite(this.ws.taskFile(project, id), serializeFrontmatter(patchHeaderLines(fm.headerLines, { updated: nowMinute() }), part.rows.join('\n')));
+      return this.get(project, id);
+    });
   }
   async archive(project: string, id: string): Promise<void> {
-    await this.readRaw(project, id);
-    const trash = path.join(this.ws.projectDir(project), '.ai', 'trash', `${id}-${Date.now().toString(36)}`);
-    await fs.mkdir(trash, { recursive: true });
-    await fs.rename(this.ws.taskFile(project, id), path.join(trash, `${id}.md`));
-    for (const kind of ['jsonl', 'json', 'queue.json'] as const) {
-      const file = this.ws.chatFile(project, id, kind);
-      try { await fs.rename(file, path.join(trash, path.basename(file))); } catch (err) { if ((err as NodeJS.ErrnoException).code !== 'ENOENT') throw err; }
-    }
-    const attachments = this.ws.attachmentsDir(project, id);
-    if (await pathExists(attachments)) await fs.rename(attachments, path.join(trash, 'attachments'));
+    const files = [this.ws.projectFile(project), this.ws.taskFile(project, id), ...(['jsonl', 'json', 'queue.json'] as const).map(kind => this.ws.chatFile(project, id, kind))];
+    await withFileLocks(files, async () => {
+      await this.readRaw(project, id);
+      const trash = path.join(this.ws.projectDir(project), '.ai', 'trash', `${id}-${Date.now().toString(36)}`);
+      await fs.mkdir(trash, { recursive: true });
+      await fs.rename(this.ws.taskFile(project, id), path.join(trash, `${id}.md`));
+      for (const kind of ['jsonl', 'json', 'queue.json'] as const) {
+        const file = this.ws.chatFile(project, id, kind);
+        try { await fs.rename(file, path.join(trash, path.basename(file))); } catch (err) { if ((err as NodeJS.ErrnoException).code !== 'ENOENT') throw err; }
+      }
+      const attachments = this.ws.attachmentsDir(project, id);
+      if (await pathExists(attachments)) await fs.rename(attachments, path.join(trash, 'attachments'));
+    });
   }
 }

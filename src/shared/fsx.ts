@@ -41,19 +41,28 @@ export async function writeJson(file: string, value: unknown): Promise<void> {
   await atomicWrite(file, JSON.stringify(value, null, 2) + '\n');
 }
 
-// 同一檔案的 read-modify-write 必須排隊；多個服務實例仍共用這個鎖，避免核可或設定互相覆蓋。
-const jsonUpdates = new Map<string, Promise<unknown>>();
+// 整段讀改寫共用程序級鎖；多檔依絕對路徑排序取得，失敗也釋放且不保留閒置項目。
+const fileLocks = new Map<string, Promise<unknown>>();
+export async function withFileLocks<T>(files: readonly string[], change: () => Promise<T>): Promise<T> {
+  const keys = [...new Set(files.map(file => path.resolve(file)))].sort();
+  const acquire = async (index: number): Promise<T> => {
+    const key = keys[index];
+    if (key === undefined) return change();
+    const job = (fileLocks.get(key) ?? Promise.resolve()).catch(() => undefined).then(() => acquire(index + 1));
+    fileLocks.set(key, job);
+    try { return await job; }
+    finally { if (fileLocks.get(key) === job) fileLocks.delete(key); }
+  };
+  return acquire(0);
+}
+
 export async function updateJson<T>(file: string, fallback: T, change: (value: T) => void): Promise<T> {
-  const key = path.resolve(file);
-  const job = (jsonUpdates.get(key) ?? Promise.resolve()).catch(() => undefined).then(async () => {
+  return withFileLocks([file], async () => {
     const value = await readJson(file, fallback);
     change(value);
     await writeJson(file, value);
     return value;
   });
-  jsonUpdates.set(key, job);
-  try { return await job; }
-  finally { if (jsonUpdates.get(key) === job) jsonUpdates.delete(key); }
 }
 
 export async function appendLine(file: string, line: string): Promise<void> {

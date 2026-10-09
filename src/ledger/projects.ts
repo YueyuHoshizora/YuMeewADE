@@ -3,7 +3,7 @@ import { promises as fs } from 'node:fs';
 import path from 'node:path';
 import { AppError } from '../shared/errors.ts';
 import { parseFrontmatter, patchHeaderLines, serializeFrontmatter } from '../shared/frontmatter.ts';
-import { atomicWrite, pathExists } from '../shared/fsx.ts';
+import { atomicWrite, pathExists, withFileLocks } from '../shared/fsx.ts';
 import { log } from '../shared/log.ts';
 import { isValidProjectName } from '../shared/names.ts';
 import { PHASE_STATES, PROJECT_STATUSES, type NewProjectInput, type Phase, type Project, type ProjectPatch, type ProjectStatus } from '../shared/types.ts';
@@ -71,24 +71,30 @@ export class ProjectLedger {
   }
 
   async create(input: NewProjectInput): Promise<Project> {
-    const phases = input.phases ?? ['計畫', '實作', '檢查', '收尾'];
-    if (!Array.isArray(phases) || phases.some(p => typeof p !== 'string')) throw new AppError('bad_request', 'field_type', { field: 'phases' });
-    const patch = { ...input, phases: phases.map((name, i) => ({ name: name.trim(), state: i === 0 ? '進行中' as const : '未開始' as const })) };
-    await this.validate(patch, input.name);
-    const dir = this.ws.projectDir(input.name);
-    if (await pathExists(dir) || (await this.list()).some(p => p.name.toLowerCase() === input.name.toLowerCase())) throw new AppError('conflict', 'project_exists');
-    await fs.mkdir(dir, { recursive: false });
-    await fs.cp(path.join(TEMPLATES_DIR, 'project'), dir, { recursive: true, force: false });
-    await Promise.all(['tasks', 'chat', 'uploads'].map(name => fs.mkdir(path.join(dir, '.ai', name), { recursive: true })));
-    const template = parseFrontmatter(await fs.readFile(path.join(TEMPLATES_DIR, 'PROJECT.md'), 'utf8'));
-    const values: Record<string, YamlValue> = { name: input.name, status: '進行中', updated: todayDate(), description: input.description ?? '', parent: input.parent ?? '', body: input.body ?? '', phases: patch.phases.map(p => ({ ...p })), related: input.related ?? [], issues: [] };
-    await atomicWrite(this.ws.projectFile(input.name), serializeFrontmatter(patchHeaderLines(template.headerLines, values), template.body));
-    await atomicWrite(path.join(dir, '.gitignore'), PROJECT_GITIGNORE);
-    if (!input.body) await ensureRepo(dir);
-    return this.get(input.name);
+    return withFileLocks([this.ws.projectFile(input.name)], async () => {
+      const phases = input.phases ?? ['計畫', '實作', '檢查', '收尾'];
+      if (!Array.isArray(phases) || phases.some(p => typeof p !== 'string')) throw new AppError('bad_request', 'field_type', { field: 'phases' });
+      const patch = { ...input, phases: phases.map((name, i) => ({ name: name.trim(), state: i === 0 ? '進行中' as const : '未開始' as const })) };
+      await this.validate(patch, input.name);
+      const dir = this.ws.projectDir(input.name);
+      if (await pathExists(dir) || (await this.list()).some(p => p.name.toLowerCase() === input.name.toLowerCase())) throw new AppError('conflict', 'project_exists');
+      await fs.mkdir(dir, { recursive: false });
+      await fs.cp(path.join(TEMPLATES_DIR, 'project'), dir, { recursive: true, force: false });
+      await Promise.all(['tasks', 'chat', 'uploads'].map(name => fs.mkdir(path.join(dir, '.ai', name), { recursive: true })));
+      const template = parseFrontmatter(await fs.readFile(path.join(TEMPLATES_DIR, 'PROJECT.md'), 'utf8'));
+      const values: Record<string, YamlValue> = { name: input.name, status: '進行中', updated: todayDate(), description: input.description ?? '', parent: input.parent ?? '', body: input.body ?? '', phases: patch.phases.map(p => ({ ...p })), related: input.related ?? [], issues: [] };
+      await atomicWrite(this.ws.projectFile(input.name), serializeFrontmatter(patchHeaderLines(template.headerLines, values), template.body));
+      await atomicWrite(path.join(dir, '.gitignore'), PROJECT_GITIGNORE);
+      if (!input.body) await ensureRepo(dir);
+      return this.get(input.name);
+    });
   }
 
   async update(id: string, patch: ProjectPatch): Promise<Project> {
+    return withFileLocks([this.ws.projectFile(id)], () => this.updateLocked(id, patch));
+  }
+
+  private async updateLocked(id: string, patch: ProjectPatch): Promise<Project> {
     await this.get(id);
     await this.validate(patch, id);
     const fm = parseFrontmatter(await fs.readFile(this.ws.projectFile(id), 'utf8'));
@@ -104,18 +110,22 @@ export class ProjectLedger {
   bodyPath(project: Project): string { return project.body || this.ws.projectDir(project.id); }
   currentPhase(project: Project): string { return project.phases.find(p => p.state !== '完成')?.name ?? ''; }
   async nextPhase(id: string): Promise<Project> {
-    const project = await this.get(id);
-    const index = project.phases.findIndex(p => p.state !== '完成');
-    if (index < 0) return project;
-    project.phases[index]!.state = '完成';
-    if (project.phases[index + 1]) project.phases[index + 1]!.state = '進行中';
-    return this.update(id, { phases: project.phases, ...(index + 1 === project.phases.length ? { status: '完成' as const } : {}) });
+    return withFileLocks([this.ws.projectFile(id)], async () => {
+      const project = await this.get(id);
+      const index = project.phases.findIndex(p => p.state !== '完成');
+      if (index < 0) return project;
+      project.phases[index]!.state = '完成';
+      if (project.phases[index + 1]) project.phases[index + 1]!.state = '進行中';
+      return this.updateLocked(id, { phases: project.phases, ...(index + 1 === project.phases.length ? { status: '完成' as const } : {}) });
+    });
   }
 
   async archive(id: string): Promise<void> {
-    await this.get(id);
-    const trash = path.join(this.ws.projectsDir, '.trash');
-    await fs.mkdir(trash, { recursive: true });
-    await fs.rename(this.ws.projectDir(id), path.join(trash, `${id}-${Date.now().toString(36)}`));
+    await withFileLocks([this.ws.projectFile(id)], async () => {
+      await this.get(id);
+      const trash = path.join(this.ws.projectsDir, '.trash');
+      await fs.mkdir(trash, { recursive: true });
+      await fs.rename(this.ws.projectDir(id), path.join(trash, `${id}-${Date.now().toString(36)}`));
+    });
   }
 }

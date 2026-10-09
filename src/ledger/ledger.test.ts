@@ -63,6 +63,43 @@ test('步驟編輯與 memo 只變更自己的段落；舊 owner 與段落相容'
   assert.deepEqual(parseSteps(raw), [{ text: '舊步驟', done: true }]);
 }));
 
+test('多個作業台帳同時改標題、memo 與步驟，且錯誤不阻擋後續更新', () => withTmpWorkspace(async ws => {
+  await new ProjectLedger(ws).create({ name: 'P' });
+  const one = new TaskLedger(ws), two = new TaskLedger(ws);
+  const task = await one.create('P', { title: '原標題' });
+  await Promise.all([one.update('P', task.id, { title: 'renamed' }), two.appendMemo('P', task.id, 'memo-1'), one.addStep('P', task.id, 'step-1')]);
+  const result = await two.get('P', task.id);
+  assert.equal(result.title, 'renamed'); assert.match(result.memo, /memo-1/);
+  assert.deepEqual(result.steps, [{ text: 'step-1', done: false }]);
+  const edits = await Promise.allSettled([one.update('P', task.id, { title: '' }), two.setStep('P', task.id, 0, true)]);
+  assert.equal(edits[0]!.status, 'rejected'); assert.equal(edits[1]!.status, 'fulfilled');
+  assert.deepEqual((await one.get('P', task.id)).steps, [{ text: 'step-1', done: true }]);
+}));
+
+test('多個專案台帳同時更新欄位與推進階段，不覆蓋先前變更', () => withTmpWorkspace(async ws => {
+  const one = new ProjectLedger(ws), two = new ProjectLedger(ws);
+  await one.create({ name: 'P' });
+  await Promise.all([one.update('P', { name: '新名字' }), two.update('P', { description: '新說明' }), one.nextPhase('P'), two.nextPhase('P')]);
+  const project = await two.get('P');
+  assert.equal(project.name, '新名字'); assert.equal(project.description, '新說明');
+  assert.deepEqual(project.phases.map(phase => phase.state), ['完成', '完成', '進行中', '未開始']);
+}));
+
+test('封存與更新排隊，不遺失更新或重建已封存的目錄', () => withTmpWorkspace(async ws => {
+  const projects = new ProjectLedger(ws), tasks = new TaskLedger(ws);
+  await projects.create({ name: 'P' });
+  const task = await tasks.create('P', { title: '原標題' });
+  await Promise.all([tasks.update('P', task.id, { title: '封存前' }), tasks.archive('P', task.id)]);
+  const trash = path.join(ws.projectDir('P'), '.ai', 'trash');
+  const [entry] = await fs.readdir(trash);
+  assert.match(await fs.readFile(path.join(trash, entry!, `${task.id}.md`), 'utf8'), /title: 封存前/);
+  await assert.rejects(tasks.get('P', task.id));
+  await Promise.all([projects.update('P', { description: '封存前說明' }), projects.archive('P')]);
+  await assert.rejects(fs.access(ws.projectDir('P')));
+  await assert.rejects(tasks.create('P', { title: '不存在' }));
+  await assert.rejects(fs.access(ws.projectDir('P')));
+}));
+
 test('作業序號掃描 chat 與 Work，封存與並行建立也不重用', () => withTmpWorkspace(async ws => {
   await new ProjectLedger(ws).create({ name: 'P' });
   const tasks = new TaskLedger(ws);
