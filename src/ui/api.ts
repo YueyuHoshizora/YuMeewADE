@@ -1,6 +1,6 @@
 // UI → 核心的 HTTP 包裝。桌面版與網頁版同一份。
 
-import type { ApiError, Bootstrap, ChatRow, MergeResult, QueueItem, Roles, Task, TaskPatch, WorktreeStatus } from '../shared/types.ts';
+import type { ApiError, Bootstrap, ChatRow, MergeResult, Project, ProjectPatch, QueueItem, Roles, Task, TaskPatch, WorktreeStatus } from '../shared/types.ts';
 
 export class ApiFailure extends Error {
   readonly status: number;
@@ -35,14 +35,17 @@ export const api = {
   createProject: (name: string) => call<unknown>('POST', '/api/projects', { name }),
   createTask: (project: string, title: string, role: string) => call<Task>('POST', '/api/tasks', { project, title, role }),
   updateTask: (project: string, task: string, patch: TaskPatch) => call<Task>('POST', '/api/task/update', { project, task, patch }),
+  updateProject: (project: string, patch: ProjectPatch) => call<Project>('POST', '/api/project/update', { project, patch }),
   send: (project: string, task: string, text: string, opts: { cli?: string; model?: string; effort?: string }) =>
     call<{ request: string; queued: boolean }>('POST', '/api/chat/send', { project, task, text, ...opts }),
   stop: (project: string, task: string) => call<{ stopped: boolean }>('POST', '/api/chat/stop', { project, task }),
   removeQueued: (project: string, task: string, request: string) => call<QueueItem[]>('POST', '/api/chat/queue/remove', { project, task, request }),
+  queueMoveFirst: (project: string, task: string, request: string) => call<QueueItem[]>('POST', '/api/chat/queue/move-first', { project, task, request }),
   worktreeStatus: (project: string, task: string) => call<WorktreeStatus>('GET', `/api/worktree/status?${q({ project, task })}`),
   worktreeDiff: (project: string, task: string) => call<{ diff: string; truncated: boolean }>('GET', `/api/worktree/diff?${q({ project, task })}`),
   worktreeCreate: (project: string, task: string) => call<WorktreeStatus>('POST', '/api/worktree/create', { project, task }),
   worktreeMerge: (project: string, task: string) => call<MergeResult>('POST', '/api/worktree/merge', { project, task }),
   worktreeRemove: (project: string, task: string) => call<{ removed: boolean }>('POST', '/api/worktree/remove', { project, task }),
   streamUrl: (project: string, task: string) => `/api/chat/stream?${q({ project, task })}`,
+  eventsUrl: () => '/api/events',
 };

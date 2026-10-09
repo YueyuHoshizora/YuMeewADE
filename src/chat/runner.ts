@@ -146,6 +146,19 @@ export class ChatRunner extends EventEmitter {
     return next;
   }
 
+  /** 把某筆排隊指示移到最前（取消並重送用）。 */
+  async moveQueuedFirst(project: string, task: string, request: string): Promise<QueueItem[]> {
+    let found = false;
+    const next = await this.deps.store.updateQueue(project, task, (queue) => {
+      const target = queue.find((q) => q.request === request);
+      found = target !== undefined;
+      return target ? [target, ...queue.filter((q) => q !== target)] : null;
+    });
+    if (!found) throw new AppError('not_found', '隊列中沒有這筆指示');
+    this.emitEvent(project, task, { event: 'queue', data: next });
+    return next;
+  }
+
   private async start(project: string, task: string, item: QueueItem, taskDoc: Task, provider: CliProvider): Promise<void> {
     const { store, ws, tasks, limits } = this.deps;
     const s = this.slot(project, task);
@@ -253,6 +266,12 @@ export class ChatRunner extends EventEmitter {
     if (!outcome.ok && !outcome.stopped) this.emitEvent(project, task, { event: 'error', data: { request: item.request, code: 'cli_failed' } });
     this.emitEvent(project, task, { event: 'done', data: { request: item.request } });
     log.info('對話結束', { project, task, request: item.request, ok: outcome.ok, stopped: outcome.stopped });
+    // AI 可能在這輪改了作業檔（state／question／步驟）：重讀並廣播
+    try {
+      this.emitEvent(project, task, { event: 'task', data: await tasks.get(project, task) });
+    } catch (err) {
+      log.warn('回合結束重讀作業檔失敗', { project, task, reason: err instanceof Error ? err.message : 'bad' });
+    }
 
     await this.drain(project, task);
   }

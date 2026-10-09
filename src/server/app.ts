@@ -9,13 +9,13 @@ import { MockCliProvider } from '../cli/mock.ts';
 import type { CliProvider } from '../cli/provider.ts';
 import { WorktreeService } from '../git/worktree.ts';
 import { RateLimiter } from '../http/ratelimit.ts';
-import { SseHub } from '../http/sse.ts';
+import { GLOBAL, SseHub } from '../http/sse.ts';
 import { ProjectLedger } from '../ledger/projects.ts';
 import { TaskLedger } from '../ledger/tasks.ts';
 import { Workspace } from '../ledger/workspace.ts';
 import { loadRoles } from '../roles/roles.ts';
 import type { Config } from '../shared/config.ts';
-import type { CliInfo, Roles } from '../shared/types.ts';
+import type { CliInfo, Project, Roles, SseEvent, Task } from '../shared/types.ts';
 
 const pkg = createRequire(import.meta.url)('../../package.json') as { version: string };
 
@@ -55,7 +55,20 @@ export class App {
     });
     this.sse = new SseHub(config.limits.sseConnections, config.limits.heartbeatSeconds * 1000);
     this.sendLimiter = new RateLimiter(config.limits.sendPerMinute);
-    this.runner.on('event', (project: string, task: string, ev) => this.sse.publish(`${project}\u0000${task}`, ev));
+    this.runner.on('event', (project: string, task: string, ev: SseEvent) => {
+      this.sse.publish(`${project}\u0000${task}`, ev);
+      if (ev.event === 'task') this.sse.publish(GLOBAL, { event: 'task', data: { project, task: ev.data } });
+    });
+  }
+
+  /** 作業變更廣播：給該作業的流，也給全域流（作業清單用）。 */
+  publishTask(project: string, task: Task): void {
+    this.sse.publish(`${project}\u0000${task.id}`, { event: 'task', data: task });
+    this.sse.publish(GLOBAL, { event: 'task', data: { project, task } });
+  }
+
+  publishProject(project: Project): void {
+    this.sse.publish(GLOBAL, { event: 'project', data: project });
   }
 
   async init(): Promise<void> {

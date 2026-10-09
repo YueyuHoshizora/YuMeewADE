@@ -3,11 +3,11 @@
 import { promises as fs, type Dirent } from 'node:fs';
 import path from 'node:path';
 import { AppError } from '../shared/errors.ts';
-import { parseFrontmatter } from '../shared/frontmatter.ts';
+import { parseFrontmatter, patchHeaderLines, serializeFrontmatter } from '../shared/frontmatter.ts';
 import { atomicWrite, pathExists } from '../shared/fsx.ts';
 import { log } from '../shared/log.ts';
-import { PROJECT_STATUSES, type Project, type ProjectIssue, type ProjectStatus } from '../shared/types.ts';
-import { YamlError, type YamlMap } from '../shared/yaml.ts';
+import { PROJECT_STATUSES, type Project, type ProjectIssue, type ProjectPatch, type ProjectStatus } from '../shared/types.ts';
+import { YamlError, type YamlMap, type YamlValue } from '../shared/yaml.ts';
 import { TEMPLATES_DIR, type Workspace } from './workspace.ts';
 
 /** 專案 git 本體的 .gitignore；`.ai/` 不進版本控制（PLAN.md A.2）。 */
@@ -87,6 +87,27 @@ export class ProjectLedger {
     await fs.mkdir(path.join(dir, '.ai', 'chat'), { recursive: true });
     await atomicWrite(path.join(dir, 'PROJECT.md'), content);
     await atomicWrite(path.join(dir, '.gitignore'), PROJECT_GITIGNORE);
+    return this.get(name);
+  }
+
+  async update(name: string, patch: ProjectPatch): Promise<Project> {
+    const file = this.ws.projectFile(name);
+    let text: string;
+    try {
+      text = await fs.readFile(file, 'utf8');
+    } catch (err) {
+      if ((err as NodeJS.ErrnoException).code === 'ENOENT') throw new AppError('not_found', '專案不存在');
+      throw err;
+    }
+    const values: Record<string, YamlValue> = {};
+    if (patch.status !== undefined) {
+      if (!PROJECT_STATUSES.includes(patch.status)) throw new AppError('bad_request', '狀態值不合法');
+      values['status'] = patch.status;
+    }
+    if (Object.keys(values).length === 0) throw new AppError('bad_request', '沒有可更新的欄位');
+    values['updated'] = todayDate();
+    const fm = parseFrontmatter(text);
+    await atomicWrite(file, serializeFrontmatter(patchHeaderLines(fm.headerLines, values), fm.body));
     return this.get(name);
   }
 }

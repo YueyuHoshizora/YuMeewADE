@@ -2,8 +2,9 @@
 
 import type { App } from '../server/app.ts';
 import { AppError } from '../shared/errors.ts';
-import type { Bootstrap, TaskPatch } from '../shared/types.ts';
+import type { Bootstrap, ProjectStatus, TaskPatch } from '../shared/types.ts';
 import { optString, reqString, type Router } from './router.ts';
+import { GLOBAL } from './sse.ts';
 
 const NAME_MAX = 64;
 const TITLE_MAX = 200;
@@ -61,8 +62,24 @@ export function registerRoutes(router: Router, app: App): void {
     }
     await app.projects.get(project);
     const updated = await app.tasks.update(project, task, patch);
-    app.sse.publish(`${project}\u0000${task}`, { event: 'task', data: updated });
+    app.publishTask(project, updated);
     return updated;
+  });
+
+  router.post('/api/project/update', async ({ body }) => {
+    const project = reqString(body, 'project', NAME_MAX);
+    const raw = body['patch'];
+    if (raw === null || typeof raw !== 'object' || Array.isArray(raw)) throw new AppError('bad_request', 'patch 必須是物件');
+    const status = (raw as Record<string, unknown>)['status'];
+    if (status !== undefined && typeof status !== 'string') throw new AppError('bad_request', 'status 必須是字串');
+    const updated = await app.projects.update(project, status === undefined ? {} : { status: status as ProjectStatus });
+    app.publishProject(updated);
+    return updated;
+  });
+
+  router.get('/api/events', async ({ req, res }) => {
+    app.sse.open(req, res, GLOBAL, { event: 'ready', data: { version: app.version } });
+    return undefined;
   });
 
   // ---- 對話 ----
@@ -104,6 +121,11 @@ export function registerRoutes(router: Router, app: App): void {
   router.post('/api/chat/queue/remove', async ({ body }) => {
     const { project, task } = await locate(body);
     return app.runner.removeQueued(project, task, reqString(body, 'request', 64));
+  });
+
+  router.post('/api/chat/queue/move-first', async ({ body }) => {
+    const { project, task } = await locate(body);
+    return app.runner.moveQueuedFirst(project, task, reqString(body, 'request', 64));
   });
 
   // ---- worktree ----

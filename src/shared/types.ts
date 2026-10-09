@@ -146,3 +146,11 @@ export interface ApiError {
   error: string;
   message: string;
 }
+
+/** 全域事件流（`GET /api/events`）：作業／專案任何變更。 */
+export type GlobalEvent =
+  | { event: 'ready'; data: { version: string } }
+  | { event: 'task'; data: { project: string; task: Task } }
+  | { event: 'project'; data: Project };
+
+export type ProjectPatch = Partial<Pick<Project, 'status'>>;

@@ -36,9 +36,14 @@
             <h2 id="chat-title"></h2>
             <select id="task-state"></select>
             <span id="task-steps" class="muted"></span>
+            <button type="button" id="task-complete" class="primary hidden" data-i18n="app.confirmComplete"></button>
           </div>
-          <div class="row muted small">
-            <span id="task-meta"></span>
+          <div class="row small">
+            <select id="task-role-edit" title="role"></select>
+            <select id="task-cli-edit" title="cli"></select>
+            <select id="task-model-edit" title="model"></select>
+            <select id="task-effort-edit" title="effort"></select>
+            <span id="task-meta" class="muted"></span>
           </div>
           <div id="task-question" class="question hidden"></div>
           <div id="worktree" class="row small"></div>
@@ -59,6 +64,7 @@
               <option value="xhigh">xhigh</option>
             </select>
             <span class="spacer"></span>
+            <button type="button" id="composer-cancel-resend" class="danger" disabled data-i18n="app.cancelResend"></button>
             <button type="button" id="composer-stop" class="danger" disabled data-i18n="app.stop"></button>
             <button type="submit" id="composer-send" data-i18n="app.send"></button>
           </div>
