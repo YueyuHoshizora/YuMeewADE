@@ -279,7 +279,7 @@ Roles   { models, roles: { role: { main, backup, job } }, permissions }   // rol
 4. 桌面外殼＝**Electron（裁示）**；前端建置工具採 **Vite＋vanilla TypeScript**（預設，沿用前案規格，可調整）；打包＝electron-builder。
 5. AI CLI（`claude`／`codex`）輸出契約未定案 → 本文件先行定案最小契約（3.1），衝突時**以 CLI 實際行為為準**，只改 adapter。
 6. `claude`／`codex` CLI 由使用者本機另行安裝與登入；本工具不代管憑證、不代裝（見 3.1 `available()`）。
-7. 程式碼簽名／公證**裁示：先不簽（使用者裁示 2026-10-10）**——開發期一律產**未簽名產物**；日後要簽再議（待定項，不影響程式實作）。Windows／Linux 若無實機，以建置產物＋checklist 驗證。
+7. 程式碼簽名／公證**裁示：先不簽（使用者裁示 2026-10-10）**——開發期一律產**未簽名產物**；日後要簽再議（待定項，不影響程式實作）。例外：macOS 產物用 ad-hoc 簽名（`identity: "-"`，不需憑證）。完全不簽時 Electron 原有簽章會在打包後失效，Apple 晶片的 Mac 下載後會判定為「已毀損」（v1.0.0 實際發生，v1.0.1 修正）。Windows／Linux 若無實機，以建置產物＋checklist 驗證。
 8. 介紹網址未指定 → 以倉庫 `README.md` 為介紹；不影響程式實作。
 9. port 預設 4560、資料根目錄預設 `~/Documents/YuMeewWorkspace`、危險旗標與各項上限皆為**可調整**新創值，定案一律入 `config.yaml`。
 

@@ -2,6 +2,11 @@
 
 本專案的版本紀錄。版本號採 [Semantic Versioning](https://semver.org/lang/zh-TW/)。
 
+## [1.0.1] - 2026-10-10
+
+### 修正
+- macOS 產物改為 ad-hoc 簽名：1.0.0 的 dmg 下載後簽章失效，Apple 晶片的 Mac 會顯示「已毀損，無法打開」。現在第一次開啟只會出現「無法驗證開發者」，可到「系統設定 → 隱私權與安全性」選擇「強制打開」。
+
 ## [1.0.0] - 2026-10-10
 
 第一個正式版本。核心流程對齊參考專案 [kieiken/project-hub](https://github.com/kieiken/project-hub)（MIT）的使用方式，畫面與視覺自行設計。

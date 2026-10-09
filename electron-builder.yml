@@ -1,4 +1,4 @@
-# electron-builder 設定：本機 npm run dist 與 GitHub Actions 共用。產物未簽名、未公證（PLAN.md 假設 7）。
+# electron-builder 設定：本機 npm run dist 與 GitHub Actions 共用。產物未以 Developer ID 簽名、未公證（PLAN.md 假設 7）。
 appId: dev.yueyuhoshizora.yumeewade
 productName: YuMeewADE
 copyright: Copyright © 2026 Yueyu Hoshizora. Apache-2.0.
@@ -20,7 +20,9 @@ mac:
   icon: build/icon.png
   category: public.app-category.developer-tools
   target: [dmg, zip]
-  identity: null
+  # ad-hoc 簽名：Apple 晶片要求整個 bundle 簽章有效；identity: null 會留下打包後失效的 Electron 簽章，
+  # 從網路下載（帶 quarantine）後 Gatekeeper 會直接判定「已毀損」且無法放行。
+  identity: "-"
   hardenedRuntime: false
   gatekeeperAssess: false
 win:
