@@ -1,6 +1,7 @@
 import type { MessageKey } from './zh-TW.ts';
 
 export const ja: Record<MessageKey, string> = {
+  'settings.enterToSend': 'Enter で送信、Shift+Enter で改行', 'chat.placeholderEnter': '指示を入力…（Enter で送信、Shift+Enter で改行）', 'chat.hintEnter': 'Enter で送信、Shift+Enter で改行', 'chat.hintModifier': '⌘ / Ctrl + Enter で送信',
   'markdown.copy': 'コードをコピー', 'markdown.copied': 'コピーしました',
   'chat.interrupted': 'コアの再起動により作業が中断されました',
   'lang.name': '日本語',

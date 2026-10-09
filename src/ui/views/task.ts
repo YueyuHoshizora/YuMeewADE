@@ -7,6 +7,7 @@ import { aiPicker } from '../components/picker.ts';
 import { markdown } from '../components/markdown.ts';
 import { area, button, confirmModal, disclosure, el, field, input, link, modal, projectHash, readLocal, row, run, select, storeLocal, toast, type View, type ViewContext } from '../components/dom.ts';
 import { aiLabel, effortLabel, localTime, modelLabel } from '../components/display.ts';
+import { shouldSend } from '../components/composer.ts';
 
 export function taskView(context: ViewContext, initialProject: ProjectView, initialTask: TaskView): View {
   let project = initialProject; let task = initialTask; let alive = true;
@@ -23,7 +24,7 @@ export function taskView(context: ViewContext, initialProject: ProjectView, init
   const question = el('div', 'question-area'); const queueNode = el('div', 'queue-strip'); const composer = el('div', 'composer');
   transcript.append(transcriptRows, question);
   const draftKey = `yumeewade.draft.${project.id}/${task.id}`; const pickKey = `yumeewade.pick.${project.id}/${task.id}`;
-  const draft = area(readLocal<string>(draftKey, ''), t('chat.placeholder')); draft.maxLength = context.state.limits.promptChars;
+  const draft = area(readLocal<string>(draftKey, ''), t(readLocal('yumeewade.enterToSend', false) ? 'chat.placeholderEnter' : 'chat.placeholder')); draft.maxLength = context.state.limits.promptChars;
   draft.rows = 2;
   function resizeDraft(): void { draft.style.height = 'auto'; draft.style.height = `${Math.min(208, Math.max(48, draft.scrollHeight))}px`; }
   draft.oninput = () => { storeLocal(draftKey, draft.value); resizeDraft(); };
@@ -36,7 +37,7 @@ export function taskView(context: ViewContext, initialProject: ProjectView, init
     await api.send({ project: project.id, task: task.id, text, ...pick.value(), ...(busy ? { mode: mode ?? 'queue' } : {}), answer, images: answer ? [] : upload.ids() });
     storeLocal(pickKey, pick.value()); if (!answer) { draft.value = ''; resizeDraft(); storeLocal(draftKey, ''); upload.clear(); } await context.refresh();
   }
-  draft.onkeydown = event => { if ((event.metaKey || event.ctrlKey) && event.key === 'Enter') { event.preventDefault(); void run(() => send(busy ? 'queue' : undefined)); } };
+  draft.onkeydown = event => { if (shouldSend(event, readLocal('yumeewade.enterToSend', false))) { event.preventDefault(); void run(() => send(busy ? 'queue' : undefined)); } };
   function controls(): void {
     if (busy) actions.replaceChildren(button(t('chat.stop'), () => request('/api/chat/stop', { project: project.id, task: task.id }), 'danger'), button(t('chat.redo'), () => send('redo'), 'danger'), button(t('chat.amend'), () => send('amend')), button(t('chat.queue'), () => send('queue'), 'primary'));
     else actions.replaceChildren(button(t('chat.send'), () => send(), 'primary'));

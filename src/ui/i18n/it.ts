@@ -1,6 +1,7 @@
 import type { MessageKey } from './zh-TW.ts';
 
 export const it: Record<MessageKey, string> = {
+  'settings.enterToSend': 'Invio per inviare, Maiusc+Invio per andare a capo', 'chat.placeholderEnter': 'Scrivi le istruzioni… (Invio per inviare, Maiusc+Invio per andare a capo)', 'chat.hintEnter': 'Invio per inviare, Maiusc+Invio per andare a capo', 'chat.hintModifier': '⌘ / Ctrl + Invio per inviare',
   'markdown.copy': 'Copia codice', 'markdown.copied': 'Copiato',
   'chat.interrupted': 'Attività interrotta dal riavvio del nucleo',
   'lang.name': 'Italiano',

@@ -6,6 +6,7 @@ import { aiPicker } from '../components/picker.ts';
 import { markdown } from '../components/markdown.ts';
 import { area, button, card, confirmModal, disclosure, el, field, input, lines, link, projectHash, readLocal, row, run, select, storeLocal, taskHash, type View, type ViewContext } from '../components/dom.ts';
 import { localTime } from '../components/display.ts';
+import { shouldSend } from '../components/composer.ts';
 
 declare global { interface Window { yumeewade?: { desktop: boolean; platform: string; pickFolder: () => Promise<string | null> }; } }
 
@@ -103,13 +104,13 @@ export function projectView(context: ViewContext, project: ProjectView, params: 
     for (const detail of overview.querySelectorAll('details')) detail.open = opened.has(detail.querySelector('summary')?.textContent);
   }
   renderOverview(); node.append(overview);
-  const draftKey = `yumeewade.quick.${project.id}`; const draft = area(readLocal<string>(draftKey, ''), t('project.quickPlaceholder')); draft.maxLength = context.state.limits.promptChars;
+  const draftKey = `yumeewade.quick.${project.id}`; const draft = area(readLocal<string>(draftKey, ''), `${t('project.quickPlaceholder')} · ${t(readLocal('yumeewade.enterToSend', false) ? 'chat.hintEnter' : 'chat.hintModifier')}`); draft.maxLength = context.state.limits.promptChars;
   draft.oninput = () => storeLocal(draftKey, draft.value);
   const pick = aiPicker(context.state, project.startPick ?? context.state.settings.initial); const upload = attachments(project.id, context.state.limits, draft);
   const start = button(t('project.start'), async () => { await upload.ready(); if (!draft.value.trim() && !upload.ids().length) return;
     const result = await api.start({ project: project.id, text: draft.value.trim(), ...pick.value(), images: upload.ids() }); storeLocal(draftKey, ''); upload.clear(); draft.value = ''; await context.refresh(); location.hash = taskHash(project.id, result.task.id);
   }, 'primary');
-  draft.onkeydown = e => { if ((e.metaKey || e.ctrlKey) && e.key === 'Enter') { e.preventDefault(); start.click(); } };
+  draft.onkeydown = e => { if (shouldSend(e, readLocal('yumeewade.enterToSend', false))) { e.preventDefault(); start.click(); } };
   node.append(card(t('project.quick'), draft, upload.node, row(pick.node, start)), detailedTaskForm(context, project, params));
   return { node, dispose: upload.dispose, update: state => {
     context.state = state;

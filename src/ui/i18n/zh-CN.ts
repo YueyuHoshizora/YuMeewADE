@@ -1,6 +1,7 @@
 import type { MessageKey } from './zh-TW.ts';
 
 export const zhCN: Record<MessageKey, string> = {
+  'settings.enterToSend': 'Enter 发送，Shift+Enter 换行', 'chat.placeholderEnter': '写下指示…（Enter 发送，Shift+Enter 换行）', 'chat.hintEnter': 'Enter 发送，Shift+Enter 换行', 'chat.hintModifier': '⌘ / Ctrl + Enter 发送',
   'markdown.copy': '复制代码', 'markdown.copied': '已复制',
   'chat.interrupted': '核心重新启动，作业已中断',
   'lang.name': '简体中文',
