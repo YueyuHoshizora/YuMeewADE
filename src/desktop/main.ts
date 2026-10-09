@@ -3,9 +3,10 @@
 
 import { app, BrowserWindow, dialog, shell, utilityProcess, type UtilityProcess } from 'electron';
 import { promises as fs } from 'node:fs';
-import http from 'node:http';
+
 import path from 'node:path';
 import { loadConfig } from '../shared/config.ts';
+import { probe, waitForCore } from './probe.ts';
 
 const HERE = path.dirname(new URL(import.meta.url).pathname);
 const APP_ROOT = path.join(HERE, '..', '..');
@@ -30,27 +31,6 @@ async function ensureConfigPath(): Promise<string> {
   return file;
 }
 
-/** 核心是否已在該 port 回應（可能是另一個網頁版實例）。 */
-function probe(host: string, port: number): Promise<boolean> {
-  const { promise, resolve } = Promise.withResolvers<boolean>();
-  const req = http.get({ host, port, path: '/api/bootstrap', headers: { Host: `${host}:${port}` }, timeout: 1500 }, (res) => {
-    res.resume();
-    resolve(res.statusCode === 200);
-  });
-  req.on('error', () => resolve(false));
-  req.on('timeout', () => {
-    req.destroy();
-    resolve(false);
-  });
-  return promise;
-}
-
-function delay(ms: number): Promise<void> {
-  const { promise, resolve } = Promise.withResolvers<void>();
-  setTimeout(resolve, ms);
-  return promise;
-}
-
 async function startCore(host: string, port: number): Promise<void> {
   if (await probe(host, port)) return; // 已有核心在跑，直接用
   core = utilityProcess.fork(SERVER_ENTRY, [], { env: { ...process.env }, stdio: 'pipe', serviceName: 'yumeewade-core' });
@@ -63,13 +43,9 @@ async function startCore(host: string, port: number): Promise<void> {
       app.quit();
     }
   });
-  const deadline = Date.now() + 15_000;
-  while (Date.now() < deadline) {
-    if (await probe(host, port)) return;
-    if (!core) throw new Error('核心啟動失敗');
-    await delay(250);
-  }
-  throw new Error('核心啟動逾時');
+  const result = await waitForCore(host, port, { timeoutMs: 15_000, intervalMs: 250, alive: () => core !== null });
+  if (result === 'dead') throw new Error('核心啟動失敗');
+  if (result === 'timeout') throw new Error('核心啟動逾時');
 }
 
 function createWindow(url: string): BrowserWindow {

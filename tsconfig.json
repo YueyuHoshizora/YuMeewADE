@@ -16,10 +16,10 @@
     "rewriteRelativeImportExtensions": true,
     "isolatedModules": true,
     "skipLibCheck": true,
-    "rootDir": "src",
+    
     "outDir": "dist",
     "noEmit": true
   },
-  "include": ["src/**/*.ts", "src/**/*.cts"],
+  "include": ["src/**/*.ts", "src/**/*.cts", "scripts/**/*.ts"],
   "exclude": ["src/ui/**"]
 }

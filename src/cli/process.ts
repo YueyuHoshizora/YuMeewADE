@@ -26,7 +26,7 @@ const cache = new Map<string, { at: number; found: boolean }>();
 /** 在 PATH 上找得到執行檔即視為可用；結果快取 30 秒。 */
 export async function findExecutable(command: string, env: NodeJS.ProcessEnv = process.env): Promise<boolean> {
   const hit = cache.get(command);
-  if (hit && Date.now() - hit.at < 30_000) return hit.found;
+  if (hit && Date.now() - hit.at < 5_000) return hit.found;
   const found = await locate(command, env);
   cache.set(command, { at: Date.now(), found });
   return found;
@@ -75,7 +75,7 @@ export function runLineProcess(opts: { command: string; args: string[]; cwd: str
     finish({ ok: false, stopped: false, reason: `spawn 失敗：${(err as Error).message}` });
     return { stop: () => undefined, done: promise };
   }
-  log.info('CLI 啟動', { label: opts.label, pid: child.pid, cwd: opts.cwd, args: opts.args.map((a) => (a.length > 80 ? a.slice(0, 80) + '…' : a)) });
+  log.info('CLI 啟動', { label: opts.label, pid: child.pid, args: redactArgs(opts.args) });
   child.on('error', (err) => finish({ ok: false, stopped, reason: `啟動失敗：${err.message}` }));
   child.stdin?.on('error', () => undefined);
   child.stdin?.end(opts.prompt);
@@ -122,4 +122,21 @@ export function runLineProcess(opts: { command: string; args: string[]; cwd: str
     },
     done: promise,
   };
+}
+
+/** 日誌只記旗標形狀：session id、路徑等帶值的旗標以 <…> 取代（安全節 8）。 */
+const VALUE_FLAGS = new Set(['--resume', '--add-dir', '--model', '-m', '-c', '--effort', 'resume']);
+export function redactArgs(args: string[]): string[] {
+  const out: string[] = [];
+  let hide = false;
+  for (const a of args) {
+    if (hide) {
+      out.push('<…>');
+      hide = false;
+      continue;
+    }
+    out.push(a.length > 40 ? a.slice(0, 40) + '…' : a);
+    hide = VALUE_FLAGS.has(a);
+  }
+  return out;
 }

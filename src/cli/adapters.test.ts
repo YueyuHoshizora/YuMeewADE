@@ -4,6 +4,7 @@ import { test } from 'node:test';
 import { DEFAULT_CONFIG } from '../shared/config.ts';
 import { claudeArgs, createClaudeParser } from './claude.ts';
 import { codexArgs, createCodexParser } from './codex.ts';
+import { redactArgs } from './process.ts';
 import type { CliEvent } from './provider.ts';
 
 const SID = 'a1224e07-3f81-4d3b-b53c-db386228e920';
@@ -87,4 +88,8 @@ test('引數組裝：model／effort／resume／add-dir／dangerous 依設定與�
   const codex = codexArgs(DEFAULT_CONFIG.cli.codex, { prompt: '', cwd: '/w', model: 'gpt-6-sol', effort: 'high', resumeId: 't1', addDirs: ['/p'] });
   assert.deepEqual(codex.slice(DEFAULT_CONFIG.cli.codex.baseArgs.length), ['-m', 'gpt-6-sol', '-c', 'model_reasoning_effort="high"', '--add-dir', '/p', 'resume', 't1', '-']);
   assert.ok(!codex.includes('--dangerously-bypass-approvals-and-sandbox'));
+});
+
+test('redactArgs：帶值旗標的值不進日誌', () => {
+  assert.deepEqual(redactArgs(['-p', '--resume', 'sid-123', '--add-dir', '/Users/me/secret', '-c', 'x=1', '--verbose']), ['-p', '--resume', '<…>', '--add-dir', '<…>', '-c', '<…>', '--verbose']);
 });

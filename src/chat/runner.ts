@@ -63,6 +63,20 @@ export class ChatRunner extends EventEmitter {
     this.emit('event', project, task, ev);
   }
 
+  /** 所有作業都沒在跑時 resolve（測試與關閉時用）。 */
+  whenIdle(): Promise<void> {
+    if (this.activeRuns === 0) return Promise.resolve();
+    const { promise, resolve } = Promise.withResolvers<void>();
+    const check = () => {
+      if (this.activeRuns === 0) {
+        this.off('event', check);
+        resolve();
+      }
+    };
+    this.on('event', check);
+    return promise;
+  }
+
   private get activeRuns(): number {
     let n = 0;
     for (const s of this.state.values()) if (s.running) n++;
@@ -260,9 +274,11 @@ export class ChatRunner extends EventEmitter {
     }
     await store.writeMeta(project, task, meta);
 
-    s.running = null;
     s.run = null;
     s.partial = '';
+    // 先把槽位交給下一筆排隊（launch 會同步設 running），外界不會在兩輪之間看到「閒置」
+    const launched = await this.drain(project, task);
+    if (!launched) s.running = null;
     if (!outcome.ok && !outcome.stopped) this.emitEvent(project, task, { event: 'error', data: { request: item.request, code: 'cli_failed' } });
     this.emitEvent(project, task, { event: 'done', data: { request: item.request } });
     log.info('對話結束', { project, task, request: item.request, ok: outcome.ok, stopped: outcome.stopped });
@@ -272,47 +288,45 @@ export class ChatRunner extends EventEmitter {
     } catch (err) {
       log.warn('回合結束重讀作業檔失敗', { project, task, reason: err instanceof Error ? err.message : 'bad' });
     }
-
-    await this.drain(project, task);
   }
 
   private async finishWithError(project: string, task: string, item: QueueItem, code: string, err: unknown): Promise<void> {
     const s = this.slot(project, task);
-    s.running = null;
     s.run = null;
     s.partial = '';
     log.error('對話無法開始', err, { project, task, request: item.request });
     const row: ChatRow = { at: new Date().toISOString(), role: 'error', text: '無法開始執行', cli: item.cli, request: item.request };
     await this.deps.store.append(project, task, row);
     this.emitEvent(project, task, { event: 'log', data: row });
+    const launched = await this.drain(project, task);
+    if (!launched) s.running = null;
     this.emitEvent(project, task, { event: 'error', data: { request: item.request, code } });
     this.emitEvent(project, task, { event: 'done', data: { request: item.request } });
-    await this.drain(project, task);
   }
 
-  /** 本輪結束後：有排隊就出隊執行。 */
-  private async drain(project: string, task: string): Promise<void> {
+  /** 本輪結束後：有排隊就出隊執行。回 true 代表已把槽位交給下一筆。 */
+  private async drain(project: string, task: string): Promise<boolean> {
     let next: QueueItem | undefined;
     const queue = await this.deps.store.updateQueue(project, task, (q) => {
       next = q[0];
       return next ? q.slice(1) : null;
     });
-    if (!next) return;
+    if (!next) return false;
     this.emitEvent(project, task, { event: 'queue', data: queue });
     const provider = this.deps.providers[next.cli];
     let taskDoc: Task;
     try {
       taskDoc = await this.deps.tasks.get(project, task);
     } catch (err) {
-      await this.finishWithError(project, task, next, 'task_missing', err);
-      return;
+      void this.finishWithError(project, task, next, 'task_missing', err);
+      return true;
     }
     if (!provider) {
-      await this.finishWithError(project, task, next, 'cli_missing', new Error(`provider ${next.cli} 不存在`));
-      return;
+      void this.finishWithError(project, task, next, 'cli_missing', new Error(`provider ${next.cli} 不存在`));
+      return true;
     }
-    // 不 await：讓呼叫端（上一輪）先收尾
     this.launch(project, task, next, taskDoc, provider);
+    return true;
   }
 }
 

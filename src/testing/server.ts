@@ -59,6 +59,8 @@ export async function startTestServer(configYaml = ''): Promise<TestServer> {
       return { status: res.status, json };
     },
     async close() {
+      await app.runner.whenIdle();
+      app.close();
       server.closeAllConnections();
       const { promise, resolve } = Promise.withResolvers<void>();
       server.close(() => resolve());
