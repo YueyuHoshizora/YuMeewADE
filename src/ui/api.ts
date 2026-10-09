@@ -1,57 +1,37 @@
-// UI → 核心的 HTTP 包裝。桌面版與網頁版同一份。
-
-import type { ApiError, Bootstrap, ChatRow, MergeResult, Project, ProjectPatch, QueueItem, Roles, Task, TaskPatch, WorktreeStatus } from '../shared/types.ts';
+import type { ApiError, AppState, NewProjectInput, Project, NewTaskInput, Task, StartInput, StartResult, SendInput, SendResult, MergePreview, MergeResult, SettingsPatch, Settings, RoleInput, Roles, AiInfo, OpLogEntry, UploadResult } from '../shared/types.ts';
 
 export class ApiFailure extends Error {
-  readonly status: number;
-  readonly code: string;
-  readonly detail: string | undefined;
-  readonly field: string | undefined;
-  constructor(status: number, body: ApiError | null) {
-    super(body?.message ?? `HTTP ${status}`);
-    this.status = status;
-    this.code = body?.error ?? 'unknown';
-    this.detail = body?.detail;
-    this.field = body?.field;
+  status: number;
+  body: ApiError & { conflicts?: string[] };
+  constructor(status: number, body: ApiError & { conflicts?: string[] }) {
+    super(body.message); this.status = status; this.body = body;
   }
 }
-
-async function call<T>(method: 'GET' | 'POST', path: string, body?: unknown): Promise<T> {
-  const init: RequestInit = { method };
-  if (body !== undefined) {
-    init.headers = { 'Content-Type': 'application/json' };
-    init.body = JSON.stringify(body);
-  }
-  const res = await fetch(path, init);
-  const text = await res.text();
-  const json = text ? (JSON.parse(text) as unknown) : null;
-  if (!res.ok) throw new ApiFailure(res.status, json as ApiError | null);
-  return json as T;
+export async function request<T>(path: string, body?: unknown): Promise<T> {
+  const res = await fetch(path, body === undefined ? {} : { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
+  const data = await res.json() as T;
+  if (!res.ok) throw new ApiFailure(res.status, data as ApiError);
+  return data;
 }
-
-const q = (params: Record<string, string>) => new URLSearchParams(params).toString();
-
+export const query = (path: string, params: Record<string, string>) => `${path}?${new URLSearchParams(params)}`;
 export const api = {
-  bootstrap: () => call<Bootstrap>('GET', '/api/bootstrap'),
-  roles: () => call<Roles>('GET', '/api/roles'),
-  tasks: (project: string) => call<Task[]>('GET', `/api/tasks?${q({ project })}`),
-  chatLog: (project: string, task: string) => call<ChatRow[]>('GET', `/api/chat/log?${q({ project, task })}`),
-  createProject: (name: string) => call<unknown>('POST', '/api/projects', { name }),
-  createTask: (project: string, title: string, role: string) => call<Task>('POST', '/api/tasks', { project, title, role }),
-  updateTask: (project: string, task: string, patch: TaskPatch) => call<Task>('POST', '/api/task/update', { project, task, patch }),
-  updateProject: (project: string, patch: ProjectPatch) => call<Project>('POST', '/api/project/update', { project, patch }),
-  archiveTask: (project: string, task: string) => call<{ archived: boolean }>('POST', '/api/task/archive', { project, task }),
-  archiveProject: (project: string) => call<{ archived: boolean }>('POST', '/api/project/archive', { project }),
-  send: (project: string, task: string, text: string, opts: { cli?: string; model?: string; effort?: string }) =>
-    call<{ request: string; queued: boolean }>('POST', '/api/chat/send', { project, task, text, ...opts }),
-  stop: (project: string, task: string) => call<{ stopped: boolean }>('POST', '/api/chat/stop', { project, task }),
-  removeQueued: (project: string, task: string, request: string) => call<QueueItem[]>('POST', '/api/chat/queue/remove', { project, task, request }),
-  queueMoveFirst: (project: string, task: string, request: string) => call<QueueItem[]>('POST', '/api/chat/queue/move-first', { project, task, request }),
-  worktreeStatus: (project: string, task: string) => call<WorktreeStatus>('GET', `/api/worktree/status?${q({ project, task })}`),
-  worktreeDiff: (project: string, task: string) => call<{ diff: string; truncated: boolean }>('GET', `/api/worktree/diff?${q({ project, task })}`),
-  worktreeCreate: (project: string, task: string) => call<WorktreeStatus>('POST', '/api/worktree/create', { project, task }),
-  worktreeMerge: (project: string, task: string) => call<MergeResult>('POST', '/api/worktree/merge', { project, task }),
-  worktreeRemove: (project: string, task: string) => call<{ removed: boolean }>('POST', '/api/worktree/remove', { project, task }),
-  streamUrl: (project: string, task: string) => `/api/chat/stream?${q({ project, task })}`,
-  eventsUrl: () => '/api/events',
+  state: () => request<AppState>('/api/state'),
+  createProject: (input: NewProjectInput) => request<Project>('/api/project/new', input),
+  createTask: (project: string, input: NewTaskInput) => request<Task>('/api/task/new', { project, ...input }),
+  start: (input: StartInput) => request<StartResult>('/api/start', input),
+  send: (input: SendInput) => request<SendResult>('/api/chat/send', input),
+  preview: (project: string, task: string) => request<MergePreview | null>(query('/api/task/preview', { project, task })),
+  diff: (project: string, task: string) => request<{ diff: string; truncated: boolean }>(query('/api/task/diff', { project, task })),
+  merge: (project: string, task: string) => request<MergeResult>('/api/task/merge', { project, task }),
+  settings: (patch: SettingsPatch) => request<Settings>('/api/settings', patch),
+  roles: (roles: RoleInput[]) => request<Roles>('/api/roles', { roles }),
+  refreshAi: (ai: string) => request<AiInfo>('/api/ai/refresh', { ai }),
+  updateAi: (ai: string) => request<{ before: string; after: string; info: AiInfo }>('/api/ai/update', { ai }),
+  log: () => request<OpLogEntry[]>('/api/log?n=100'),
+  async upload(project: string, file: File): Promise<UploadResult> {
+    const res = await fetch(query('/api/upload', { project, name: file.name }), { method: 'POST', body: file });
+    const data = await res.json() as UploadResult;
+    if (!res.ok) throw new ApiFailure(res.status, data as unknown as ApiError);
+    return data;
+  },
 };

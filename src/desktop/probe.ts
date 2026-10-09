@@ -2,12 +2,23 @@
 
 import http from 'node:http';
 
-/** 核心是否已在該 port 回應 bootstrap（可能是另一個網頁版實例）。 */
+/** 該 port 是否已有 YuMeewADE 核心在回應（可能是另一個網頁版實例）；別的程式佔用同 port 回 false。 */
 export function probe(host: string, port: number, timeoutMs = 1500): Promise<boolean> {
   const { promise, resolve } = Promise.withResolvers<boolean>();
-  const req = http.get({ host, port, path: '/api/bootstrap', headers: { Host: `${host}:${port}` }, timeout: timeoutMs }, (res) => {
-    res.resume();
-    resolve(res.statusCode === 200);
+  const req = http.get({ host, port, path: '/api/ping', headers: { Host: `${host}:${port}` }, timeout: timeoutMs }, (res) => {
+    let body = '';
+    res.setEncoding('utf8');
+    res.on('data', (c: string) => {
+      if (body.length < 4096) body += c;
+    });
+    res.on('end', () => {
+      try {
+        resolve(res.statusCode === 200 && (JSON.parse(body) as { app?: unknown }).app === 'yumeewade');
+      } catch {
+        resolve(false);
+      }
+    });
+    res.on('error', () => resolve(false));
   });
   req.on('error', () => resolve(false));
   req.on('timeout', () => {

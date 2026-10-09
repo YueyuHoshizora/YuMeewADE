@@ -1,7 +1,7 @@
 // Electron 主行程：只管視窗與生命週期，核心以 utilityProcess 另起（與 npm start 同一份 dist/server/main.js）。
 // renderer 走與網頁版完全相同的 http://127.0.0.1:{port}，不另立協定（安全節 4）。
 
-import { app, BrowserWindow, dialog, shell, utilityProcess, type UtilityProcess } from 'electron';
+import { app, BrowserWindow, dialog, ipcMain, shell, utilityProcess, type UtilityProcess } from 'electron';
 import { promises as fs } from 'node:fs';
 
 import path from 'node:path';
@@ -88,6 +88,15 @@ app.on('window-all-closed', () => app.quit());
 app
   .whenReady()
   .then(async () => {
+    ipcMain.handle('pick-folder', async (event) => {
+      const win = BrowserWindow.fromWebContents(event.sender);
+      if (!win) return null;
+      // 僅由我們的 renderer 呼叫；不向任意遠端 frame 暴露原生對話框。
+      const url = new URL(event.senderFrame?.url ?? 'about:blank');
+      if (url.protocol !== 'http:' || !['127.0.0.1', 'localhost', '[::1]'].includes(url.hostname)) return null;
+      const result = await dialog.showOpenDialog(win, { properties: ['openDirectory'] });
+      return result.canceled ? null : result.filePaths[0] ?? null;
+    });
     await ensureConfigPath();
     const config = await loadConfig();
     const { host, port } = config.server;

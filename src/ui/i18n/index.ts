@@ -42,8 +42,13 @@ export function localeName(locale: Locale): string {
 }
 
 export function t(key: MessageKey, params: Record<string, string | number> = {}): string {
-  const template = MESSAGES[current][key] ?? zhTW[key];
+  const template = MESSAGES[current][key] ?? zhTW[key] ?? key;
   return template.replace(/\{(\w+)\}/g, (_, name: string) => (name in params ? String(params[name]) : `{${name}}`));
+}
+
+/** 動態組出的鍵（例如操作紀錄的 action）是否有翻譯；沒有就由呼叫端顯示原值。 */
+export function hasMessage(key: string): key is MessageKey {
+  return Object.hasOwn(zhTW, key);
 }
 
 /** 把 data-i18n／data-i18n-placeholder 屬性對應的文字套到 DOM。 */
