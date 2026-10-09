@@ -1,16 +1,27 @@
 import type { AppState } from '../shared/types.ts';
 import { api } from './api.ts';
 import { getLocale, t } from './i18n/index.ts';
-import { button, el, link, run, showError, type View, type ViewContext } from './components/dom.ts';
+import { button, el, link, readLocal, run, showError, taskHash, type View, type ViewContext } from './components/dom.ts';
 import { needsReply, tree } from './components/tree.ts';
 import { newProjectView, projectView } from './views/projects.ts';
 import { taskView } from './views/task.ts';
 import { turnView } from './views/turn.ts';
 import { settingsView } from './views/settings.ts';
 import { stream } from './components/stream.ts';
+import { attention } from './components/attention.ts';
 
 const header = document.getElementById('header')!; const sidebar = document.getElementById('sidebar')!; const main = document.getElementById('main')!;
 let state: AppState | null = null; let view: View | null = null; let route = ''; let viewTarget = ''; let refreshJob: Promise<void> | null = null; let refreshAgain = false; let debounce: number | undefined;
+function notify(previous: AppState | null, next: AppState): void {
+  const items = attention(next); window.yumeewade?.setBadge?.(items.length);
+  if (!previous || !readLocal('yumeewade.notifications', true) || !('Notification' in window) || Notification.permission !== 'granted' || (!document.hidden && document.hasFocus())) return;
+  const before = attention(previous);
+  for (const item of items) {
+    if (before.some(old => old.project === item.project && old.task === item.task && old.kind === item.kind)) continue;
+    const hash = taskHash(item.project, item.task); if (location.hash === hash && !document.hidden && document.hasFocus()) continue;
+    try { const notice = new Notification(item.title, { body: t(item.kind === 'answer' ? 'notification.answer' : 'notification.done'), tag: hash }); notice.onclick = () => { window.yumeewade?.focus?.(); window.focus(); location.hash = hash; notice.close(); }; } catch { /* 系統不支援通知時不影響狀態更新。 */ }
+  }
+}
 
 function drawShell(): void {
   if (!state) return;
@@ -47,7 +58,7 @@ function refresh(): Promise<void> {
   refreshJob = (async () => {
     try {
       do {
-        refreshAgain = false; state = await api.state(); drawShell();
+        refreshAgain = false; const next = await api.state(); notify(state, next); state = next; drawShell();
         navigate(); view?.update?.(state);
       } while (refreshAgain);
     } catch (error) {

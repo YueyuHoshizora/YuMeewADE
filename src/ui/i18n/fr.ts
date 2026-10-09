@@ -1,6 +1,7 @@
 import type { MessageKey } from './zh-TW.ts';
 
 export const fr: Record<MessageKey, string> = {
+  'settings.notifications': 'Notifier à la fin des tâches ou si une réponse est nécessaire', 'settings.notificationPermission': 'Autoriser les notifications système', 'notification.done': 'La réponse de l’IA est terminée', 'notification.answer': 'L’IA attend votre réponse',
   'connection.reconnecting': 'Connexion au cœur perdue. Reconnexion…',
   'tree.search': 'Rechercher des projets et tâches…',
   'settings.enterToSend': 'Entrée pour envoyer, Maj+Entrée pour un saut de ligne', 'chat.placeholderEnter': 'Écrivez vos instructions… (Entrée pour envoyer, Maj+Entrée pour un saut de ligne)', 'chat.hintEnter': 'Entrée pour envoyer, Maj+Entrée pour un saut de ligne', 'chat.hintModifier': '⌘ / Ctrl + Entrée pour envoyer',

@@ -1,6 +1,7 @@
 import type { MessageKey } from './zh-TW.ts';
 
 export const it: Record<MessageKey, string> = {
+  'settings.notifications': 'Notifica al termine delle attività o quando serve una risposta', 'settings.notificationPermission': 'Consenti notifiche di sistema', 'notification.done': 'L’IA ha completato la risposta', 'notification.answer': 'L’IA ha bisogno della tua risposta',
   'connection.reconnecting': 'Connessione al nucleo interrotta. Riconnessione…',
   'tree.search': 'Cerca progetti e attività…',
   'settings.enterToSend': 'Invio per inviare, Maiusc+Invio per andare a capo', 'chat.placeholderEnter': 'Scrivi le istruzioni… (Invio per inviare, Maiusc+Invio per andare a capo)', 'chat.hintEnter': 'Invio per inviare, Maiusc+Invio per andare a capo', 'chat.hintModifier': '⌘ / Ctrl + Invio per inviare',

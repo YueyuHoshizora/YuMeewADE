@@ -8,7 +8,7 @@ import { area, button, card, confirmModal, disclosure, el, field, input, lines, 
 import { localTime } from '../components/display.ts';
 import { shouldSend } from '../components/composer.ts';
 
-declare global { interface Window { yumeewade?: { desktop: boolean; platform: string; pickFolder: () => Promise<string | null> }; } }
+declare global { interface Window { yumeewade?: { desktop: true; platform: string; pickFolder: () => Promise<string | null>; setBadge: (count: number) => void; focus: () => void }; } }
 
 export function newProjectView(context: ViewContext, params: URLSearchParams): View {
   const node = el('div', 'page'); const name = input(); name.required = true; name.maxLength = 60;

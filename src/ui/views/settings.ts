@@ -11,7 +11,10 @@ export function settingsView(context: ViewContext, redraw: () => void): View {
   language.onchange = () => { setLocale(language.value as Locale); redraw(); };
   const tools = input(); tools.type = 'checkbox'; tools.checked = readLocal('yumeewade.tools', false); tools.onchange = () => storeLocal('yumeewade.tools', tools.checked);
   const enter = input(); enter.type = 'checkbox'; enter.checked = readLocal('yumeewade.enterToSend', false); enter.onchange = () => storeLocal('yumeewade.enterToSend', enter.checked);
-  node.append(card(t('settings.general'), field(t('settings.language'), language), field(t('settings.tools'), tools), field(t('settings.enterToSend'), enter), field(t('settings.root'), el('code', '', state.root))));
+  const notifications = input(); notifications.type = 'checkbox'; notifications.checked = readLocal('yumeewade.notifications', true);
+  notifications.onchange = () => { storeLocal('yumeewade.notifications', notifications.checked); if (notifications.checked && 'Notification' in window && Notification.permission === 'default') void Notification.requestPermission(); };
+  const permission = button(t('settings.notificationPermission'), async () => { if ('Notification' in window && Notification.permission === 'default') await Notification.requestPermission(); }); permission.disabled = !('Notification' in window) || Notification.permission !== 'default';
+  node.append(card(t('settings.general'), field(t('settings.language'), language), field(t('settings.tools'), tools), field(t('settings.enterToSend'), enter), field(t('settings.notifications'), notifications), permission, field(t('settings.root'), el('code', '', state.root))));
   const initial = aiPicker(state, state.settings.initial); node.append(card(t('settings.initial'), initial.node, button(t('common.save'), async () => { await api.settings({ initial: initial.value() }); await context.refresh(); toast(t('common.saved')); }, 'primary')));
   const aiSection = card(t('settings.ais'));
   for (const info of state.ais.filter(ai => ai.name !== 'mock')) {

@@ -1,5 +1,6 @@
 // 繁體中文定義訊息契約；專案內容與 AI 輸出不翻譯。
 export const zhTW = {
+  'settings.notifications': '作業完成或需要回答時通知', 'settings.notificationPermission': '允許系統通知', 'notification.done': 'AI 已完成回覆', 'notification.answer': 'AI 需要你的回答',
   'connection.reconnecting': '核心連線中斷，重新連線中…',
   'tree.search': '搜尋專案與作業…',
   'settings.enterToSend': 'Enter 送出，Shift+Enter 換行', 'chat.placeholderEnter': '寫下指示…（Enter 送出，Shift+Enter 換行）', 'chat.hintEnter': 'Enter 送出，Shift+Enter 換行', 'chat.hintModifier': '⌘ / Ctrl + Enter 送出',
