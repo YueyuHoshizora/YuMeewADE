@@ -2,10 +2,11 @@
 
 import { promises as fs } from 'node:fs';
 import path from 'node:path';
+import { randomUUID } from 'node:crypto';
 
 export async function atomicWrite(file: string, content: string): Promise<void> {
   await fs.mkdir(path.dirname(file), { recursive: true });
-  const tmp = `${file}.${process.pid}.${Date.now()}.tmp`;
+  const tmp = `${file}.${process.pid}.${randomUUID()}.tmp`;
   await fs.writeFile(tmp, content, 'utf8');
   try {
     await fs.rename(tmp, file);
@@ -38,6 +39,21 @@ export async function readJson<T>(file: string, fallback: T): Promise<T> {
 
 export async function writeJson(file: string, value: unknown): Promise<void> {
   await atomicWrite(file, JSON.stringify(value, null, 2) + '\n');
+}
+
+// 同一檔案的 read-modify-write 必須排隊；多個服務實例仍共用這個鎖，避免核可或設定互相覆蓋。
+const jsonUpdates = new Map<string, Promise<unknown>>();
+export async function updateJson<T>(file: string, fallback: T, change: (value: T) => void): Promise<T> {
+  const key = path.resolve(file);
+  const job = (jsonUpdates.get(key) ?? Promise.resolve()).catch(() => undefined).then(async () => {
+    const value = await readJson(file, fallback);
+    change(value);
+    await writeJson(file, value);
+    return value;
+  });
+  jsonUpdates.set(key, job);
+  try { return await job; }
+  finally { if (jsonUpdates.get(key) === job) jsonUpdates.delete(key); }
 }
 
 export async function appendLine(file: string, line: string): Promise<void> {

@@ -1,0 +1,53 @@
+import type { App } from '../server/app.ts';
+import type { AiPick, AppState, Project, Task, TaskView } from '../shared/types.ts';
+import { promises as fs } from 'node:fs';
+import path from 'node:path';
+import { pathExists, readJson } from '../shared/fsx.ts';
+import { phaseKey, stepsHash } from '../ledger/completion.ts';
+
+/** Legacy projects without any matching phase assignments use all their tasks. */
+export function phaseTasks(project: Project, tasks: Task[]): Task[] {
+  const names = new Set(project.phases.map((phase) => phase.name));
+  const current = project.phases.find((phase) => phase.state !== '完成')?.name;
+  return tasks.some((task) => names.has(task.phase)) ? tasks.filter((task) => task.phase === current) : tasks;
+}
+
+async function hasChat(file: string): Promise<boolean> {
+  try { return (await fs.stat(file)).size > 0; }
+  catch (error) {
+    if ((error as NodeJS.ErrnoException).code === 'ENOENT') return false;
+    throw error;
+  }
+}
+
+export async function buildState(app: App): Promise<AppState> {
+  const [projects, savedOrder, settings, roles, ais] = await Promise.all([
+    app.projects.list(), app.order.get(), app.settings.get(), app.roles(), app.ai.list(),
+  ]);
+  const views = await Promise.all(projects.map(async (project) => {
+    const tasks = await app.tasks.list(project.id);
+    const taskViews: TaskView[] = await Promise.all(tasks.map(async (task) => {
+      const [approved, continued, copy, chat] = await Promise.all([
+        app.completion.isApproved(project.id, task.id), app.completion.continued(project.id, task.id), app.worktree.exists(project.id, task.id),
+        hasChat(app.ws.chatFile(project.id, task.id, 'jsonl')),
+      ]);
+      return { ...task, confirm: task.state === '完成' ? !approved : task.steps.length > 0 && task.steps.every((step) => step.done) && continued !== stepsHash(task.steps), copy, copyMissing: Boolean(task.workdir) && !copy, hasChat: chat };
+    }));
+    const bodyPath = app.projects.bodyPath(project);
+    const currentPhase = app.projects.currentPhase(project);
+    const group = phaseTasks(project, tasks);
+    const [isGit, startPick, continued] = await Promise.all([
+      pathExists(path.join(bodyPath, '.git')), readJson<AiPick | null>(app.ws.startPickFile(project.id), null), app.completion.phaseContinued(project.id),
+    ]);
+    return { ...project, tasks: taskViews, currentPhase, phaseOffer: Boolean(currentPhase) && group.length > 0 && group.every((task) => task.state === '完成') && continued !== phaseKey(group), isGit, bodyPath, dir: app.ws.projectDir(project.id), startPick, pinned: savedOrder.pins.includes(project.id) };
+  }));
+  const order: Record<string, string[]> = {};
+  for (const project of projects) {
+    if (order[project.parent]) continue;
+    const ids = projects.filter((child) => child.parent === project.parent).map((child) => child.id);
+    const listed = (savedOrder.order[project.parent] ?? []).filter((id, index, list) => ids.includes(id) && list.indexOf(id) === index);
+    order[project.parent] = [...listed, ...ids.filter((id) => !listed.includes(id))];
+  }
+  const { promptChars, queueLength, concurrentRuns, uploadBytes, imagesPerSend } = app.config.limits;
+  return { version: app.version, root: app.ws.root, projects: views, order, running: app.runner.running(), unread: app.runner.unread(), ais, settings, roles, limits: { promptChars, queueLength, concurrentRuns, uploadBytes, imagesPerSend } };
+}

@@ -3,16 +3,25 @@ id:
 title:
 state: 未開始
 phase:
-owner:
 role:
+parent:
+kind: main
+derivedFrom:
+workspace: isolated
 cli:
 model:
 effort:
 question:
+workdir:
+mergeExcluded: false
 updated:
 ---
 ## 步驟
-- [ ]
-## 已完成的工作
+
+## 做了什麼
+
 ## 下一步
-## 注意事項
+
+## 注意
+
+## 備註

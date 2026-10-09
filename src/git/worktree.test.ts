@@ -3,80 +3,159 @@ import { promises as fs } from 'node:fs';
 import path from 'node:path';
 import { test } from 'node:test';
 import { ProjectLedger } from '../ledger/projects.ts';
+import { TaskLedger } from '../ledger/tasks.ts';
+import { CompletionStore } from '../ledger/completion.ts';
 import { AppError } from '../shared/errors.ts';
 import { withTmpWorkspace } from '../testing/tmp.ts';
-import { git } from './git.ts';
-import { WorktreeService } from './worktree.ts';
+import { commitAll, git, gitOk } from './git.ts';
+import { MergeConflictError, WorktreeService } from './worktree.ts';
 
-test('worktree：建立 → 改檔 → diff → 收編 → 本體含變更；.ai/ 不進 git', () =>
-  withTmpWorkspace(async (ws) => {
-    await new ProjectLedger(ws).create('P');
-    const wt = new WorktreeService(ws, 100_000);
-    const before = await wt.status('P', 'T1');
-    assert.equal(before.exists, false);
+// All fixtures exercise real repositories, linked worktrees and on-disk ledgers.
+test('isolated prepare, preview, diff, merge and automatic cleanup', () => withTmpWorkspace(async ws => {
+  const projects = new ProjectLedger(ws);
+  const tasks = new TaskLedger(ws);
+  await projects.create({ name: 'P' });
+  const task = await tasks.create('P', { title: '第一件' });
+  const wt = new WorktreeService({ ws, projects, tasks, diffBytes: 100_000 });
+  assert.equal(await wt.preview('P', task.id), null);
+  const dir = await wt.prepare('P', task.id);
+  assert.equal(await wt.prepare('P', task.id), dir);
+  assert.equal((await tasks.get('P', task.id)).workdir, dir);
+  await assert.rejects(fs.access(path.join(dir, '.ai')));
+  await fs.writeFile(path.join(dir, 'hello.txt'), 'hi\n');
+  await fs.appendFile(path.join(dir, 'AGENTS.md'), '\nchange\n');
+  const preview = await wt.preview('P', task.id);
+  assert.ok(preview);
+  assert.equal(preview.files, 2);
+  assert.equal(preview.conflict, false);
+  assert.ok(preview.paths.includes('hello.txt'));
+  const diff = await wt.diff('P', task.id);
+  assert.match(diff.diff, /\+hi/);
+  assert.equal(diff.truncated, false);
+  const result = await wt.merge('P', task.id);
+  assert.equal(result.merged, true);
+  assert.equal(await fs.readFile(path.join(ws.projectDir('P'), 'hello.txt'), 'utf8'), 'hi\n');
+  await assert.rejects(fs.access(dir));
+  assert.notEqual((await git(ws.projectDir('P'), ['rev-parse', '--verify', `refs/heads/ym/${task.id}`])).code, 0);
+  const done = await tasks.get('P', task.id);
+  assert.equal(done.state, '完成');
+  assert.equal(done.workdir, '');
+  assert.match(done.memo, /已合併到主資料夾/);
+  assert.doesNotMatch(await gitOk(ws.projectDir('P'), ['ls-files']), /\.ai\//);
+  assert.equal(await new CompletionStore(ws).isApproved('P', task.id), true);
+  const operations = await fs.readFile(path.join(ws.internalDir, 'log.jsonl'), 'utf8');
+  assert.equal(JSON.parse(operations.trim().split('\n').at(-1)!).action, 'merge');
+}));
 
-    const dir = await wt.ensure('P', 'T1');
-    assert.equal(dir, ws.worktreeDir('P', 'T1'));
-    assert.equal(await wt.ensure('P', 'T1'), dir); // 冪等
-    assert.equal(await fs.access(path.join(dir, 'PROJECT.md')).then(() => true), true);
-    await assert.rejects(fs.access(path.join(dir, '.ai')), 'worktree 不應有 .ai/');
+test('preview does not commit pending changes; committed conflicts abort only own merge', () => withTmpWorkspace(async ws => {
+  const projects = new ProjectLedger(ws);
+  const tasks = new TaskLedger(ws);
+  await projects.create({ name: 'P' });
+  const repo = ws.projectDir('P');
+  await fs.writeFile(path.join(repo, 'content.txt'), 'base\n');
+  await commitAll(repo, 'base');
+  const task = await tasks.create('P', { title: '衝突' });
+  const wt = new WorktreeService({ ws, projects, tasks, diffBytes: 100_000 });
+  const dir = await wt.prepare('P', task.id);
+  const before = await gitOk(dir, ['rev-parse', 'HEAD']);
+  await fs.writeFile(path.join(dir, 'content.txt'), 'copy\n');
+  await wt.preview('P', task.id);
+  assert.equal(await gitOk(dir, ['rev-parse', 'HEAD']), before);
+  await commitAll(dir, 'copy');
+  await fs.writeFile(path.join(repo, 'content.txt'), 'main\n');
+  await commitAll(repo, 'main');
+  const preview = await wt.preview('P', task.id);
+  assert.equal(preview?.conflict, true);
+  assert.deepEqual(preview?.conflictPaths, ['content.txt']);
+  await assert.rejects(wt.merge('P', task.id), (error: unknown) => error instanceof MergeConflictError && error.toJSON().conflicts[0] === 'content.txt');
+  assert.equal(await fs.readFile(path.join(repo, 'content.txt'), 'utf8'), 'main\n');
+  assert.equal(await gitOk(repo, ['status', '--porcelain']), '');
+  assert.notEqual((await git(repo, ['rev-parse', '--verify', 'MERGE_HEAD'])).code, 0);
+  const record = await tasks.get('P', task.id);
+  assert.equal(record.state, '等待回覆');
+  assert.match(record.question, /先把主資料夾的最新內容合進副本/);
+  assert.equal(record.workdir, dir);
+  // A manually started merge must remain untouched.
+  await git(repo, ['merge', '--no-ff', `ym/${task.id}`]);
+  const mergeHead = await gitOk(repo, ['rev-parse', 'MERGE_HEAD']);
+  await assert.rejects(wt.merge('P', task.id), (e: unknown) => e instanceof AppError && e.detail === 'merge_in_progress');
+  assert.equal(await gitOk(repo, ['rev-parse', 'MERGE_HEAD']), mergeHead);
+  await gitOk(repo, ['merge', '--abort']);
+}));
 
-    await fs.writeFile(path.join(dir, 'hello.txt'), 'hi\n');
-    await fs.appendFile(path.join(dir, 'PROJECT.md'), '改了\n');
-    const status = await wt.status('P', 'T1');
-    assert.equal(status.exists, true);
-    assert.equal(status.branch, 'ym/T1');
-    assert.deepEqual(status.dirty.sort(), ['PROJECT.md', 'hello.txt']);
+test('already merged is approved and cleans worktree without another commit', () => withTmpWorkspace(async ws => {
+  const projects = new ProjectLedger(ws);
+  const tasks = new TaskLedger(ws);
+  await projects.create({ name: 'P' });
+  const task = await tasks.create('P', { title: '沒有新變更' });
+  const wt = new WorktreeService({ ws, projects, tasks, diffBytes: 100 });
+  await wt.prepare('P', task.id);
+  const head = await gitOk(ws.projectDir('P'), ['rev-parse', 'HEAD']);
+  const result = await wt.merge('P', task.id);
+  assert.equal(result.already, true);
+  assert.equal(await gitOk(ws.projectDir('P'), ['rev-parse', 'HEAD']), head);
+  assert.equal((await tasks.get('P', task.id)).state, '完成');
+}));
 
-    const d = await wt.diff('P', 'T1');
-    assert.match(d.diff, /\+改了/);
-    assert.match(d.diff, /\+hi/);
-    assert.equal(d.truncated, false);
+test('external non-repo is initialized, secrets copied but never newly committed', () => withTmpWorkspace(async (ws, tmp) => {
+  const body = path.join(tmp, 'external');
+  await fs.mkdir(path.join(body, 'nested'), { recursive: true });
+  await fs.writeFile(path.join(body, 'app.txt'), 'app\n');
+  await fs.writeFile(path.join(body, '.env.local'), 'SECRET=one\n');
+  await fs.writeFile(path.join(body, 'nested', '.npmrc'), 'TOKEN=two\n');
+  const projects = new ProjectLedger(ws);
+  const tasks = new TaskLedger(ws);
+  await projects.create({ name: 'P', body });
+  const task = await tasks.create('P', { title: '外部' });
+  const wt = new WorktreeService({ ws, projects, tasks, diffBytes: 100_000 });
+  const dir = await wt.prepare('P', task.id);
+  assert.equal(await fs.readFile(path.join(dir, '.env.local'), 'utf8'), 'SECRET=one\n');
+  assert.equal(await fs.readFile(path.join(dir, 'nested', '.npmrc'), 'utf8'), 'TOKEN=two\n');
+  assert.doesNotMatch(await gitOk(body, ['ls-files']), /\.env|\.npmrc/);
+  assert.equal((await wt.preview('P', task.id))?.files, 0);
+  assert.doesNotMatch((await wt.diff('P', task.id)).diff, /SECRET|TOKEN/);
+  await fs.writeFile(path.join(dir, 'app.txt'), 'changed\n');
+  await wt.merge('P', task.id);
+  assert.equal(await fs.readFile(path.join(body, 'app.txt'), 'utf8'), 'changed\n');
+  assert.doesNotMatch(await gitOk(body, ['ls-files']), /\.env|\.npmrc/);
+}));
 
-    const merged = await wt.merge('P', 'T1', '第一件');
-    assert.equal(merged.merged, true);
-    const repo = ws.projectDir('P');
-    assert.match(await fs.readFile(path.join(repo, 'hello.txt'), 'utf8'), /hi/);
-    assert.match((await git(repo, ['log', '--oneline'])).stdout, /收編 T1: 第一件/);
-    assert.match((await git(repo, ['ls-files'])).stdout, /PROJECT\.md/);
-    assert.doesNotMatch((await git(repo, ['ls-files'])).stdout, /\.ai\//);
+test('direct saves tracked edits, preserves tracked secrets and excludes new secrets', () => withTmpWorkspace(async ws => {
+  const projects = new ProjectLedger(ws);
+  const tasks = new TaskLedger(ws);
+  await projects.create({ name: 'P' });
+  const repo = ws.projectDir('P');
+  await fs.writeFile(path.join(repo, '.env.tracked'), 'old\n');
+  await gitOk(repo, ['add', '-f', '.env.tracked']);
+  await gitOk(repo, ['commit', '--no-verify', '-m', 'tracked configuration']);
+  await fs.writeFile(path.join(repo, '.env.tracked'), 'updated\n');
+  await fs.writeFile(path.join(repo, '.dev.vars.new'), 'never\n');
+  const task = await tasks.create('P', { title: '直接', workspace: 'direct' });
+  const wt = new WorktreeService({ ws, projects, tasks, diffBytes: 100 });
+  assert.equal(await wt.prepare('P', task.id), repo);
+  assert.equal(await gitOk(repo, ['show', 'HEAD:.env.tracked']), 'updated\n');
+  assert.doesNotMatch(await gitOk(repo, ['ls-files']), /\.dev.vars.new/);
+  assert.equal((await tasks.get('P', task.id)).workdir, '');
+}));
 
-    await wt.remove('P', 'T1');
-    assert.equal((await wt.status('P', 'T1')).exists, false);
-    await assert.rejects(wt.remove('P', 'T1'), (e: unknown) => e instanceof AppError && e.code === 'not_found');
-  }));
-
-test('worktree：衝突時中止，本體不變；未提交時拒絕移除', () =>
-  withTmpWorkspace(async (ws) => {
-    await new ProjectLedger(ws).create('P');
-    const wt = new WorktreeService(ws, 100_000);
-    const dir = await wt.ensure('P', 'T2');
-    const repo = ws.projectDir('P');
-    await fs.writeFile(path.join(repo, 'PROJECT.md'), '---\nname: P\nstatus: 進行中\nupdated: x\n---\n本體版\n');
-    await fs.writeFile(path.join(dir, 'PROJECT.md'), '---\nname: P\nstatus: 暫停\nupdated: y\n---\n副本版\n');
-    const r = await wt.merge('P', 'T2', '衝突');
-    assert.equal(r.merged, false);
-    assert.deepEqual(r.conflicts, ['PROJECT.md']);
-    assert.match(await fs.readFile(path.join(repo, 'PROJECT.md'), 'utf8'), /本體版/);
-    assert.equal((await git(repo, ['status', '--porcelain'])).stdout.trim(), '');
-    await fs.writeFile(path.join(dir, 'new.txt'), 'x');
-    await assert.rejects(wt.remove('P', 'T2'), (e: unknown) => e instanceof AppError && e.code === 'conflict');
-  }));
-
-test('建立副本時複製未追蹤的 .env／.npmrc，已追蹤的不重複；範本 rules.md 存在', () =>
-  withTmpWorkspace(async (ws) => {
-    await new ProjectLedger(ws).create('P');
-    const repo = ws.projectDir('P');
-    assert.match(await fs.readFile(path.join(repo, '.ai', 'rules.md'), 'utf8'), /共用規則/);
-    assert.match(await fs.readFile(path.join(repo, 'CLAUDE.md'), 'utf8'), /Claude Code/);
-    await fs.writeFile(path.join(repo, '.env'), 'SECRET=1\n');
-    await fs.writeFile(path.join(repo, '.npmrc'), 'registry=x\n');
-    await fs.writeFile(path.join(repo, 'other.txt'), 'no\n');
-    const wt = new WorktreeService(ws, 100_000);
-    const dir = await wt.ensure('P', 'T3');
-    assert.equal(await fs.readFile(path.join(dir, '.env'), 'utf8'), 'SECRET=1\n');
-    assert.equal(await fs.readFile(path.join(dir, '.npmrc'), 'utf8'), 'registry=x\n');
-    await assert.rejects(fs.access(path.join(dir, '.ai')));
-    // .env 在副本中是被 .gitignore 忽略的，不會進 diff
-    assert.doesNotMatch((await wt.diff('P', 'T3')).diff, /SECRET/);
-  }));
+test('exclusion, stale copyclear, missing merge and bounded diff', () => withTmpWorkspace(async ws => {
+  const projects = new ProjectLedger(ws);
+  const tasks = new TaskLedger(ws);
+  await projects.create({ name: 'P' });
+  const task = await tasks.create('P', { title: '清除' });
+  const wt = new WorktreeService({ ws, projects, tasks, diffBytes: 50 });
+  const dir = await wt.prepare('P', task.id);
+  await wt.exclusion('P', task.id, true);
+  assert.equal(await wt.preview('P', task.id), null);
+  await assert.rejects(wt.merge('P', task.id), (e: unknown) => e instanceof AppError && e.detail === 'merge_excluded');
+  await wt.exclusion('P', task.id, false);
+  await fs.writeFile(path.join(dir, 'large.txt'), 'x'.repeat(1000));
+  const diff = await wt.diff('P', task.id);
+  assert.equal(diff.truncated, true);
+  assert.ok(Buffer.byteLength(diff.diff) <= 50);
+  await assert.rejects(wt.copyclear('P', task.id), (e: unknown) => e instanceof AppError && e.detail === 'worktree_exists');
+  await gitOk(ws.projectDir('P'), ['worktree', 'remove', '--force', dir]);
+  await assert.rejects(wt.merge('P', task.id), (e: unknown) => e instanceof AppError && e.detail === 'worktree_missing');
+  assert.equal((await tasks.get('P', task.id)).workdir, '');
+  assert.equal((await wt.copyclear('P', task.id)).workdir, '');
+}));

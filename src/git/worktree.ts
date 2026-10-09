@@ -1,123 +1,192 @@
-// 作業工作副本（R7）：Work/{專案}/{作業ID} 為 git worktree，分支 ym/{作業ID}。
-// 收編由人觸發：先在副本與本體各自提交，再 --no-ff 合併；衝突即中止，本體不變。
-
+// Work/{project}/{task} is a git worktree; only human-triggered merge publishes its changes.
 import { promises as fs } from 'node:fs';
 import path from 'node:path';
 import type { Workspace } from '../ledger/workspace.ts';
+import type { ProjectLedger } from '../ledger/projects.ts';
+import type { TaskLedger } from '../ledger/tasks.ts';
+import { CompletionStore } from '../ledger/completion.ts';
+import { OpLog } from '../ledger/oplog.ts';
 import { AppError } from '../shared/errors.ts';
 import { pathExists } from '../shared/fsx.ts';
 import { log } from '../shared/log.ts';
-import type { MergeResult, WorktreeStatus } from '../shared/types.ts';
-import { branchExists, commitAll, currentBranch, ensureRepo, git, gitOk } from './git.ts';
+import type { MergePreview, MergeResult, Task } from '../shared/types.ts';
+import { branchExists, commitAll, ensureRepo, git, gitOk, isLocalSecret, isRepo } from './git.ts';
+
+export class MergeConflictError extends AppError {
+  readonly conflicts: string[];
+  constructor(conflicts: string[]) {
+    super('conflict', 'merge_conflict');
+    this.conflicts = conflicts;
+  }
+  override toJSON() { return { ...super.toJSON(), conflicts: this.conflicts }; }
+}
 
 export class WorktreeService {
   private readonly ws: Workspace;
+  private readonly projects: ProjectLedger;
+  private readonly tasks: TaskLedger;
   private readonly diffBytes: number;
-
-  constructor(ws: Workspace, diffBytes: number) {
-    this.ws = ws;
-    this.diffBytes = diffBytes;
+  constructor(deps: { ws: Workspace; projects: ProjectLedger; tasks: TaskLedger; diffBytes: number }) {
+    this.ws = deps.ws;
+    this.projects = deps.projects;
+    this.tasks = deps.tasks;
+    this.diffBytes = deps.diffBytes;
   }
-
-  branch(task: string): string {
-    return `ym/${task}`;
+  branch(task: string): string { return `ym/${task}`; }
+  async bodyPath(project: string): Promise<string> {
+    return (await this.projects.get(project)).body || this.ws.projectDir(project);
   }
-
-  /** 副本存在就回路徑，否則建立（必要時先把專案 git init）。 */
-  async ensure(project: string, task: string): Promise<string> {
-    const repo = this.ws.projectDir(project);
-    const dir = this.ws.worktreeDir(project, task);
-    if (await pathExists(dir)) {
-      if (!(await pathExists(`${dir}/.git`))) throw new AppError('conflict', 'worktree_not_git');
-      return dir;
+  async exists(project: string, task: string): Promise<boolean> {
+    const record = await this.tasks.get(project, task);
+    if (record.workdir && await pathExists(record.workdir)) return true;
+    return pathExists(this.ws.worktreeDir(project, task));
+  }
+  async prepare(project: string, task: string): Promise<string> {
+    const record = await this.tasks.get(project, task);
+    const repo = await this.bodyPath(project);
+    if (record.workspace === 'direct') {
+      if (await isRepo(repo)) await commitAll(repo, 'YuMeewADE：開始前儲存');
+      return repo;
     }
+    const dir = this.ws.worktreeDir(project, task);
     await ensureRepo(repo);
-    await fs.mkdir(this.ws.workDir, { recursive: true });
-    const branch = this.branch(task);
-    if (await branchExists(repo, branch)) await gitOk(repo, ['worktree', 'add', '-q', dir, branch]);
-    else await gitOk(repo, ['worktree', 'add', '-q', '-b', branch, dir, 'HEAD']);
-    await copyLocalSecrets(repo, dir);
-    log.info('建立工作副本', { project, task, dir, branch });
+    if (await pathExists(dir)) {
+      await this.verifyFamily(repo, dir);
+    } else {
+      await commitAll(repo, 'YuMeewADE：開始前儲存');
+      await fs.mkdir(path.dirname(dir), { recursive: true });
+      await gitOk(repo, ['worktree', 'prune']);
+      const branch = this.branch(task);
+      await gitOk(repo, await branchExists(repo, branch)
+        ? ['worktree', 'add', '-q', dir, branch]
+        : ['worktree', 'add', '-q', '-b', branch, dir, 'HEAD']);
+      await copyLocalSecrets(repo, dir);
+    }
+    if (record.workdir !== dir) await this.tasks.update(project, task, { workdir: dir });
     return dir;
   }
-
-  async status(project: string, task: string): Promise<WorktreeStatus> {
-    const repo = this.ws.projectDir(project);
-    const dir = this.ws.worktreeDir(project, task);
-    const branch = this.branch(task);
-    if (!(await pathExists(`${dir}/.git`))) return { exists: false, path: dir, branch, dirty: [], ahead: 0 };
-    const porcelain = await gitOk(dir, ['status', '--porcelain']);
-    const dirty = porcelain
-      .split('\n')
-      .filter((l) => l.trim() !== '')
-      .map((l) => l.slice(3).trim());
-    const main = await currentBranch(repo);
-    const ahead = Number((await git(repo, ['rev-list', '--count', `${main}..${branch}`])).stdout.trim() || 0);
-    return { exists: true, path: dir, branch, dirty, ahead };
+  private async verifyFamily(repo: string, dir: string): Promise<void> {
+    if (!(await pathExists(path.join(dir, '.git')))) throw new AppError('conflict', 'worktree_not_git');
+    const common = async (cwd: string) => fs.realpath((await gitOk(cwd, ['rev-parse', '--path-format=absolute', '--git-common-dir'])).trim());
+    if (await common(repo) !== await common(dir)) throw new AppError('conflict', 'worktree_not_git');
   }
-
-  /** 收編前預覽：相對合併基底的已提交＋未提交變更，加上未追蹤檔內容。 */
+  private async copy(project: string, task: string): Promise<{ record: Task; repo: string; dir: string }> {
+    const record = await this.tasks.get(project, task);
+    return { record, repo: await this.bodyPath(project), dir: record.workdir };
+  }
+  async preview(project: string, task: string): Promise<MergePreview | null> {
+    const { record, repo, dir } = await this.copy(project, task);
+    if (!dir || record.mergeExcluded || !(await pathExists(path.join(dir, '.git')))) return null;
+    await this.verifyFamily(repo, dir);
+    const mainHead = (await gitOk(repo, ['rev-parse', 'HEAD'])).trim();
+    const workHead = (await gitOk(dir, ['rev-parse', 'HEAD'])).trim();
+    const base = (await gitOk(repo, ['merge-base', mainHead, workHead])).trim();
+    const stat = await gitOk(dir, ['diff', '--shortstat', base]);
+    const untracked = splitNull(await gitOk(dir, ['ls-files', '--others', '--exclude-standard', '-z'])).filter(f => !isLocalSecret(f));
+    const paths = splitNull(await gitOk(dir, ['diff', '--name-only', '-z', base]));
+    const tree = await git(repo, ['merge-tree', '--write-tree', '--name-only', '--no-messages', '-z', mainHead, workHead]);
+    if (tree.code !== 0 && tree.code !== 1) throw new AppError('internal', 'git_failed');
+    return {
+      files: Number(stat.match(/(\d+) files? changed/)?.[1] ?? 0) + untracked.length,
+      added: Number(stat.match(/(\d+) insertions?/)?.[1] ?? 0),
+      removed: Number(stat.match(/(\d+) deletions?/)?.[1] ?? 0),
+      conflict: tree.code === 1,
+      conflictPaths: tree.code === 1 ? splitNull(tree.stdout).slice(1) : [],
+      paths: [...new Set([...paths, ...untracked])],
+      mainDirty: (await gitOk(repo, ['status', '--porcelain'])).length > 0,
+    };
+  }
   async diff(project: string, task: string): Promise<{ diff: string; truncated: boolean }> {
-    const repo = this.ws.projectDir(project);
-    const dir = this.ws.worktreeDir(project, task);
-    if (!(await pathExists(`${dir}/.git`))) throw new AppError('not_found', 'worktree_missing');
-    const main = await currentBranch(repo);
-    const base = (await gitOk(repo, ['merge-base', main, this.branch(task)])).trim();
-    let out = (await git(dir, ['diff', base], { maxBytes: this.diffBytes })).stdout;
-    const untracked = (await gitOk(dir, ['ls-files', '--others', '--exclude-standard'])).split('\n').filter((f) => f !== '');
-    for (const file of untracked.slice(0, 50)) {
-      if (out.length > this.diffBytes) break;
-      out += (await git(dir, ['diff', '--no-index', '--', '/dev/null', file], { maxBytes: this.diffBytes })).stdout;
+    const { repo, dir } = await this.copy(project, task);
+    if (!dir || !(await pathExists(path.join(dir, '.git')))) throw new AppError('not_found', 'worktree_missing');
+    await this.verifyFamily(repo, dir);
+    const head = (await gitOk(dir, ['rev-parse', 'HEAD'])).trim();
+    const base = (await gitOk(repo, ['merge-base', 'HEAD', head])).trim();
+    const result = await git(dir, ['diff', base], { maxBytes: this.diffBytes });
+    if (result.code !== 0) throw new AppError('internal', 'git_failed');
+    let diff = result.stdout;
+    let truncated = result.truncated ?? false;
+    const files = splitNull(await gitOk(dir, ['ls-files', '--others', '--exclude-standard', '-z'])).filter(f => !isLocalSecret(f));
+    for (const file of files) {
+      if (truncated) break;
+      const next = await git(dir, ['diff', '--no-index', '--', '/dev/null', file], { maxBytes: Math.max(0, this.diffBytes - Buffer.byteLength(diff)) });
+      if (next.code !== 0 && next.code !== 1) throw new AppError('internal', 'git_failed');
+      diff += next.stdout;
+      truncated ||= next.truncated ?? false;
     }
-    const truncated = out.length > this.diffBytes;
-    return { diff: truncated ? out.slice(0, this.diffBytes) : out, truncated };
+    return { diff, truncated };
   }
-
-  /** 人工收編：副本提交 → 本體提交 → --no-ff 合併；衝突 abort 並回清單。 */
-  async merge(project: string, task: string, title: string): Promise<MergeResult> {
-    const repo = this.ws.projectDir(project);
-    const dir = this.ws.worktreeDir(project, task);
-    if (!(await pathExists(`${dir}/.git`))) throw new AppError('not_found', 'worktree_missing');
-    const branch = this.branch(task);
-    await commitAll(dir, `YuMeewADE: ${task} ${title}`.trim());
-    await commitAll(repo, 'YuMeewADE: 收編前儲存');
-    const r = await git(repo, ['merge', '--no-ff', '--no-edit', '-m', `收編 ${task}: ${title}`.trim(), branch]);
-    if (r.code !== 0) {
-      const conflicts = (await git(repo, ['diff', '--name-only', '--diff-filter=U'])).stdout.split('\n').filter((f) => f !== '');
-      await git(repo, ['merge', '--abort']);
-      log.warn('收編衝突，已中止', { project, task, conflicts });
-      return { merged: false, conflicts };
+  async merge(project: string, task: string): Promise<MergeResult> {
+    const { record, repo, dir } = await this.copy(project, task);
+    if (record.mergeExcluded) throw new AppError('conflict', 'merge_excluded');
+    if (!dir || !(await pathExists(path.join(dir, '.git')))) {
+      if (record.workdir) await this.tasks.update(project, task, { workdir: '' });
+      throw new AppError('conflict', 'worktree_missing');
+    }
+    await this.verifyFamily(repo, dir);
+    if (await mergeHead(repo) || await mergeHead(dir)) throw new AppError('conflict', 'merge_in_progress');
+    await commitAll(dir, `${record.title}（作業儲存）`);
+    await commitAll(repo, '合併前儲存');
+    const source = (await gitOk(dir, ['rev-parse', 'HEAD'])).trim();
+    const before = (await gitOk(repo, ['rev-parse', 'HEAD'])).trim();
+    const ancestor = await git(repo, ['merge-base', '--is-ancestor', source, 'HEAD']);
+    if (ancestor.code > 1) throw new AppError('internal', 'git_failed');
+    const already = ancestor.code === 0;
+    if (!already) {
+      const merged = await git(repo, ['merge', '--no-ff', '--no-edit', '-m', `合併：${record.title}`, source]);
+      if (merged.code !== 0) {
+        const ownMerge = await mergeHead(repo) === source && (await gitOk(repo, ['rev-parse', 'HEAD'])).trim() === before;
+        const conflicts = splitNull(await gitOk(repo, ['diff', '--name-only', '--diff-filter=U', '-z']));
+        if (ownMerge) await gitOk(repo, ['merge', '--abort']);
+        if (ownMerge && conflicts.length > 0) {
+          await this.tasks.update(project, task, { state: '等待回覆', question: `合併時發生衝突（${conflicts.join('、')}）。請讓 AI 先把主資料夾的最新內容合進副本並解決衝突，再按合併。` });
+          throw new MergeConflictError(conflicts);
+        }
+        throw new AppError('internal', 'git_failed');
+      }
     }
     const commit = (await gitOk(repo, ['rev-parse', '--short', 'HEAD'])).trim();
-    log.info('收編完成', { project, task, commit });
-    return { merged: true, commit };
+    await gitOk(repo, ['worktree', 'remove', '--force', dir]);
+    const branch = this.branch(task);
+    // -d keeps branches containing unexpected work instead of discarding them.
+    if ((await git(repo, ['branch', '-d', branch])).code !== 0) log.warn('分支未刪除，保留', { project, task, branch });
+    await this.tasks.update(project, task, { workdir: '', state: '完成', question: '' });
+    await new CompletionStore(this.ws).approve(project, task);
+    await this.tasks.appendMemo(project, task, `已合併到主資料夾 ${commit}`);
+    await new OpLog(this.ws).record({ action: 'merge', project, task, commit, already });
+    return { merged: true, commit, ...(already ? { already: true } : {}) };
   }
-
-  /** 移除副本與分支；副本有未提交變更時拒絕（409）。分支若未合併則保留。 */
-  async remove(project: string, task: string): Promise<void> {
-    const repo = this.ws.projectDir(project);
-    const dir = this.ws.worktreeDir(project, task);
-    if (!(await pathExists(`${dir}/.git`))) throw new AppError('not_found', 'worktree_missing');
-    const r = await git(repo, ['worktree', 'remove', dir]);
-    if (r.code !== 0) throw new AppError('conflict', 'worktree_dirty');
-    const d = await git(repo, ['branch', '-d', this.branch(task)]);
-    if (d.code !== 0) log.warn('分支未合併，保留', { project, task, branch: this.branch(task) });
+  async exclusion(project: string, task: string, excluded: boolean): Promise<Task> {
+    return this.tasks.update(project, task, { mergeExcluded: excluded });
+  }
+  async copyclear(project: string, task: string): Promise<Task> {
+    const record = await this.tasks.get(project, task);
+    if (record.workdir && await pathExists(record.workdir)) throw new AppError('conflict', 'worktree_exists');
+    return this.tasks.update(project, task, { workdir: '' });
   }
 }
+function splitNull(value: string): string[] { return value.split('\0').filter(Boolean); }
+async function mergeHead(dir: string): Promise<string | null> {
+  const result = await git(dir, ['rev-parse', '--verify', '-q', 'MERGE_HEAD']);
+  return result.code === 0 ? result.stdout.trim() : null;
+}
 
-/** 未追蹤的本機設定（.env*、.npmrc 等）複製到副本，AI 才跑得起測試；已追蹤的由 git 自己帶。 */
-const LOCAL_SECRET_GLOBS = [/^\.env(\..+)?$/, /^\.npmrc$/, /^\.dev\.vars(\..+)?$/];
+/** Copy untracked local settings without logging their contents or following symlinks. */
 export async function copyLocalSecrets(repo: string, dir: string): Promise<string[]> {
-  const tracked = new Set((await git(repo, ['ls-files'])).stdout.split('\n'));
+  const tracked = new Set(splitNull(await gitOk(repo, ['ls-files', '-z'])));
   const copied: string[] = [];
-  for (const name of await fs.readdir(repo)) {
-    if (tracked.has(name) || !LOCAL_SECRET_GLOBS.some((re) => re.test(name))) continue;
-    try {
-      await fs.copyFile(path.join(repo, name), path.join(dir, name));
-      copied.push(name);
-    } catch {
-      /* 目錄或無法讀取：略過 */
+  async function visit(relative: string): Promise<void> {
+    for (const entry of await fs.readdir(path.join(repo, relative), { withFileTypes: true })) {
+      if (entry.name === '.git' || entry.name === '.ai' || entry.name === 'node_modules') continue;
+      const file = path.join(relative, entry.name);
+      if (entry.isDirectory()) await visit(file);
+      else if (entry.isFile() && isLocalSecret(file) && !tracked.has(file)) {
+        await fs.mkdir(path.dirname(path.join(dir, file)), { recursive: true });
+        await fs.copyFile(path.join(repo, file), path.join(dir, file));
+        copied.push(file);
+      }
     }
   }
+  await visit('');
   return copied;
 }

@@ -1,123 +1,121 @@
-// 專案台帳：Projects/{name}/PROJECT.md 的讀寫。
-
-import { promises as fs, type Dirent } from 'node:fs';
+// 台帳與程式本體可分離；顯示改名不搬目錄，避免破壞作業與對話的識別碼。
+import { promises as fs } from 'node:fs';
 import path from 'node:path';
 import { AppError } from '../shared/errors.ts';
 import { parseFrontmatter, patchHeaderLines, serializeFrontmatter } from '../shared/frontmatter.ts';
 import { atomicWrite, pathExists } from '../shared/fsx.ts';
 import { log } from '../shared/log.ts';
-import { PROJECT_STATUSES, type Project, type ProjectIssue, type ProjectPatch, type ProjectStatus } from '../shared/types.ts';
-import { YamlError, type YamlMap, type YamlValue } from '../shared/yaml.ts';
+import { isValidProjectName } from '../shared/names.ts';
+import { PHASE_STATES, PROJECT_STATUSES, type NewProjectInput, type Phase, type Project, type ProjectPatch, type ProjectStatus } from '../shared/types.ts';
+import { type YamlValue } from '../shared/yaml.ts';
+import { ensureRepo } from '../git/git.ts';
 import { TEMPLATES_DIR, type Workspace } from './workspace.ts';
 
-/** 專案 git 本體的 .gitignore；`.ai/` 不進版本控制（PLAN.md A.2）。 */
-export const PROJECT_GITIGNORE = ['# YuMeewADE 台帳與對話不進版本控制', '.ai/', '', '# 本機機密', '.env', '.env.*', '!.env.example', '.DS_Store', ''].join('\n');
-
+export const PROJECT_GITIGNORE = ['# 台帳與對話不進版本控制', '.ai/', '', '# 本機機密', '.env', '.env.*', '.npmrc', '.dev.vars*', '.DS_Store', ''].join('\n');
 export function todayDate(now = new Date()): string {
   return `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`;
 }
 
-function projectFromData(name: string, data: YamlMap): Project {
-  const status = data['status'];
-  const issues: ProjectIssue[] = [];
-  if (Array.isArray(data['issues'])) {
-    for (const it of data['issues']) {
-      if (it && typeof it === 'object' && !Array.isArray(it)) issues.push({ text: String(it['text'] ?? ''), level: String(it['level'] ?? '') });
-      else if (typeof it === 'string') issues.push({ text: it, level: '' });
-    }
-  }
-  return {
-    name,
-    status: PROJECT_STATUSES.includes(status as ProjectStatus) ? (status as ProjectStatus) : '未開始',
-    updated: data['updated'] === null || data['updated'] === undefined ? '' : String(data['updated']),
-    related: Array.isArray(data['related']) ? data['related'].filter((x): x is string => typeof x === 'string') : [],
-    issues,
-  };
-}
-
 export class ProjectLedger {
   private readonly ws: Workspace;
-  constructor(ws: Workspace) {
-    this.ws = ws;
-  }
+  constructor(ws: Workspace) { this.ws = ws; }
 
   async list(): Promise<Project[]> {
-    let entries: Dirent[];
-    try {
-      entries = await fs.readdir(this.ws.projectsDir, { withFileTypes: true });
-    } catch (err) {
-      if ((err as NodeJS.ErrnoException).code === 'ENOENT') return [];
-      throw err;
-    }
-    const out: Project[] = [];
-    for (const e of entries) {
-      if (!e.isDirectory() || e.name.startsWith('.')) continue;
-      try {
-        out.push(await this.get(e.name));
-      } catch (err) {
-        if (err instanceof AppError && err.code === 'not_found') continue;
-        log.warn('略過無法解析的專案', { name: e.name, reason: err instanceof YamlError ? err.message : 'bad' });
+    const entries = await fs.readdir(this.ws.projectsDir, { withFileTypes: true }).catch((err: NodeJS.ErrnoException) => { if (err.code === 'ENOENT') return []; throw err; });
+    const rows = await Promise.all(entries.filter(e => e.isDirectory() && !e.name.startsWith('.')).map(async e => {
+      try { return await this.get(e.name); } catch { log.warn('略過無法解析的專案', { id: e.name }); return null; }
+    }));
+    return rows.filter((p): p is Project => p !== null).sort((a, b) => a.name.localeCompare(b.name, 'zh-Hant'));
+  }
+
+  async get(id: string): Promise<Project> {
+    let text: string;
+    try { text = await fs.readFile(this.ws.projectFile(id), 'utf8'); }
+    catch (err) { if ((err as NodeJS.ErrnoException).code === 'ENOENT') throw new AppError('not_found', 'project_missing'); throw err; }
+    const { data, body } = parseFrontmatter(text);
+    const s = (key: string) => data[key] == null ? '' : String(data[key]);
+    const phases: Phase[] = [];
+    if (Array.isArray(data['phases'])) for (const phase of data['phases']) {
+      if (phase && typeof phase === 'object' && !Array.isArray(phase) && typeof phase['name'] === 'string') {
+        phases.push({ name: phase['name'], state: PHASE_STATES.includes(phase['state'] as Phase['state']) ? phase['state'] as Phase['state'] : '未開始' });
       }
     }
-    return out.sort((a, b) => a.name.localeCompare(b.name, 'zh-Hant'));
+    const issues = (Array.isArray(data['issues']) ? data['issues'] : []).flatMap(it => {
+      if (typeof it === 'string') return [{ text: it, level: '' }];
+      if (it && typeof it === 'object' && !Array.isArray(it)) return [{ text: String(it['text'] ?? ''), level: String(it['level'] ?? '') }];
+      return [];
+    });
+    return { id, name: s('name') || id, status: PROJECT_STATUSES.includes(s('status') as ProjectStatus) ? s('status') as ProjectStatus : '未開始', updated: s('updated'), description: s('description'), parent: s('parent'), body: s('body'), phases, related: Array.isArray(data['related']) ? data['related'].filter((v): v is string => typeof v === 'string') : [], issues,
+      notes: body.split(/\r?\n/).filter(line => line.trim() && !/^#\s|^\s*<!--/.test(line)).join('\n') };
   }
 
-  async get(name: string): Promise<Project> {
-    const file = this.ws.projectFile(name);
-    let text: string;
-    try {
-      text = await fs.readFile(file, 'utf8');
-    } catch (err) {
-      if ((err as NodeJS.ErrnoException).code === 'ENOENT') throw new AppError('not_found', 'project_missing');
-      throw err;
+  private async validate(patch: ProjectPatch, id?: string): Promise<void> {
+    if (patch.name !== undefined && !isValidProjectName(patch.name)) throw new AppError('bad_request', 'invalid_project_name');
+    for (const key of ['description', 'parent', 'body'] as const) if (patch[key] !== undefined && typeof patch[key] !== 'string') throw new AppError('bad_request', 'field_type', { field: key });
+    if (patch.status !== undefined && !PROJECT_STATUSES.includes(patch.status)) throw new AppError('bad_request', 'invalid_state');
+    if (patch.body) {
+      if (!path.isAbsolute(patch.body) || !(await fs.stat(patch.body).catch(() => null))?.isDirectory()) throw new AppError('bad_request', 'field_type', { field: 'body' });
     }
-    return projectFromData(name, parseFrontmatter(text).data);
+    if (patch.parent) {
+      let parent = await this.get(patch.parent);
+      const seen = new Set<string>();
+      while (true) {
+        if (parent.id === id || seen.has(parent.id)) throw new AppError('bad_request', 'field_type', { field: 'parent' });
+        seen.add(parent.id);
+        if (!parent.parent) break;
+        parent = await this.get(parent.parent);
+      }
+    }
+    if (patch.related !== undefined && (!Array.isArray(patch.related) || patch.related.some(v => typeof v !== 'string'))) throw new AppError('bad_request', 'field_type', { field: 'related' });
+    if (patch.phases !== undefined && (!Array.isArray(patch.phases) || patch.phases.length > 12 || patch.phases.some(p => !p || typeof p.name !== 'string' || !p.name.trim() || !PHASE_STATES.includes(p.state)))) throw new AppError('bad_request', 'field_type', { field: 'phases' });
   }
 
-  async create(name: string): Promise<Project> {
-    const dir = this.ws.projectDir(name);
-    const lower = name.toLowerCase();
-    for (const existing of await this.list()) {
-      if (existing.name.toLowerCase() === lower) throw new AppError('conflict', 'project_exists');
-    }
-    if (await pathExists(dir)) throw new AppError('conflict', 'project_exists');
-    const template = await fs.readFile(path.join(TEMPLATES_DIR, 'PROJECT.md'), 'utf8');
-    const content = template.replaceAll('{{name}}', name).replaceAll('{{date}}', todayDate());
-    await fs.mkdir(path.join(dir, '.ai', 'tasks'), { recursive: true });
-    await fs.mkdir(path.join(dir, '.ai', 'chat'), { recursive: true });
-    // templates/project/：rules.md、memory/INDEX.md、CLAUDE.md、AGENTS.md（AI 啟動時自動讀的工作規則）
-    await fs.cp(path.join(TEMPLATES_DIR, 'project'), dir, { recursive: true, force: false, errorOnExist: false });
-    await atomicWrite(path.join(dir, 'PROJECT.md'), content);
+  async create(input: NewProjectInput): Promise<Project> {
+    const phases = input.phases ?? ['計畫', '實作', '檢查', '收尾'];
+    if (!Array.isArray(phases) || phases.some(p => typeof p !== 'string')) throw new AppError('bad_request', 'field_type', { field: 'phases' });
+    const patch = { ...input, phases: phases.map((name, i) => ({ name: name.trim(), state: i === 0 ? '進行中' as const : '未開始' as const })) };
+    await this.validate(patch, input.name);
+    const dir = this.ws.projectDir(input.name);
+    if (await pathExists(dir) || (await this.list()).some(p => p.name.toLowerCase() === input.name.toLowerCase())) throw new AppError('conflict', 'project_exists');
+    await fs.mkdir(dir, { recursive: false });
+    await fs.cp(path.join(TEMPLATES_DIR, 'project'), dir, { recursive: true, force: false });
+    await Promise.all(['tasks', 'chat', 'uploads'].map(name => fs.mkdir(path.join(dir, '.ai', name), { recursive: true })));
+    const template = parseFrontmatter(await fs.readFile(path.join(TEMPLATES_DIR, 'PROJECT.md'), 'utf8'));
+    const values: Record<string, YamlValue> = { name: input.name, status: '進行中', updated: todayDate(), description: input.description ?? '', parent: input.parent ?? '', body: input.body ?? '', phases: patch.phases.map(p => ({ ...p })), related: input.related ?? [], issues: [] };
+    await atomicWrite(this.ws.projectFile(input.name), serializeFrontmatter(patchHeaderLines(template.headerLines, values), template.body));
     await atomicWrite(path.join(dir, '.gitignore'), PROJECT_GITIGNORE);
-    return this.get(name);
+    if (!input.body) await ensureRepo(dir);
+    return this.get(input.name);
   }
 
-  async update(name: string, patch: ProjectPatch): Promise<Project> {
-    const file = this.ws.projectFile(name);
-    let text: string;
-    try {
-      text = await fs.readFile(file, 'utf8');
-    } catch (err) {
-      if ((err as NodeJS.ErrnoException).code === 'ENOENT') throw new AppError('not_found', 'project_missing');
-      throw err;
-    }
+  async update(id: string, patch: ProjectPatch): Promise<Project> {
+    await this.get(id);
+    await this.validate(patch, id);
+    const fm = parseFrontmatter(await fs.readFile(this.ws.projectFile(id), 'utf8'));
     const values: Record<string, YamlValue> = {};
-    if (patch.status !== undefined) {
-      if (!PROJECT_STATUSES.includes(patch.status)) throw new AppError('bad_request', 'invalid_state');
-      values['status'] = patch.status;
-    }
-    if (Object.keys(values).length === 0) throw new AppError('bad_request', 'no_updatable_fields');
+    for (const key of ['name', 'status', 'description', 'parent', 'body', 'related'] as const) if (patch[key] !== undefined) values[key] = patch[key] as YamlValue;
+    if (patch.phases !== undefined) values['phases'] = patch.phases.map(p => ({ ...p }));
+    if (!Object.keys(values).length) throw new AppError('bad_request', 'no_updatable_fields');
     values['updated'] = todayDate();
-    const fm = parseFrontmatter(text);
-    await atomicWrite(file, serializeFrontmatter(patchHeaderLines(fm.headerLines, values), fm.body));
-    return this.get(name);
+    await atomicWrite(this.ws.projectFile(id), serializeFrontmatter(patchHeaderLines(fm.headerLines, values), fm.body));
+    return this.get(id);
   }
 
-  /** 封存：整個專案目錄移到 Projects/.trash/{name}-{時間}/（不刪除）。 */
-  async archive(name: string): Promise<void> {
-    await this.get(name);
+  bodyPath(project: Project): string { return project.body || this.ws.projectDir(project.id); }
+  currentPhase(project: Project): string { return project.phases.find(p => p.state !== '完成')?.name ?? ''; }
+  async nextPhase(id: string): Promise<Project> {
+    const project = await this.get(id);
+    const index = project.phases.findIndex(p => p.state !== '完成');
+    if (index < 0) return project;
+    project.phases[index]!.state = '完成';
+    if (project.phases[index + 1]) project.phases[index + 1]!.state = '進行中';
+    return this.update(id, { phases: project.phases, ...(index + 1 === project.phases.length ? { status: '完成' as const } : {}) });
+  }
+
+  async archive(id: string): Promise<void> {
+    await this.get(id);
     const trash = path.join(this.ws.projectsDir, '.trash');
     await fs.mkdir(trash, { recursive: true });
-    await fs.rename(this.ws.projectDir(name), path.join(trash, `${name}-${Date.now().toString(36)}`));
+    await fs.rename(this.ws.projectDir(id), path.join(trash, `${id}-${Date.now().toString(36)}`));
   }
 }

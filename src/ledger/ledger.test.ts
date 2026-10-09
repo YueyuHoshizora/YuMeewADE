@@ -2,81 +2,108 @@ import assert from 'node:assert/strict';
 import { promises as fs } from 'node:fs';
 import path from 'node:path';
 import { test } from 'node:test';
-import { AppError } from '../shared/errors.ts';
+import { parseConfig } from '../shared/config.ts';
 import { withTmpWorkspace } from '../testing/tmp.ts';
 import { ProjectLedger } from './projects.ts';
-import { countSteps, TaskLedger } from './tasks.ts';
+import { parseSteps, TaskLedger } from './tasks.ts';
+import { CompletionStore, phaseKey, stepsHash } from './completion.ts';
+import { SettingsStore } from './settings.ts';
+import { OrderStore } from './order.ts';
+import { OpLog } from './oplog.ts';
 
-test('工作區初始化建立目錄與 roles.yaml', () =>
-  withTmpWorkspace(async (ws) => {
-    assert.ok((await fs.stat(ws.projectsDir)).isDirectory());
-    assert.ok((await fs.stat(ws.workDir)).isDirectory());
-    assert.match(await fs.readFile(ws.rolesFile, 'utf8'), /^models:/m);
-  }));
+test('專案預設、階段推進、改名不搬目錄、階層與外部本體驗證', () => withTmpWorkspace(async (ws, dir) => {
+  const projects = new ProjectLedger(ws);
+  assert.ok((await fs.stat(ws.internalDir)).isDirectory());
+  const p = await projects.create({ name: 'P', description: '說明' });
+  assert.equal(p.id, 'P'); assert.equal(p.status, '進行中'); assert.equal(projects.currentPhase(p), '計畫');
+  assert.equal(projects.bodyPath(p), ws.projectDir('P'));
+  const renamed = await projects.update('P', { name: '新名字' });
+  assert.equal(renamed.id, 'P'); assert.equal(renamed.name, '新名字');
+  await projects.create({ name: 'Child', parent: 'P', body: dir, phases: ['一'] });
+  await assert.rejects(projects.update('P', { parent: 'Child' }));
+  await assert.rejects(projects.create({ name: 'Invalid', body: path.join(dir, 'absent') }));
+  await assert.rejects(projects.create({ name: '../escape' }));
+  await assert.rejects(projects.create({ name: 'P' }));
+  await assert.rejects(projects.create({ name: 'TooMany', phases: Array.from({ length: 13 }, (_, i) => String(i)) }));
+  for (let i = 0; i < 4; i++) await projects.nextPhase('P');
+  assert.equal((await projects.get('P')).status, '完成');
+  assert.equal(projects.currentPhase(await projects.get('P')), '');
+}));
 
-test('專案建立、讀取、同名衝突、名稱白名單', () =>
-  withTmpWorkspace(async (ws) => {
-    const projects = new ProjectLedger(ws);
-    assert.deepEqual(await projects.list(), []);
-    const p = await projects.create('範例專案');
-    assert.equal(p.name, '範例專案');
-    assert.equal(p.status, '未開始');
-    assert.match(p.updated, /^\d{4}-\d{2}-\d{2}$/);
-    assert.match(await fs.readFile(path.join(ws.projectDir('範例專案'), '.gitignore'), 'utf8'), /^\.ai\/$/m);
-    await assert.rejects(projects.create('範例專案'), (e: unknown) => e instanceof AppError && e.code === 'conflict');
-    await assert.rejects(projects.create('../escape'), (e: unknown) => e instanceof AppError && e.code === 'bad_request');
-    await assert.rejects(projects.get('nope'), (e: unknown) => e instanceof AppError && e.code === 'not_found');
-    assert.equal((await projects.list()).length, 1);
-  }));
+test('舊專案缺欄位仍能讀、issues 與正文保留', () => withTmpWorkspace(async ws => {
+  const projects = new ProjectLedger(ws);
+  await projects.create({ name: 'P' });
+  await fs.writeFile(ws.projectFile('P'), '---\nname: 舊檔\nstatus: 暫停\nrelated: [Q]\nissues:\n  - { text: 卡住, level: 高 }\n---\n# 備註\n保留內容\n');
+  const p = await projects.get('P');
+  assert.deepEqual(p.phases, []); assert.equal(p.body, ''); assert.equal(p.description, '');
+  assert.deepEqual(p.issues, [{ text: '卡住', level: '高' }]); assert.equal(p.notes, '保留內容');
+  await projects.update('P', { description: '新說明' });
+  assert.equal((await projects.get('P')).notes, '保留內容');
+}));
 
-test('手改的 PROJECT.md issues／related 能讀回', () =>
-  withTmpWorkspace(async (ws) => {
-    const projects = new ProjectLedger(ws);
-    await projects.create('P');
-    await fs.writeFile(
-      ws.projectFile('P'),
-      '---\nname: P\nstatus: 進行中\nupdated: 2026-10-10\nrelated: [Q]\nissues:\n  - { text: 卡住, level: 高 }\n---\n備註\n',
-    );
-    const p = await projects.get('P');
-    assert.equal(p.status, '進行中');
-    assert.deepEqual(p.related, ['Q']);
-    assert.deepEqual(p.issues, [{ text: '卡住', level: '高' }]);
-  }));
+test('步驟編輯與 memo 只變更自己的段落；舊 owner 與段落相容', () => withTmpWorkspace(async ws => {
+  await new ProjectLedger(ws).create({ name: 'P' });
+  const tasks = new TaskLedger(ws);
+  const task = await tasks.create('P', { title: '作業', steps: ['讀規格', '實作'], workspace: 'direct' });
+  assert.equal(task.workspace, 'direct'); assert.deepEqual(task.steps, [{ text: '讀規格', done: false }, { text: '實作', done: false }]);
+  await tasks.setStep('P', task.id, 0, true);
+  await tasks.addStep('P', task.id, '驗證'); await tasks.removeStep('P', task.id, 1);
+  assert.deepEqual((await tasks.get('P', task.id)).steps, [{ text: '讀規格', done: true }, { text: '驗證', done: false }]);
+  await assert.rejects(tasks.setStep('P', task.id, 99, true));
+  await assert.rejects(tasks.appendMemo('P', task.id, 'x'.repeat(301)));
+  await tasks.appendMemo('P', task.id, '完成初稿');
+  assert.match((await tasks.get('P', task.id)).memo, /完成初稿$/);
+  const file = ws.taskFile('P', task.id);
+  await fs.writeFile(file, '---\nid: ignored\ntitle: 舊檔\nowner: codex\nstate: 進行中 # 保留\n---\n## 手順\n* [X] 舊步驟\n## 已完成的工作\n不能遺失\n## Next\n先驗證\n## 注意事項\n舊注意\n## メモ\n舊備註\n');
+  const old = await tasks.get('P', task.id); assert.equal(old.cli, 'codex'); assert.equal(old.next, '先驗證');
+  await tasks.update('P', task.id, { state: '等待回覆', workdir: '/tmp/copy', mergeExcluded: true });
+  await tasks.appendMemo('P', task.id, '新備註');
+  const raw = await tasks.readRaw('P', task.id);
+  assert.match(raw, /state: 等待回覆 # 保留/); assert.match(raw, /## 已完成的工作\n不能遺失/); assert.match(raw, /## 注意事項\n舊注意/);
+  assert.deepEqual(parseSteps(raw), [{ text: '舊步驟', done: true }]);
+}));
 
-test('作業建立、序號、更新只改指定鍵並保留正文', () =>
-  withTmpWorkspace(async (ws) => {
-    await new ProjectLedger(ws).create('P');
-    const tasks = new TaskLedger(ws);
-    const a = await tasks.create('P', '第一件', '實作');
-    const b = await tasks.create('P', '第二件');
-    assert.match(a.id, /^\d{8}-001$/);
-    assert.match(b.id, /^\d{8}-002$/);
-    assert.equal(a.role, '實作');
-    assert.equal(a.state, '未開始');
-    assert.deepEqual(a.steps, { done: 0, total: 1 });
+test('作業序號掃描 chat 與 Work，封存與並行建立也不重用', () => withTmpWorkspace(async ws => {
+  await new ProjectLedger(ws).create({ name: 'P' });
+  const tasks = new TaskLedger(ws);
+  const a = await tasks.create('P', { title: '第一件' });
+  await tasks.archive('P', a.id);
+  const b = await tasks.create('P', { title: '第二件' }); assert.notEqual(a.id, b.id);
+  const day = a.id.slice(0, 8);
+  await fs.writeFile(ws.chatFile('P', `${day}-050`, 'jsonl'), '');
+  await fs.mkdir(ws.worktreeDir('P', `${day}-080`), { recursive: true });
+  const rows = await Promise.all(Array.from({ length: 4 }, (_, i) => tasks.create('P', { title: `並行 ${i}` })));
+  assert.deepEqual(rows.map(t => t.id), [81,82,83,84].map(n => `${day}-${String(n).padStart(3, '0')}`));
+}));
 
-    // 模擬 AI 手改正文
-    const file = ws.taskFile('P', a.id);
-    const raw = await fs.readFile(file, 'utf8');
-    await fs.writeFile(file, raw.replace('- [ ]', '- [x] 讀規格\n- [ ] 寫碼'));
+test('完成核可、continue hash、階段 key 與多實例寫入不互相覆蓋', () => withTmpWorkspace(async ws => {
+  const one = new CompletionStore(ws), two = new CompletionStore(ws);
+  await Promise.all([one.approve('P', 'a'), two.approve('P', 'b')]);
+  assert.equal(await one.isApproved('P', 'a'), true); assert.equal(await two.isApproved('P', 'b'), true);
+  await one.revoke('P', 'a'); assert.equal(await one.isApproved('P', 'a'), false);
+  const hash = stepsHash([{ text: '做事', done: true }]); await one.setContinued('P', 'a', hash);
+  assert.equal(await two.continued('P', 'a'), hash); assert.notEqual(hash, stepsHash([{ text: '新事', done: true }]));
+  await new ProjectLedger(ws).create({ name: 'P' }); const tasks = new TaskLedger(ws);
+  const a = await tasks.create('P', { title: 'A' }), b = await tasks.create('P', { title: 'B' });
+  assert.equal(phaseKey([a,b]), phaseKey([b,a]));
+  await one.setPhaseContinued('P', phaseKey([a,b])); assert.equal(await two.phaseContinued('P'), phaseKey([a,b]));
+}));
 
-    const updated = await tasks.update('P', a.id, { state: '進行中', question: '要不要加測試？' });
-    assert.equal(updated.state, '進行中');
-    assert.equal(updated.question, '要不要加測試？');
-    assert.deepEqual(updated.steps, { done: 1, total: 2 });
-    assert.match(await fs.readFile(file, 'utf8'), /- \[x\] 讀規格\n- \[ \] 寫碼/);
-
-    await assert.rejects(tasks.update('P', a.id, { state: '飛天' as never }), (e: unknown) => e instanceof AppError && e.code === 'bad_request');
-    await assert.rejects(tasks.update('P', a.id, {}), (e: unknown) => e instanceof AppError && e.code === 'bad_request');
-    await assert.rejects(tasks.get('P', '99999999-999'), (e: unknown) => e instanceof AppError && e.code === 'not_found');
-    const list = await tasks.list('P');
-    assert.deepEqual(
-      list.map((t) => t.id),
-      [b.id, a.id],
-    );
-  }));
-
-test('countSteps 只數「## 步驟」段落', () => {
-  assert.deepEqual(countSteps('## 步驟\n- [x] a\n- [ ] b\n## 下一步\n- [ ] c\n'), { done: 1, total: 2 });
-  assert.deepEqual(countSteps('沒有步驟'), { done: 0, total: 0 });
-});
+test('設定預設取 config、驗證陣列與 AI；排序與釘選；紀錄 newest-first 上限', () => withTmpWorkspace(async ws => {
+  const settings = new SettingsStore(ws, parseConfig('cli:\n  claude:\n    fullAccess: false\n', null));
+  assert.deepEqual((await settings.get()).initial, { ai: 'codex', model: 'gpt-6.1-sol', effort: 'high' });
+  assert.equal((await settings.get()).fullAccess['claude'], false);
+  await settings.update({ hiddenModels: { codex: ['one'] }, fullAccess: { codex: false } });
+  await settings.update({ hiddenModels: { claude: ['two'] } });
+  assert.deepEqual((await settings.get()).hiddenModels, { codex: ['one'], claude: ['two'] });
+  await assert.rejects(settings.update({ initial: { ai: 'mock', model: '', effort: '' } }));
+  await assert.rejects(settings.update({ modelOrder: { codex: [1] as never } }));
+  const order = new OrderStore(ws); assert.deepEqual(await order.setOrder('', ['B','A','B']), ['B','A']);
+  await order.setPinned('B', true); await order.setPinned('A', true); assert.deepEqual(await order.setPinned('B', false), ['A']);
+  const oplog = new OpLog(ws);
+  for (let i = 0; i < 205; i++) await oplog.record({ action: 'test', i });
+  const recent = await oplog.recent(999); assert.equal(recent.length, 200); assert.equal(recent[0]!['i'], 204);
+  assert.deepEqual(await oplog.recent(0), []);
+  await fs.rm(path.join(ws.internalDir, 'log.jsonl')); await fs.mkdir(path.join(ws.internalDir, 'log.jsonl'));
+  await assert.doesNotReject(oplog.record({ action: 'still-safe' }));
+}));

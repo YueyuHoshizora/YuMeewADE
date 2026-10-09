@@ -12,12 +12,14 @@ export class Workspace {
   readonly root: string;
   readonly projectsDir: string;
   readonly workDir: string;
+  readonly internalDir: string;
   readonly rolesFile: string;
 
   constructor(root: string) {
     this.root = path.resolve(root);
     this.projectsDir = path.join(this.root, 'Projects');
     this.workDir = path.join(this.root, 'Work');
+    this.internalDir = path.join(this.root, '.yumeewade');
     this.rolesFile = path.join(this.root, 'roles.yaml');
   }
 
@@ -25,6 +27,7 @@ export class Workspace {
   async init(): Promise<void> {
     await fs.mkdir(this.projectsDir, { recursive: true });
     await fs.mkdir(this.workDir, { recursive: true });
+    await fs.mkdir(this.internalDir, { recursive: true });
     if (!(await pathExists(this.rolesFile))) {
       await fs.copyFile(path.join(TEMPLATES_DIR, 'roles.yaml'), this.rolesFile);
     }
@@ -53,6 +56,19 @@ export class Workspace {
   chatFile(name: string, id: string, kind: 'jsonl' | 'json' | 'queue.json'): string {
     if (!isValidTaskId(id)) throw new AppError('bad_request', 'invalid_task_id');
     return path.join(this.projectDir(name), '.ai', 'chat', `${id}.${kind}`);
+  }
+
+  attachmentsDir(name: string, id: string): string {
+    if (!isValidTaskId(id)) throw new AppError('bad_request', 'invalid_task_id');
+    return path.join(this.projectDir(name), '.ai', 'attachments', id);
+  }
+
+  uploadsDir(name: string): string {
+    return path.join(this.projectDir(name), '.ai', 'uploads');
+  }
+
+  startPickFile(name: string): string {
+    return path.join(this.projectDir(name), '.ai', 'start-pick.json');
   }
 
   worktreeDir(name: string, id: string): string {
