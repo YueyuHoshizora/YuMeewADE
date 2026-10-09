@@ -39,6 +39,8 @@
 - 作業第一次送出指示時自動建立 git worktree 副本（分支 `ym/{作業ID}`），AI 只在副本工作；**收編**由人按鈕觸發，先看 diff 再合併，衝突則中止不污染本體。
 - `roles.yaml` 定義角色 → CLI／模型／思考強度；作業綁角色，啟動參數由角色決定，作業或單次送出可覆寫。
 - CLI 未安裝時 UI 顯示佔位，`mock` provider 可以在沒有任何 CLI 的機器上走完全部流程。
+- UI 多語系：繁體中文（預設）、簡體中文、English、日本語、Deutsch、Français、Italiano；左下角切換，選擇會記在瀏覽器／App 內。台帳檔案裡的狀態值維持繁體中文，不受語言影響。
+- 預設權限（不開 `dangerous` 也能工作）：claude 以 `--permission-mode acceptEdits` 自動接受工作副本與主專案 `.ai/` 內的檔案編輯，執行指令仍會被拒；codex 以 `-s workspace-write` 沙箱執行且不詢問。要讓 AI 自由執行指令、碰沙箱外的東西，才需要在 `config.yaml` 開 `dangerous: true`。
 
 ## 需求
 
@@ -99,6 +101,14 @@ HTTP JSON＋SSE，桌面版與網頁版完全相同。
 | `POST /api/worktree/remove` | 移除副本與分支（副本有未提交變更時拒絕） |
 
 錯誤碼：400 輸入不合法／403 來源不符／404 不存在／409 衝突（執行中、同名、副本未清）／413 過大／429 太頻繁／500 內部錯誤。訊息一律 generic，原因只進本地日誌。
+
+### Windows／Linux 產物啟動 checklist（無實機時依此驗收 CI 產物）
+
+1. 安裝或解壓後啟動 `YuMeewADE`，視窗標題為 YuMeewADE，左欄顯示版本號。
+2. 使用者設定目錄出現 `config.yaml`（Windows `%APPDATA%\YuMeewADE\`、Linux `~/.config/YuMeewADE/`）。
+3. 新增專案、新增作業、選 `mock` 送出一則指示 → 看到串流回覆（流程範例 1）。
+4. 送出 `[slow] x` 後再送一則 → 顯示排隊；按「停止」→ 第一則標記已停止、第二則接著跑完（流程範例 2）。
+5. 關閉視窗後，工作管理員／`ps` 看不到殘留的 `yumeewade-core`。
 
 ## 測試
 

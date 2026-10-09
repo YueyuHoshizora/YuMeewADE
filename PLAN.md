@@ -41,7 +41,7 @@
 - 內嵌終端機（pty）畫面：第一版僅無頭串流對話。
 - AI 帳號切換、用量監控、額度（上限）管理。
 - 自動更新機制、程式碼簽名與公證、各平台商店上架（見假設 7）。
-- 多語系（第一版僅繁體中文）。
+- ~~多語系（第一版僅繁體中文）~~ → **改為範圍內**（使用者裁示 2026-10-10，見附錄 A.8）：UI 支援繁體中文／簡體中文／英文／日文／德文／法文／義大利文。
 - 即時通訊（Discord 等）整合、MCP 伺服器管理、圖片／影片生成流程。
 
 ### 硬性要求
@@ -376,3 +376,30 @@ roles:
 
 ### A.7 版本釘選（2026-10-10 npm 最新）
 electron 44.7.0、vite 8.3.4、electron-builder 26.15.3、typescript 7.0.2、@types/node 24.x；Node engines `>=24`。
+
+### A.8 多語系（使用者裁示 2026-10-10 納入）
+- UI 語言：`zh-TW`（預設）、`zh-CN`、`en`、`ja`、`de`、`fr`、`it`（「藝大藝文」解讀為義大利文；若有誤請裁示）。
+- 實作：`src/ui/i18n/` 自寫模組（無相依）。`zh-TW.ts` 定義全部訊息鍵，其他語言以 `Record<MessageKey, string>` 型別強制齊全；靜態文字用 `data-i18n`／`data-i18n-placeholder`，動態文字用 `t()`；語言選擇存 `localStorage`（`yumeewade.lang`），未設定時依 `navigator.language`。
+- 台帳內部值（作業狀態 `未開始／進行中／等待回覆／暫停／完成`、專案狀態）**不翻譯、不改寫**，只在顯示時對應；AI 提示前言與伺服器補充訊息維持繁體中文，UI 以錯誤碼顯示各語言的 generic 訊息並附伺服器補充。
+
+### A.9 實作期修訂（Gate 3／4 實測後）
+- CLI 權限預設（安全節 3 的「危險旗標預設關閉」不變）：claude `baseArgs` 加 `--permission-mode acceptEdits`（只自動接受工作目錄與 `--add-dir` 內的檔案編輯，執行指令仍拒絕）；codex `baseArgs` 加 `-s workspace-write -c approval_policy="never"`（沙箱內不詢問）。沒有這兩項，無頭模式下 AI 連副本內的檔案都無法修改。
+- 環境白名單預設多放行 `CODEX_HOME`、`CLAUDE_CONFIG_DIR`（CLI 設定目錄指標，非憑證；缺少時 codex 找不到登入狀態而回 401）。
+- 續聊失敗處理：某輪失敗（非人工停止）時不保存該輪的 session id，若本輪是 resume 則刪除既有 session（下次重新開始並附交接包），`seen` 也不前進。
+- 桌面版：Electron 主行程以 `utilityProcess.fork` 執行同一份 `dist/server/main.js`；若 port 已有核心回應（例如網頁版已在跑）則直接共用；App 結束時結束核心。設定檔在 `app.getPath('userData')/config.yaml`，首次啟動從範本複製。
+
+### A.10 Gate 5 安全 checklist（2026-10-10 逐條核對）
+| # | 規則 | 實作位置 | 驗證 |
+|---|---|---|---|
+| 1 | 僅 loopback | `shared/config.ts` 拒絕非 loopback；`http/server.ts` 依 config 綁定 | `config.test.ts` |
+| 2 | 無認證宣告 | `README.md` 首段 | 文件 |
+| 3 | 危險旗標預設關閉 | `DEFAULT_CONFIG.cli.*.dangerous=false`；adapter 只在 true 時附加 | `config.test.ts`、Gate 3 log |
+| 4 | Electron 隔離 | `desktop/main.ts` contextIsolation／sandbox／nodeIntegration=false／導航封鎖；`preload.cts` 只暴露 platform | Gate 4 CDP 檢查 `require`／`process` 為 undefined |
+| 5 | 輸入驗證與上限 | `http/router.ts` readJsonBody 413、reqString 長度、`limits.promptChars` | `routes.test.ts`、`chat.test.ts` |
+| 6 | 頻率限制 | `http/ratelimit.ts`，`/api/chat/send` 429 | `chat.test.ts` |
+| 7 | 路徑白名單 | `shared/names.ts`＋`ledger/workspace.ts` isInside | `names.test.ts`、`ledger.test.ts` |
+| 8 | 憑證不入日誌、環境最小化 | `shared/log.ts`（不寫 env／提示；stderr 500 字）、`cli/process.ts` minimalEnv | Gate 3 日誌抽查 |
+| 9 | generic 錯誤 | `shared/errors.ts`、`http/router.ts` sendError | `routes.test.ts` |
+| 10 | 供應鏈釘選 | `package.json` 確切版本、`package-lock.json` 入庫 | 檔案 |
+| 11 | 資源上限 | `chat/runner.ts` concurrentRuns／queueLength、`http/sse.ts` sseConnections | `runner.test.ts`、`chat.test.ts` |
+| 12 | Host／Origin | `http/router.ts` checkOrigin | `routes.test.ts` |

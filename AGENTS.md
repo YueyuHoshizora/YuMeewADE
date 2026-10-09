@@ -68,8 +68,8 @@ config.yaml          設定範本；templates/ 內為 roles.yaml／PROJECT.md／
 5. **輸入驗證與大小上限**：請求體 1 MiB、指示 10,000 字（皆入 `config.yaml`）；超過回 413／400；所有 JSON 欄位檢查型別與長度。
 6. **頻率限制**：每來源每分鐘指示數上限（`limits.sendPerMinute`），超過回 429。
 7. **路徑白名單**：專案名／作業 ID 僅接受 `src/shared/names.ts` 定義的字元集，拒絕 `..`、分隔符、Windows 保留名與結尾點／空白；最後再以 `path.resolve` 驗證仍落在工作區內。
-8. **憑證不入日誌、環境最小化**：日誌不寫 env、argv 之外的提示內容、CLI stderr 只截前 500 字；CLI 子行程環境採白名單（`PATH`、`HOME`、`USER`、`LANG`、`LC_*`、`TERM`、`TMPDIR`、`SHELL`、`XDG_*`、Windows 的 `APPDATA`／`LOCALAPPDATA`／`USERPROFILE`／`SystemRoot`／`ComSpec`／`PATHEXT`）＋`cli.envPassthrough`。
-9. **對外錯誤一律 generic**：回應只含錯誤碼與固定訊息（400／404／409／413／429／500）；例外堆疊與內部路徑只進本地日誌。
+8. **憑證不入日誌、環境最小化**：日誌不寫 env、argv 之外的提示內容、CLI stderr 只截前 500 字；CLI 子行程環境採白名單（`PATH`、`HOME`、`USER`、`LANG`、`LC_*`、`TERM`、`TMPDIR`、`SHELL`、`XDG_*`、Windows 的 `APPDATA`／`LOCALAPPDATA`／`USERPROFILE`／`SystemRoot`／`ComSpec`／`PATHEXT`）＋CLI 設定目錄指標（`CODEX_HOME`、`CLAUDE_CONFIG_DIR`）＋`cli.envPassthrough`。
+9. **對外錯誤一律 generic**：回應只含錯誤碼與固定訊息（400／403／404／409／413／429／500）；例外堆疊與內部路徑只進本地日誌。
 10. **供應鏈**：相依釘選確切版本、lockfile 入庫；Electron／Vite／electron-builder／TypeScript 升版須人工裁示。
 11. **資源防護**：同時執行中的對話數、SSE 連線數、隊列長度皆有上限（`limits.*`）；超限回 409／503，不排隊無限等待。
 12. **CSRF／DNS rebinding**：所有請求檢查 `Host` 為 `127.0.0.1:{port}` 或 `localhost:{port}`；非 GET 請求若帶 `Origin` 必須同源，否則 403。（本條為實作補強，嚴於企劃書。）
@@ -80,6 +80,12 @@ config.yaml          設定範本；templates/ 內為 roles.yaml／PROJECT.md／
 - 檔案系統測試一律在 `os.tmpdir()` 下建臨時工作區，結束時刪除；不得碰真實 `~/Documents`。
 - 對話流程測試用 `MockCliProvider`；真實 CLI 只在 Gate 3 人工驗證，不進自動測試。
 - 不寫只驗證「有呼叫」「不丟錯」的測試；測行為、邊界、狀態轉移、錯誤路徑。
+
+## 七之一、多語系（UI）
+
+- 所有使用者可見文字一律經 `src/ui/i18n/`：靜態 DOM 用 `data-i18n`／`data-i18n-placeholder`，動態文字用 `t()`（`main.ts` 內別名 `i`，避免與作業變數 `t` 衝突）。
+- 新增訊息先加進 `zh-TW.ts`（鍵的唯一來源），再補齊 `zh-CN`／`en`／`ja`／`de`／`fr`／`it`；少一個語言 `npm run typecheck` 會失敗。
+- 台帳內部值（狀態、角色鍵）不翻譯、不改寫，只在顯示層對應。伺服器端訊息維持繁體中文，UI 以錯誤碼對應各語言。
 
 ## 八、Git 紀律
 
