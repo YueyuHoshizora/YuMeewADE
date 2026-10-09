@@ -4,7 +4,8 @@
 import { promises as fs } from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
-import { parseYamlMap, type YamlMap, type YamlValue } from './yaml.ts';
+import { atomicWrite } from './fsx.ts';
+import { parseYamlMap, yamlScalar, type YamlMap, type YamlValue } from './yaml.ts';
 
 export interface CliCommandConfig {
   command: string;
@@ -213,4 +214,46 @@ export async function loadConfig(env: NodeJS.ProcessEnv = process.env, cwd = pro
     return parseConfig(text, candidate);
   }
   return { ...DEFAULT_CONFIG, workspace: { root: expandHome(DEFAULT_CONFIG.workspace.root) } };
+}
+
+/** 設定變更寫回的檔案：目前採用的設定檔；全用預設值時寫到 ~/.yumeewade/config.yaml（下次啟動會讀到）。 */
+export function configWriteTarget(config: Config): string {
+  return config.source ?? path.join(os.homedir(), '.yumeewade', 'config.yaml');
+}
+
+/** 只改寫 workspace.root 那一行，其他設定與註解原樣保留；缺區塊或缺欄位時補上。 */
+export function withWorkspaceRoot(text: string, root: string): string {
+  const eol = text.includes('\r\n') ? '\r\n' : '\n';
+  const lines = text.split(/\r?\n/u);
+  const value = yamlScalar(root);
+  const start = lines.findIndex(line => /^workspace:\s*(#.*)?$/u.test(line));
+  if (start < 0) {
+    const head = text === '' || text.endsWith('\n') ? text : text + eol;
+    return `${head}workspace:${eol}  root: ${value}${eol}`;
+  }
+  let at = -1;
+  for (let i = start + 1; i < lines.length; i++) {
+    const line = lines[i]!;
+    if (/^[^\s#]/u.test(line)) break;
+    if (/^ +root:(\s|$)/u.test(line)) { at = i; break; }
+  }
+  if (at < 0) lines.splice(start + 1, 0, `  root: ${value}`);
+  else {
+    const line = lines[at]!;
+    const indent = line.slice(0, line.indexOf('root:'));
+    // 行尾註解不含引號才保留，避免把引號值裡的 # 誤當註解
+    const comment = /\s+#[^"']*$/u.exec(line.slice(indent.length + 'root:'.length))?.[0] ?? '';
+    lines[at] = `${indent}root: ${value}${comment}`;
+  }
+  return lines.join(eol);
+}
+
+/** 把新的工作區根目錄寫回設定檔；寫入前先確認改寫後的內容仍能解析出同一路徑。 */
+export async function saveWorkspaceRoot(file: string, root: string): Promise<void> {
+  let text = '';
+  try { text = await fs.readFile(file, 'utf8'); }
+  catch (err) { if ((err as NodeJS.ErrnoException).code !== 'ENOENT') throw err; }
+  const next = withWorkspaceRoot(text, root);
+  if (parseConfig(next, file).workspace.root !== root) throw new ConfigError('workspace.root 寫回後無法讀出相同路徑');
+  await atomicWrite(file, next);
 }

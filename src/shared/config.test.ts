@@ -3,7 +3,7 @@ import { promises as fs } from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { test } from 'node:test';
-import { ConfigError, DEFAULT_CONFIG, loadConfig, parseConfig } from './config.ts';
+import { ConfigError, DEFAULT_CONFIG, loadConfig, parseConfig, withWorkspaceRoot } from './config.ts';
 
 test('空設定等於預設值', () => {
   const c = parseConfig('', null);
@@ -60,4 +60,27 @@ test('loadConfig 依序找檔，找不到用預設', async () => {
   } finally {
     await fs.rm(dir, { recursive: true, force: true });
   }
+});
+
+test('withWorkspaceRoot 只改 root 那一行：保留註解與其他區塊，特殊字元路徑可讀回', () => {
+  const text = '# 頂部註解\nserver:\n  port: 4999\n\nworkspace:\n  # 區塊內註解\n  root: ~/Old   # 根目錄說明\n  # 結構說明\n\ncli:\n  envPassthrough: [A]\n';
+  for (const root of ['/Users/me/My Work', '/tmp/a #b', 'C:\\Users\\me\\工作區', '/tmp/x: y', '/tmp/"q"']) {
+    const next = withWorkspaceRoot(text, root);
+    const c = parseConfig(next, null);
+    assert.equal(c.workspace.root, root);
+    assert.equal(c.server.port, 4999);
+    assert.deepEqual(c.cli.envPassthrough, ['A']);
+    assert.deepEqual(next.split('\n').filter(l => !/^ +root:/u.test(l)), text.split('\n').filter(l => !/^ +root:/u.test(l)));
+  }
+  assert.match(withWorkspaceRoot(text, '/plain'), /^ {2}root: \/plain {3}# 根目錄說明$/mu);
+});
+
+test('withWorkspaceRoot 缺 workspace 區塊或缺 root 時補上，保留 CRLF', () => {
+  assert.equal(parseConfig(withWorkspaceRoot('', '/a'), null).workspace.root, '/a');
+  assert.equal(parseConfig(withWorkspaceRoot('server:\n  port: 4999', '/b'), null).workspace.root, '/b');
+  const crlf = withWorkspaceRoot('workspace:\r\n  # 尚未設定\r\nlimits:\r\n  queueLength: 5\r\n', '/c');
+  assert.ok(!/[^\r]\n/u.test(crlf));
+  const c = parseConfig(crlf, null);
+  assert.equal(c.workspace.root, '/c');
+  assert.equal(c.limits.queueLength, 5);
 });
