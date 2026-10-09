@@ -1,4 +1,7 @@
-// UI 與核心共用的型別；只放純資料型別，不得 import Node 模組。
+// UI 與核心共用的型別（API 契約）；只放純資料型別，不得 import Node 模組。
+// 流程對齊參考專案 project-hub：專案（含階段）→ 作業（含子作業／分支）→ 同一作業內的對話；狀態值寫入檔案。
+
+// ---- 列舉值（寫進台帳檔案的原值；UI 依值翻譯顯示） ----
 
 export const PROJECT_STATUSES = ['未開始', '進行中', '暫停', '完成'] as const;
 export type ProjectStatus = (typeof PROJECT_STATUSES)[number];
@@ -6,74 +9,199 @@ export type ProjectStatus = (typeof PROJECT_STATUSES)[number];
 export const TASK_STATES = ['未開始', '進行中', '等待回覆', '暫停', '完成'] as const;
 export type TaskState = (typeof TASK_STATES)[number];
 
-export const CLI_NAMES = ['claude', 'codex', 'mock'] as const;
-export type CliName = (typeof CLI_NAMES)[number];
+export const PHASE_STATES = ['未開始', '進行中', '完成'] as const;
+export type PhaseState = (typeof PHASE_STATES)[number];
 
-export const EFFORTS = ['low', 'medium', 'high', 'xhigh'] as const;
-export type Effort = (typeof EFFORTS)[number];
+/** 能實際對話的 AI（mock 僅測試用，UI 不列出）。 */
+export const AI_NAMES = ['claude', 'codex', 'mock'] as const;
+export type AiName = (typeof AI_NAMES)[number];
+
+/** roles.yaml 槽位裡代表「人」的值。 */
+export const HUMAN = '人';
+
+/** 作業種類：main＝一般作業；derived＝從另一作業分出的分支。 */
+export const TASK_KINDS = ['main', 'derived'] as const;
+export type TaskKind = (typeof TASK_KINDS)[number];
+
+/** 作業的工作位置：isolated＝git worktree 副本（預設）；direct＝直接在主資料夾。 */
+export const WORKSPACE_MODES = ['isolated', 'direct'] as const;
+export type WorkspaceMode = (typeof WORKSPACE_MODES)[number];
+
+/** 執行中送出新指示時的處理方式：① 取消並重做 ② 補充說明（一起做）③ 做完再接續。 */
+export const SEND_MODES = ['redo', 'amend', 'queue'] as const;
+export type SendMode = (typeof SEND_MODES)[number];
+
+// ---- 專案 ----
+
+export interface Phase {
+  name: string;
+  state: PhaseState;
+}
 
 export interface ProjectIssue {
   text: string;
   level: string;
 }
 
+/** PROJECT.md（frontmatter＋正文）。id＝Projects/ 底下的資料夾名，name 可改名不搬資料夾。 */
 export interface Project {
+  id: string;
   name: string;
   status: ProjectStatus;
   updated: string;
+  description: string;
+  /** 上層專案 id（子專案）；空字串＝頂層。 */
+  parent: string;
+  /** 主資料夾（程式碼本體）絕對路徑；空字串＝台帳資料夾本身。 */
+  body: string;
+  phases: Phase[];
   related: string[];
   issues: ProjectIssue[];
+  /** 正文（# 備註 之後的說明），唯讀顯示用。 */
+  notes: string;
 }
 
+export interface NewProjectInput {
+  name: string;
+  description?: string;
+  /** 每行一個階段；省略＝預設四階段。 */
+  phases?: string[];
+  parent?: string;
+  body?: string;
+  related?: string[];
+}
+
+export type ProjectPatch = Partial<Pick<Project, 'name' | 'status' | 'description' | 'parent' | 'body' | 'related'>> & { phases?: Phase[] };
+
+// ---- 作業 ----
+
+export interface Step {
+  text: string;
+  done: boolean;
+}
+
+/** .ai/tasks/{id}.md。 */
 export interface Task {
   id: string;
   title: string;
   state: TaskState;
   phase: string;
-  owner: string;
   role: string;
+  /** 上層作業 id（子作業）；空字串＝無。 */
+  parent: string;
+  kind: TaskKind;
+  /** kind＝derived 時的來源作業 id。 */
+  derivedFrom: string;
+  workspace: WorkspaceMode;
+  /** 最近一次（或下次預設）使用的 AI／模型／思考強度。 */
   cli: string;
   model: string;
   effort: string;
+  /** AI 提出、等人回答的問題；空字串＝沒有。 */
   question: string;
+  /** 工作副本路徑（建立後寫入；合併或清除後清空）。 */
+  workdir: string;
+  mergeExcluded: boolean;
   updated: string;
-  /** 「## 步驟」清單的勾選進度，由正文解析，唯讀。 */
-  steps: { done: number; total: number };
+  /** 「## 步驟」清單。 */
+  steps: Step[];
+  /** 「## 備註」最後一行（完整內容在檔案裡）。 */
+  memo: string;
+  /** 「## 下一步」第一行。 */
+  next: string;
 }
 
-export type TaskPatch = Partial<Pick<Task, 'title' | 'state' | 'phase' | 'owner' | 'role' | 'cli' | 'model' | 'effort' | 'question'>>;
-
-export type ChatRole = 'user' | 'assistant' | 'error';
-
-export interface ChatRow {
-  at: string;
-  role: ChatRole;
-  text: string;
-  cli: string;
-  model?: string;
-  request: string;
-  /** 人工停止，已收部分照樣存檔。 */
-  cancelled?: boolean;
-  /** 串流中斷（CLI 異常結束），已收部分照樣存檔。 */
-  interrupted?: boolean;
-}
-
-export interface ChatMeta {
-  sessions: Partial<Record<string, string>>;
-  /** 各 CLI 上次收尾的那筆 request（舊版為已看過的行數），用來組交接包。 */
-  seen: Partial<Record<string, string | number>>;
-}
-
-export interface QueueItem {
-  request: string;
-  text: string;
-  cli: string;
+export interface NewTaskInput {
+  title: string;
+  role?: string;
+  phase?: string;
+  parent?: string;
+  kind?: TaskKind;
+  derivedFrom?: string;
+  workspace?: WorkspaceMode;
+  steps?: string[];
+  cli?: string;
   model?: string;
   effort?: string;
-  at: string;
 }
 
+export type TaskPatch = Partial<Pick<Task, 'title' | 'state' | 'phase' | 'role' | 'parent' | 'cli' | 'model' | 'effort' | 'question'>>;
+
+/** /api/state 裡的作業：台帳＋計算欄位。 */
+export interface TaskView extends Task {
+  /** 等人確認完成（AI 自行寫了「完成」但人還沒核可，或步驟全勾）。 */
+  confirm: boolean;
+  /** 已有對話紀錄（.ai/chat/{id}.jsonl 存在且非空）；狀態圓點區分「處理過」與「未碰過」。 */
+  hasChat: boolean;
+  /** 工作副本目前存在。 */
+  copy: boolean;
+  /** task.workdir 有值但資料夾已不存在。 */
+  copyMissing: boolean;
+}
+
+export interface ProjectView extends Project {
+  tasks: TaskView[];
+  /** 目前階段（第一個未完成的階段名稱；全部完成＝空字串）。 */
+  currentPhase: string;
+  /** 目前階段的作業都完成了，提示「前往下一階段」。 */
+  phaseOffer: boolean;
+  /** 主資料夾是 git repo（決定作業能否用副本）。 */
+  isGit: boolean;
+  /** 解析後的主資料夾絕對路徑（body 為空時＝台帳資料夾）。 */
+  bodyPath: string;
+  /** 台帳資料夾絕對路徑。 */
+  dir: string;
+  /** 快速開始上次的選擇。 */
+  startPick: AiPick | null;
+  pinned: boolean;
+}
+
+// ---- AI／模型 ----
+
+export interface AiPick {
+  ai: string;
+  model: string;
+  effort: string;
+}
+
+export interface ModelInfo {
+  id: string;
+  label: string;
+  /** 這個模型接受的思考強度（CLI 原值，例如 low／medium／high／xhigh／max）。 */
+  efforts: string[];
+  defaultEffort: string;
+}
+
+export interface AiInfo {
+  name: AiName;
+  available: boolean;
+  /** `--version` 的版本號；取不到為空字串。 */
+  version: string;
+  models: ModelInfo[];
+  /** 模型清單來源：cli-cache／cli／builtin。 */
+  source: string;
+  refreshedAt: string;
+  /** 目前是否以「跳過權限確認」啟動。 */
+  fullAccess: boolean;
+}
+
+export interface Settings {
+  /** 新作業／快速開始的預設選擇。 */
+  initial: AiPick;
+  /** 選單隱藏的模型 id（依 AI 分組）。 */
+  hiddenModels: Partial<Record<string, string[]>>;
+  /** 選單中的模型順序（依 AI 分組；沒列到的排在後面）。 */
+  modelOrder: Partial<Record<string, string[]>>;
+  /** 各 AI 是否跳過權限確認（預設依 config.yaml 的 cli.*.dangerous）。 */
+  fullAccess: Partial<Record<string, boolean>>;
+}
+
+export type SettingsPatch = Partial<Settings>;
+
+// ---- 角色 ----
+
 export interface RoleSlot {
+  /** claude／codex／人 */
   cli: string;
   model: string;
   effort: string;
@@ -86,61 +214,203 @@ export interface RoleDef {
 }
 
 export interface Roles {
-  models: Record<string, string[]>;
   roles: Record<string, RoleDef>;
 }
 
-export interface CliInfo {
+export interface RoleInput {
   name: string;
-  available: boolean;
-  dangerous: boolean;
+  job: string;
+  main: RoleSlot;
+  backup?: RoleSlot;
 }
 
-export interface Limits {
-  promptChars: number;
-  queueLength: number;
-  concurrentRuns: number;
+// ---- 對話 ----
+
+export interface Ask {
+  question: string;
+  options: string[];
+  multi: boolean;
 }
 
-export interface Bootstrap {
-  version: string;
-  projects: Project[];
-  clis: CliInfo[];
-  roles: Roles;
-  limits: Limits;
-  workspaceRoot: string;
-}
+export type ChatRow =
+  | {
+      at: string;
+      role: 'user';
+      text: string;
+      /** 送給哪個 AI。 */
+      to: string;
+      model?: string;
+      effort?: string;
+      request: string;
+      /** 執行中送出的方式；answer＝回答 AI 的問題。 */
+      mode?: SendMode | 'answer';
+      /** 附件圖片的絕對路徑。 */
+      images?: string[];
+    }
+  | {
+      at: string;
+      role: 'assistant';
+      ai: string;
+      model?: string;
+      effort?: string;
+      text: string;
+      /** 失敗原因代碼（generic）；正常結束不帶。 */
+      error?: string;
+      /** 被人停止（含 ①取消重做／②補充 造成的中止）。 */
+      stopped?: boolean;
+      /** 本輪耗時毫秒。 */
+      ms: number;
+      request: string;
+      asks?: Ask[];
+    }
+  | {
+      at: string;
+      role: 'event';
+      ai?: string;
+      /** 工具呼叫摘要（指令、讀寫檔）；UI 預設收合。 */
+      tool?: boolean;
+      text: string;
+      request?: string;
+    };
 
-export interface RunState {
-  request: string;
-  cli: string;
+export interface QueueItem {
+  id: string;
+  text: string;
+  ai: string;
   model?: string;
-  startedAt: string;
+  effort?: string;
+  images?: string[];
+  at: string;
+  /** 自動開始失敗時的錯誤代碼。 */
+  error?: string;
 }
 
-export interface WorktreeStatus {
-  exists: boolean;
-  path: string;
-  branch: string;
-  dirty: string[];
-  ahead: number;
+export interface Busy {
+  request: string;
+  ai: string;
+  model?: string;
+  effort?: string;
+  startedAt: string;
+  /** 本輪是從哪種方式開始的。 */
+  mode?: SendMode | 'answer';
+}
+
+export interface RunningInfo extends Busy {
+  project: string;
+  task: string;
+}
+
+export interface SendInput {
+  project: string;
+  task: string;
+  text: string;
+  ai?: string;
+  model?: string;
+  effort?: string;
+  /** 執行中必填。 */
+  mode?: SendMode;
+  /** true＝這則是在回答作業的 question（成功後清掉 question）。 */
+  answer?: boolean;
+  /** 先以 /api/upload 上傳得到的 id。 */
+  images?: string[];
+  /** 從隊列取出這筆直接開始（停止後或重啟後的「▶ 開始」）。 */
+  fromQueue?: string;
+}
+
+export interface SendResult {
+  request: string;
+  queued: boolean;
+}
+
+export interface StartInput {
+  project: string;
+  text: string;
+  ai: string;
+  model?: string;
+  effort?: string;
+  images?: string[];
+}
+
+export interface StartResult {
+  task: Task;
+  request: string;
+}
+
+export interface UploadResult {
+  id: string;
+  name: string;
+  /** GET 預覽網址。 */
+  url: string;
+}
+
+/** 作業對話流（`GET /api/chat/stream?project&task`）。 */
+export type ChatEvent =
+  | { event: 'snapshot'; data: { rows: ChatRow[]; busy: Busy | null; partial: string; queue: QueueItem[] } }
+  | { event: 'busy'; data: Busy }
+  /** 增量文字（客戶端自行累加到 partial）。 */
+  | { event: 'delta'; data: { request: string; text: string } }
+  | { event: 'row'; data: ChatRow }
+  | { event: 'queue'; data: QueueItem[] }
+  | { event: 'idle'; data: { request: string } };
+
+/** 全域事件流（`GET /api/events`）：任何會影響 /api/state 的變更。客戶端收到 changed 就重抓 /api/state。 */
+export type GlobalEvent = { event: 'ready'; data: { version: string } } | { event: 'changed'; data: { project?: string; task?: string } };
+
+// ---- 工作副本／合併 ----
+
+export interface MergePreview {
+  files: number;
+  added: number;
+  removed: number;
+  /** 合併可能衝突。 */
+  conflict: boolean;
+  conflictPaths: string[];
+  paths: string[];
+  /** 主資料夾有未提交的變更（合併前會自動儲存）。 */
+  mainDirty: boolean;
 }
 
 export interface MergeResult {
   merged: boolean;
   commit?: string;
   conflicts?: string[];
+  /** 已經合併過（副本沒有新東西）。 */
+  already?: boolean;
 }
 
-/** SSE 事件（`GET /api/chat/stream`）。 */
-export type SseEvent =
-  | { event: 'ready'; data: { running: RunState | null; partial: string; queue: QueueItem[]; task: Task | null } }
-  | { event: 'log'; data: ChatRow }
-  | { event: 'delta'; data: { request: string; text: string } }
-  | { event: 'done'; data: { request: string } }
-  | { event: 'error'; data: { request: string; code: string } }
-  | { event: 'queue'; data: QueueItem[] }
-  | { event: 'task'; data: Task };
+// ---- 操作紀錄 ----
+
+export interface OpLogEntry {
+  at: string;
+  action: string;
+  project?: string;
+  task?: string;
+  [key: string]: unknown;
+}
+
+// ---- 整體狀態（`GET /api/state`） ----
+
+export interface Limits {
+  promptChars: number;
+  queueLength: number;
+  concurrentRuns: number;
+  uploadBytes: number;
+  imagesPerSend: number;
+}
+
+export interface AppState {
+  version: string;
+  root: string;
+  projects: ProjectView[];
+  /** 專案排序：key＝上層專案 id（頂層為 ''），值＝子專案 id 順序。 */
+  order: Record<string, string[]>;
+  running: RunningInfo[];
+  unread: { project: string; task: string }[];
+  ais: AiInfo[];
+  settings: Settings;
+  roles: Roles;
+  limits: Limits;
+}
 
 export interface ApiError {
   error: string;
@@ -149,11 +419,3 @@ export interface ApiError {
   detail?: string;
   field?: string;
 }
-
-/** 全域事件流（`GET /api/events`）：作業／專案任何變更。 */
-export type GlobalEvent =
-  | { event: 'ready'; data: { version: string } }
-  | { event: 'task'; data: { project: string; task: Task } }
-  | { event: 'project'; data: Project };
-
-export type ProjectPatch = Partial<Pick<Project, 'status'>>;

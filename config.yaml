@@ -1,6 +1,6 @@
 # YuMeewADE 設定檔範本
 # 讀取順序：環境變數 YUMEEWADE_CONFIG 指向的檔案 → 目前目錄的 config.yaml → ~/.yumeewade/config.yaml → 內建預設值（與本檔相同）。
-# 桌面 App 第一次啟動時會把本範本複製到使用者設定目錄（macOS: ~/Library/Application Support/YuMeewADE/config.yaml）。
+# 桌面 App 第一次啟動時會把本範本複製到使用者設定目錄（macOS: ~/Library/Application Support/yumeewade/config.yaml）。
 # 所有值皆可改；程式不寫死任何 host／port／路徑／CLI 旗標。
 
 server:
@@ -11,36 +11,41 @@ workspace:
   root: ~/Documents/YuMeewWorkspace   # 台帳與工作副本的根目錄；~ 會展開
   # 結構：
   #   {root}/roles.yaml                        角色分工（不存在時自動從範本建立）
-  #   {root}/Projects/{專案名}/PROJECT.md      專案台帳（git 本體）
-  #   {root}/Projects/{專案名}/.ai/tasks/*.md  作業台帳
-  #   {root}/Projects/{專案名}/.ai/chat/*      對話記錄（jsonl）、session（json）、隊列（queue.json）
-  #   {root}/Work/{專案名}/{作業ID}/           git worktree 工作副本
+  #   {root}/Projects/{專案}/PROJECT.md        專案台帳
+  #   {root}/Projects/{專案}/.ai/tasks/*.md    作業台帳
+  #   {root}/Projects/{專案}/.ai/chat/*        對話記錄（jsonl）、session（json）、隊列（queue.json）
+  #   {root}/Work/{專案}/{作業ID}/             git worktree 工作副本
+  #   {root}/.yumeewade/                       操作紀錄、設定、模型清單快取、內部日誌
 
 cli:
   claude:
     command: claude
     # 無頭模式必要旗標；adapter 依 stream-json 解析，移除這些旗標會使對話無法運作。
-    # acceptEdits＝自動接受工作副本（與主專案 .ai/）內的檔案編輯；執行指令仍會被拒，需要時才開 dangerous
-    baseArgs: [-p, --output-format, stream-json, --verbose, --include-partial-messages, --permission-mode, acceptEdits]
-    # 危險旗標：跳過所有權限確認。預設關閉；開啟代表 AI 可以用你的權限改檔與執行指令
-    dangerous: false
-    dangerousArgs: [--dangerously-skip-permissions]
+    baseArgs: [-p, --output-format, stream-json, --verbose, --include-partial-messages]
+    # ⚠ 預設跳過所有權限確認：AI 可以用你的帳號權限改檔與執行任何指令。
+    # 設定頁可逐一關閉（存在 .yumeewade/settings.json，優先於這裡）；關閉時改用 safeArgs。
+    fullAccess: true
+    fullAccessArgs: [--dangerously-skip-permissions]
+    safeArgs: [--permission-mode, acceptEdits]       # 只自動接受改檔，執行指令會被拒
   codex:
     command: codex
-    # workspace-write 沙箱內可改檔、可執行指令，不詢問；要跳出沙箱才開 dangerous
-    baseArgs: [exec, --json, --skip-git-repo-check, -s, workspace-write, -c, 'approval_policy="never"']
-    dangerous: false
-    dangerousArgs: [--dangerously-bypass-approvals-and-sandbox]
+    baseArgs: [exec, --json, --skip-git-repo-check]
+    # ⚠ 預設跳過權限確認與沙箱。
+    fullAccess: true
+    fullAccessArgs: [--dangerously-bypass-approvals-and-sandbox]
+    safeArgs: [-s, workspace-write, -c, 'approval_policy="never"']   # 工作目錄沙箱內可改檔與執行指令
   # 子行程環境變數採白名單；除了內建的 PATH／HOME／LANG 等基本變數外，額外要放行的名稱寫在這裡
   envPassthrough: []
 
 limits:
-  bodyBytes: 1048576       # 請求體上限（1 MiB）
-  promptChars: 10000       # 單則指示字數上限
+  bodyBytes: 2097152       # JSON 請求體上限（2 MiB）
+  promptChars: 100000      # 單則指示字數上限
   sendPerMinute: 30        # 每來源每分鐘可送出的指示數
-  concurrentRuns: 2        # 同時執行中的對話數
-  sseConnections: 20       # SSE 連線數上限
+  concurrentRuns: 3        # 同時執行中的對話數
+  sseConnections: 30       # SSE 連線數上限
   queueLength: 20          # 每個作業的排隊指示上限
-  handoffChars: 24000      # 換 CLI 交接包字數上限（超長截舊留新）
+  handoffChars: 60000      # 換 AI 交接包字數上限（超長截舊留新）
   heartbeatSeconds: 15     # SSE 心跳間隔
-  diffBytes: 2000000       # 收編 diff 顯示上限
+  diffBytes: 2000000       # 合併前 diff 顯示上限
+  uploadBytes: 20971520    # 單張圖片上限（20 MiB）
+  imagesPerSend: 10        # 每次送出最多幾張圖片

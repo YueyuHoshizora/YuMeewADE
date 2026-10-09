@@ -8,9 +8,13 @@ import { parseYamlMap, type YamlMap, type YamlValue } from './yaml.ts';
 
 export interface CliCommandConfig {
   command: string;
+  /** 無頭模式必要旗標（adapter 依此解析輸出）。 */
   baseArgs: string[];
-  dangerous: boolean;
-  dangerousArgs: string[];
+  /** 預設是否跳過權限確認；設定頁可逐一覆寫（.yumeewade/settings.json）。 */
+  fullAccess: boolean;
+  fullAccessArgs: string[];
+  /** fullAccess 關閉時改用的權限旗標。 */
+  safeArgs: string[];
 }
 
 export interface Config {
@@ -27,6 +31,8 @@ export interface Config {
     handoffChars: number;
     heartbeatSeconds: number;
     diffBytes: number;
+    uploadBytes: number;
+    imagesPerSend: number;
   };
   /** 實際採用的設定檔路徑；null＝全部用預設值。 */
   source: string | null;
@@ -38,30 +44,34 @@ export const DEFAULT_CONFIG: Config = {
   cli: {
     claude: {
       command: 'claude',
-      // acceptEdits：自動接受工作目錄（含 --add-dir）內的檔案編輯；Bash 等仍被拒絕，要全開才用 dangerous
-      baseArgs: ['-p', '--output-format', 'stream-json', '--verbose', '--include-partial-messages', '--permission-mode', 'acceptEdits'],
-      dangerous: false,
-      dangerousArgs: ['--dangerously-skip-permissions'],
+      baseArgs: ['-p', '--output-format', 'stream-json', '--verbose', '--include-partial-messages'],
+      fullAccess: true,
+      fullAccessArgs: ['--dangerously-skip-permissions'],
+      // 只自動接受檔案編輯；執行指令會被拒
+      safeArgs: ['--permission-mode', 'acceptEdits'],
     },
     codex: {
       command: 'codex',
-      // workspace-write 沙箱＋不詢問；要跳過沙箱才用 dangerous
-      baseArgs: ['exec', '--json', '--skip-git-repo-check', '-s', 'workspace-write', '-c', 'approval_policy="never"'],
-      dangerous: false,
-      dangerousArgs: ['--dangerously-bypass-approvals-and-sandbox'],
+      baseArgs: ['exec', '--json', '--skip-git-repo-check'],
+      fullAccess: true,
+      fullAccessArgs: ['--dangerously-bypass-approvals-and-sandbox'],
+      // 工作目錄沙箱內可改檔與執行指令，不詢問
+      safeArgs: ['-s', 'workspace-write', '-c', 'approval_policy="never"'],
     },
     envPassthrough: [],
   },
   limits: {
-    bodyBytes: 1_048_576,
-    promptChars: 10_000,
+    bodyBytes: 2_097_152,
+    promptChars: 100_000,
     sendPerMinute: 30,
-    concurrentRuns: 2,
-    sseConnections: 20,
+    concurrentRuns: 3,
+    sseConnections: 30,
     queueLength: 20,
-    handoffChars: 24_000,
+    handoffChars: 60_000,
     heartbeatSeconds: 15,
     diffBytes: 2_000_000,
+    uploadBytes: 20_971_520,
+    imagesPerSend: 10,
   },
   source: null,
 };
@@ -118,15 +128,25 @@ function strList(map: YamlMap, key: string, fallback: string[], where: string): 
   return v as string[];
 }
 
+/** 0.1 版範本的 baseArgs（權限旗標混在裡面）；讀到就換成新預設，權限改由 fullAccess 決定。 */
+const LEGACY_BASE_ARGS: Record<'claude' | 'codex', string> = {
+  claude: JSON.stringify(['-p', '--output-format', 'stream-json', '--verbose', '--include-partial-messages', '--permission-mode', 'acceptEdits']),
+  codex: JSON.stringify(['exec', '--json', '--skip-git-repo-check', '-s', 'workspace-write', '-c', 'approval_policy="never"']),
+};
+
 function cliSection(map: YamlMap, name: 'claude' | 'codex'): CliCommandConfig {
   const s = section(map, name);
   const d = DEFAULT_CONFIG.cli[name];
   const where = `cli.${name}`;
+  let baseArgs = strList(s, 'baseArgs', d.baseArgs, where);
+  if (JSON.stringify(baseArgs) === LEGACY_BASE_ARGS[name]) baseArgs = d.baseArgs;
+  // 0.1 版的 dangerous／dangerousArgs 是自動複製的範本值，不代表使用者選擇，略過
   return {
     command: str(s, 'command', d.command, where),
-    baseArgs: strList(s, 'baseArgs', d.baseArgs, where),
-    dangerous: bool(s, 'dangerous', d.dangerous, where),
-    dangerousArgs: strList(s, 'dangerousArgs', d.dangerousArgs, where),
+    baseArgs,
+    fullAccess: bool(s, 'fullAccess', d.fullAccess, where),
+    fullAccessArgs: strList(s, 'fullAccessArgs', d.fullAccessArgs, where),
+    safeArgs: strList(s, 'safeArgs', d.safeArgs, where),
   };
 }
 
@@ -161,6 +181,8 @@ export function parseConfig(text: string, source: string | null): Config {
       handoffChars: int(limits, 'handoffChars', L.handoffChars, 'limits'),
       heartbeatSeconds: int(limits, 'heartbeatSeconds', L.heartbeatSeconds, 'limits'),
       diffBytes: int(limits, 'diffBytes', L.diffBytes, 'limits'),
+      uploadBytes: int(limits, 'uploadBytes', L.uploadBytes, 'limits'),
+      imagesPerSend: int(limits, 'imagesPerSend', L.imagesPerSend, 'limits'),
     },
     source,
   };

@@ -13,14 +13,31 @@ test('空設定等於預設值', () => {
 });
 
 test('部分覆寫與型別驗證', () => {
-  const c = parseConfig('server:\n  port: 5000\ncli:\n  codex:\n    dangerous: true\nlimits:\n  queueLength: 3\n', null);
+  const c = parseConfig('server:\n  port: 5000\ncli:\n  codex:\n    fullAccess: false\nlimits:\n  queueLength: 3\n', null);
   assert.equal(c.server.port, 5000);
-  assert.equal(c.cli.codex.dangerous, true);
-  assert.equal(c.cli.claude.dangerous, false);
+  assert.equal(c.cli.codex.fullAccess, false);
+  assert.equal(c.cli.claude.fullAccess, true);
   assert.equal(c.limits.queueLength, 3);
   assert.throws(() => parseConfig('server:\n  port: abc\n', null), ConfigError);
   assert.throws(() => parseConfig('limits:\n  queueLength: 0\n', null), ConfigError);
   assert.throws(() => parseConfig('cli:\n  claude:\n    baseArgs: -p\n', null), ConfigError);
+});
+
+test('0.1 版範本的 baseArgs 換成新預設，權限旗標不再混在裡面', () => {
+  const legacy = [
+    'cli:',
+    '  claude:',
+    '    baseArgs: [-p, --output-format, stream-json, --verbose, --include-partial-messages, --permission-mode, acceptEdits]',
+    '    dangerous: false',
+    '  codex:',
+    `    baseArgs: [exec, --json, --skip-git-repo-check, -s, workspace-write, -c, 'approval_policy="never"']`,
+  ].join('\n');
+  const c = parseConfig(legacy, null);
+  assert.deepEqual(c.cli.claude.baseArgs, DEFAULT_CONFIG.cli.claude.baseArgs);
+  assert.deepEqual(c.cli.codex.baseArgs, DEFAULT_CONFIG.cli.codex.baseArgs);
+  assert.equal(c.cli.claude.fullAccess, true);
+  // 自訂過的 baseArgs 不動
+  assert.deepEqual(parseConfig('cli:\n  claude:\n    baseArgs: [-p, --output-format, stream-json, --verbose]\n', null).cli.claude.baseArgs, ['-p', '--output-format', 'stream-json', '--verbose']);
 });
 
 test('非 loopback host 被拒絕', () => {

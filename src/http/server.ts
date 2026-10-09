@@ -5,7 +5,7 @@ import path from 'node:path';
 import type { App } from '../server/app.ts';
 import { log } from '../shared/log.ts';
 import { Router } from './router.ts';
-import { registerRoutes } from './routes.ts';
+import { registerRoutes } from './routes/index.ts';
 import { serveStatic } from './static.ts';
 
 export const UI_DIR = path.join(path.dirname(new URL(import.meta.url).pathname), '..', 'ui');

@@ -1,74 +1,85 @@
 // 核心組裝：config → 工作區 → 各層物件。HTTP 路由只透過 App 取用。
 
 import { createRequire } from 'node:module';
+import { AiCatalog } from '../ai/catalog.ts';
 import { ChatRunner } from '../chat/runner.ts';
 import { ChatStore } from '../chat/store.ts';
-import { ClaudeCliProvider } from '../cli/claude.ts';
-import { CodexCliProvider } from '../cli/codex.ts';
-import { MockCliProvider } from '../cli/mock.ts';
 import type { CliProvider } from '../cli/provider.ts';
+import { createProviders } from '../cli/providers.ts';
 import { WorktreeService } from '../git/worktree.ts';
 import { RateLimiter } from '../http/ratelimit.ts';
-import { GLOBAL, SseHub } from '../http/sse.ts';
+import { GLOBAL, SseHub, taskKey } from '../http/sse.ts';
+import { CompletionStore } from '../ledger/completion.ts';
+import { OpLog } from '../ledger/oplog.ts';
+import { OrderStore } from '../ledger/order.ts';
 import { ProjectLedger } from '../ledger/projects.ts';
+import { SettingsStore } from '../ledger/settings.ts';
 import { TaskLedger } from '../ledger/tasks.ts';
 import { Workspace } from '../ledger/workspace.ts';
 import { loadRoles } from '../roles/roles.ts';
 import type { Config } from '../shared/config.ts';
-import type { CliInfo, Project, Roles, SseEvent, Task } from '../shared/types.ts';
+import type { AppState, Roles } from '../shared/types.ts';
+import { buildState } from '../state/state.ts';
 
 const pkg = createRequire(import.meta.url)('../../package.json') as { version: string };
 
+export interface AppOptions {
+  /** 測試用：取代真實 CLI。 */
+  providers?: Record<string, CliProvider>;
+  /** 測試用：AI 模型快取所在的家目錄（預設 os.homedir()）。 */
+  home?: string;
+}
+
 export class App {
   readonly config: Config;
+  readonly version = pkg.version;
   readonly ws: Workspace;
   readonly projects: ProjectLedger;
   readonly tasks: TaskLedger;
-  readonly store: ChatStore;
+  readonly completion: CompletionStore;
+  readonly settings: SettingsStore;
+  readonly order: OrderStore;
+  readonly oplog: OpLog;
   readonly worktree: WorktreeService;
-  readonly providers: Record<string, CliProvider>;
+  readonly ai: AiCatalog;
+  readonly store: ChatStore;
   readonly runner: ChatRunner;
   readonly sse: SseHub;
   readonly sendLimiter: RateLimiter;
-  readonly version = pkg.version;
 
-  constructor(config: Config, options: { providers?: Record<string, CliProvider> } = {}) {
+  private changeTimer: NodeJS.Timeout | null = null;
+  private pendingChange: { project?: string; task?: string } | null = null;
+
+  constructor(config: Config, options: AppOptions = {}) {
     this.config = config;
     this.ws = new Workspace(config.workspace.root);
     this.projects = new ProjectLedger(this.ws);
     this.tasks = new TaskLedger(this.ws);
+    this.completion = new CompletionStore(this.ws);
+    this.settings = new SettingsStore(this.ws, config);
+    this.order = new OrderStore(this.ws);
+    this.oplog = new OpLog(this.ws);
+    this.worktree = new WorktreeService({ ws: this.ws, projects: this.projects, tasks: this.tasks, diffBytes: config.limits.diffBytes });
+    this.ai = new AiCatalog({ config, ws: this.ws, settings: this.settings, ...(options.home ? { home: options.home } : {}) });
     this.store = new ChatStore(this.ws);
-    this.worktree = new WorktreeService(this.ws, config.limits.diffBytes);
-    this.providers = options.providers ?? {
-      claude: new ClaudeCliProvider(config.cli.claude, config.cli.envPassthrough),
-      codex: new CodexCliProvider(config.cli.codex, config.cli.envPassthrough),
-      mock: new MockCliProvider(),
-    };
+    this.sse = new SseHub(config.limits.sseConnections, config.limits.heartbeatSeconds * 1000);
+    this.sendLimiter = new RateLimiter(config.limits.sendPerMinute);
     this.runner = new ChatRunner({
       ws: this.ws,
       store: this.store,
+      projects: this.projects,
       tasks: this.tasks,
+      completion: this.completion,
+      worktree: this.worktree,
+      settings: this.settings,
+      oplog: this.oplog,
       roles: () => this.roles(),
-      providers: this.providers,
+      providers: options.providers ?? createProviders(config),
       limits: config.limits,
-      prepareCwd: (project, task) => this.worktree.ensure(project, task),
+      publish: (project, task, ev) => this.sse.publish(taskKey(project, task), ev),
+      watching: (project, task) => this.sse.watching(taskKey(project, task)),
+      onChanged: (project, task) => this.changed(project, task),
     });
-    this.sse = new SseHub(config.limits.sseConnections, config.limits.heartbeatSeconds * 1000);
-    this.sendLimiter = new RateLimiter(config.limits.sendPerMinute);
-    this.runner.on('event', (project: string, task: string, ev: SseEvent) => {
-      this.sse.publish(`${project}\u0000${task}`, ev);
-      if (ev.event === 'task') this.sse.publish(GLOBAL, { event: 'task', data: { project, task: ev.data } });
-    });
-  }
-
-  /** 作業變更廣播：給該作業的流，也給全域流（作業清單用）。 */
-  publishTask(project: string, task: Task): void {
-    this.sse.publish(`${project}\u0000${task.id}`, { event: 'task', data: task });
-    this.sse.publish(GLOBAL, { event: 'task', data: { project, task } });
-  }
-
-  publishProject(project: Project): void {
-    this.sse.publish(GLOBAL, { event: 'project', data: project });
   }
 
   async init(): Promise<void> {
@@ -80,11 +91,26 @@ export class App {
     return loadRoles(this.ws.rolesFile);
   }
 
-  async cliInfo(): Promise<CliInfo[]> {
-    return Promise.all(Object.values(this.providers).map(async (p) => ({ name: p.name, available: await p.available(), dangerous: p.dangerous })));
+  state(): Promise<AppState> {
+    return buildState(this);
+  }
+
+  /** 通知所有客戶端重抓 /api/state；100ms 內的多次變更合併成一次。 */
+  changed(project?: string, task?: string): void {
+    if (this.pendingChange === null) this.pendingChange = { ...(project ? { project } : {}), ...(task ? { task } : {}) };
+    else if (this.pendingChange.project !== project || this.pendingChange.task !== task) this.pendingChange = {};
+    if (this.changeTimer) return;
+    this.changeTimer = setTimeout(() => {
+      this.changeTimer = null;
+      const data = this.pendingChange ?? {};
+      this.pendingChange = null;
+      this.sse.publish(GLOBAL, { event: 'changed', data });
+    }, 100);
+    this.changeTimer.unref();
   }
 
   close(): void {
+    if (this.changeTimer) clearTimeout(this.changeTimer);
     this.sse.closeAll();
   }
 }

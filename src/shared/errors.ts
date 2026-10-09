@@ -67,6 +67,13 @@ export const DETAIL_MESSAGES = {
   archive_has_worktree: '請先移除工作副本再封存',
   archive_project_running: '有作業執行中，不能封存',
   archive_project_has_worktrees: '請先移除所有工作副本再封存',
+  // Git worktree workflow
+  merge_conflict: '合併時發生衝突，請先在副本解決後再合併',
+  merge_excluded: '此副本已排除合併',
+  merge_in_progress: '已有尚未完成的合併，請先處理',
+  worktree_exists: '副本仍存在，不能清除紀錄',
+  // ---- BackendChat ----
+  mode_required: '執行中送出請選擇取消重做、補充說明或做完接續',
 } as const;
 
 export type DetailCode = keyof typeof DETAIL_MESSAGES;

@@ -4,7 +4,7 @@
 import type { IncomingMessage, ServerResponse } from 'node:http';
 import { AppError } from '../shared/errors.ts';
 import { log } from '../shared/log.ts';
-import type { GlobalEvent, SseEvent } from '../shared/types.ts';
+import type { ChatEvent, GlobalEvent } from '../shared/types.ts';
 
 export const GLOBAL = '*';
 const MAX_BUFFERED = 4 * 1024 * 1024;
@@ -31,8 +31,14 @@ export class SseHub {
     return this.conns.size;
   }
 
+  /** 這條 key 目前是否有客戶端開著（未讀判定用）。 */
+  watching(key: string): boolean {
+    for (const c of this.conns) if (c.key === key && !c.res.writableEnded && !c.res.destroyed) return true;
+    return false;
+  }
+
   /** 開啟一條流並先送 ready；超過上限回 503。 */
-  open(req: IncomingMessage, res: ServerResponse, key: string, ready: SseEvent | GlobalEvent): void {
+  open(req: IncomingMessage, res: ServerResponse, key: string, ready: ChatEvent | GlobalEvent): void {
     if (this.conns.size >= this.limit) throw new AppError('unavailable', 'sse_limit');
     res.writeHead(200, {
       'Content-Type': 'text/event-stream; charset=utf-8',
@@ -49,7 +55,7 @@ export class SseHub {
     req.on('close', () => this.conns.delete(conn));
   }
 
-  publish(key: string, ev: SseEvent | GlobalEvent): void {
+  publish(key: string, ev: ChatEvent | GlobalEvent): void {
     const payload = format(ev);
     for (const c of this.conns) if (c.key === key) this.write(c, payload);
   }
@@ -73,6 +79,11 @@ export class SseHub {
     for (const c of this.conns) c.res.end();
     this.conns.clear();
   }
+}
+
+/** 作業對話流的 key。 */
+export function taskKey(project: string, task: string): string {
+  return `${project}\u0000${task}`;
 }
 
 function format(ev: { event: string; data: unknown }): string {

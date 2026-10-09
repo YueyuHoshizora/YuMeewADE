@@ -9,9 +9,12 @@ export interface Ctx {
   res: ServerResponse;
   query: URLSearchParams;
   body: Record<string, unknown>;
+  /** postRaw 路由的原始請求體；其他路由為空 Buffer。 */
+  raw: Buffer;
   ip: string;
 }
 
+/** 回傳值會以 JSON 送出；回 undefined 代表 handler 自己寫了回應（SSE、二進位）。 */
 export type Handler = (ctx: Ctx) => Promise<unknown | undefined>;
 
 export interface RouterOptions {
@@ -52,7 +55,7 @@ export function checkOrigin(req: IncomingMessage, opts: RouterOptions): void {
   }
 }
 
-export async function readJsonBody(req: IncomingMessage, limit: number): Promise<Record<string, unknown>> {
+export async function readRawBody(req: IncomingMessage, limit: number): Promise<Buffer> {
   const declared = Number(req.headers['content-length'] ?? 0);
   if (declared > limit) throw new AppError('too_large');
   const chunks: Buffer[] = [];
@@ -63,10 +66,15 @@ export async function readJsonBody(req: IncomingMessage, limit: number): Promise
     if (size > limit) throw new AppError('too_large');
     chunks.push(buf);
   }
-  if (size === 0) return {};
+  return Buffer.concat(chunks, size);
+}
+
+export async function readJsonBody(req: IncomingMessage, limit: number): Promise<Record<string, unknown>> {
+  const raw = await readRawBody(req, limit);
+  if (raw.length === 0) return {};
   let parsed: unknown;
   try {
-    parsed = JSON.parse(Buffer.concat(chunks).toString('utf8'));
+    parsed = JSON.parse(raw.toString('utf8'));
   } catch {
     throw new AppError('bad_request', 'bad_json');
   }
@@ -74,8 +82,10 @@ export async function readJsonBody(req: IncomingMessage, limit: number): Promise
   return parsed as Record<string, unknown>;
 }
 
+const EMPTY: Buffer = Buffer.alloc(0);
+
 export class Router {
-  private readonly routes: Record<string, Handler> = {};
+  private readonly routes: Record<string, { handler: Handler; rawLimit?: number }> = {};
   private readonly opts: RouterOptions;
 
   constructor(opts: RouterOptions) {
@@ -83,11 +93,16 @@ export class Router {
   }
 
   get(path: string, handler: Handler): void {
-    this.routes[`GET ${path}`] = handler;
+    this.routes[`GET ${path}`] = { handler };
   }
 
   post(path: string, handler: Handler): void {
-    this.routes[`POST ${path}`] = handler;
+    this.routes[`POST ${path}`] = { handler };
+  }
+
+  /** 請求體不解析 JSON，原樣放在 ctx.raw（上限 limit 位元組）。 */
+  postRaw(path: string, limit: number, handler: Handler): void {
+    this.routes[`POST ${path}`] = { handler, rawLimit: limit };
   }
 
   /** 回 true 代表已處理（含錯誤回應）；false 代表不是 API 路徑。 */
@@ -96,10 +111,15 @@ export class Router {
     if (!url.pathname.startsWith('/api/')) return false;
     try {
       checkOrigin(req, this.opts);
-      const handler = this.routes[`${req.method} ${url.pathname}`];
-      if (!handler) throw new AppError('not_found');
-      const body = req.method === 'POST' ? await readJsonBody(req, this.opts.bodyBytes) : {};
-      const result = await handler({ req, res, query: url.searchParams, body, ip: req.socket.remoteAddress ?? '' });
+      const route = this.routes[`${req.method} ${url.pathname}`];
+      if (!route) throw new AppError('not_found');
+      let body: Record<string, unknown> = {};
+      let raw = EMPTY;
+      if (req.method === 'POST') {
+        if (route.rawLimit !== undefined) raw = await readRawBody(req, route.rawLimit);
+        else body = await readJsonBody(req, this.opts.bodyBytes);
+      }
+      const result = await route.handler({ req, res, query: url.searchParams, body, raw, ip: req.socket.remoteAddress ?? '' });
       if (result !== undefined && !res.headersSent) sendJson(res, 200, result);
     } catch (err) {
       if (err instanceof AppError && err.code === 'too_large' && !res.headersSent) {
