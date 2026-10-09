@@ -2,11 +2,12 @@
 
 import { promises as fs } from 'node:fs';
 import path from 'node:path';
+import { fileURLToPath } from 'node:url';
 import { AppError } from '../shared/errors.ts';
 import { isInside, pathExists } from '../shared/fsx.ts';
 import { isValidProjectName, isValidTaskId } from '../shared/names.ts';
 
-export const TEMPLATES_DIR = path.join(path.dirname(new URL(import.meta.url).pathname), '..', '..', 'templates');
+export const TEMPLATES_DIR = path.join(path.dirname(fileURLToPath(import.meta.url)), '..', '..', 'templates');
 
 export class Workspace {
   readonly root: string;

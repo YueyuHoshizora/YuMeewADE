@@ -2,13 +2,14 @@
 
 import http from 'node:http';
 import path from 'node:path';
+import { fileURLToPath } from 'node:url';
 import type { App } from '../server/app.ts';
 import { log } from '../shared/log.ts';
 import { Router } from './router.ts';
 import { registerRoutes } from './routes/index.ts';
 import { serveStatic } from './static.ts';
 
-export const UI_DIR = path.join(path.dirname(new URL(import.meta.url).pathname), '..', 'ui');
+export const UI_DIR = path.join(path.dirname(fileURLToPath(import.meta.url)), '..', 'ui');
 
 export function createHttpServer(app: App): http.Server {
   const { host, port } = app.config.server;

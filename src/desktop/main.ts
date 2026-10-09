@@ -5,10 +5,11 @@ import { app, BrowserWindow, dialog, ipcMain, shell, utilityProcess, type Utilit
 import { promises as fs } from 'node:fs';
 
 import path from 'node:path';
+import { fileURLToPath } from 'node:url';
 import { loadConfig } from '../shared/config.ts';
 import { probe, waitForCore } from './probe.ts';
 
-const HERE = path.dirname(new URL(import.meta.url).pathname);
+const HERE = path.dirname(fileURLToPath(import.meta.url));
 const APP_ROOT = path.join(HERE, '..', '..');
 const SERVER_ENTRY = path.join(HERE, '..', 'server', 'main.js');
 const PRELOAD = path.join(HERE, 'preload.cjs');
