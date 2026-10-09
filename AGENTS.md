@@ -29,20 +29,23 @@
 ## 三、結構對應
 
 ```
-src/server/main.ts   核心進入點：讀 config → 啟動 HTTP
-src/shared/          純函式：yaml 子集、frontmatter、路徑白名單、原子寫入、型別、錯誤
-src/ledger/          台帳層：PROJECT.md／.ai/tasks 讀寫（唯一碰台帳檔的地方）
-src/chat/            對話層：JSONL 記錄、session 持久化、交接包、隊列、執行狀態機
-src/cli/             CliProvider 介面＋claude／codex／mock 三個 adapter
-src/git/             worktree 建立／狀態／diff／收編
-src/roles/           roles.yaml 讀取與 role→啟動參數解析
-src/http/            路由、SSE、靜態檔、限流、輸入驗證
-src/desktop/         Electron 主行程與 preload（只管視窗與拉起核心）
-src/ui/              Vite 前端（vanilla TypeScript，無框架）
-config.yaml          設定範本；templates/ 內為 roles.yaml／PROJECT.md／作業檔範本
+src/server/          核心進入點（main.ts）與組裝（app.ts：所有服務的唯一建構處）
+src/shared/          純函式與契約：yaml 子集、frontmatter、路徑白名單、原子寫入、config、錯誤、types.ts（UI ⇄ 核心 API 型別）
+src/ledger/          台帳層：專案、作業、完成確認、設定、排序、操作紀錄（唯一碰台帳檔的地方）
+src/state/           /api/state 組裝：樹、圓點、交給你嚕、未讀等計算欄位
+src/chat/            對話層：JSONL、session、交接包、三種執行中指示與隊列、問題解析、附件、執行狀態機
+src/cli/             CliProvider 介面＋claude／codex／mock adapter（唯一 spawn AI CLI 的地方）
+src/ai/              模型清單（讀 CLI 快取）、CLI 版本與更新
+src/git/             worktree 副本、合併預覽、合併、自動儲存
+src/roles/           roles.yaml 讀寫與 role→啟動參數解析
+src/system/          用系統開啟資料夾／檔案
+src/http/            路由（routes/ 依領域分檔）、SSE、靜態檔、限流、輸入驗證
+src/desktop/         Electron 主行程與 preload（視窗、拉起核心、資料夾選擇）
+src/ui/              Vite 前端（vanilla TypeScript，無框架；views／components 分檔）
+config.yaml          設定範本；templates/ 內為 roles.yaml／PROJECT.md／作業檔／專案範本
 ```
 
-各層只能往下依賴：`http → chat/ledger/git/roles → cli/shared`。`ui` 只透過 HTTP／SSE 與核心溝通，桌面版與網頁版走**完全相同**的 API，Electron 主行程不另立協定。
+各層只能往下依賴：`http → state/chat/ledger/git/ai/roles → cli/shared`。`ui` 只透過 HTTP／SSE 與核心溝通，型別只從 `src/shared/types.ts` 取；桌面版與網頁版走**完全相同**的 API，Electron 主行程不另立協定。
 
 ## 四、台帳與檔案規則
 
@@ -50,12 +53,13 @@ config.yaml          設定範本；templates/ 內為 roles.yaml／PROJECT.md／
 - 單一後端程序是唯一寫者；寫檔一律「寫暫存檔 → `rename` 原子搬移」；JSONL 只追加不改寫。
 - 路徑一律用 `node:path` 組；專案名／作業 ID 必須通過 `src/shared/names.ts` 的白名單，任何來自請求的名稱都不得直接拼進路徑。
 - YAML 只支援 `src/shared/yaml.ts` 文件化的子集（純量、行內 `[]`／`{}`、縮排清單與巢狀 map、`#` 註解）。不要加 anchor、多行純量等語法到範本。
-- 專案 git 本體的 `.gitignore` 含 `.ai/`：台帳與對話不進版本控制，worktree 副本裡沒有 `.ai/`，AI 以 `--add-dir` 取得主專案 `.ai/` 的寫入權。
+- 主資料夾（`PROJECT.md` 的 `body`）可以指向工作區外的既有資料夾；沒填時台帳資料夾本身就是 git 本體，其 `.gitignore` 含 `.ai/`，台帳與對話不進版本控制。AI 在 worktree 副本工作，以 `--add-dir` 取得台帳 `.ai/` 的寫入權。
+- 自動儲存（`git add -A`＋`commit --no-verify`）不得提交新出現的 `.env*`／`.npmrc`／`.dev.vars*`。
 
 ## 五、外部 CLI
 
 - 只有 `src/cli/` 可以 `spawn` `claude`／`codex`；其他地方一律透過 `CliProvider` 介面（`send`／`onEvent`／`stop`／`available`）。
-- 指令名稱、基本旗標、危險旗標全部來自 `config.yaml`，程式不得寫死。
+- 指令名稱、基本旗標、權限旗標全部來自 `config.yaml`，程式不得寫死；每次送出依設定頁的「完整權限」開關選 `fullAccessArgs` 或 `safeArgs`。
 - CLI 輸出格式若與契約衝突，**只改 adapter**，不動 `src/chat/` 狀態機。
 - 失敗 fail-closed：CLI 不存在、非 0 退出、串流中斷 → 回 `error` 事件（generic），已收部分存檔並標記，不自動重試、不冒充內容。
 
@@ -63,9 +67,9 @@ config.yaml          設定範本；templates/ 內為 roles.yaml／PROJECT.md／
 
 1. 核心**只監聽 127.0.0.1**（或 `localhost`）。`config.yaml` 的 `server.host` 若不是 loopback，啟動時拒絕並結束，不得改綁 0.0.0.0 或對外 port。
 2. **單機無認證**是明示接受的風險（個人本機使用）；`README.md` 首頁必須載明此限制，程式不得假裝有認證。
-3. **CLI 危險旗標預設關閉**（`cli.*.dangerous: false`）。開啟只能在 `config.yaml` 明示，`README.md` 必須警示其後果。
-4. Electron renderer：`contextIsolation: true`、`nodeIntegration: false`、`sandbox: true`、只經 preload 暴露最小介面（版本與平台）、只載入 `http://127.0.0.1:{port}`；外部連結交給系統瀏覽器，禁止在視窗內導航到其他來源。
-5. **輸入驗證與大小上限**：請求體 1 MiB、指示 10,000 字（皆入 `config.yaml`）；超過回 413／400；所有 JSON 欄位檢查型別與長度。
+3. **CLI 權限旗標**：使用者 2026-10-10 裁示**預設完整權限**（`cli.*.fullAccess: true`，對齊 project-hub），取代企劃書原「預設關閉」。設定頁必須提供逐一關閉的開關並顯示後果；`README.md` 首頁必須警示。
+4. Electron renderer：`contextIsolation: true`、`nodeIntegration: false`、`sandbox: true`、只經 preload 暴露最小介面（平台資訊與 `pickFolder()`）、只載入 `http://127.0.0.1:{port}`；外部連結交給系統瀏覽器，禁止在視窗內導航到其他來源。
+5. **輸入驗證與大小上限**：JSON 請求體 2 MiB、指示 100,000 字、圖片 20 MiB／張且只收 png／jpg／webp／gif（皆入 `config.yaml`）；超過回 413／400；所有 JSON 欄位檢查型別與長度。
 6. **頻率限制**：每來源每分鐘指示數上限（`limits.sendPerMinute`），超過回 429。
 7. **路徑白名單**：專案名／作業 ID 僅接受 `src/shared/names.ts` 定義的字元集，拒絕 `..`、分隔符、Windows 保留名與結尾點／空白；最後再以 `path.resolve` 驗證仍落在工作區內。
 8. **憑證不入日誌、環境最小化**：日誌不寫 env、argv 之外的提示內容、CLI stderr 只截前 500 字；CLI 子行程環境採白名單（`PATH`、`HOME`、`USER`、`LANG`、`LC_*`、`TERM`、`TMPDIR`、`SHELL`、`XDG_*`、Windows 的 `APPDATA`／`LOCALAPPDATA`／`USERPROFILE`／`SystemRoot`／`ComSpec`／`PATHEXT`）＋CLI 設定目錄指標（`CODEX_HOME`、`CLAUDE_CONFIG_DIR`）＋`cli.envPassthrough`。

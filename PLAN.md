@@ -414,3 +414,33 @@ electron 44.7.0、vite 8.3.4、electron-builder 26.15.3、typescript 7.0.2、@ty
 - codex 0.160 的 `exec --json` 沒有逐字增量事件（實測只有 `item.started`／`item.completed`），故 agent_message 以整段送出；指令執行在 `item.started` 時就顯示。
 - 未做（仍為建議）：routes 只透過 facade 取用 App；輸入驗證抽 schema。目前規模下不值得。
 
+
+## 附錄 B 重建：對齊 project-hub 核心工作流（2026-10-10）
+
+使用者實測 0.1 版後判定「完全不能用」，要求重新參考 kieiken/project-hub。實測找到的根因：作業沒設 role 時送出直接 400、模型清單是空的、claude 以 acceptEdits 啟動不能執行指令、介面只有三欄 CRUD、即時更新停在「執行中」。本附錄的定案**優先於**前文衝突處（第五節資料模型、4.1／4.2 協定、安全節 3）。
+
+### B.1 使用者裁示
+1. 範圍：核心工作流完整對齊。包含樹狀側欄、專案概要與快速開始、對話畫面（每次送出選 AI／模型／思考強度；執行中 ①取消重做 ②補充說明 ③做完接續、停止、隊列）、狀態圓點、交給你嚕（原「輪到你了」）／未讀、步驟與階段、完成確認、工作副本合併預覽／合併／排除、AI 問題選項按鈕、設定頁、操作紀錄、換 AI 交接包、圖片附件。
+   不做：內嵌終端機、帳號切換、用量、ChatGPT、遠端、自動更新、freetalk、整理維護、委派 API、Discord。
+2. AI 權限**預設完整權限**（取代安全節 3 的「預設關閉」），設定頁可逐一關閉。
+3. 流程照參考專案，視覺自行設計。
+
+### B.2 工作區與檔案
+- `{root}/Projects/{id}/PROJECT.md` 新增 `description`、`parent`（上層專案 id）、`body`（主資料夾絕對路徑；空＝台帳資料夾本身）、`phases: [{name, state}]`（預設 計畫／實作／檢查／收尾）。舊檔缺欄位照樣可讀。
+- `.ai/tasks/{id}.md` 欄位：`id title state phase role parent kind(main|derived) derivedFrom workspace(isolated|direct) cli model effort question workdir mergeExcluded updated`；正文 `## 步驟`（勾選清單）、`## 做了什麼`、`## 下一步`、`## 注意`、`## 備註`。作業 ID 不重用（掃描 tasks／chat／Work）。
+- `.ai/chat/{id}.jsonl` 列型別：`user`（`to model effort request mode images`）、`assistant`（`ai model effort text error stopped ms request asks`）、`event`（`tool` 工具摘要）。`.json` 存各 AI 的 session 與模型；`.queue.json` 存排隊指示。`.ai/attachments/{id}/` 存圖片。
+- `{root}/.yumeewade/`：`log.jsonl`（操作紀錄）、`settings.json`（預設 AI、隱藏／排序模型、完整權限）、`models.json`（模型清單快取）、`completion.json`（完成核可、繼續標記、階段繼續標記）、`order.json`（專案排序與釘選）。
+- `Work/{專案}/{作業}/`、分支 `ym/{作業}`。主資料夾不是 git 時先 `git init`＋初始提交。
+
+### B.3 規則
+- 送出時 AI／模型／思考強度的優先序：單次指定 → 作業檔 → 角色 main → 設定的預設 AI（不再因為沒有角色而失敗）。
+- 每輪開始作業轉 進行中；回覆含 `[[question]]…[[/question]]` 區塊 → 解析成 `asks`，作業轉 等待回覆 並寫入 question；以 `answer` 送出的回答會清掉 question。
+- 執行中送出必須指定 `mode`：`redo`／`amend` 會停掉目前這輪，再用包裝過的指示立即開始；`queue` 會排隊，正常結束後自動出隊。停止會同時清空隊列。
+- 完成確認：AI 寫了 `完成` 但人尚未核可，或步驟全勾且未按「繼續進行」→ `confirm`。人在 UI 把狀態改成完成即視同核可。
+- 階段：目前階段（第一個未完成）的作業全部完成 → 提示前往下一階段；最後一階段完成 → 專案完成。
+- 合併：兩邊自動儲存 → `--no-ff` 合併；衝突只中止自己開始的合併，作業轉 等待回覆；成功則移除副本與分支，作業轉完成並核可。
+- 未讀：一輪結束時若沒有客戶端開著該作業的對話流，就標未讀；開啟即清除。
+- 模型清單讀 CLI 自己的快取（codex `models_cache.json`、claude `cache/model-catalog/`），每個模型的思考強度選項也從快取取得。
+
+### B.4 協定
+以 `src/shared/types.ts` 與 `README.md`「協定摘要」為準。全域 SSE 只發 `changed`，客戶端重抓 `GET /api/state`；作業 SSE 先送 `snapshot`，再送 `busy`／`delta`／`row`／`queue`／`idle`。舊端點（`/api/bootstrap`、`/api/tasks`、`/api/worktree/*`、`/api/chat/queue/*`）已移除。

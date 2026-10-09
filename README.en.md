@@ -1,0 +1,133 @@
+# YuMeewADE
+
+[繁體中文](README.md) | English | [日本語](README.ja.md)
+
+A cross-platform AI project collaboration app: projects, tasks, and AI conversations in one interface. It drives your local `claude` / `codex` CLI in headless mode. Choose the AI, model, and reasoning effort for each message; while AI is running, cancel and redo, add context, or queue the next instruction. Tasks run in git worktree copies by default, with one-click merging into the main folder after reviewing the diff.
+
+The workflow draws on [kieiken/project-hub](https://github.com/kieiken/project-hub) (MIT): file-based ledgers, task working copies, three instruction modes during execution, AI question options, completion confirmation, and phases. This project includes none of its code, and its interface was designed separately.
+
+> **Security notice (read first)**
+> - The core listens only on `http://127.0.0.1:4560`, with **no login or authentication**. This is intentional: it is a single-user local tool, not a web service. Other processes on your machine can call it. Do not bind it to `0.0.0.0` or forward the port externally.
+> - **AI has full access by default**: claude starts with `--dangerously-skip-permissions`, and codex with `--dangerously-bypass-approvals-and-sandbox`. They can modify files and execute any command with your account's permissions (the same as project-hub; a user decision on 2026-10-10). Disable this individually under “Settings → AI tools → Full access.” With full access disabled, claude automatically approves only file edits, while codex runs in a working-directory sandbox.
+> - Each CLI manages its own AI billing, plans, and login. This tool does not manage credentials or guarantee that no charges will occur.
+
+## Interface and workflow
+
+- **Left-hand tree**: tasks appear under projects; subtasks are indented with `↳`, and branch tasks are marked `⑂`. Dot colors: red = AI running, yellow = awaiting your reply, blue = awaiting completion confirmation, purple = complete, light green = previously handled, gray = not started. Unread results are marked “Unread.” The context menu (⋯) supports renaming, adding subtasks or branches, and archiving; projects also support pinning, reordering, and adding subprojects.
+- **Your turn**: the title-bar button shows task counts for “Awaiting reply” and “Confirm completion.” Open it to “Mark complete” or “Continue.”
+- **New project**: enter a name, description, and phases (defaults: Plan / Implement / Review / Wrap up). Set “Main folder” to an existing code folder (the desktop app has a “Choose…” button); leave it blank to use the ledger folder itself. Providing a “First task (optional)” starts it immediately.
+- **Project overview**: the phase roadmap and tasks in the current phase. Once all tasks in the current phase are complete, “Next phase” is offered. **Quick start**: describe what you want to do, choose an AI, model, and reasoning effort (your last choices are remembered), optionally attach images, and click “Start” to create a task and hand it to AI. “＋ Add task with details” is also available.
+- **Task view**:
+  - Conversation: switch AI, model, or reasoning effort with each message. Switching AI includes the human and AI text messages the new AI has not yet seen (a handoff package); using the same AI continues the existing session.
+  - Sending while running: **① Cancel and redo**, **② Add context (do together)**, or **③ Continue after this** (queued, starts automatically afterward, and persists across restarts). “Stop” also clears the queue.
+  - When AI needs a decision, it asks a question at the end of its response in a fixed format. The interface displays **option buttons**, and you can also type your own answer. Answering moves the task from “Awaiting reply” back to “In progress.”
+  - Working copy: shows “N files +a −b” and conflict warnings. You can “View diff,” **Merge into main folder** (automatically saves both sides, then merges with `--no-ff`; success removes the copy and marks the task complete; conflicts abort the merge, leave the main folder unchanged, and move the task to Awaiting reply), or “Exclude from merge.”
+  - At the bottom, change the state and phase, check off steps (the `## 步驟` list), and leave notes. Checking all steps or AI writing “完成” puts the task into “Confirm completion,” leaving the decision to a human (“完成” is a literal Chinese ledger value).
+- **Settings**: language (7 languages), default AI for new tasks, AI tools (versions, “Refresh models,” “Update CLI,” and the “Full access” toggle), models shown in menus and their order, roles (written back to `roles.yaml`), and recent activity.
+
+Model lists are read directly from the CLIs' own caches (`~/.codex/models_cache.json`, `~/.claude/cache/model-catalog/`). Available reasoning efforts for each model also come from the cache; built-in lists are used only when the cache cannot be read.
+
+## Architecture
+
+```
+[Electron App｜macOS／Windows／Linux] ──┐
+[瀏覽器｜網頁版] ⇄ http://127.0.0.1:4560 ┴─ Shared UI (Vite + vanilla TypeScript)
+[YuMeewADE 核心｜Node.js v24｜TypeScript，無 runtime 相依]
+        ├─ src/ledger/   Ledger: projects, tasks, completion confirmation, settings, ordering, activity log
+        ├─ src/state/    /api/state Overall state (tree, dots, Your turn, unread)
+        ├─ src/chat/     Conversations: JSONL, sessions, handoff packages, three running instruction modes, question parsing, attachments
+        ├─ src/cli/      CliProvider adapter: claude/codex headless mode + mock
+        ├─ src/ai/       Model lists, CLI versions and updates
+        ├─ src/git/      Worktree copies, merge previews, merging
+        ├─ src/roles/    Read/write roles.yaml
+        ├─ src/http/     Routing, SSE, static frontend, rate limiting
+        └─ src/desktop/  Electron main process (windows, core startup, folder picker)
+工作區 ~/Documents/YuMeewWorkspace/
+        ├─ roles.yaml
+        ├─ Projects/{專案}/PROJECT.md、.ai/tasks/{作業}.md、.ai/chat/{作業}.jsonl|.json|.queue.json、.ai/attachments/
+        ├─ Work/{專案}/{作業}/          Git worktree copy (branch ym/{作業})
+        └─ .yumeewade/                  Activity log log.jsonl, settings.json, models.json, completion.json, order.json, internal logs
+```
+
+**Four distributions, one codebase**: macOS app (dmg / zip), Windows app (nsis / portable), Linux app (AppImage / deb), and web version (open the local service in a browser). The desktop app simply starts the core and opens a window loading the same URL.
+
+**Ledger = Markdown files**: `PROJECT.md` and `.ai/tasks/*.md` contain frontmatter and body text; conversations use JSONL, one record per line. You can grep or edit them manually; there is no database. State values (未開始／進行中／等待回覆／暫停／完成 — literal file values, kept in Traditional Chinese) are written to files in Traditional Chinese, while the UI displays them in the selected language.
+
+## Requirements
+
+- Node.js **24** or later, Git 2.38 or later (`git worktree`, `git merge-tree --write-tree`).
+- For real AI: install and sign in to [Claude Code](https://docs.anthropic.com/claude-code) (`claude`) and/or [Codex CLI](https://github.com/openai/codex) (`codex`) locally.
+- Desktop packaging: build on each target platform (macOS artifacts must be built on macOS).
+
+## Installation and startup
+
+```bash
+git clone https://github.com/YueyuHoshizora/YuMeewADE.git
+cd YuMeewADE
+npm ci
+npm run build
+npm start            # 網頁版：瀏覽器開 http://127.0.0.1:4560
+npm run desktop      # 桌面版（開發機）
+```
+
+- First startup creates `~/Documents/YuMeewWorkspace/`, `Projects/`, `Work/`, `.yumeewade/`, and `roles.yaml`.
+- New projects copy `.ai/rules.md` (AI work rules), `.ai/memory/INDEX.md`, `CLAUDE.md`, and `AGENTS.md` from `templates/project/`. You can customize the templates.
+- Archiving is not deletion: tasks are archived to `Projects/{專案}/.ai/trash/`, and projects to `Projects/.trash/`.
+- Development mode: `npm run dev` (tsc / vite watch, with automatic core restarts).
+- Package unsigned artifacts for the current platform: `npm run dist` → `release/`. Release artifacts are built separately on all three platforms by GitHub Actions (`.github/workflows/build.yml`). They are unsigned and not notarized: on first launch, macOS requires permission in “System Settings → Privacy & Security,” and Windows requires clicking “Run anyway.”
+
+## `config.yaml`
+
+Configuration lookup order: the `YUMEEWADE_CONFIG` environment variable → `config.yaml` in the current directory → `~/.yumeewade/config.yaml` → built-in defaults. The desktop app places a template in the user's configuration directory. Old templates automatically copied by version 0.1 (with permission flags in `baseArgs`) are automatically replaced with the new defaults.
+
+| Section | Fields | Description |
+|---|---|---|
+| `server` | `host`、`port` | Loopback only; default `127.0.0.1:4560` |
+| `workspace` | `root` | Workspace root; default `~/Documents/YuMeewWorkspace` |
+| `cli.claude` / `cli.codex` | `command`、`baseArgs`、`fullAccess`、`fullAccessArgs`、`safeArgs` | Commands and headless-mode flags; `fullAccess` sets the default permissions, overridden by the toggle in Settings |
+| `cli` | `envPassthrough` | Additional environment variables allowed through to CLI child processes (by default, only PATH / HOME / LANG and similar variables) |
+| `limits` | `bodyBytes`、`promptChars`、`sendPerMinute`、`concurrentRuns`、`sseConnections`、`queueLength`、`handoffChars`、`heartbeatSeconds`、`diffBytes`、`uploadBytes`、`imagesPerSend` | Resource and request limits |
+
+## Protocol summary (UI ⇄ core)
+
+HTTP JSON plus SSE, identical in desktop and web versions. Types are defined in [`src/shared/types.ts`](src/shared/types.ts).
+
+| Method and path | Purpose |
+|---|---|
+| `GET /api/state` | Overall state: projects (including tasks and computed fields), ordering, running tasks, unread results, AI and models, settings, roles, limits |
+| `GET /api/events` | SSE (global): refetch `/api/state` on `changed` |
+| `GET /api/chat/stream?project=&task=` | SSE (single task): `snapshot`／`busy`／`delta`／`row`／`queue`／`idle` |
+| `POST /api/project/new`、`/api/project/update`、`/api/project/archive` | Projects |
+| `POST /api/phase/next`、`/api/phase/continue` | Phases |
+| `POST /api/order`、`/api/pin` | Project ordering and pinning |
+| `POST /api/task/new`、`/api/task/update`、`/api/task/step`、`/api/task/memo`、`/api/task/completion`、`/api/task/archive`、`/api/task/read` | Tasks |
+| `POST /api/start` | Quick start (create a task and send) |
+| `POST /api/chat/send` | Send `{project, task, text, ai?, model?, effort?, mode?, answer?, images?, fromQueue?}`; while running, `mode` is required: `redo`／`amend`／`queue` |
+| `POST /api/chat/stop`、`/api/chat/unqueue` | Stop (and clear the queue), remove queued instructions |
+| `POST /api/upload`、`GET /api/upload`、`GET /api/attachment` | Image upload, preview, conversation attachments |
+| `GET /api/task/preview`、`GET /api/task/diff`、`POST /api/task/merge`、`/api/task/merge-exclusion`、`/api/task/copyclear` | Working copies |
+| `GET /api/ai`、`POST /api/ai/refresh`、`POST /api/ai/update` | AI tools and model lists |
+| `POST /api/settings`、`POST /api/roles`、`GET /api/log` | Settings, roles, activity log |
+| `POST /api/open` | Open a folder or file using the system |
+| `GET /api/ping` | Desktop startup probe |
+
+Error responses use `{error, message, detail?, field?}`: `detail` is a translatable code displayed in the UI's language; internal causes are written only to local logs.
+
+### Windows / Linux artifact startup checklist (use to validate CI artifacts when no physical machine is available)
+
+1. Install or extract and launch `YuMeewADE`. The window title is YuMeewADE, and the version number appears in the upper-left corner.
+2. `config.yaml` appears in the user's configuration directory (Windows `%APPDATA%\yumeewade\`, Linux `~/.config/yumeewade/`).
+3. Create a project and send an instruction through Quick start; confirm a streaming response appears.
+4. While running, send a second instruction using “③ Continue after this.” It appears in the queue and starts automatically after the first finishes.
+5. After closing the window, no `yumeewade-core` process remains in Task Manager / `ps`.
+
+## Tests
+
+```bash
+npm run typecheck
+npm test             # node --test；對話流程用 MockCliProvider，不呼叫真的 CLI
+```
+
+## License
+
+Apache-2.0; see [LICENSE](LICENSE) for the full text.
