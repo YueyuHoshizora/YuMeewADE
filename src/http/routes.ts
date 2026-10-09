@@ -77,6 +77,25 @@ export function registerRoutes(router: Router, app: App): void {
     return updated;
   });
 
+  router.post('/api/task/archive', async ({ body }) => {
+    const { project, task } = await locate(body);
+    if (app.runner.isRunning(project, task)) throw new AppError('conflict', '作業執行中，不能封存');
+    if ((await app.worktree.status(project, task)).exists) throw new AppError('conflict', '請先移除工作副本再封存');
+    await app.tasks.archive(project, task);
+    return { archived: true };
+  });
+
+  router.post('/api/project/archive', async ({ body }) => {
+    const project = reqString(body, 'project', NAME_MAX);
+    await app.projects.get(project);
+    for (const t of await app.tasks.list(project)) {
+      if (app.runner.isRunning(project, t.id)) throw new AppError('conflict', '有作業執行中，不能封存');
+      if ((await app.worktree.status(project, t.id)).exists) throw new AppError('conflict', '請先移除所有工作副本再封存');
+    }
+    await app.projects.archive(project);
+    return { archived: true };
+  });
+
   router.get('/api/events', async ({ req, res }) => {
     app.sse.open(req, res, GLOBAL, { event: 'ready', data: { version: app.version } });
     return undefined;

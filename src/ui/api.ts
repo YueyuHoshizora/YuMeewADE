@@ -36,6 +36,8 @@ export const api = {
   createTask: (project: string, title: string, role: string) => call<Task>('POST', '/api/tasks', { project, title, role }),
   updateTask: (project: string, task: string, patch: TaskPatch) => call<Task>('POST', '/api/task/update', { project, task, patch }),
   updateProject: (project: string, patch: ProjectPatch) => call<Project>('POST', '/api/project/update', { project, patch }),
+  archiveTask: (project: string, task: string) => call<{ archived: boolean }>('POST', '/api/task/archive', { project, task }),
+  archiveProject: (project: string) => call<{ archived: boolean }>('POST', '/api/project/archive', { project }),
   send: (project: string, task: string, text: string, opts: { cli?: string; model?: string; effort?: string }) =>
     call<{ request: string; queued: boolean }>('POST', '/api/chat/send', { project, task, text, ...opts }),
   stop: (project: string, task: string) => call<{ stopped: boolean }>('POST', '/api/chat/stop', { project, task }),

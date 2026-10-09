@@ -1,4 +1,5 @@
 import assert from 'node:assert/strict';
+import { promises as fs } from 'node:fs';
 import http from 'node:http';
 import { test } from 'node:test';
 import { startTestServer } from '../testing/server.ts';
@@ -65,6 +66,28 @@ test('閘門：Host／Origin 不符回 403，壞 JSON 回 400，過大回 413', 
     assert.equal((await s.api('POST', '/api/projects', { name: 'x'.repeat(200) })).status, 413);
     // 不帶 Content-Length 的分塊上傳也要擋
     assert.equal(await raw({ 'Transfer-Encoding': 'chunked' }, ['{"name":"', 'y'.repeat(300), '"}']), 413);
+  } finally {
+    await s.close();
+  }
+});
+
+test('封存作業與專案：移到 trash、清單消失、副本存在時拒絕', async () => {
+  const s = await startTestServer();
+  try {
+    await s.api('POST', '/api/projects', { name: 'Arc' });
+    const t = (await s.api('POST', '/api/tasks', { project: 'Arc', title: 'x' })).json as Task;
+    await s.api('POST', '/api/worktree/create', { project: 'Arc', task: t.id });
+    assert.equal((await s.api('POST', '/api/task/archive', { project: 'Arc', task: t.id })).status, 409);
+    assert.equal((await s.api('POST', '/api/project/archive', { project: 'Arc' })).status, 409);
+    await s.api('POST', '/api/worktree/remove', { project: 'Arc', task: t.id });
+    assert.equal((await s.api('POST', '/api/task/archive', { project: 'Arc', task: t.id })).status, 200);
+    assert.deepEqual((await s.api('GET', '/api/tasks?project=Arc')).json, []);
+    assert.equal((await s.api('POST', '/api/task/archive', { project: 'Arc', task: t.id })).status, 404);
+    assert.equal((await s.api('POST', '/api/project/archive', { project: 'Arc' })).status, 200);
+    assert.deepEqual(((await s.api('GET', '/api/bootstrap')).json as Bootstrap).projects, []);
+    const trash = await fs.readdir(`${s.app.ws.projectsDir}/.trash`);
+    assert.equal(trash.length, 1);
+    assert.match(trash[0] ?? '', /^Arc-/);
   } finally {
     await s.close();
   }

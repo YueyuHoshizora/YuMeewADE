@@ -132,4 +132,20 @@ export class TaskLedger {
     await atomicWrite(this.ws.taskFile(project, id), serializeFrontmatter(lines, fm.body));
     return this.get(project, id);
   }
+
+  /** 封存：作業檔與對話檔移到 .ai/trash/{id}-{時間}/（不刪除，可手動救回）。 */
+  async archive(project: string, id: string): Promise<void> {
+    await this.readRaw(project, id); // 404 檢查
+    const trash = path.join(this.ws.projectDir(project), '.ai', 'trash', `${id}-${Date.now().toString(36)}`);
+    await fs.mkdir(trash, { recursive: true });
+    await fs.rename(this.ws.taskFile(project, id), path.join(trash, `${id}.md`));
+    for (const kind of ['jsonl', 'json', 'queue.json'] as const) {
+      const file = this.ws.chatFile(project, id, kind);
+      try {
+        await fs.rename(file, path.join(trash, path.basename(file)));
+      } catch (err) {
+        if ((err as NodeJS.ErrnoException).code !== 'ENOENT') throw err;
+      }
+    }
+  }
 }

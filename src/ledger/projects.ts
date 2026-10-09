@@ -112,4 +112,12 @@ export class ProjectLedger {
     await atomicWrite(file, serializeFrontmatter(patchHeaderLines(fm.headerLines, values), fm.body));
     return this.get(name);
   }
+
+  /** 封存：整個專案目錄移到 Projects/.trash/{name}-{時間}/（不刪除）。 */
+  async archive(name: string): Promise<void> {
+    await this.get(name);
+    const trash = path.join(this.ws.projectsDir, '.trash');
+    await fs.mkdir(trash, { recursive: true });
+    await fs.rename(this.ws.projectDir(name), path.join(trash, `${name}-${Date.now().toString(36)}`));
+  }
 }

@@ -98,7 +98,16 @@ function renderProjects(): void {
         if (updated) applyProject(updated);
         else status.value = p.status;
       };
-      sub.append(status, el('span', {}, p.updated));
+      const archive = el('button', { type: 'button', class: 'inline danger' }, i('app.archiveProject'));
+      archive.onclick = async (e) => {
+        e.stopPropagation();
+        if (!confirm(i('app.confirmArchiveProject', { name: p.name }))) return;
+        if (await guard(api.archiveProject(p.name))) {
+          if (state.project === p.name) location.reload();
+          else await reloadBootstrap();
+        }
+      };
+      sub.append(status, el('span', {}, p.updated), archive);
       li.append(sub);
       li.onclick = () => void selectProject(p.name);
       return li;
@@ -440,10 +449,16 @@ function renderWorktree(): void {
     if (!confirm(i('wt.confirmRemove'))) return;
     if (await guard(api.worktreeRemove(state.project, task.id))) await reloadWorktree();
   };
+  if (wt.ahead === 0 && wt.dirty.length === 0) box.append(el('span', { class: 'muted' }, i('wt.clean')));
   box.append(diffBtn, mergeBtn, rmBtn, pre);
 }
 
 // ---- 事件綁定 ----
+
+$('task-archive').onclick = async () => {
+  if (!state.task || !confirm(i('app.confirmArchiveTask'))) return;
+  if (await guard(api.archiveTask(state.project, state.task.id))) location.reload();
+};
 
 $('project-create').onclick = async () => {
   const input = $<HTMLInputElement>('project-name');
