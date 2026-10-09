@@ -2,7 +2,7 @@ import type { AiPick, RoleInput, RoleSlot } from '../../shared/types.ts';
 import { api } from '../api.ts';
 import { getLocale, hasMessage, LOCALES, localeName, setLocale, t, type Locale } from '../i18n/index.ts';
 import { aiPicker } from '../components/picker.ts';
-import { button, card, el, field, input, readLocal, row, run, select, storeLocal, toast, type View, type ViewContext } from '../components/dom.ts';
+import { button, card, confirmModal, el, field, input, readLocal, row, run, select, storeLocal, toast, type View, type ViewContext } from '../components/dom.ts';
 import { aiLabel, localTime, sourceLabel } from '../components/display.ts';
 
 export function settingsView(context: ViewContext, redraw: () => void): View {
@@ -14,7 +14,15 @@ export function settingsView(context: ViewContext, redraw: () => void): View {
   const notifications = input(); notifications.type = 'checkbox'; notifications.checked = readLocal('yumeewade.notifications', true);
   notifications.onchange = () => { storeLocal('yumeewade.notifications', notifications.checked); if (notifications.checked && 'Notification' in window && Notification.permission === 'default') void run(async () => { await Notification.requestPermission(); }); };
   const permission = button(t('settings.notificationPermission'), async () => { if ('Notification' in window && Notification.permission === 'default') await Notification.requestPermission(); }); permission.disabled = !('Notification' in window) || Notification.permission !== 'default';
-  node.append(card(t('settings.general'), field(t('settings.language'), language), field(t('settings.tools'), tools), field(t('settings.enterToSend'), enter), field(t('settings.notifications'), notifications), permission, field(t('settings.root'), el('code', '', state.root))));
+  const root = input(state.root); root.spellcheck = false; root.autocomplete = 'off';
+  const pickRoot = window.yumeewade?.pickFolder ? [button(t('project.pickFolder'), async () => { const value = await window.yumeewade!.pickFolder(); if (value) root.value = value; })] : [];
+  const applyRoot = button(t('settings.rootApply'), async () => {
+    const value = root.value.trim();
+    if (!value || value === context.state.root) return;
+    if (!await confirmModal(t('settings.rootConfirmTitle'), t('settings.rootConfirm', { root: value }), t('settings.rootApply'))) return;
+    await api.workspace(value); await context.refresh(); redraw(); toast(t('settings.rootChanged'));
+  });
+  node.append(card(t('settings.general'), field(t('settings.language'), language), field(t('settings.tools'), tools), field(t('settings.enterToSend'), enter), field(t('settings.notifications'), notifications), permission, field(t('settings.root'), root), row(...pickRoot, applyRoot), el('p', 'muted', t('settings.rootHint'))));
   const initial = aiPicker(state, state.settings.initial); node.append(card(t('settings.initial'), initial.node, button(t('common.save'), async () => { await api.settings({ initial: initial.value() }); await context.refresh(); toast(t('common.saved')); }, 'primary')));
   const aiSection = card(t('settings.ais'));
   for (const info of state.ais.filter(ai => ai.name !== 'mock')) {

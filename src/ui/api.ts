@@ -25,6 +25,7 @@ export const api = {
   merge: (project: string, task: string) => request<MergeResult>('/api/task/merge', { project, task }),
   settings: (patch: SettingsPatch) => request<Settings>('/api/settings', patch),
   roles: (roles: RoleInput[]) => request<Roles>('/api/roles', { roles }),
+  workspace: (root: string) => request<{ root: string }>('/api/workspace', { root }),
   refreshAi: (ai: string) => request<AiInfo>('/api/ai/refresh', { ai }),
   updateAi: (ai: string) => request<{ before: string; after: string; info: AiInfo }>('/api/ai/update', { ai }),
   log: () => request<OpLogEntry[]>('/api/log?n=100'),
