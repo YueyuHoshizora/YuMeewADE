@@ -8,7 +8,7 @@ import { parseRoles } from '../roles/roles.ts';
 import { AppError } from '../shared/errors.ts';
 import type { SseEvent } from '../shared/types.ts';
 import { withTmpWorkspace } from '../testing/tmp.ts';
-import { ChatRunner } from './runner.ts';
+import { ChatRunner, unseenRows } from './runner.ts';
 import { ChatStore } from './store.ts';
 
 const ROLES = parseRoles('roles:\n  實作: { main: [mock, default, high], job: 寫碼 }\n');
@@ -70,7 +70,7 @@ test('流程範例 1：送出 → log(user) → delta… → log(assistant) → 
     assert.equal(raw.trim().split('\n').length, 2);
     const meta = await s.store.readMeta('P', s.task);
     assert.match(meta.sessions['mock'] ?? '', /^mock-/);
-    assert.equal(meta.seen['mock'], 2);
+    assert.equal(meta.seen['mock'], log[1]?.request);
     assert.equal((await s.tasks.get('P', s.task)).state, '進行中');
   }));
 
@@ -163,3 +163,64 @@ test('role 為人或 CLI 不存在時拒絕', () =>
     const s = await setup(ws);
     await assert.rejects(s.runner.send('P', s.task, 'x', { cli: 'claude' }), (e: unknown) => e instanceof AppError && e.code === 'bad_request');
   }));
+
+test('prepareCwd 失敗：發 error／done 並釋放執行槽，之後可再送', () =>
+  withTmpWorkspace(async (ws) => {
+    const s = await setup(ws);
+    let fail = true;
+    const runner = new ChatRunner({
+      ws,
+      store: s.store,
+      tasks: s.tasks,
+      roles: async () => ROLES,
+      providers: { mock: new MockCliProvider(5) },
+      limits: { concurrentRuns: 2, queueLength: 3, handoffChars: 1000 },
+      prepareCwd: async (p) => {
+        if (fail) throw new Error('git 壞了');
+        return ws.projectDir(p);
+      },
+    });
+    const dones: string[] = [];
+    const waitDone = () => {
+      const { promise, resolve } = Promise.withResolvers<void>();
+      runner.once('event', function handler(_p: string, _t: string, ev: SseEvent) {
+        if (ev.event === 'done') {
+          dones.push(ev.data.request);
+          resolve();
+        } else runner.once('event', handler);
+      });
+      return promise;
+    };
+    const d1 = waitDone();
+    await runner.send('P', s.task, 'x', {});
+    await d1;
+    assert.equal(runner.isRunning('P', s.task), false);
+    fail = false;
+    const d2 = waitDone();
+    const r = await runner.send('P', s.task, 'y', {});
+    assert.equal(r.queued, false);
+    await d2;
+    const log = await s.store.readLog('P', s.task);
+    assert.equal(log[1]?.role, 'error');
+    assert.match(log.at(-1)?.text ?? '', /^已收到：y/);
+  }));
+
+test('同時入隊不會互相蓋掉', () =>
+  withTmpWorkspace(async (ws) => {
+    const s = await setup(ws, { concurrentRuns: 2, queueLength: 10, handoffChars: 1000 });
+    await s.runner.send('P', s.task, '[slow] a', {});
+    await Promise.all(['b', 'c', 'd', 'e'].map((t) => s.runner.send('P', s.task, t, {})));
+    const queue = await s.store.readQueue('P', s.task);
+    assert.deepEqual(queue.map((q) => q.text).sort(), ['b', 'c', 'd', 'e']);
+    s.runner.stop('P', s.task);
+    await s.waitFor(() => s.doneCount() === 5);
+    assert.deepEqual(await s.store.readQueue('P', s.task), []);
+  }));
+
+test('unseenRows：以 request 標記取未讀列，舊版行數標記相容', () => {
+  const rows = ['a', 'b', 'c', 'd'].map((r) => ({ at: '', role: 'user' as const, text: r, cli: 'x', request: r }));
+  assert.deepEqual(unseenRows(rows, { sessions: {}, seen: {} }, 'x').map((r) => r.text), ['a', 'b', 'c', 'd']);
+  assert.deepEqual(unseenRows(rows, { sessions: {}, seen: { x: 'b' } }, 'x').map((r) => r.text), ['c', 'd']);
+  assert.deepEqual(unseenRows(rows, { sessions: {}, seen: { x: 3 } }, 'x').map((r) => r.text), ['d']);
+  assert.deepEqual(unseenRows(rows, { sessions: {}, seen: { x: 'gone' } }, 'x').map((r) => r.text), ['a', 'b', 'c', 'd']);
+});

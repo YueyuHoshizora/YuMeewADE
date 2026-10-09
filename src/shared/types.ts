@@ -60,8 +60,8 @@ export interface ChatRow {
 
 export interface ChatMeta {
   sessions: Partial<Record<string, string>>;
-  /** 各 CLI 已看過的 JSONL 行數，用來組交接包。 */
-  seen: Partial<Record<string, number>>;
+  /** 各 CLI 上次收尾的那筆 request（舊版為已看過的行數），用來組交接包。 */
+  seen: Partial<Record<string, string | number>>;
 }
 
 export interface QueueItem {

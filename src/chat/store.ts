@@ -49,7 +49,24 @@ export class ChatStore {
     return readJson<QueueItem[]>(this.ws.chatFile(project, task, 'queue.json'), []);
   }
 
-  writeQueue(project: string, task: string, queue: QueueItem[]): Promise<void> {
-    return writeJson(this.ws.chatFile(project, task, 'queue.json'), queue);
+  /**
+   * 讀改寫隊列；同一作業的修改串行化，避免入隊與出隊同時 read→write 互相蓋掉。
+   * mutate 回傳新的隊列（或 null 代表不寫）。
+   */
+  updateQueue(project: string, task: string, mutate: (queue: QueueItem[]) => QueueItem[] | null): Promise<QueueItem[]> {
+    const key = `${project}\u0000${task}`;
+    const prev = this.queueLocks.get(key) ?? Promise.resolve();
+    const run = prev.then(async () => {
+      const queue = await this.readQueue(project, task);
+      const next = mutate(queue);
+      if (next === null) return queue;
+      await writeJson(this.ws.chatFile(project, task, 'queue.json'), next);
+      return next;
+    });
+    // 失敗也要讓後續的鎖繼續
+    this.queueLocks.set(key, run.then(() => undefined, () => undefined));
+    return run;
   }
+
+  private readonly queueLocks = new Map<string, Promise<void>>();
 }

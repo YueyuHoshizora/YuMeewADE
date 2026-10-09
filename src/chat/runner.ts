@@ -10,7 +10,7 @@ import type { Workspace } from '../ledger/workspace.ts';
 import { resolveLaunch, type Launch } from '../roles/roles.ts';
 import { AppError } from '../shared/errors.ts';
 import { log } from '../shared/log.ts';
-import type { ChatRow, QueueItem, Roles, RunState, SseEvent, Task } from '../shared/types.ts';
+import type { ChatMeta, ChatRow, QueueItem, Roles, RunState, SseEvent, Task } from '../shared/types.ts';
 import { buildHandoff, buildPreamble, buildPrompt } from './prompt.ts';
 import type { ChatStore } from './store.ts';
 
@@ -95,10 +95,15 @@ export class ChatRunner extends EventEmitter {
     };
     const s = this.slot(project, task);
     if (s.running) {
-      const queue = await this.deps.store.readQueue(project, task);
-      if (queue.length >= this.deps.limits.queueLength) throw new AppError('unavailable', '排隊指示已達上限');
-      queue.push(item);
-      await this.deps.store.writeQueue(project, task, queue);
+      let full = false;
+      const queue = await this.deps.store.updateQueue(project, task, (q) => {
+        if (q.length >= this.deps.limits.queueLength) {
+          full = true;
+          return null;
+        }
+        return [...q, item];
+      });
+      if (full) throw new AppError('unavailable', '排隊指示已達上限');
       this.emitEvent(project, task, { event: 'queue', data: queue });
       return { request: item.request, queued: true };
     }
@@ -130,10 +135,13 @@ export class ChatRunner extends EventEmitter {
   }
 
   async removeQueued(project: string, task: string, request: string): Promise<QueueItem[]> {
-    const queue = await this.deps.store.readQueue(project, task);
-    const next = queue.filter((q) => q.request !== request);
-    if (next.length === queue.length) throw new AppError('not_found', '隊列中沒有這筆指示');
-    await this.deps.store.writeQueue(project, task, next);
+    let found = false;
+    const next = await this.deps.store.updateQueue(project, task, (queue) => {
+      const filtered = queue.filter((q) => q.request !== request);
+      found = filtered.length !== queue.length;
+      return found ? filtered : null;
+    });
+    if (!found) throw new AppError('not_found', '隊列中沒有這筆指示');
     this.emitEvent(project, task, { event: 'queue', data: next });
     return next;
   }
@@ -144,7 +152,7 @@ export class ChatRunner extends EventEmitter {
     const prior = await store.readLog(project, task);
     const meta = await store.readMeta(project, task);
     const resumeId = meta.sessions[item.cli];
-    const unseen = prior.slice(meta.seen[item.cli] ?? 0);
+    const unseen = unseenRows(prior, meta, item.cli);
     const handoff = buildHandoff(unseen, limits.handoffChars);
 
     const userRow: ChatRow = { at: item.at, role: 'user', text: item.text, cli: item.cli, ...(item.model ? { model: item.model } : {}), request: item.request };
@@ -232,7 +240,7 @@ export class ChatRunner extends EventEmitter {
     const succeeded = outcome.stopped || (outcome.ok && errorReason === undefined);
     if (succeeded) {
       if (sessionId) meta.sessions[item.cli] = sessionId;
-      meta.seen[item.cli] = prior.length + 1 + rows.length;
+      meta.seen[item.cli] = (rows.at(-1) ?? userRow).request;
     } else if (resumeId) {
       // 失敗的續聊多半是 session 已失效：丟掉它，下次重新開始並附交接包
       delete meta.sessions[item.cli];
@@ -250,6 +258,10 @@ export class ChatRunner extends EventEmitter {
   }
 
   private async finishWithError(project: string, task: string, item: QueueItem, code: string, err: unknown): Promise<void> {
+    const s = this.slot(project, task);
+    s.running = null;
+    s.run = null;
+    s.partial = '';
     log.error('對話無法開始', err, { project, task, request: item.request });
     const row: ChatRow = { at: new Date().toISOString(), role: 'error', text: '無法開始執行', cli: item.cli, request: item.request };
     await this.deps.store.append(project, task, row);
@@ -261,10 +273,12 @@ export class ChatRunner extends EventEmitter {
 
   /** 本輪結束後：有排隊就出隊執行。 */
   private async drain(project: string, task: string): Promise<void> {
-    const queue = await this.deps.store.readQueue(project, task);
-    const next = queue.shift();
+    let next: QueueItem | undefined;
+    const queue = await this.deps.store.updateQueue(project, task, (q) => {
+      next = q[0];
+      return next ? q.slice(1) : null;
+    });
     if (!next) return;
-    await this.deps.store.writeQueue(project, task, queue);
     this.emitEvent(project, task, { event: 'queue', data: queue });
     const provider = this.deps.providers[next.cli];
     let taskDoc: Task;
@@ -281,4 +295,22 @@ export class ChatRunner extends EventEmitter {
     // 不 await：讓呼叫端（上一輪）先收尾
     this.launch(project, task, next, taskDoc, provider);
   }
+}
+
+/**
+ * 某個 CLI 還沒看過的對話列：從它上次收尾的那筆 request 之後算起。
+ * 舊版 meta.seen 存的是行數（number），照舊處理。
+ */
+export function unseenRows(rows: ChatRow[], meta: ChatMeta, cli: string): ChatRow[] {
+  const mark = meta.seen[cli];
+  if (mark === undefined) return rows;
+  if (typeof mark === 'number') return rows.slice(mark);
+  let idx = -1;
+  for (let i = rows.length - 1; i >= 0; i--) {
+    if (rows[i]?.request === mark) {
+      idx = i;
+      break;
+    }
+  }
+  return idx < 0 ? rows : rows.slice(idx + 1);
 }
