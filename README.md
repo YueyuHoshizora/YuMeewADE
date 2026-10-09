@@ -59,7 +59,9 @@ npm start            # 網頁版：瀏覽器開 http://127.0.0.1:4560
 ```
 
 - 第一次啟動會建立 `~/Documents/YuMeewWorkspace/`、`Projects/`、`Work/` 與 `roles.yaml`（從 `templates/roles.yaml` 複製）。
-- 桌面版（開發機）：`npm run desktop`。
+- 新專案會從 `templates/project/` 複製 `.ai/rules.md`（AI 工作規則）、`.ai/memory/INDEX.md`、`CLAUDE.md`、`AGENTS.md`；可以自己改範本。
+- 封存不是刪除：作業封存到 `Projects/{專案}/.ai/trash/`，專案封存到 `Projects/.trash/`，想救回就把目錄搬回去。
+- 桌面版（開發機）：`npm run desktop`；開發模式 `npm run dev`（tsc／vite watch＋核心自動重啟，跨平台）。
 - 打包目前平台的未簽名產物：`npm run dist` → `release/`。
 - 正式產物由 GitHub Actions（`.github/workflows/build.yml`）在 macOS／Windows／Linux 三個 runner 各自建置，與本機共用同一套 `electron-builder.yml`。產物未簽名、未公證：macOS 第一次開啟需在「系統設定 → 隱私權與安全性」允許，Windows 需按「仍要執行」。
 
@@ -86,21 +88,25 @@ HTTP JSON＋SSE，桌面版與網頁版完全相同。
 | `GET /api/bootstrap` | 專案清單、可用 CLI、roles、limits |
 | `GET /api/tasks?project=` | 作業清單 |
 | `GET /api/chat/log?project=&task=` | 對話記錄 |
-| `GET /api/chat/stream?project=&task=` | SSE：`ready`／`log`／`delta`／`done`／`error`／`queue`／`task` |
+| `GET /api/chat/stream?project=&task=` | SSE（單一作業）：`ready`／`log`／`delta`／`done`／`error`／`queue`／`task` |
+| `GET /api/events` | SSE（全域）：`task`／`project` 變更，作業清單即時更新 |
 | `GET /api/worktree/status?project=&task=` | 副本狀態 |
 | `GET /api/worktree/diff?project=&task=` | 收編前 diff |
 | `GET /api/roles` | roles.yaml 內容 |
 | `POST /api/projects` | 建立專案 `{name}` |
 | `POST /api/tasks` | 建立作業 `{project, title, role?}` |
-| `POST /api/task/update` | 更新作業 `{project, task, patch}` |
+| `POST /api/task/update` | 更新作業 `{project, task, patch}`（title／state／role／cli／model／effort／question…） |
+| `POST /api/project/update` | 更新專案 `{project, patch: {status}}` |
+| `POST /api/task/archive` / `POST /api/project/archive` | 封存到 trash（執行中或副本存在時 409） |
 | `POST /api/chat/send` | 送出指示 `{project, task, text, cli?, model?, effort?}`；執行中則入隊 |
 | `POST /api/chat/stop` | 停止目前執行 |
 | `POST /api/chat/queue/remove` | 移除排隊中的指示 `{project, task, request}` |
+| `POST /api/chat/queue/move-first` | 把排隊中的指示移到最前（「取消並重送」用） |
 | `POST /api/worktree/create` | 建立工作副本 |
 | `POST /api/worktree/merge` | 收編（人工觸發；執行中拒絕；衝突中止） |
 | `POST /api/worktree/remove` | 移除副本與分支（副本有未提交變更時拒絕） |
 
-錯誤碼：400 輸入不合法／403 來源不符／404 不存在／409 衝突（執行中、同名、副本未清）／413 過大／429 太頻繁／500 內部錯誤。訊息一律 generic，原因只進本地日誌。
+錯誤碼：400 輸入不合法／403 來源不符／404 不存在／409 衝突（執行中、同名、副本未清）／413 過大／429 太頻繁／503 上限／500 內部錯誤。回應為 `{error, message, detail?, field?}`：`message` 固定繁中、`detail` 是可翻譯的代碼（UI 依語言顯示），內部原因只進本地日誌。
 
 ### Windows／Linux 產物啟動 checklist（無實機時依此驗收 CI 產物）
 

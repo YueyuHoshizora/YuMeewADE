@@ -403,3 +403,14 @@ electron 44.7.0、vite 8.3.4、electron-builder 26.15.3、typescript 7.0.2、@ty
 | 10 | 供應鏈釘選 | `package.json` 確切版本、`package-lock.json` 入庫 | 檔案 |
 | 11 | 資源上限 | `chat/runner.ts` concurrentRuns／queueLength、`http/sse.ts` sseConnections | `runner.test.ts`、`chat.test.ts` |
 | 12 | Host／Origin | `http/router.ts` checkOrigin | `routes.test.ts` |
+
+### A.11 第二輪修正（2026-10-10，自我檢討後）
+- 正確性：`prepareCwd` 失敗釋放執行槽；隊列讀改寫以 per-task Promise 鏈串行化；交接包的「已讀」標記改為 request id（舊行數相容）；上一輪結束時直接把槽位交給下一筆排隊，外界不會看到兩輪之間的閒置空窗。
+- 功能：全域事件流 `GET /api/events`（作業／專案變更即時進清單）；回合結束重讀作業檔並廣播；`POST /api/project/update`；作業 role／cli／model／effort 在 UI 可改；步驟全勾時「確認完成」按鈕（AI 不得自行寫 `完成`，見 rules.md）；取消並重送（`queue/move-first`＋停止）；封存作業／專案到 trash；建專案複製 `templates/project/`；worktree 建立時複製未追蹤的 `.env*`／`.npmrc`／`.dev.vars*`。
+- 多語系：錯誤回應帶 `detail` 代碼與 `field`，UI 七語翻譯（`detail.*`）；伺服器 `message` 仍為繁中但不再是唯一來源。
+- 效能／韌性：對話區增量繪製（高頻 delta 只改串流節點）；SSE 緩衝超過 4 MiB 斷線由客戶端重連；停止中狀態；執行檔偵測快取縮為 5 秒；日誌不記帶值旗標（`--resume`、`--add-dir`、`-m`、`-c`…）。
+- 測試：claude／codex 解析器抽成純函式，以實測 JSON 行當 fixture；桌面探測 `probe.ts` 抽出並測試；測試伺服器關閉前等 runner 閒置。
+- 執行環境註記：桌面版核心跑在 Electron 44 內建的 Node 22.x 上（`utilityProcess`），`engines >=24` 針對的是網頁版與開發；程式碼不得使用 Node 22 沒有的 API。
+- codex 0.160 的 `exec --json` 沒有逐字增量事件（實測只有 `item.started`／`item.completed`），故 agent_message 以整段送出；指令執行在 `item.started` 時就顯示。
+- 未做（仍為建議）：routes 只透過 facade 取用 App；輸入驗證抽 schema。目前規模下不值得。
+

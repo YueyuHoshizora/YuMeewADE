@@ -69,7 +69,7 @@ config.yaml          設定範本；templates/ 內為 roles.yaml／PROJECT.md／
 6. **頻率限制**：每來源每分鐘指示數上限（`limits.sendPerMinute`），超過回 429。
 7. **路徑白名單**：專案名／作業 ID 僅接受 `src/shared/names.ts` 定義的字元集，拒絕 `..`、分隔符、Windows 保留名與結尾點／空白；最後再以 `path.resolve` 驗證仍落在工作區內。
 8. **憑證不入日誌、環境最小化**：日誌不寫 env、argv 之外的提示內容、CLI stderr 只截前 500 字；CLI 子行程環境採白名單（`PATH`、`HOME`、`USER`、`LANG`、`LC_*`、`TERM`、`TMPDIR`、`SHELL`、`XDG_*`、Windows 的 `APPDATA`／`LOCALAPPDATA`／`USERPROFILE`／`SystemRoot`／`ComSpec`／`PATHEXT`）＋CLI 設定目錄指標（`CODEX_HOME`、`CLAUDE_CONFIG_DIR`）＋`cli.envPassthrough`。
-9. **對外錯誤一律 generic**：回應只含錯誤碼與固定訊息（400／403／404／409／413／429／500）；例外堆疊與內部路徑只進本地日誌。
+9. **對外錯誤一律 generic**：回應為 `{error, message, detail?, field?}`；`detail` 必須是 `src/shared/errors.ts` 的 `DETAIL_MESSAGES` 代碼（新增代碼同時補七語 `detail.*` 翻譯），`message` 為固定繁中；例外堆疊與內部路徑只進本地日誌。
 10. **供應鏈**：相依釘選確切版本、lockfile 入庫；Electron／Vite／electron-builder／TypeScript 升版須人工裁示。
 11. **資源防護**：同時執行中的對話數、SSE 連線數、隊列長度皆有上限（`limits.*`）；超限回 409／503，不排隊無限等待。
 12. **CSRF／DNS rebinding**：所有請求檢查 `Host` 為 `127.0.0.1:{port}` 或 `localhost:{port}`；非 GET 請求若帶 `Origin` 必須同源，否則 403。（本條為實作補強，嚴於企劃書。）
