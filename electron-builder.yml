@@ -11,21 +11,27 @@ files:
   - config.yaml
   - package.json
   - LICENSE
+extraResources:
+  - from: build/icon.png
+    to: icon.png
 asar: true
 npmRebuild: false
 mac:
+  icon: build/icon.png
   category: public.app-category.developer-tools
   target: [dmg, zip]
   identity: null
   hardenedRuntime: false
   gatekeeperAssess: false
 win:
+  icon: build/icon.png
   target: [nsis, portable]
   signAndEditExecutable: false
 nsis:
   oneClick: false
   allowToChangeInstallationDirectory: true
 linux:
+  icon: build/icon.png
   target: [AppImage, deb]
   category: Development
   maintainer: yueyuhoshizora@gmail.com

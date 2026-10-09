@@ -74,6 +74,7 @@ function createWindow(url: string): BrowserWindow {
     minWidth: 640,
     minHeight: 480,
     title: 'YuMeewADE',
+    ...(process.platform === 'darwin' ? {} : { icon: app.isPackaged ? path.join(process.resourcesPath, 'icon.png') : path.join(APP_ROOT, 'build', 'icon.png') }),
     webPreferences: {
       preload: PRELOAD,
       contextIsolation: true,
