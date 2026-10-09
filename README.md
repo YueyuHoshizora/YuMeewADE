@@ -23,7 +23,7 @@
   - AI 需要你決定時，會在回覆最後用固定格式提問，畫面顯示成**選項按鈕**，也能自己寫答案。回答後作業從「等待回覆」回到「進行中」。
   - 工作副本：顯示「N 個檔案 +a −b」與衝突預警。可以看差異、**合併到主資料夾**（自動儲存兩邊再 `--no-ff` 合併，成功後移除副本並把作業標為完成；衝突就中止、主資料夾不變，作業轉為等待回覆），或排除合併。
   - 下方可以改狀態與階段、勾選步驟（`## 步驟` 清單）、留下備註。步驟全勾或 AI 自己寫了「完成」時，會進入「確認完成」，由人決定。
-- **設定**：語言（7 種）、Enter／⌘+Enter 送出、通知開關、新作業預設 AI、AI 工具（版本、重新取得模型、更新 CLI、完整權限開關）、選單顯示的模型與順序、角色分工（寫回 `roles.yaml`）、最近操作紀錄。
+- **設定**：語言（7 種）、Enter／⌘+Enter 送出、通知開關、工作區根目錄（可直接切換，寫回設定檔；桌面版可用「選擇…」挑資料夾）、新作業預設 AI、AI 工具（版本、重新取得模型、更新 CLI、完整權限開關）、選單顯示的模型與順序、角色分工（寫回 `roles.yaml`）、最近操作紀錄。
 
 模型清單直接讀 CLI 自己的快取（`~/.codex/models_cache.json`、`~/.claude/cache/model-catalog/`）。每個模型可選的思考強度也從快取取得，讀不到才用內建清單。
 
@@ -85,7 +85,7 @@ npm run desktop      # 桌面版（開發機）
 | 區塊 | 欄位 | 說明 |
 |---|---|---|
 | `server` | `host`、`port` | 只允許 loopback；預設 `127.0.0.1:4560` |
-| `workspace` | `root` | 工作區根目錄，預設 `~/Documents/YuMeewWorkspace` |
+| `workspace` | `root` | 工作區根目錄，預設 `~/Documents/YuMeewWorkspace`；設定頁切換時會改寫這一行 |
 | `cli.claude` / `cli.codex` | `command`、`baseArgs`、`fullAccess`、`fullAccessArgs`、`safeArgs` | 指令與無頭模式旗標；`fullAccess` 是預設權限，設定頁的開關優先 |
 | `cli` | `envPassthrough` | 額外放行給 CLI 子行程的環境變數（預設只給 PATH／HOME／LANG 等） |
 | `limits` | `bodyBytes`、`promptChars`、`sendPerMinute`、`concurrentRuns`、`sseConnections`、`queueLength`、`handoffChars`、`heartbeatSeconds`、`diffBytes`、`uploadBytes`、`imagesPerSend` | 各種上限 |
@@ -111,6 +111,7 @@ HTTP JSON 加 SSE，桌面版與網頁版完全相同。型別定義在 [`src/sh
 | `GET /api/ai`、`POST /api/ai/refresh`、`POST /api/ai/update` | AI 工具與模型清單 |
 | `POST /api/settings`、`POST /api/roles`、`GET /api/log` | 設定、角色、操作紀錄 |
 | `POST /api/open` | 用系統開啟資料夾或檔案 |
+| `POST /api/workspace` | 切換工作區根目錄（AI 執行中拒絕；寫回目前採用的設定檔） |
 | `GET /api/ping` | 桌面版啟動探測 |
 
 錯誤回應為 `{error, message, detail?, field?}`：`detail` 是可翻譯的代碼，UI 依語言顯示；內部原因只進本地日誌。

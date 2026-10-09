@@ -295,6 +295,7 @@ Roles   { models, roles: { role: { main, backup, job } }, permissions }   // rol
 - 讀取順序：`YUMEEWADE_CONFIG` → `./config.yaml` → `~/.yumeewade/config.yaml` → 內建預設（與倉庫根 `config.yaml` 範本相同）。桌面 App 啟動時若使用者設定目錄沒有 `config.yaml`，複製範本過去並以 `YUMEEWADE_CONFIG` 指向它。
 - 區塊：`server{host,port}`、`workspace{root}`、`cli{claude{command,baseArgs,dangerous,dangerousArgs},codex{…},envPassthrough}`、`limits{bodyBytes,promptChars,sendPerMinute,concurrentRuns,sseConnections,queueLength,handoffChars,heartbeatSeconds,diffBytes}`。
 - `server.host` 非 loopback 時啟動失敗（安全節 1）。
+- 工作區根目錄可在設定頁切換（`POST /api/workspace`）：先建好新工作區，再只改寫設定檔的 `workspace.root` 那一行（其他內容與註解保留；全用預設時寫到 `~/.yumeewade/config.yaml`），最後換上新的 App。SSE 連線由核心持有、切換時沿用；AI 執行中回 409，原工作區檔案不搬移。
 
 ### A.2 工作區配置
 ```

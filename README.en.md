@@ -23,7 +23,7 @@ The workflow draws on [kieiken/project-hub](https://github.com/kieiken/project-h
   - When AI needs a decision, it asks a question at the end of its response in a fixed format. The interface displays **option buttons**, and you can also type your own answer. Answering moves the task from “Awaiting reply” back to “In progress.”
   - Working copy: shows “N files +a −b” and conflict warnings. You can “View diff,” **Merge into main folder** (automatically saves both sides, then merges with `--no-ff`; success removes the copy and marks the task complete; conflicts abort the merge, leave the main folder unchanged, and move the task to Awaiting reply), or “Exclude from merge.”
   - At the bottom, change the state and phase, check off steps (the `## 步驟` list), and leave notes. Checking all steps or AI writing “完成” puts the task into “Confirm completion,” leaving the decision to a human (“完成” is a literal Chinese ledger value).
-- **Settings**: language (7 languages), Enter vs ⌘/Ctrl+Enter to send, notifications, default AI for new tasks, AI tools (versions, “Refresh models,” “Update CLI,” and the “Full access” toggle), models shown in menus and their order, roles (written back to `roles.yaml`), and recent activity.
+- **Settings**: language (7 languages), Enter vs ⌘/Ctrl+Enter to send, notifications, workspace root (switch it in place; saved back to the config file; the desktop app has a “Choose…” folder picker), default AI for new tasks, AI tools (versions, “Refresh models,” “Update CLI,” and the “Full access” toggle), models shown in menus and their order, roles (written back to `roles.yaml`), and recent activity.
 
 Model lists are read directly from the CLIs' own caches (`~/.codex/models_cache.json`, `~/.claude/cache/model-catalog/`). Available reasoning efforts for each model also come from the cache; built-in lists are used only when the cache cannot be read.
 
@@ -85,7 +85,7 @@ Configuration lookup order: the `YUMEEWADE_CONFIG` environment variable → `con
 | Section | Fields | Description |
 |---|---|---|
 | `server` | `host`、`port` | Loopback only; default `127.0.0.1:4560` |
-| `workspace` | `root` | Workspace root; default `~/Documents/YuMeewWorkspace` |
+| `workspace` | `root` | Workspace root; default `~/Documents/YuMeewWorkspace`. Switching it in Settings rewrites this line |
 | `cli.claude` / `cli.codex` | `command`、`baseArgs`、`fullAccess`、`fullAccessArgs`、`safeArgs` | Commands and headless-mode flags; `fullAccess` sets the default permissions, overridden by the toggle in Settings |
 | `cli` | `envPassthrough` | Additional environment variables allowed through to CLI child processes (by default, only PATH / HOME / LANG and similar variables) |
 | `limits` | `bodyBytes`、`promptChars`、`sendPerMinute`、`concurrentRuns`、`sseConnections`、`queueLength`、`handoffChars`、`heartbeatSeconds`、`diffBytes`、`uploadBytes`、`imagesPerSend` | Resource and request limits |
@@ -111,6 +111,7 @@ HTTP JSON plus SSE, identical in desktop and web versions. Types are defined in 
 | `GET /api/ai`、`POST /api/ai/refresh`、`POST /api/ai/update` | AI tools and model lists |
 | `POST /api/settings`、`POST /api/roles`、`GET /api/log` | Settings, roles, activity log |
 | `POST /api/open` | Open a folder or file using the system |
+| `POST /api/workspace` | Switch the workspace root (rejected while an AI is running; saved to the active config file) |
 | `GET /api/ping` | Desktop startup probe |
 
 Error responses use `{error, message, detail?, field?}`: `detail` is a translatable code displayed in the UI's language; internal causes are written only to local logs.

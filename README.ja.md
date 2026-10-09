@@ -23,7 +23,7 @@
   - AI が判断を求める場合、応答の最後に決まった形式で質問します。画面では**選択肢ボタン**として表示し、自分で回答を書くこともできます。回答すると、タスクは「回答待ち」から「進行中」に戻ります。
   - 作業コピー：「N ファイル +a −b」と競合の警告を表示します。「差分を見る」、**メインフォルダーにマージ**（両側を自動保存してから `--no-ff` でマージ。成功するとコピーを削除してタスクを完了にします。競合するとマージを中止し、メインフォルダーは変更せず、タスクを回答待ちにします）、または「マージから除外」を選べます。
   - 下部では状態やフェーズの変更、手順（`## 步驟` のリスト）のチェック、メモの記入ができます。すべての手順をチェックするか、AI が自分で「完成」と書くと「完了を確認」に進み、人間が判断します（「完成」は台帳に記録する中国語の値です）。
-- **設定**：言語（7言語）、Enter／⌘+Enter での送信、通知、新規タスクの既定 AI、AI ツール（バージョン、「モデルを更新」、「CLI を更新」、「フルアクセス」の切り替え）、メニューに表示するモデルと順序、役割分担（`roles.yaml` に書き戻します）、最近の操作を設定・確認できます。
+- **設定**：言語（7言語）、Enter／⌘+Enter での送信、通知、ワークスペースのルート（その場で切り替え、設定ファイルに保存。デスクトップ版は「選択…」でフォルダーを選べます）、新規タスクの既定 AI、AI ツール（バージョン、「モデルを更新」、「CLI を更新」、「フルアクセス」の切り替え）、メニューに表示するモデルと順序、役割分担（`roles.yaml` に書き戻します）、最近の操作を設定・確認できます。
 
 モデル一覧は CLI 自身のキャッシュ（`~/.codex/models_cache.json`、`~/.claude/cache/model-catalog/`）から直接読み取ります。各モデルで選べる推論の強度もキャッシュから取得し、読み取れない場合のみ組み込みの一覧を使います。
 
@@ -85,7 +85,7 @@ npm run desktop      # 桌面版（開發機）
 | セクション | フィールド | 説明 |
 |---|---|---|
 | `server` | `host`、`port` | ループバックのみ許可。既定は `127.0.0.1:4560` |
-| `workspace` | `root` | ワークスペースのルート。既定は `~/Documents/YuMeewWorkspace` |
+| `workspace` | `root` | ワークスペースのルート。既定は `~/Documents/YuMeewWorkspace`。設定画面で切り替えるとこの行が書き換わります |
 | `cli.claude` / `cli.codex` | `command`、`baseArgs`、`fullAccess`、`fullAccessArgs`、`safeArgs` | コマンドとヘッドレスモードのフラグ。`fullAccess` は既定の権限で、設定画面の切り替えが優先 |
 | `cli` | `envPassthrough` | CLI 子プロセスに追加で渡す環境変数（既定では PATH／HOME／LANG などのみ） |
 | `limits` | `bodyBytes`、`promptChars`、`sendPerMinute`、`concurrentRuns`、`sseConnections`、`queueLength`、`handoffChars`、`heartbeatSeconds`、`diffBytes`、`uploadBytes`、`imagesPerSend` | 各種上限 |
@@ -111,6 +111,7 @@ HTTP JSON と SSE を使い、デスクトップ版と Web 版で完全に共通
 | `GET /api/ai`、`POST /api/ai/refresh`、`POST /api/ai/update` | AI ツールとモデル一覧 |
 | `POST /api/settings`、`POST /api/roles`、`GET /api/log` | 設定、役割、操作記録 |
 | `POST /api/open` | システムでフォルダーやファイルを開く |
+| `POST /api/workspace` | ワークスペースのルートを切り替え（AI 実行中は拒否。使用中の設定ファイルに保存） |
 | `GET /api/ping` | デスクトップ版の起動確認 |
 
 エラー応答は `{error, message, detail?, field?}` です。`detail` は翻訳可能なコードで、UI の言語に応じて表示します。内部の原因はローカルログのみに記録します。
