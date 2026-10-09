@@ -5,10 +5,14 @@ import type { ApiError, Bootstrap, ChatRow, MergeResult, Project, ProjectPatch, 
 export class ApiFailure extends Error {
   readonly status: number;
   readonly code: string;
+  readonly detail: string | undefined;
+  readonly field: string | undefined;
   constructor(status: number, body: ApiError | null) {
     super(body?.message ?? `HTTP ${status}`);
     this.status = status;
     this.code = body?.error ?? 'unknown';
+    this.detail = body?.detail;
+    this.field = body?.field;
   }
 }
 

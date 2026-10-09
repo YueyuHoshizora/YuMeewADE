@@ -68,7 +68,7 @@ export class ProjectLedger {
     try {
       text = await fs.readFile(file, 'utf8');
     } catch (err) {
-      if ((err as NodeJS.ErrnoException).code === 'ENOENT') throw new AppError('not_found', '專案不存在');
+      if ((err as NodeJS.ErrnoException).code === 'ENOENT') throw new AppError('not_found', 'project_missing');
       throw err;
     }
     return projectFromData(name, parseFrontmatter(text).data);
@@ -78,9 +78,9 @@ export class ProjectLedger {
     const dir = this.ws.projectDir(name);
     const lower = name.toLowerCase();
     for (const existing of await this.list()) {
-      if (existing.name.toLowerCase() === lower) throw new AppError('conflict', '同名專案已存在');
+      if (existing.name.toLowerCase() === lower) throw new AppError('conflict', 'project_exists');
     }
-    if (await pathExists(dir)) throw new AppError('conflict', '同名專案已存在');
+    if (await pathExists(dir)) throw new AppError('conflict', 'project_exists');
     const template = await fs.readFile(path.join(TEMPLATES_DIR, 'PROJECT.md'), 'utf8');
     const content = template.replaceAll('{{name}}', name).replaceAll('{{date}}', todayDate());
     await fs.mkdir(path.join(dir, '.ai', 'tasks'), { recursive: true });
@@ -98,15 +98,15 @@ export class ProjectLedger {
     try {
       text = await fs.readFile(file, 'utf8');
     } catch (err) {
-      if ((err as NodeJS.ErrnoException).code === 'ENOENT') throw new AppError('not_found', '專案不存在');
+      if ((err as NodeJS.ErrnoException).code === 'ENOENT') throw new AppError('not_found', 'project_missing');
       throw err;
     }
     const values: Record<string, YamlValue> = {};
     if (patch.status !== undefined) {
-      if (!PROJECT_STATUSES.includes(patch.status)) throw new AppError('bad_request', '狀態值不合法');
+      if (!PROJECT_STATUSES.includes(patch.status)) throw new AppError('bad_request', 'invalid_state');
       values['status'] = patch.status;
     }
-    if (Object.keys(values).length === 0) throw new AppError('bad_request', '沒有可更新的欄位');
+    if (Object.keys(values).length === 0) throw new AppError('bad_request', 'no_updatable_fields');
     values['updated'] = todayDate();
     const fm = parseFrontmatter(text);
     await atomicWrite(file, serializeFrontmatter(patchHeaderLines(fm.headerLines, values), fm.body));

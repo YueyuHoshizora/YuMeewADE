@@ -34,7 +34,7 @@ export function sendJson(res: ServerResponse, status: number, data: unknown): vo
 export function sendError(res: ServerResponse, err: unknown): void {
   if (err instanceof AppError) {
     if (err.status === 500) log.error('請求失敗', err);
-    sendJson(res, err.status, { error: err.code, message: err.publicMessage });
+    sendJson(res, err.status, err.toJSON());
     return;
   }
   log.error('未預期的錯誤', err);
@@ -68,9 +68,9 @@ export async function readJsonBody(req: IncomingMessage, limit: number): Promise
   try {
     parsed = JSON.parse(Buffer.concat(chunks).toString('utf8'));
   } catch {
-    throw new AppError('bad_request', 'JSON 格式錯誤');
+    throw new AppError('bad_request', 'bad_json');
   }
-  if (parsed === null || typeof parsed !== 'object' || Array.isArray(parsed)) throw new AppError('bad_request', '請求體必須是 JSON 物件');
+  if (parsed === null || typeof parsed !== 'object' || Array.isArray(parsed)) throw new AppError('bad_request', 'body_not_object');
   return parsed as Record<string, unknown>;
 }
 
@@ -121,15 +121,15 @@ export class Router {
 
 export function reqString(src: Record<string, unknown> | URLSearchParams, key: string, max: number): string {
   const v = src instanceof URLSearchParams ? src.get(key) : src[key];
-  if (typeof v !== 'string' || v.length === 0) throw new AppError('bad_request', `${key} 必填`);
-  if (v.length > max) throw new AppError('bad_request', `${key} 過長`);
+  if (typeof v !== 'string' || v.length === 0) throw new AppError('bad_request', 'field_required', { field: key });
+  if (v.length > max) throw new AppError('bad_request', 'field_too_long', { field: key });
   return v;
 }
 
 export function optString(src: Record<string, unknown> | URLSearchParams, key: string, max: number): string | undefined {
   const v = src instanceof URLSearchParams ? src.get(key) : src[key];
   if (v === undefined || v === null || v === '') return undefined;
-  if (typeof v !== 'string') throw new AppError('bad_request', `${key} 必須是字串`);
-  if (v.length > max) throw new AppError('bad_request', `${key} 過長`);
+  if (typeof v !== 'string') throw new AppError('bad_request', 'field_type', { field: key });
+  if (v.length > max) throw new AppError('bad_request', 'field_too_long', { field: key });
   return v;
 }

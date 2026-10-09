@@ -83,8 +83,8 @@ export class ChatRunner extends EventEmitter {
     const taskDoc = await this.deps.tasks.get(project, task);
     const launch = resolveLaunch(await this.deps.roles(), taskDoc, override);
     const provider = this.deps.providers[launch.cli];
-    if (!provider) throw new AppError('bad_request', `不支援的 CLI：${launch.cli}`);
-    if (!(await provider.available())) throw new AppError('bad_request', `${launch.cli} 未安裝或不可用`);
+    if (!provider) throw new AppError('bad_request', 'cli_unsupported', { field: launch.cli });
+    if (!(await provider.available())) throw new AppError('bad_request', 'cli_unavailable', { field: launch.cli });
     const item: QueueItem = {
       request: randomUUID(),
       text,
@@ -103,11 +103,11 @@ export class ChatRunner extends EventEmitter {
         }
         return [...q, item];
       });
-      if (full) throw new AppError('unavailable', '排隊指示已達上限');
+      if (full) throw new AppError('unavailable', 'queue_full');
       this.emitEvent(project, task, { event: 'queue', data: queue });
       return { request: item.request, queued: true };
     }
-    if (this.activeRuns >= this.deps.limits.concurrentRuns) throw new AppError('unavailable', '同時執行中的對話已達上限');
+    if (this.activeRuns >= this.deps.limits.concurrentRuns) throw new AppError('unavailable', 'runs_limit');
     this.launch(project, task, item, taskDoc, provider);
     return { request: item.request, queued: false };
   }
@@ -141,7 +141,7 @@ export class ChatRunner extends EventEmitter {
       found = filtered.length !== queue.length;
       return found ? filtered : null;
     });
-    if (!found) throw new AppError('not_found', '隊列中沒有這筆指示');
+    if (!found) throw new AppError('not_found', 'queue_item_missing');
     this.emitEvent(project, task, { event: 'queue', data: next });
     return next;
   }
@@ -154,7 +154,7 @@ export class ChatRunner extends EventEmitter {
       found = target !== undefined;
       return target ? [target, ...queue.filter((q) => q !== target)] : null;
     });
-    if (!found) throw new AppError('not_found', '隊列中沒有這筆指示');
+    if (!found) throw new AppError('not_found', 'queue_item_missing');
     this.emitEvent(project, task, { event: 'queue', data: next });
     return next;
   }

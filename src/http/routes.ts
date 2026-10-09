@@ -43,7 +43,7 @@ export function registerRoutes(router: Router, app: App): void {
     await app.projects.get(project);
     if (role) {
       const roles = await app.roles();
-      if (!roles.roles[role]) throw new AppError('bad_request', 'role 不存在');
+      if (!roles.roles[role]) throw new AppError('bad_request', 'role_missing');
     }
     return app.tasks.create(project, title, role);
   });
@@ -52,12 +52,12 @@ export function registerRoutes(router: Router, app: App): void {
     const project = reqString(body, 'project', NAME_MAX);
     const task = reqString(body, 'task', NAME_MAX);
     const raw = body['patch'];
-    if (raw === null || typeof raw !== 'object' || Array.isArray(raw)) throw new AppError('bad_request', 'patch 必須是物件');
+    if (raw === null || typeof raw !== 'object' || Array.isArray(raw)) throw new AppError('bad_request', 'patch_not_object');
     const patch: TaskPatch = {};
     for (const key of ['title', 'state', 'phase', 'owner', 'role', 'cli', 'model', 'effort', 'question'] as const) {
       const v = (raw as Record<string, unknown>)[key];
       if (v === undefined) continue;
-      if (typeof v !== 'string') throw new AppError('bad_request', `${key} 必須是字串`);
+      if (typeof v !== 'string') throw new AppError('bad_request', 'field_type', { field: key });
       (patch as Record<string, string>)[key] = v;
     }
     await app.projects.get(project);
@@ -69,9 +69,9 @@ export function registerRoutes(router: Router, app: App): void {
   router.post('/api/project/update', async ({ body }) => {
     const project = reqString(body, 'project', NAME_MAX);
     const raw = body['patch'];
-    if (raw === null || typeof raw !== 'object' || Array.isArray(raw)) throw new AppError('bad_request', 'patch 必須是物件');
+    if (raw === null || typeof raw !== 'object' || Array.isArray(raw)) throw new AppError('bad_request', 'patch_not_object');
     const status = (raw as Record<string, unknown>)['status'];
-    if (status !== undefined && typeof status !== 'string') throw new AppError('bad_request', 'status 必須是字串');
+    if (status !== undefined && typeof status !== 'string') throw new AppError('bad_request', 'field_type', { field: 'status' });
     const updated = await app.projects.update(project, status === undefined ? {} : { status: status as ProjectStatus });
     app.publishProject(updated);
     return updated;
@@ -79,8 +79,8 @@ export function registerRoutes(router: Router, app: App): void {
 
   router.post('/api/task/archive', async ({ body }) => {
     const { project, task } = await locate(body);
-    if (app.runner.isRunning(project, task)) throw new AppError('conflict', '作業執行中，不能封存');
-    if ((await app.worktree.status(project, task)).exists) throw new AppError('conflict', '請先移除工作副本再封存');
+    if (app.runner.isRunning(project, task)) throw new AppError('conflict', 'archive_while_running');
+    if ((await app.worktree.status(project, task)).exists) throw new AppError('conflict', 'archive_has_worktree');
     await app.tasks.archive(project, task);
     return { archived: true };
   });
@@ -89,8 +89,8 @@ export function registerRoutes(router: Router, app: App): void {
     const project = reqString(body, 'project', NAME_MAX);
     await app.projects.get(project);
     for (const t of await app.tasks.list(project)) {
-      if (app.runner.isRunning(project, t.id)) throw new AppError('conflict', '有作業執行中，不能封存');
-      if ((await app.worktree.status(project, t.id)).exists) throw new AppError('conflict', '請先移除所有工作副本再封存');
+      if (app.runner.isRunning(project, t.id)) throw new AppError('conflict', 'archive_project_running');
+      if ((await app.worktree.status(project, t.id)).exists) throw new AppError('conflict', 'archive_project_has_worktrees');
     }
     await app.projects.archive(project);
     return { archived: true };
@@ -167,14 +167,14 @@ export function registerRoutes(router: Router, app: App): void {
 
   router.post('/api/worktree/merge', async ({ body }) => {
     const { project, task } = await locate(body);
-    if (app.runner.isRunning(project, task)) throw new AppError('conflict', '作業執行中，請先停止再收編');
+    if (app.runner.isRunning(project, task)) throw new AppError('conflict', 'merge_while_running');
     const t = await app.tasks.get(project, task);
     return app.worktree.merge(project, task, t.title);
   });
 
   router.post('/api/worktree/remove', async ({ body }) => {
     const { project, task } = await locate(body);
-    if (app.runner.isRunning(project, task)) throw new AppError('conflict', '作業執行中，不能移除副本');
+    if (app.runner.isRunning(project, task)) throw new AppError('conflict', 'remove_while_running');
     await app.worktree.remove(project, task);
     return { removed: true };
   });

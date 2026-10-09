@@ -95,7 +95,7 @@ export class TaskLedger {
     try {
       return await fs.readFile(this.ws.taskFile(project, id), 'utf8');
     } catch (err) {
-      if ((err as NodeJS.ErrnoException).code === 'ENOENT') throw new AppError('not_found', '作業不存在');
+      if ((err as NodeJS.ErrnoException).code === 'ENOENT') throw new AppError('not_found', 'task_missing');
       throw err;
     }
   }
@@ -118,15 +118,15 @@ export class TaskLedger {
     for (const k of STR_FIELDS) {
       const v = patch[k];
       if (v === undefined) continue;
-      if (typeof v !== 'string' || v.length > 2000) throw new AppError('bad_request', `${k} 必須是字串`);
+      if (typeof v !== 'string' || v.length > 2000) throw new AppError('bad_request', 'field_type', { field: k });
       values[k] = v === '' ? null : v;
     }
     if (patch.state !== undefined) {
-      if (!TASK_STATES.includes(patch.state)) throw new AppError('bad_request', '狀態值不合法');
+      if (!TASK_STATES.includes(patch.state)) throw new AppError('bad_request', 'invalid_state');
       values['state'] = patch.state;
     }
-    if (patch.title === '') throw new AppError('bad_request', '標題不得為空');
-    if (Object.keys(values).length === 0) throw new AppError('bad_request', '沒有可更新的欄位');
+    if (patch.title === '') throw new AppError('bad_request', 'title_required');
+    if (Object.keys(values).length === 0) throw new AppError('bad_request', 'no_updatable_fields');
     values['updated'] = nowMinute();
     const lines = patchHeaderLines(fm.headerLines, values);
     await atomicWrite(this.ws.taskFile(project, id), serializeFrontmatter(lines, fm.body));

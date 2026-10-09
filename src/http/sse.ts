@@ -33,7 +33,7 @@ export class SseHub {
 
   /** 開啟一條流並先送 ready；超過上限回 503。 */
   open(req: IncomingMessage, res: ServerResponse, key: string, ready: SseEvent | GlobalEvent): void {
-    if (this.conns.size >= this.limit) throw new AppError('unavailable', 'SSE 連線數已達上限');
+    if (this.conns.size >= this.limit) throw new AppError('unavailable', 'sse_limit');
     res.writeHead(200, {
       'Content-Type': 'text/event-stream; charset=utf-8',
       'Cache-Control': 'no-store',

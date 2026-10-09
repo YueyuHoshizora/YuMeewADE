@@ -39,10 +39,9 @@ async function guard<T>(p: Promise<T>): Promise<T | undefined> {
     return await p;
   } catch (err) {
     if (err instanceof ApiFailure) {
-      const generic = i(`err.${err.code}` as MessageKey);
-      // 伺服器的補充說明是繁中；非預設訊息時附在後面
-      const detail = err.message && err.message !== generic ? `（${err.message}）` : '';
-      toast(`${err.status}：${generic}${detail}`);
+      // detail 代碼可翻譯；沒有 detail 就顯示錯誤碼的 generic 訊息
+      const text = err.detail ? i(`detail.${err.detail}` as MessageKey, { field: err.field ?? '' }) : i(`err.${err.code}` as MessageKey);
+      toast(`${err.status}：${text}`);
     } else toast(i('err.network'));
     return undefined;
   }

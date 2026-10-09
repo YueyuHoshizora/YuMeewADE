@@ -145,6 +145,9 @@ export type SseEvent =
 export interface ApiError {
   error: string;
   message: string;
+  /** 可翻譯的補充代碼（見 shared/errors.ts DETAIL_MESSAGES）。 */
+  detail?: string;
+  field?: string;
 }
 
 /** 全域事件流（`GET /api/events`）：作業／專案任何變更。 */

@@ -31,9 +31,9 @@ export class Workspace {
   }
 
   projectDir(name: string): string {
-    if (!isValidProjectName(name)) throw new AppError('bad_request', '專案名稱不合法');
+    if (!isValidProjectName(name)) throw new AppError('bad_request', 'invalid_project_name');
     const dir = path.join(this.projectsDir, name);
-    if (!isInside(this.projectsDir, dir)) throw new AppError('bad_request', '專案名稱不合法');
+    if (!isInside(this.projectsDir, dir)) throw new AppError('bad_request', 'invalid_project_name');
     return dir;
   }
 
@@ -46,17 +46,17 @@ export class Workspace {
   }
 
   taskFile(name: string, id: string): string {
-    if (!isValidTaskId(id)) throw new AppError('bad_request', '作業 ID 不合法');
+    if (!isValidTaskId(id)) throw new AppError('bad_request', 'invalid_task_id');
     return path.join(this.tasksDir(name), `${id}.md`);
   }
 
   chatFile(name: string, id: string, kind: 'jsonl' | 'json' | 'queue.json'): string {
-    if (!isValidTaskId(id)) throw new AppError('bad_request', '作業 ID 不合法');
+    if (!isValidTaskId(id)) throw new AppError('bad_request', 'invalid_task_id');
     return path.join(this.projectDir(name), '.ai', 'chat', `${id}.${kind}`);
   }
 
   worktreeDir(name: string, id: string): string {
-    if (!isValidTaskId(id)) throw new AppError('bad_request', '作業 ID 不合法');
+    if (!isValidTaskId(id)) throw new AppError('bad_request', 'invalid_task_id');
     this.projectDir(name); // 驗證專案名
     return path.join(this.workDir, name, id);
   }

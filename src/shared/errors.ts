@@ -1,4 +1,4 @@
-// 對外錯誤：只帶狀態碼與固定訊息；內部原因放在 cause，只進本地日誌。
+// 對外錯誤：狀態碼＋錯誤碼＋可翻譯的 detail 代碼（UI 依 detail 顯示各語言）；內部原因放在 cause，只進本地日誌。
 
 export type ErrorCode =
   | 'bad_request'
@@ -32,16 +32,65 @@ const MESSAGE: Record<ErrorCode, string> = {
   internal: '內部錯誤',
 };
 
+/** detail 代碼與繁中補充（UI 以 `detail.<代碼>` 翻譯；{field} 為欄位名）。 */
+export const DETAIL_MESSAGES = {
+  invalid_project_name: '專案名稱不合法',
+  invalid_task_id: '作業 ID 不合法',
+  project_exists: '同名專案已存在',
+  project_missing: '專案不存在',
+  task_missing: '作業不存在',
+  worktree_missing: '尚未建立工作副本',
+  queue_item_missing: '隊列中沒有這筆指示',
+  invalid_state: '狀態值不合法',
+  no_updatable_fields: '沒有可更新的欄位',
+  patch_not_object: 'patch 必須是物件',
+  body_not_object: '請求體必須是 JSON 物件',
+  bad_json: 'JSON 格式錯誤',
+  title_required: '標題不得為空',
+  role_missing: 'role 不存在',
+  invalid_effort: 'effort 不合法',
+  no_cli_for_task: '此作業未指定可執行的 CLI（role 為人或未設定）',
+  cli_unsupported: '不支援的 CLI：{field}',
+  cli_unavailable: '{field} 未安裝或不可用',
+  field_required: '{field} 必填',
+  field_too_long: '{field} 過長',
+  field_type: '{field} 必須是字串',
+  queue_full: '排隊指示已達上限',
+  runs_limit: '同時執行中的對話已達上限',
+  sse_limit: 'SSE 連線數已達上限',
+  git_failed: 'git 指令失敗',
+  worktree_not_git: '副本目錄已存在但不是 worktree',
+  worktree_dirty: '副本有未提交的變更，請先收編或手動清理',
+  merge_while_running: '作業執行中，請先停止再收編',
+  remove_while_running: '作業執行中，不能移除副本',
+  archive_while_running: '作業執行中，不能封存',
+  archive_has_worktree: '請先移除工作副本再封存',
+  archive_project_running: '有作業執行中，不能封存',
+  archive_project_has_worktrees: '請先移除所有工作副本再封存',
+} as const;
+
+export type DetailCode = keyof typeof DETAIL_MESSAGES;
+
 export class AppError extends Error {
   readonly code: ErrorCode;
   readonly status: number;
-  /** 可對外的補充（不含路徑、堆疊）；省略則用固定訊息。 */
+  readonly detail: DetailCode | undefined;
+  readonly field: string | undefined;
+  /** 可對外的補充（繁中；不含路徑、堆疊）。 */
   readonly publicMessage: string;
-  constructor(code: ErrorCode, publicMessage?: string, options?: { cause?: unknown }) {
-    super(publicMessage ?? MESSAGE[code], options);
+
+  constructor(code: ErrorCode, detail?: DetailCode, options: { cause?: unknown; field?: string } = {}) {
+    const publicMessage = detail ? DETAIL_MESSAGES[detail].replace('{field}', options.field ?? '') : MESSAGE[code];
+    super(publicMessage, options.cause === undefined ? undefined : { cause: options.cause });
     this.name = 'AppError';
     this.code = code;
     this.status = STATUS[code];
-    this.publicMessage = publicMessage ?? MESSAGE[code];
+    this.detail = detail;
+    this.field = options.field;
+    this.publicMessage = publicMessage;
+  }
+
+  toJSON(): { error: ErrorCode; message: string; detail?: DetailCode; field?: string } {
+    return { error: this.code, message: this.publicMessage, ...(this.detail ? { detail: this.detail } : {}), ...(this.field ? { field: this.field } : {}) };
   }
 }

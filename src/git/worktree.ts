@@ -28,7 +28,7 @@ export class WorktreeService {
     const repo = this.ws.projectDir(project);
     const dir = this.ws.worktreeDir(project, task);
     if (await pathExists(dir)) {
-      if (!(await pathExists(`${dir}/.git`))) throw new AppError('conflict', '副本目錄已存在但不是 worktree');
+      if (!(await pathExists(`${dir}/.git`))) throw new AppError('conflict', 'worktree_not_git');
       return dir;
     }
     await ensureRepo(repo);
@@ -60,7 +60,7 @@ export class WorktreeService {
   async diff(project: string, task: string): Promise<{ diff: string; truncated: boolean }> {
     const repo = this.ws.projectDir(project);
     const dir = this.ws.worktreeDir(project, task);
-    if (!(await pathExists(`${dir}/.git`))) throw new AppError('not_found', '尚未建立工作副本');
+    if (!(await pathExists(`${dir}/.git`))) throw new AppError('not_found', 'worktree_missing');
     const main = await currentBranch(repo);
     const base = (await gitOk(repo, ['merge-base', main, this.branch(task)])).trim();
     let out = (await git(dir, ['diff', base], { maxBytes: this.diffBytes })).stdout;
@@ -77,7 +77,7 @@ export class WorktreeService {
   async merge(project: string, task: string, title: string): Promise<MergeResult> {
     const repo = this.ws.projectDir(project);
     const dir = this.ws.worktreeDir(project, task);
-    if (!(await pathExists(`${dir}/.git`))) throw new AppError('not_found', '尚未建立工作副本');
+    if (!(await pathExists(`${dir}/.git`))) throw new AppError('not_found', 'worktree_missing');
     const branch = this.branch(task);
     await commitAll(dir, `YuMeewADE: ${task} ${title}`.trim());
     await commitAll(repo, 'YuMeewADE: 收編前儲存');
@@ -97,9 +97,9 @@ export class WorktreeService {
   async remove(project: string, task: string): Promise<void> {
     const repo = this.ws.projectDir(project);
     const dir = this.ws.worktreeDir(project, task);
-    if (!(await pathExists(`${dir}/.git`))) throw new AppError('not_found', '尚未建立工作副本');
+    if (!(await pathExists(`${dir}/.git`))) throw new AppError('not_found', 'worktree_missing');
     const r = await git(repo, ['worktree', 'remove', dir]);
-    if (r.code !== 0) throw new AppError('conflict', '副本有未提交的變更，請先收編或手動清理');
+    if (r.code !== 0) throw new AppError('conflict', 'worktree_dirty');
     const d = await git(repo, ['branch', '-d', this.branch(task)]);
     if (d.code !== 0) log.warn('分支未合併，保留', { project, task, branch: this.branch(task) });
   }

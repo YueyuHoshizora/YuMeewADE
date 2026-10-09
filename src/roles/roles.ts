@@ -58,13 +58,13 @@ export function resolveLaunch(roles: Roles, task: Pick<Task, 'role' | 'cli' | 'm
   const role = task.role ? roles.roles[task.role] : undefined;
   const main = role?.main;
   const cli = override.cli || task.cli || main?.cli || '';
-  if (!cli || cli === HUMAN) throw new AppError('bad_request', '此作業未指定可執行的 CLI（role 為人或未設定）');
+  if (!cli || cli === HUMAN) throw new AppError('bad_request', 'no_cli_for_task');
   // 換了 CLI 就不能沿用別的 CLI 的模型
   const sameCliAsTask = !override.cli || override.cli === task.cli;
   const sameCliAsRole = cli === main?.cli;
   let model = override.model || (sameCliAsTask ? task.model : '') || (sameCliAsRole ? main?.model : '') || '';
   if (model === 'default') model = '';
   const effort = override.effort || task.effort || main?.effort || '';
-  if (effort && !EFFORTS.includes(effort as (typeof EFFORTS)[number])) throw new AppError('bad_request', 'effort 不合法');
+  if (effort && !EFFORTS.includes(effort as (typeof EFFORTS)[number])) throw new AppError('bad_request', 'invalid_effort');
   return { cli, model, effort };
 }

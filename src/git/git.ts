@@ -38,7 +38,7 @@ export async function gitOk(cwd: string, args: string[]): Promise<string> {
   const r = await git(cwd, args);
   if (r.code !== 0) {
     log.error('git 失敗', undefined, { cwd, args, code: r.code, stderr: r.stderr.slice(0, 500) });
-    throw new AppError('internal', 'git 指令失敗', { cause: new Error(r.stderr.slice(0, 500)) });
+    throw new AppError('internal', 'git_failed', { cause: new Error(r.stderr.slice(0, 500)) });
   }
   return r.stdout;
 }
