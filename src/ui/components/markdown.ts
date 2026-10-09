@@ -1,5 +1,6 @@
 import { request } from '../api.ts';
 import { el, button } from './dom.ts';
+import { t } from '../i18n/index.ts';
 
 // 不使用 HTML parser：AI 回覆也視為不可信任的文字，網址只接受 HTTP(S)。
 function inline(parent: HTMLElement, value: string): void {
@@ -28,18 +29,22 @@ export function markdown(value: string): HTMLElement {
   while (i < lines.length) {
     const line = lines[i] ?? '';
     if (line.startsWith('```')) {
-      const code: string[] = []; i++;
+      const language = line.slice(3).trim(); const code: string[] = []; i++;
       while (i < lines.length && !lines[i]?.startsWith('```')) code.push(lines[i++] ?? '');
-      const pre = el('pre'); pre.append(el('code', '', code.join('\n'))); node.append(pre); i++; continue;
+      const text = code.join('\n'); const pre = el('pre'); pre.append(el('code', '', text));
+      const copy = button(t('markdown.copy'), async () => { await navigator.clipboard.writeText(text); copy.textContent = t('markdown.copied'); window.setTimeout(() => { copy.textContent = t('markdown.copy'); }, 1500); });
+      const block = el('div', 'code-block'); const bar = el('div', 'code-toolbar'); bar.append(el('span', 'muted', language), copy); block.append(bar, pre); node.append(block); i++; continue;
     }
     if (!line.trim()) { i++; continue; }
     const heading = /^(#{1,6})\s+(.+)$/.exec(line);
     if (heading) { const h = el(`h${Math.min(6, heading[1]!.length)}` as 'h1'); inline(h, heading[2]!); node.append(h); i++; continue; }
-    if (line.includes('|') && /^\s*\|?\s*:?-{3,}/.test(lines[i + 1] ?? '')) {
+    const cells = (s: string): string[] => s.trim().replace(/^\||(?<!\\)\|$/g, '').split(/(?<!\\)\|/).map(v => v.trim().replace(/\\\|/g, '|'));
+    const separators = cells(lines[i + 1] ?? ''); const headers = cells(line);
+    if (line.includes('|') && separators.length === headers.length && separators.every(s => /^:?-{3,}:?$/.test(s))) {
       const table = el('table'); const head = el('thead'); const body = el('tbody'); const tr = el('tr');
-      const cells = (s: string) => s.trim().replace(/^\||\|$/g, '').split('|').map(v => v.trim());
-      for (const cell of cells(line)) { const th = el('th'); inline(th, cell); tr.append(th); } head.append(tr); i += 2;
-      while (i < lines.length && lines[i]?.includes('|')) { const r = el('tr'); for (const cell of cells(lines[i++]!)) { const td = el('td'); inline(td, cell); r.append(td); } body.append(r); }
+      const align = separators.map(s => s.startsWith(':') && s.endsWith(':') ? 'center' : s.endsWith(':') ? 'right' : 'left');
+      for (const [at, cell] of headers.entries()) { const th = el('th'); th.style.textAlign = align[at]!; inline(th, cell); tr.append(th); } head.append(tr); i += 2;
+      while (i < lines.length && lines[i]?.includes('|')) { const r = el('tr'); const values = cells(lines[i++]!); for (const [at] of headers.entries()) { const td = el('td'); td.style.textAlign = align[at]!; inline(td, values[at] ?? ''); r.append(td); } body.append(r); }
       table.append(head, body); const wrap = el('div', 'table-scroll'); wrap.append(table); node.append(wrap); continue;
     }
     if (/^\s*(?:[-*+] |\d+\. )/.test(line)) {

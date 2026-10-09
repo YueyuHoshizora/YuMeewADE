@@ -1,6 +1,7 @@
 import type { MessageKey } from './zh-TW.ts';
 
 export const zhCN: Record<MessageKey, string> = {
+  'markdown.copy': '复制代码', 'markdown.copied': '已复制',
   'chat.interrupted': '核心重新启动，作业已中断',
   'lang.name': '简体中文',
   'app.title': 'YuMeewADE',

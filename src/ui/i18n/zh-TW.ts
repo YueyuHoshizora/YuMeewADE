@@ -1,5 +1,6 @@
 // 繁體中文定義訊息契約；專案內容與 AI 輸出不翻譯。
 export const zhTW = {
+  'markdown.copy': '複製程式碼', 'markdown.copied': '已複製',
   'chat.interrupted': '核心重新啟動，作業已中斷',
   'lang.name': '繁體中文',
   'app.title': 'YuMeewADE',

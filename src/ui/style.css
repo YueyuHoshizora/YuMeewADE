@@ -60,3 +60,4 @@ body { height: 100dvh; display: grid; grid-template-rows: 64px minmax(0, 1fr); }
   .composer-controls .compact-picker { flex-basis: 100%; }
   .task-footer > .row { flex-wrap: wrap; }
 }
+.code-block{min-width:0;margin:12px 0}.code-toolbar{display:flex;align-items:center;justify-content:space-between;gap:8px}.code-toolbar button{font-size:12px;padding:3px 8px}.code-block pre{margin-top:4px;overflow:auto}.table-scroll{max-width:100%;overflow-x:auto}.table-scroll table{border-collapse:collapse}.table-scroll th,.table-scroll td{border:1px solid var(--border);padding:6px 10px}

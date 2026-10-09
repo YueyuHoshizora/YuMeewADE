@@ -1,6 +1,7 @@
 import type { MessageKey } from './zh-TW.ts';
 
 export const it: Record<MessageKey, string> = {
+  'markdown.copy': 'Copia codice', 'markdown.copied': 'Copiato',
   'chat.interrupted': 'Attività interrotta dal riavvio del nucleo',
   'lang.name': 'Italiano',
   'app.title': 'YuMeewADE',
