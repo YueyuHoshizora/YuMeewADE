@@ -1,0 +1,31 @@
+# electron-builder 設定：本機 npm run dist 與 GitHub Actions 共用。產物未簽名、未公證（PLAN.md 假設 7）。
+appId: dev.yueyuhoshizora.yumeewade
+productName: YuMeewADE
+copyright: Copyright © 2026 Yueyu Hoshizora. Apache-2.0.
+directories:
+  output: release
+  buildResources: build
+files:
+  - dist/**
+  - templates/**
+  - config.yaml
+  - package.json
+  - LICENSE
+asar: true
+npmRebuild: false
+mac:
+  category: public.app-category.developer-tools
+  target: [dmg, zip]
+  identity: null
+  hardenedRuntime: false
+  gatekeeperAssess: false
+win:
+  target: [nsis, portable]
+  signAndEditExecutable: false
+nsis:
+  oneClick: false
+  allowToChangeInstallationDirectory: true
+linux:
+  target: [AppImage, deb]
+  category: Development
+  maintainer: yueyuhoshizora@gmail.com

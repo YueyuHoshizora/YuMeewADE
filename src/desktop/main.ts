@@ -1,0 +1,128 @@
+// Electron 主行程：只管視窗與生命週期，核心以 utilityProcess 另起（與 npm start 同一份 dist/server/main.js）。
+// renderer 走與網頁版完全相同的 http://127.0.0.1:{port}，不另立協定（安全節 4）。
+
+import { app, BrowserWindow, dialog, shell, utilityProcess, type UtilityProcess } from 'electron';
+import { promises as fs } from 'node:fs';
+import http from 'node:http';
+import path from 'node:path';
+import { loadConfig } from '../shared/config.ts';
+
+const HERE = path.dirname(new URL(import.meta.url).pathname);
+const APP_ROOT = path.join(HERE, '..', '..');
+const SERVER_ENTRY = path.join(HERE, '..', 'server', 'main.js');
+const PRELOAD = path.join(HERE, 'preload.cjs');
+
+let core: UtilityProcess | null = null;
+let quitting = false;
+
+/** 桌面版設定檔固定在使用者設定目錄；第一次啟動從範本複製。 */
+async function ensureConfigPath(): Promise<string> {
+  const fromEnv = process.env['YUMEEWADE_CONFIG'];
+  if (fromEnv) return fromEnv;
+  const file = path.join(app.getPath('userData'), 'config.yaml');
+  try {
+    await fs.access(file);
+  } catch {
+    await fs.mkdir(path.dirname(file), { recursive: true });
+    await fs.copyFile(path.join(APP_ROOT, 'config.yaml'), file);
+  }
+  process.env['YUMEEWADE_CONFIG'] = file;
+  return file;
+}
+
+/** 核心是否已在該 port 回應（可能是另一個網頁版實例）。 */
+function probe(host: string, port: number): Promise<boolean> {
+  const { promise, resolve } = Promise.withResolvers<boolean>();
+  const req = http.get({ host, port, path: '/api/bootstrap', headers: { Host: `${host}:${port}` }, timeout: 1500 }, (res) => {
+    res.resume();
+    resolve(res.statusCode === 200);
+  });
+  req.on('error', () => resolve(false));
+  req.on('timeout', () => {
+    req.destroy();
+    resolve(false);
+  });
+  return promise;
+}
+
+function delay(ms: number): Promise<void> {
+  const { promise, resolve } = Promise.withResolvers<void>();
+  setTimeout(resolve, ms);
+  return promise;
+}
+
+async function startCore(host: string, port: number): Promise<void> {
+  if (await probe(host, port)) return; // 已有核心在跑，直接用
+  core = utilityProcess.fork(SERVER_ENTRY, [], { env: { ...process.env }, stdio: 'pipe', serviceName: 'yumeewade-core' });
+  core.stdout?.on('data', (c: Buffer) => process.stdout.write(c));
+  core.stderr?.on('data', (c: Buffer) => process.stderr.write(c));
+  core.on('exit', (code) => {
+    core = null;
+    if (code !== 0 && !quitting) {
+      dialog.showErrorBox('YuMeewADE', `核心程序結束（代碼 ${code}）。請檢查設定檔與日誌。`);
+      app.quit();
+    }
+  });
+  const deadline = Date.now() + 15_000;
+  while (Date.now() < deadline) {
+    if (await probe(host, port)) return;
+    if (!core) throw new Error('核心啟動失敗');
+    await delay(250);
+  }
+  throw new Error('核心啟動逾時');
+}
+
+function createWindow(url: string): BrowserWindow {
+  const win = new BrowserWindow({
+    width: 1280,
+    height: 820,
+    minWidth: 900,
+    minHeight: 560,
+    title: 'YuMeewADE',
+    webPreferences: {
+      preload: PRELOAD,
+      contextIsolation: true,
+      nodeIntegration: false,
+      sandbox: true,
+      webSecurity: true,
+    },
+  });
+  const origin = new URL(url).origin;
+  win.webContents.on('will-navigate', (ev, target) => {
+    if (new URL(target).origin !== origin) {
+      ev.preventDefault();
+      if (/^https?:/.test(target)) void shell.openExternal(target);
+    }
+  });
+  win.webContents.setWindowOpenHandler(({ url: target }) => {
+    if (/^https?:/.test(target)) void shell.openExternal(target);
+    return { action: 'deny' };
+  });
+  void win.loadURL(url);
+  return win;
+}
+
+app.on('before-quit', () => {
+  quitting = true;
+  core?.kill();
+});
+
+app.on('window-all-closed', () => app.quit());
+
+app
+  .whenReady()
+  .then(async () => {
+    await ensureConfigPath();
+    const config = await loadConfig();
+    const { host, port } = config.server;
+    await startCore(host, port);
+    const url = `http://${host}:${port}/`;
+    createWindow(url);
+    app.on('activate', () => {
+      if (BrowserWindow.getAllWindows().length === 0) createWindow(url);
+    });
+  })
+  .catch((err: unknown) => {
+    dialog.showErrorBox('YuMeewADE 無法啟動', err instanceof Error ? err.message : String(err));
+    app.quit();
+  });

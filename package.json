@@ -3,6 +3,7 @@
   "version": "0.1.0",
   "description": "跨平台 AI 專案協作 App：台帳、作業、AI 對話同畫面管理",
   "license": "Apache-2.0",
+  "author": "Yueyu Hoshizora",
   "private": true,
   "type": "module",
   "main": "dist/desktop/main.js",
@@ -16,7 +17,7 @@
     "start": "node dist/server/main.js",
     "dev": "tsc -p tsconfig.build.json --watch --preserveWatchOutput & vite build --watch & node --watch dist/server/main.js",
     "desktop": "electron .",
-    "dist": "electron-builder --config electron-builder.yml"
+    "dist": "electron-builder --config electron-builder.yml --publish never"
   },
   "devDependencies": {
     "@types/node": "24.19.1",
