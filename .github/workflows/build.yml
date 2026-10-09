@@ -69,6 +69,6 @@ jobs:
         with:
           path: artifacts
           merge-multiple: true
-      - run: node .github/workflows/release.ts
+      - run: node scripts/release.ts
         env:
           GH_TOKEN: ${{ github.token }}
