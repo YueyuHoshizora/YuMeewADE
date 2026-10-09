@@ -62,3 +62,21 @@ test('worktree：衝突時中止，本體不變；未提交時拒絕移除', () 
     await fs.writeFile(path.join(dir, 'new.txt'), 'x');
     await assert.rejects(wt.remove('P', 'T2'), (e: unknown) => e instanceof AppError && e.code === 'conflict');
   }));
+
+test('建立副本時複製未追蹤的 .env／.npmrc，已追蹤的不重複；範本 rules.md 存在', () =>
+  withTmpWorkspace(async (ws) => {
+    await new ProjectLedger(ws).create('P');
+    const repo = ws.projectDir('P');
+    assert.match(await fs.readFile(path.join(repo, '.ai', 'rules.md'), 'utf8'), /共用規則/);
+    assert.match(await fs.readFile(path.join(repo, 'CLAUDE.md'), 'utf8'), /Claude Code/);
+    await fs.writeFile(path.join(repo, '.env'), 'SECRET=1\n');
+    await fs.writeFile(path.join(repo, '.npmrc'), 'registry=x\n');
+    await fs.writeFile(path.join(repo, 'other.txt'), 'no\n');
+    const wt = new WorktreeService(ws, 100_000);
+    const dir = await wt.ensure('P', 'T3');
+    assert.equal(await fs.readFile(path.join(dir, '.env'), 'utf8'), 'SECRET=1\n');
+    assert.equal(await fs.readFile(path.join(dir, '.npmrc'), 'utf8'), 'registry=x\n');
+    await assert.rejects(fs.access(path.join(dir, '.ai')));
+    // .env 在副本中是被 .gitignore 忽略的，不會進 diff
+    assert.doesNotMatch((await wt.diff('P', 'T3')).diff, /SECRET/);
+  }));

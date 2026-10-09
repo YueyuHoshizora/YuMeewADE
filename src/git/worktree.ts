@@ -2,6 +2,7 @@
 // 收編由人觸發：先在副本與本體各自提交，再 --no-ff 合併；衝突即中止，本體不變。
 
 import { promises as fs } from 'node:fs';
+import path from 'node:path';
 import type { Workspace } from '../ledger/workspace.ts';
 import { AppError } from '../shared/errors.ts';
 import { pathExists } from '../shared/fsx.ts';
@@ -35,6 +36,7 @@ export class WorktreeService {
     const branch = this.branch(task);
     if (await branchExists(repo, branch)) await gitOk(repo, ['worktree', 'add', '-q', dir, branch]);
     else await gitOk(repo, ['worktree', 'add', '-q', '-b', branch, dir, 'HEAD']);
+    await copyLocalSecrets(repo, dir);
     log.info('建立工作副本', { project, task, dir, branch });
     return dir;
   }
@@ -101,4 +103,21 @@ export class WorktreeService {
     const d = await git(repo, ['branch', '-d', this.branch(task)]);
     if (d.code !== 0) log.warn('分支未合併，保留', { project, task, branch: this.branch(task) });
   }
+}
+
+/** 未追蹤的本機設定（.env*、.npmrc 等）複製到副本，AI 才跑得起測試；已追蹤的由 git 自己帶。 */
+const LOCAL_SECRET_GLOBS = [/^\.env(\..+)?$/, /^\.npmrc$/, /^\.dev\.vars(\..+)?$/];
+export async function copyLocalSecrets(repo: string, dir: string): Promise<string[]> {
+  const tracked = new Set((await git(repo, ['ls-files'])).stdout.split('\n'));
+  const copied: string[] = [];
+  for (const name of await fs.readdir(repo)) {
+    if (tracked.has(name) || !LOCAL_SECRET_GLOBS.some((re) => re.test(name))) continue;
+    try {
+      await fs.copyFile(path.join(repo, name), path.join(dir, name));
+      copied.push(name);
+    } catch {
+      /* 目錄或無法讀取：略過 */
+    }
+  }
+  return copied;
 }

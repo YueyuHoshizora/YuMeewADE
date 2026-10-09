@@ -23,8 +23,9 @@ export function buildPreamble(p: Preamble): string {
     roleLine,
     `專案：${p.project}（主專案目錄 ${p.projectDir}）`,
     `作業 ${p.taskId}：${p.taskTitle}`,
-    `作業檔：${p.taskFile}（可更新 state／question／步驟勾選；state 值：未開始／進行中／等待回覆／暫停／完成）`,
+    `作業檔：${p.taskFile}（可更新 question／步驟勾選；state 值：未開始／進行中／等待回覆／暫停／完成，但「完成」由人確認，不要自行寫入）`,
     p.cwd === p.projectDir ? `工作目錄：${p.cwd}` : `工作目錄：${p.cwd}（git worktree 副本；只在此修改，收編到主專案由人操作）`,
+    `工作規則：先讀 ${p.projectDir}/.ai/rules.md；長對話時依規則把摘要存到 ${p.projectDir}/.ai/memory/。`,
     '需要人判斷時，把問題寫進作業檔 question 並把 state 設為「等待回覆」。',
   ].join('\n');
 }

@@ -85,6 +85,8 @@ export class ProjectLedger {
     const content = template.replaceAll('{{name}}', name).replaceAll('{{date}}', todayDate());
     await fs.mkdir(path.join(dir, '.ai', 'tasks'), { recursive: true });
     await fs.mkdir(path.join(dir, '.ai', 'chat'), { recursive: true });
+    // templates/project/：rules.md、memory/INDEX.md、CLAUDE.md、AGENTS.md（AI 啟動時自動讀的工作規則）
+    await fs.cp(path.join(TEMPLATES_DIR, 'project'), dir, { recursive: true, force: false, errorOnExist: false });
     await atomicWrite(path.join(dir, 'PROJECT.md'), content);
     await atomicWrite(path.join(dir, '.gitignore'), PROJECT_GITIGNORE);
     return this.get(name);
