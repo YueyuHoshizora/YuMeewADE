@@ -9,6 +9,7 @@ import { fileURLToPath } from 'node:url';
 import { hostAuthority, loadConfig } from '../shared/config.ts';
 import { probe, waitForCore } from './probe.ts';
 import { acceptsFrame, validBadgeCount } from './policy.ts';
+import { stopOwnedCore } from './shutdown.ts';
 
 const HERE = path.dirname(fileURLToPath(import.meta.url));
 const APP_ROOT = path.join(HERE, '..', '..');
@@ -17,6 +18,7 @@ const PRELOAD = path.join(HERE, 'preload.cjs');
 
 let core: UtilityProcess | null = null;
 let quitting = false;
+let shutdownComplete = false;
 let mainWindow: BrowserWindow | null = null;
 let coreOrigin = '';
 const primaryInstance = app.requestSingleInstanceLock();
@@ -49,6 +51,7 @@ async function ensureConfigPath(): Promise<string> {
 
 async function startCore(host: string, port: number): Promise<void> {
   if (await probe(host, port)) return; // 已有核心在跑，直接用
+  if (quitting) return;
   core = utilityProcess.fork(SERVER_ENTRY, [], { env: { ...process.env }, stdio: 'pipe', serviceName: 'yumeewade-core' });
   core.stdout?.on('data', (c: Buffer) => process.stdout.write(c));
   core.stderr?.on('data', (c: Buffer) => process.stderr.write(c));
@@ -97,9 +100,17 @@ function createWindow(url: string): BrowserWindow {
   return win;
 }
 
-app.on('before-quit', () => {
+app.on('before-quit', (event) => {
+  if (shutdownComplete) return;
+  const ownedCore = core;
+  if (!ownedCore) { quitting = true; return; }
+  event.preventDefault();
+  if (quitting) return;
   quitting = true;
-  core?.kill();
+  void stopOwnedCore(ownedCore).then(() => {
+    shutdownComplete = true;
+    app.quit();
+  });
 });
 
 app.on('window-all-closed', () => app.quit());
@@ -124,14 +135,17 @@ if (primaryInstance) app
     await ensureConfigPath();
     const config = await loadConfig();
     const { host, port } = config.server;
+    if (quitting) return;
     await startCore(host, port);
     const url = `http://${hostAuthority(host, port)}/`;
+    if (quitting) return;
     createWindow(url);
     app.on('activate', () => {
       if (BrowserWindow.getAllWindows().length === 0) createWindow(url);
     });
   })
   .catch((err: unknown) => {
+    if (quitting) return;
     dialog.showErrorBox('YuMeewADE 無法啟動', err instanceof Error ? err.message : String(err));
     app.quit();
   });
