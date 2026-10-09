@@ -6,4 +6,6 @@ electron.contextBridge.exposeInMainWorld('yumeewade', Object.freeze({
   desktop: true,
   platform: process.platform,
   pickFolder: (): Promise<string | null> => electron.ipcRenderer.invoke('pick-folder') as Promise<string | null>,
+  setBadge: (count: number): void => electron.ipcRenderer.send('set-badge', count),
+  focus: (): void => electron.ipcRenderer.send('focus-window'),
 }));

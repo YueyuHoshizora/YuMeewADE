@@ -8,6 +8,7 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { hostAuthority, loadConfig } from '../shared/config.ts';
 import { probe, waitForCore } from './probe.ts';
+import { acceptsFrame, validBadgeCount } from './policy.ts';
 
 const HERE = path.dirname(fileURLToPath(import.meta.url));
 const APP_ROOT = path.join(HERE, '..', '..');
@@ -16,6 +17,20 @@ const PRELOAD = path.join(HERE, 'preload.cjs');
 
 let core: UtilityProcess | null = null;
 let quitting = false;
+let mainWindow: BrowserWindow | null = null;
+let coreOrigin = '';
+const primaryInstance = app.requestSingleInstanceLock();
+if (!primaryInstance) app.quit();
+
+function focusWindow(): void {
+  if (!mainWindow || mainWindow.isDestroyed()) return;
+  if (mainWindow.isMinimized()) mainWindow.restore();
+  mainWindow.show();
+  mainWindow.focus();
+  if (process.platform === 'darwin') app.focus({ steal: true });
+}
+
+app.on('second-instance', focusWindow);
 
 /** 桌面版設定檔固定在使用者設定目錄；第一次啟動從範本複製。 */
 async function ensureConfigPath(): Promise<string> {
@@ -53,8 +68,8 @@ function createWindow(url: string): BrowserWindow {
   const win = new BrowserWindow({
     width: 1280,
     height: 820,
-    minWidth: 900,
-    minHeight: 560,
+    minWidth: 640,
+    minHeight: 480,
     title: 'YuMeewADE',
     webPreferences: {
       preload: PRELOAD,
@@ -65,6 +80,9 @@ function createWindow(url: string): BrowserWindow {
     },
   });
   const origin = new URL(url).origin;
+  coreOrigin = origin;
+  mainWindow = win;
+  win.on('closed', () => { if (mainWindow === win) mainWindow = null; });
   win.webContents.on('will-navigate', (ev, target) => {
     if (new URL(target).origin !== origin) {
       ev.preventDefault();
@@ -86,17 +104,22 @@ app.on('before-quit', () => {
 
 app.on('window-all-closed', () => app.quit());
 
-app
+if (primaryInstance) app
   .whenReady()
   .then(async () => {
     ipcMain.handle('pick-folder', async (event) => {
-      const win = BrowserWindow.fromWebContents(event.sender);
-      if (!win) return null;
-      // 僅由我們的 renderer 呼叫；不向任意遠端 frame 暴露原生對話框。
-      const url = new URL(event.senderFrame?.url ?? 'about:blank');
-      if (url.protocol !== 'http:' || !['127.0.0.1', 'localhost', '[::1]'].includes(url.hostname)) return null;
+      const win = mainWindow;
+      if (!win || event.sender !== win.webContents || !acceptsFrame(event.senderFrame?.url, coreOrigin)) return null;
       const result = await dialog.showOpenDialog(win, { properties: ['openDirectory'] });
       return result.canceled ? null : result.filePaths[0] ?? null;
+    });
+    ipcMain.on('set-badge', (event, count: unknown) => {
+      if (!mainWindow || event.sender !== mainWindow.webContents || !acceptsFrame(event.senderFrame?.url, coreOrigin) || !validBadgeCount(count)) return;
+      if (process.platform !== 'win32') app.setBadgeCount(count);
+    });
+    ipcMain.on('focus-window', (event) => {
+      if (!mainWindow || event.sender !== mainWindow.webContents || !acceptsFrame(event.senderFrame?.url, coreOrigin)) return;
+      focusWindow();
     });
     await ensureConfigPath();
     const config = await loadConfig();
