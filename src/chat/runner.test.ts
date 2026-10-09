@@ -76,3 +76,15 @@ test('concurrent sends reserve slots; queue limit and failed preparation release
   assert.equal(s.runner.isRunning('P', third.id), false);
   await s.runner.send({ project: 'P', task: third.id, text: 'works' }); await s.runner.whenIdle();
 }));
+
+test('核心關閉停止忙碌執行、保留隊列且拒絕新指示', () => withTmpWorkspace(async ws => {
+  const s = await setup(ws, { chunkMs: 5, stopMs: 2 });
+  await s.send('running [slow]');
+  await s.send('keep queued', { mode: 'queue' });
+  await s.runner.stopAll();
+  await s.runner.whenIdle();
+  assert.equal(s.runner.running().length, 0);
+  assert.equal((await s.store.readQueue('P', s.task.id))[0]?.text, 'keep queued');
+  assert.ok((await s.store.readLog('P', s.task.id)).some(row => row.role === 'assistant' && row.stopped));
+  await assert.rejects(s.send('rejected'), { code: 'unavailable' });
+}));

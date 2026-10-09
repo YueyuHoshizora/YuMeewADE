@@ -109,6 +109,11 @@ export class App {
     this.changeTimer.unref();
   }
 
+  async shutdown(): Promise<void> {
+    try { await this.runner.stopAll(); }
+    finally { this.close(); }
+  }
+
   close(): void {
     if (this.changeTimer) clearTimeout(this.changeTimer);
     this.sse.closeAll();

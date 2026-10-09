@@ -16,13 +16,25 @@ async function main(): Promise<void> {
   const url = `http://${hostAuthority(config.server.host, config.server.port)}`;
   log.info('YuMeewADE 已啟動', { url, root: app.ws.root, config: config.source ?? '(預設)', version: app.version });
   process.stdout.write(`YuMeewADE ${app.version} ${url}\n`);
+  let closing = false;
   const shutdown = () => {
-    log.info('收到結束訊號，關閉中');
-    server.close(() => process.exit(0));
-    setTimeout(() => process.exit(0), 2000).unref();
+    if (closing) return;
+    closing = true;
+    log.info('收到結束訊號，停止 AI 並保存紀錄');
+    const deadline = setTimeout(() => process.exit(0), 6000);
+    void (async () => {
+      try {
+        await app.shutdown();
+        await new Promise<void>(resolve => { server.close(() => resolve()); server.closeAllConnections(); });
+        await log.flush();
+      } catch (err) { log.error('核心關閉失敗', err); }
+      finally { clearTimeout(deadline); process.exit(0); }
+    })();
   };
   process.on('SIGINT', shutdown);
   process.on('SIGTERM', shutdown);
+  const parentPort = (process as NodeJS.Process & { parentPort?: { on(event: 'message', listener: (message: { data: unknown }) => void): void } }).parentPort;
+  parentPort?.on('message', message => { if (message.data === 'shutdown') shutdown(); });
 }
 
 main().catch(async (err) => {

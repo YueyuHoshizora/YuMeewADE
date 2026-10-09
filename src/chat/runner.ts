@@ -34,6 +34,7 @@ export class ChatRunner extends EventEmitter {
   private readonly locks = new Map<string, Promise<unknown>>();
   private readonly unreadTasks = new Map<string, { project: string; task: string }>();
   private readonly jobs = new Set<Promise<void>>();
+  private shuttingDown = false;
   constructor(deps: RunnerDeps) { super(); this.deps = deps; }
   private slot(p: string, t: string): Slot {
     const key = `${p}\0${t}`; let s = this.slots.get(key);
@@ -54,12 +55,28 @@ export class ChatRunner extends EventEmitter {
   unread(): { project: string; task: string }[] { return [...this.unreadTasks.values()]; }
   markRead(p: string, t: string): void { if (this.unreadTasks.delete(`${p}\0${t}`)) this.deps.onChanged(p, t); }
   async whenIdle(): Promise<void> { while (this.jobs.size) await Promise.all([...this.jobs]); }
+  async stopAll(): Promise<void> {
+    this.shuttingDown = true;
+    for (const s of this.slots.values()) { s.text = ''; s.run?.stop(); }
+    let timer: NodeJS.Timeout | undefined;
+    try {
+      await Promise.race([
+        (async () => {
+          await Promise.allSettled([...this.locks.values()]);
+          for (const s of this.slots.values()) { s.text = ''; s.run?.stop(); }
+          await Promise.allSettled([...this.slots.values()].map(s => s.finished));
+        })(),
+        new Promise<void>(resolve => { timer = setTimeout(resolve, 4500); }),
+      ]);
+    } finally { clearTimeout(timer); }
+  }
   async snapshot(p: string, t: string): Promise<{ rows: ChatRow[]; busy: Busy | null; partial: string; queue: QueueItem[] }> {
     await this.deps.tasks.get(p, t); const s = this.slot(p, t);
     return { rows: await this.deps.store.readLog(p, t), busy: s.busy, partial: s.partial, queue: await this.deps.store.readQueue(p, t) };
   }
   send(input: SendInput): Promise<SendResult> { return this.lock(input.project, input.task, () => this.sendLocked(input)); }
   private async sendLocked(input: SendInput): Promise<SendResult> {
+    if (this.shuttingDown) throw new AppError('unavailable');
     const { project: p, task: t } = input; const s = this.slot(p, t);
     let chosen = input;
     if (input.fromQueue) {
@@ -92,6 +109,7 @@ export class ChatRunner extends EventEmitter {
     try {
       const cwd = await this.deps.worktree.prepare(p, t);
       const images = await attachImages(this.deps.ws, p, t, chosen.images ?? [], this.deps.limits.imagesPerSend);
+      if (this.shuttingDown) throw new AppError('unavailable');
       if (task.state === '完成') await this.deps.completion.revoke(p, t);
       await this.deps.tasks.update(p, t, { state: '進行中', cli: pick.cli, model: pick.model, effort: pick.effort, ...(chosen.answer ? { question: '' } : {}) });
       if (input.fromQueue) { const q = await this.deps.store.updateQueue(p, t, q => q.filter(x => x.id !== input.fromQueue)); this.publish(p, t, { event: 'queue', data: q }); }
@@ -106,7 +124,7 @@ export class ChatRunner extends EventEmitter {
       await this.deps.oplog.record({ action: chosen.mode === 'redo' ? 'chatredo' : chosen.mode === 'amend' ? 'chatamend' : 'chat', project: p, task: t }); this.deps.onChanged(p, t);
       s.finished = this.execute(p, t, item, provider, meta, { prompt: buildPrompt({ preamble, handoff, text: item.text, images }), cwd, ...(resumeId ? { resumeId } : {}), model: pick.model, effort: pick.effort, fullAccess: settings.fullAccess[item.ai] ?? provider.dangerous, addDirs: [path.join(this.deps.ws.projectDir(p), '.ai')], images });
       const job = s.finished.then(async () => { await this.lock(p, t, async () => {
-        if (s.busy) return;
+        if (s.busy || this.shuttingDown) return;
         const queue = await this.deps.store.readQueue(p, t); const first = queue[0];
         if (!first || first.error || s.text === '') return;
         try { await this.sendLocked({ project: p, task: t, text: first.text, fromQueue: first.id }); }
@@ -119,6 +137,7 @@ export class ChatRunner extends EventEmitter {
   private async execute(p: string, t: string, item: QueueItem, provider: CliProvider, meta: ChatMeta, opts: Parameters<CliProvider['send']>[0]): Promise<void> {
     const s = this.slot(p, t); const started = Date.now(); let result: string | undefined; let sid = opts.resumeId; let error = ''; const asks: Ask[] = []; let writes = Promise.resolve();
     try {
+      if (this.shuttingDown) throw new AppError('unavailable');
       const run = provider.send(opts, ev => {
         if (ev.type === 'session') sid = ev.id;
         else if (ev.type === 'delta') { s.partial += ev.text; this.publish(p, t, { event: 'delta', data: { request: item.id, text: ev.text } }); }
