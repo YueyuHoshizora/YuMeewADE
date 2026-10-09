@@ -108,13 +108,27 @@ export function runLineProcess(opts: { command: string; args: string[]; cwd: str
   child.stdin?.on('error', () => undefined);
   child.stdin?.end(opts.prompt);
   let buf = '';
+  let bufBytes = 0;
+  let failure: string | undefined;
   child.stdout?.setEncoding('utf8');
   child.stdout?.on('data', (chunk: string) => {
-    buf += chunk;
-    let idx: number;
-    while ((idx = buf.indexOf('\n')) >= 0) {
-      const line = buf.slice(0, idx).trim();
-      buf = buf.slice(idx + 1);
+    if (settled || failure) return;
+    let start = 0;
+    while (start < chunk.length) {
+      const idx = chunk.indexOf('\n', start);
+      const part = chunk.slice(start, idx < 0 ? undefined : idx);
+      bufBytes += Buffer.byteLength(part);
+      if (bufBytes > 16 * 1024 * 1024) {
+        failure = 'CLI line output limit exceeded';
+        log.warn('CLI 輸出超過單行上限', { label: opts.label });
+        buf = '';
+        cancelStop = terminateTree(child, () => finish({ ok: false, stopped: false, reason: failure }));
+        return;
+      }
+      buf += part;
+      if (idx < 0) break;
+      const line = buf.trim();
+      buf = ''; bufBytes = 0; start = idx + 1;
       if (!line.startsWith('{')) continue;
       try {
         onLine(JSON.parse(line) as Record<string, unknown>);
@@ -128,20 +142,21 @@ export function runLineProcess(opts: { command: string; args: string[]; cwd: str
     if (stderr.length < STDERR_SNIPPET) stderr += chunk;
   });
   child.on('close', (code, signal) => {
-    if (buf.trim().startsWith('{')) {
+    if (!failure && buf.trim().startsWith('{')) {
       try {
         onLine(JSON.parse(buf.trim()) as Record<string, unknown>);
       } catch {
         /* 尾端不完整 */
       }
     }
-    if (stopped) finish({ ok: false, stopped: true });
+    if (failure) finish({ ok: false, stopped: false, reason: failure });
+    else if (stopped) finish({ ok: false, stopped: true });
     else if (code === 0) finish({ ok: true, stopped: false });
     else finish({ ok: false, stopped: false, reason: `exit ${code ?? signal}: ${stderr.slice(0, STDERR_SNIPPET)}` });
   });
   return {
     stop: () => {
-      if (stopped || settled) return;
+      if (stopped || settled || failure) return;
       stopped = true;
       cancelStop = terminateTree(child, () => finish({ ok: false, stopped: true }));
     },

@@ -23,3 +23,11 @@ test('非推論指令逾時也會停止整個行程樹', { skip: process.platfor
   assert.equal(result.ok, false);
   assert.equal(result.reason, 'command timeout');
 });
+
+test('沒有換行的超大輸出會失敗而不是無限制累積', { timeout: 8000 }, async () => {
+  const run = runLineProcess({ command: process.execPath, args: ['-e', 'process.stdout.write(\"x\".repeat(17 * 1024 * 1024)); setInterval(() => {}, 1000)'], cwd: process.cwd(), env: process.env, prompt: '', label: 'limit-test' }, () => assert.fail('不應解析為 JSON'));
+  const outcome = await run.done;
+  assert.equal(outcome.ok, false);
+  assert.equal(outcome.stopped, false);
+  assert.equal(outcome.reason, 'CLI line output limit exceeded');
+});
