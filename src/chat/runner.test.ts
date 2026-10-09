@@ -88,3 +88,13 @@ test('核心關閉停止忙碌執行、保留隊列且拒絕新指示', () => wi
   assert.ok((await s.store.readLog('P', s.task.id)).some(row => row.role === 'assistant' && row.stopped));
   await assert.rejects(s.send('rejected'), { code: 'unavailable' });
 }));
+
+test('執行開始持久化 marker，正常完成後清除', () => withTmpWorkspace(async ws => {
+  const s = await setup(ws, { chunkMs: 5 });
+  const sent = await s.send('running [slow]');
+  const running = (await s.store.readMeta('P', s.task.id)).running;
+  assert.equal(running?.request, sent.request);
+  assert.equal(running?.ai, 'codex');
+  await s.runner.whenIdle();
+  assert.equal((await s.store.readMeta('P', s.task.id)).running, undefined);
+}));

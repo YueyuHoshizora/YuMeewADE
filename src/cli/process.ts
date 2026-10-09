@@ -156,7 +156,8 @@ function runResolvedLineProcess(opts: { command: string; args: string[]; cwd: st
         failure = 'CLI line output limit exceeded';
         log.warn('CLI 輸出超過單行上限', { label: opts.label });
         buf = '';
-        cancelStop = terminateTree(child, () => finish({ ok: false, stopped: false, reason: failure }));
+        const reason = failure;
+        cancelStop = terminateTree(child, () => finish({ ok: false, stopped: false, reason }));
         return;
       }
       buf += part;

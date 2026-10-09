@@ -93,6 +93,7 @@ export class ChatRunner extends EventEmitter {
     const provider = this.deps.providers[pick.cli];
     if (!provider) throw new AppError('bad_request', 'cli_unsupported');
     if (!await provider.available()) throw new AppError('bad_request', 'cli_unavailable');
+    if (this.shuttingDown) throw new AppError('unavailable');
     const item: QueueItem = { id: randomUUID(), text: chosen.text, ai: pick.cli, model: pick.model, effort: pick.effort, at: new Date().toISOString(), ...(chosen.images ? { images: chosen.images } : {}) };
     if (s.busy && chosen.mode === 'queue') {
       const queue = await this.deps.store.updateQueue(p, t, q => { if (q.length >= this.deps.limits.queueLength) throw new AppError('unavailable', 'queue_full'); return [...q, item]; });
@@ -119,6 +120,8 @@ export class ChatRunner extends EventEmitter {
       const preamble = resumeId ? `繼續作業 ${t}：${this.deps.ws.taskFile(p, t)}。工作目錄：${cwd}。先讀 ${path.join(this.deps.ws.projectDir(p), '.ai/rules.md')}；區切時更新作業檔，不要自己把 state 寫成 完成。\n請使用人類這次指示所使用的相同語言回覆。` : buildPreamble({ project: project.name, projectDir: this.deps.ws.projectDir(p), taskId: t, taskTitle: task.title, taskFile: this.deps.ws.taskFile(p, t), cwd, role: task.role, job: roles.roles[task.role]?.job ?? '', cli: item.ai });
       const handoff = buildHandoff(resumeId ? unseenRows(prior, meta, item.ai) : prior, this.deps.limits.handoffChars);
       const user: ChatRow = { at: item.at, role: 'user', text: item.text, to: item.ai, model: pick.model, effort: pick.effort, request: item.id, ...(s.busy.mode ? { mode: s.busy.mode } : {}), ...(images.length ? { images } : {}) };
+      meta.running = { request: item.id, ai: item.ai, model: pick.model, effort: pick.effort, startedAt: s.busy.startedAt };
+      await this.deps.store.writeMeta(p, t, meta);
       await this.deps.store.append(p, t, user); this.publish(p, t, { event: 'row', data: user }); this.publish(p, t, { event: 'busy', data: s.busy });
       s.text = item.text; s.partial = '';
       await this.deps.oplog.record({ action: chosen.mode === 'redo' ? 'chatredo' : chosen.mode === 'amend' ? 'chatamend' : 'chat', project: p, task: t }); this.deps.onChanged(p, t);
@@ -151,6 +154,7 @@ export class ChatRunner extends EventEmitter {
       if (!outcome.ok && !outcome.stopped) error = 'cli_failed';
       const row: ChatRow = { at: new Date().toISOString(), role: 'assistant', ai: item.ai, model: item.model ?? '', effort: item.effort ?? '', text: parsed.text, ms: Date.now() - started, request: item.id, ...(error ? { error } : {}), ...(outcome.stopped ? { stopped: true } : {}), ...(asks.length ? { asks } : {}) };
       await this.deps.store.append(p, t, row); this.publish(p, t, { event: 'row', data: row });
+      delete meta.running;
       if (sid) { meta.sessions[item.ai] = sid; meta.models[item.ai] = item.model ?? ''; } meta.seen[item.ai] = item.id; await this.deps.store.writeMeta(p, t, meta);
       if (asks.length && !outcome.stopped) await this.deps.tasks.update(p, t, { state: '等待回覆', question: asks.map(x => x.question).join(' / ').slice(0, 300) });
       if (outcome.stopped || error) s.text = '';

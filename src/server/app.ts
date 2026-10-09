@@ -84,6 +84,7 @@ export class App {
 
   async init(): Promise<void> {
     await this.ws.init();
+    await this.store.recoverInterrupted();
   }
 
   /** 每次讀檔：roles.yaml 可手改，不快取。 */
