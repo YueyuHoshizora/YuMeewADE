@@ -1,5 +1,6 @@
 // 繁體中文定義訊息契約；專案內容與 AI 輸出不翻譯。
 export const zhTW = {
+  'chat.interrupted': '核心重新啟動，作業已中斷',
   'lang.name': '繁體中文',
   'app.title': 'YuMeewADE',
   'nav.projects': '專案', 'nav.new': '＋ 新專案', 'nav.turn': '交給你嚕', 'nav.settings': '設定', 'nav.menu': '展開／收起專案',

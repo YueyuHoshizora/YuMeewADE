@@ -56,18 +56,21 @@ export function taskView(context: ViewContext, initialProject: ProjectView, init
       if (!busy && index === 0) q.append(button(t('chat.startQueued'), () => api.send({ project: project.id, task: task.id, text: '', fromQueue: item.id }), 'primary')); return q;
     })); queueNode.hidden = !queue.length;
   }
-  function renderTranscript(): void {
-    const top = transcript.scrollTop; const detailsState = Array.from(transcript.querySelectorAll<HTMLDetailsElement>('details.tool-events')).map(d => d.open);
-    const nodes: HTMLElement[] = []; let toolRows: ChatRow[] = [];
-    function flushTools(): void {
-      if (!toolRows.length) return;
-      const tools = disclosure(t('chat.tools', { n: toolRows.length }), ...toolRows.map(event => el('pre', 'tool-row', event.text)));
-      tools.className = 'tool-events'; const at = nodes.filter(n => n instanceof HTMLDetailsElement).length;
-      tools.open = detailsState[at] ?? readLocal('yumeewade.tools', false); nodes.push(tools); toolRows = [];
-    }
-    for (const entry of rows) {
-      if (entry.role === 'event' && entry.tool) { toolRows.push(entry); continue; } flushTools();
-      if (entry.role === 'event') { nodes.push(el('div', 'event-row', entry.text)); continue; }
+  let live: HTMLElement | null = null; let liveBody: HTMLElement | null = null; let liveFrame = 0; let toolGroup: HTMLDetailsElement | null = null; let toolCount = 0;
+  function follow(): void { if (following) transcript.scrollTop = transcript.scrollHeight; latest.hidden = following; }
+  function removeLive(): void { cancelAnimationFrame(liveFrame); liveFrame = 0; live?.remove(); live = null; liveBody = null; }
+  function addLive(): void {
+    removeLive(); if (!busy) return;
+    live = el('article', 'chat-card assistant live'); liveBody = markdown(partial || '…');
+    live.append(row(el('span', 'dot running'), el('strong', '', `${aiLabel(busy.ai)} · ${modelLabel(context.state, busy.ai, busy.model)} · ${effortLabel(busy.effort)}`), el('span', 'live-time')), liveBody); transcriptRows.append(live); clock(); follow();
+  }
+  function appendRow(entry: ChatRow): void {
+      if (entry.role === 'event' && entry.tool) {
+        if (!toolGroup) { toolCount = 0; toolGroup = disclosure(''); toolGroup.className = 'tool-events'; toolGroup.open = readLocal('yumeewade.tools', false); transcriptRows.insertBefore(toolGroup, live); }
+        toolGroup.querySelector('summary')!.textContent = t('chat.tools', { n: ++toolCount }); toolGroup.append(el('pre', 'tool-row', entry.text)); return;
+      }
+      toolGroup = null;
+      if (entry.role === 'event') { transcriptRows.insertBefore(el('div', 'event-row', entry.text), live); return; }
       const item = el('article', `chat-card ${entry.role}`); const metadata = el('div', 'chat-meta');
       if (entry.role === 'user') {
         metadata.append(el('strong', '', t('chat.you')), el('time', '', localTime(entry.at)), el('span', '', `→ ${aiLabel(entry.to)} · ${modelLabel(context.state, entry.to, entry.model)} · ${effortLabel(entry.effort)}`));
@@ -86,15 +89,15 @@ export function taskView(context: ViewContext, initialProject: ProjectView, init
         }
       } else {
         metadata.append(el('strong', '', aiLabel(entry.ai)), el('span', '', `${modelLabel(context.state, entry.ai, entry.model)} · ${effortLabel(entry.effort)}`), el('time', '', localTime(entry.at)), el('span', '', t('chat.duration', { seconds: Math.round(entry.ms / 1000) })));
-        if (entry.stopped) metadata.append(el('span', 'stopped-mark', t('chat.stopped'))); if (entry.error) metadata.append(el('span', 'error-mark', t('chat.error')));
+        if (entry.stopped) metadata.append(el('span', 'stopped-mark', t('chat.stopped'))); if (entry.error) metadata.append(el('span', 'error-mark', t(entry.error === 'interrupted' ? 'chat.interrupted' : 'chat.error')));
         item.append(metadata, markdown(entry.text));
       }
-      nodes.push(item);
-    }
-    flushTools();
-    if (busy) { const live = el('article', 'chat-card assistant live'); live.append(row(el('span', 'dot running'), el('strong', '', `${aiLabel(busy.ai)} · ${modelLabel(context.state, busy.ai, busy.model)} · ${effortLabel(busy.effort)}`), el('span', 'live-time')), markdown(partial || '…')); nodes.push(live); }
-    transcriptRows.replaceChildren(...nodes); clock(); renderQuestion();
-    if (following) { transcript.scrollTop = transcript.scrollHeight; latest.hidden = true; } else { transcript.scrollTop = top; latest.hidden = false; }
+      transcriptRows.insertBefore(item, live);
+  }
+  function renderTranscript(): void {
+    const top = transcript.scrollTop; removeLive(); toolGroup = null; transcriptRows.replaceChildren();
+    for (const entry of rows) appendRow(entry);
+    addLive(); renderQuestion(); if (!following) transcript.scrollTop = top; follow();
   }
   function renderQuestion(): void {
     // 重畫串流文字不應吃掉使用者正在輸入的答案；問題內容沒變就保留 DOM。
@@ -162,19 +165,21 @@ export function taskView(context: ViewContext, initialProject: ProjectView, init
   const resizeFrame = requestAnimationFrame(resizeDraft);
   function receive(event: ChatEvent): void {
     switch (event.event) {
-      case 'snapshot': rows = event.data.rows; busy = event.data.busy; partial = event.data.partial; queue = event.data.queue; break;
-      case 'busy': busy = event.data; partial = ''; break;
-      case 'delta': if (busy?.request === event.data.request) partial += event.data.text; break;
-      case 'row': rows.push(event.data); if (event.data.role === 'assistant' && event.data.request === busy?.request) partial = ''; break;
-      case 'queue': queue = event.data; break;
-      case 'idle': if (busy?.request === event.data.request) { busy = null; partial = ''; } void context.refresh(); void run(renderWork); break;
+      case 'snapshot': rows = event.data.rows; busy = event.data.busy; partial = event.data.partial; queue = event.data.queue; renderTranscript(); controls(); break;
+      case 'busy': busy = event.data; partial = ''; addLive(); controls(); break;
+      case 'delta': if (busy?.request === event.data.request) {
+        partial += event.data.text;
+        if (!liveFrame) liveFrame = requestAnimationFrame(() => { liveFrame = 0; if (!liveBody) return; const next = markdown(partial || '…'); liveBody.replaceWith(next); liveBody = next; follow(); });
+      } break;
+      case 'row': rows.push(event.data); if (event.data.role === 'assistant' && event.data.request === busy?.request) { partial = ''; removeLive(); } appendRow(event.data); renderQuestion(); follow(); break;
+      case 'queue': queue = event.data; renderQueue(); break;
+      case 'idle': if (busy?.request === event.data.request) { busy = null; partial = ''; removeLive(); } controls(); follow(); void context.refresh(); void run(renderWork); break;
     }
-    controls(); renderTranscript();
   }
   const source = new EventSource(query('/api/chat/stream', { project: project.id, task: task.id }));
   for (const event of ['snapshot', 'busy', 'delta', 'row', 'queue', 'idle'] as const) source.addEventListener(event, message => { try { receive({ event, data: JSON.parse((message as MessageEvent<string>).data) } as ChatEvent); } catch { /* 無效 SSE 不改畫面；重連 snapshot 可恢復。 */ } });
   const timer = window.setInterval(clock, 1000); void run(() => request('/api/task/read', { project: project.id, task: task.id }));
-  return { node, dispose: () => { alive = false; source.close(); window.clearInterval(timer); cancelAnimationFrame(resizeFrame); upload.dispose(); }, update: (state: AppState) => {
+  return { node, dispose: () => { alive = false; source.close(); removeLive(); window.clearInterval(timer); cancelAnimationFrame(resizeFrame); upload.dispose(); }, update: (state: AppState) => {
     context.state = state; const nextProject = state.projects.find(p => p.id === project.id); const nextTask = nextProject?.tasks.find(t => t.id === task.id); if (!nextProject || !nextTask) { location.hash = projectHash(project.id); return; }
     const workChanged = JSON.stringify([task.copy, task.copyMissing, task.mergeExcluded, task.workdir, task.updated]) !== JSON.stringify([nextTask.copy, nextTask.copyMissing, nextTask.mergeExcluded, nextTask.workdir, nextTask.updated]);
     const footerChanged = JSON.stringify([task.state, task.phase, task.steps, task.memo]) !== JSON.stringify([nextTask.state, nextTask.phase, nextTask.steps, nextTask.memo]);

@@ -1,6 +1,7 @@
 import type { MessageKey } from './zh-TW.ts';
 
 export const de: Record<MessageKey, string> = {
+  'chat.interrupted': 'Aufgabe durch Neustart des Kerns unterbrochen',
   'lang.name': 'Deutsch',
   'app.title': 'YuMeewADE',
   'nav.projects': 'Projekte',

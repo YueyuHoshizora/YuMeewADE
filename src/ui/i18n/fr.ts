@@ -1,6 +1,7 @@
 import type { MessageKey } from './zh-TW.ts';
 
 export const fr: Record<MessageKey, string> = {
+  'chat.interrupted': 'Tâche interrompue par le redémarrage du cœur',
   'lang.name': 'Français',
   'app.title': 'YuMeewADE',
   'nav.projects': 'Projets',

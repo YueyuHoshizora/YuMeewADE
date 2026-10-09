@@ -1,6 +1,7 @@
 import type { MessageKey } from './zh-TW.ts';
 
 export const en: Record<MessageKey, string> = {
+  'chat.interrupted': 'Run interrupted by a core restart',
   'lang.name': 'English',
   'app.title': 'YuMeewADE',
   'nav.projects': 'Projects',

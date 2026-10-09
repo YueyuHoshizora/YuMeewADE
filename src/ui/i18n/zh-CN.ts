@@ -1,6 +1,7 @@
 import type { MessageKey } from './zh-TW.ts';
 
 export const zhCN: Record<MessageKey, string> = {
+  'chat.interrupted': '核心重新启动，作业已中断',
   'lang.name': '简体中文',
   'app.title': 'YuMeewADE',
   'nav.projects': '项目',
