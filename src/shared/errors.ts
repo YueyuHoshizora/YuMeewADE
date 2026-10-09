@@ -67,6 +67,10 @@ export const DETAIL_MESSAGES = {
   archive_has_worktree: '請先移除工作副本再封存',
   archive_project_running: '有作業執行中，不能封存',
   archive_project_has_worktrees: '請先移除所有工作副本再封存',
+  root_not_absolute: '工作區路徑必須是絕對路徑（可用 ~ 開頭）',
+  root_not_directory: '工作區路徑已存在但不是資料夾',
+  root_unwritable: '無法在這個位置建立工作區',
+  relocate_busy: 'AI 執行中或正在切換，暫時不能切換工作區',
   // Git worktree workflow
   merge_conflict: '合併時發生衝突，請先在副本解決後再合併',
   merge_excluded: '此副本已排除合併',

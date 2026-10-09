@@ -6,6 +6,7 @@ export const it: Record<MessageKey, string> = {
   'tree.search': 'Cerca progetti e attività…',
   'settings.enterToSend': 'Invio per inviare, Maiusc+Invio per andare a capo', 'chat.placeholderEnter': 'Scrivi le istruzioni… (Invio per inviare, Maiusc+Invio per andare a capo)', 'chat.hintEnter': 'Invio per inviare, Maiusc+Invio per andare a capo', 'chat.hintModifier': '⌘ / Ctrl + Invio per inviare',
   'markdown.copy': 'Copia codice', 'markdown.copied': 'Copiato', 'markdown.copyFailed': 'Copia non riuscita',
+  'log.workspace': 'Cambio area di lavoro', 'detail.root_not_absolute': 'Il percorso dell’area di lavoro deve essere assoluto (~ è consentito)', 'detail.root_not_directory': 'Il percorso esiste ma non è una cartella', 'detail.root_unwritable': 'Impossibile creare un’area di lavoro in questa posizione', 'detail.relocate_busy': 'Un’IA è in esecuzione o è in corso un cambio; riprova più tardi',
   'chat.interrupted': 'Attività interrotta dal riavvio del nucleo',
   'lang.name': 'Italiano',
   'app.title': 'YuMeewADE',

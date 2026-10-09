@@ -18,6 +18,7 @@ import { TaskLedger } from '../ledger/tasks.ts';
 import { Workspace } from '../ledger/workspace.ts';
 import { loadRoles } from '../roles/roles.ts';
 import type { Config } from '../shared/config.ts';
+import { AppError } from '../shared/errors.ts';
 import type { AppState, Roles } from '../shared/types.ts';
 import { buildState } from '../state/state.ts';
 
@@ -28,6 +29,10 @@ export interface AppOptions {
   providers?: Record<string, CliProvider>;
   /** 測試用：AI 模型快取所在的家目錄（預設 os.homedir()）。 */
   home?: string;
+  /** 切換工作區；由 CoreHost 提供（它才能換掉整個 App）。 */
+  relocate?: (root: string) => Promise<string>;
+  /** CoreHost 持有的即時連線；切換工作區時沿用，網頁不必斷線重連。沒給就自建並在 close 時關閉。 */
+  sse?: SseHub;
 }
 
 export class App {
@@ -46,12 +51,15 @@ export class App {
   readonly runner: ChatRunner;
   readonly sse: SseHub;
   readonly sendLimiter: RateLimiter;
+  readonly relocate: (root: string) => Promise<string>;
 
   private changeTimer: NodeJS.Timeout | null = null;
   private pendingChange: { project?: string; task?: string } | null = null;
+  private readonly ownsSse: boolean;
 
   constructor(config: Config, options: AppOptions = {}) {
     this.config = config;
+    this.relocate = options.relocate ?? (() => Promise.reject(new AppError('conflict', 'relocate_busy')));
     this.ws = new Workspace(config.workspace.root);
     this.projects = new ProjectLedger(this.ws);
     this.tasks = new TaskLedger(this.ws);
@@ -62,7 +70,8 @@ export class App {
     this.worktree = new WorktreeService({ ws: this.ws, projects: this.projects, tasks: this.tasks, diffBytes: config.limits.diffBytes });
     this.ai = new AiCatalog({ config, ws: this.ws, settings: this.settings, ...(options.home ? { home: options.home } : {}) });
     this.store = new ChatStore(this.ws);
-    this.sse = new SseHub(config.limits.sseConnections, config.limits.heartbeatSeconds * 1000);
+    this.ownsSse = !options.sse;
+    this.sse = options.sse ?? new SseHub(config.limits.sseConnections, config.limits.heartbeatSeconds * 1000);
     this.sendLimiter = new RateLimiter(config.limits.sendPerMinute);
     this.runner = new ChatRunner({
       ws: this.ws,
@@ -117,6 +126,6 @@ export class App {
 
   close(): void {
     if (this.changeTimer) clearTimeout(this.changeTimer);
-    this.sse.closeAll();
+    if (this.ownsSse) this.sse.closeAll();
   }
 }

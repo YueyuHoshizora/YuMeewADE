@@ -5,6 +5,7 @@ export const zhTW = {
   'tree.search': '搜尋專案與作業…',
   'settings.enterToSend': 'Enter 送出，Shift+Enter 換行', 'chat.placeholderEnter': '寫下指示…（Enter 送出，Shift+Enter 換行）', 'chat.hintEnter': 'Enter 送出，Shift+Enter 換行', 'chat.hintModifier': '⌘ / Ctrl + Enter 送出',
   'markdown.copy': '複製程式碼', 'markdown.copied': '已複製', 'markdown.copyFailed': '複製失敗',
+  'log.workspace': '切換工作區', 'detail.root_not_absolute': '工作區路徑必須是絕對路徑（可用 ~ 開頭）', 'detail.root_not_directory': '工作區路徑已存在但不是資料夾', 'detail.root_unwritable': '無法在這個位置建立工作區', 'detail.relocate_busy': 'AI 執行中或正在切換，暫時不能切換工作區',
   'chat.interrupted': '核心重新啟動，作業已中斷',
   'lang.name': '繁體中文',
   'app.title': 'YuMeewADE',

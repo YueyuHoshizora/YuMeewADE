@@ -6,6 +6,7 @@ export const de: Record<MessageKey, string> = {
   'tree.search': 'Projekte und Aufgaben suchen…',
   'settings.enterToSend': 'Enter sendet, Shift+Enter fügt eine neue Zeile ein', 'chat.placeholderEnter': 'Anweisungen schreiben… (Enter sendet, Shift+Enter für neue Zeile)', 'chat.hintEnter': 'Enter sendet, Shift+Enter für neue Zeile', 'chat.hintModifier': '⌘ / Ctrl + Enter zum Senden',
   'markdown.copy': 'Code kopieren', 'markdown.copied': 'Kopiert', 'markdown.copyFailed': 'Kopieren fehlgeschlagen',
+  'log.workspace': 'Arbeitsbereich gewechselt', 'detail.root_not_absolute': 'Der Pfad des Arbeitsbereichs muss absolut sein (~ ist erlaubt)', 'detail.root_not_directory': 'Der Pfad existiert, ist aber kein Ordner', 'detail.root_unwritable': 'An diesem Ort kann kein Arbeitsbereich angelegt werden', 'detail.relocate_busy': 'Eine KI läuft oder ein Wechsel ist im Gange; bitte später erneut versuchen',
   'chat.interrupted': 'Aufgabe durch Neustart des Kerns unterbrochen',
   'lang.name': 'Deutsch',
   'app.title': 'YuMeewADE',

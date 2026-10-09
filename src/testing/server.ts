@@ -4,10 +4,10 @@ import { promises as fs } from 'node:fs';
 import net from 'node:net';
 import os from 'node:os';
 import path from 'node:path';
-import { createHttpServer, listen } from '../http/server.ts';
+import { listen } from '../http/server.ts';
 import { MockCliProvider } from '../cli/mock.ts';
-import { App } from '../server/app.ts';
-import type { AppOptions } from '../server/app.ts';
+import type { App, AppOptions } from '../server/app.ts';
+import { CoreHost } from '../server/host.ts';
 import { parseConfig } from '../shared/config.ts';
 
 async function freePort(): Promise<number> {
@@ -21,7 +21,10 @@ async function freePort(): Promise<number> {
 }
 
 export interface TestServer {
-  app: App;
+  /** 目前掛載的 App（切換工作區後會換成新的）。 */
+  readonly app: App;
+  /** 測試用設定檔；切換工作區會寫回這裡，不碰使用者的 ~/.yumeewade。 */
+  configFile: string;
   base: string;
   port: number;
   dir: string;
@@ -33,14 +36,17 @@ export interface TestServer {
 export async function startTestServer(configYaml = '', options: AppOptions = {}): Promise<TestServer> {
   const dir = await fs.mkdtemp(path.join(os.tmpdir(), 'yumeewade-http-'));
   const port = await freePort();
-  const config = parseConfig(`server:\n  port: ${port}\nworkspace:\n  root: ${JSON.stringify(path.join(dir, 'root'))}\n${configYaml}`, null);
-  const app = new App(config, { ...options, providers: options.providers ?? { mock: new MockCliProvider(5) }, home: options.home ?? path.join(dir, 'home') });
-  await app.init();
-  const server = createHttpServer(app);
+  const configFile = path.join(dir, 'config.yaml');
+  const text = `server:\n  port: ${port}\nworkspace:\n  root: ${JSON.stringify(path.join(dir, 'root'))}\n${configYaml}`;
+  await fs.writeFile(configFile, text);
+  const host = new CoreHost(parseConfig(text, configFile), { app: { ...options, providers: options.providers ?? { mock: new MockCliProvider(5) }, home: options.home ?? path.join(dir, 'home') } });
+  await host.init();
+  const { server } = host;
   await listen(server, '127.0.0.1', port);
   const base = `http://127.0.0.1:${port}`;
   return {
-    app,
+    get app() { return host.app; },
+    configFile,
     base,
     port,
     dir,
@@ -60,8 +66,8 @@ export async function startTestServer(configYaml = '', options: AppOptions = {})
       return { status: res.status, json };
     },
     async close() {
-      await app.runner.whenIdle();
-      app.close();
+      await host.app.runner.whenIdle();
+      host.close();
       server.closeAllConnections();
       const { promise, resolve } = Promise.withResolvers<void>();
       server.close(() => resolve());

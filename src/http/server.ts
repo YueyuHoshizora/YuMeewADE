@@ -11,10 +11,21 @@ import { serveStatic } from './static.ts';
 
 export const UI_DIR = path.join(path.dirname(fileURLToPath(import.meta.url)), '..', 'ui');
 
-export function createHttpServer(app: App): http.Server {
+export interface HttpCore {
+  server: http.Server;
+  /** 換上另一個 App 的路由；之後的請求都交給它，已在處理中的請求照舊完成。 */
+  mount(app: App): void;
+}
+
+function routerFor(app: App): Router {
   const { host, port } = app.config.server;
   const router = new Router({ host, port, bodyBytes: app.config.limits.bodyBytes });
   registerRoutes(router, app);
+  return router;
+}
+
+export function createHttpServer(app: App): HttpCore {
+  let router = routerFor(app);
   const server = http.createServer((req, res) => {
     router
       .handle(req, res)
@@ -25,7 +36,7 @@ export function createHttpServer(app: App): http.Server {
       });
   });
   server.keepAliveTimeout = 65_000;
-  return server;
+  return { server, mount: next => { router = routerFor(next); } };
 }
 
 export function listen(server: http.Server, host: string, port: number): Promise<void> {

@@ -6,6 +6,7 @@ export const ja: Record<MessageKey, string> = {
   'tree.search': 'プロジェクトと作業を検索…',
   'settings.enterToSend': 'Enter で送信、Shift+Enter で改行', 'chat.placeholderEnter': '指示を入力…（Enter で送信、Shift+Enter で改行）', 'chat.hintEnter': 'Enter で送信、Shift+Enter で改行', 'chat.hintModifier': '⌘ / Ctrl + Enter で送信',
   'markdown.copy': 'コードをコピー', 'markdown.copied': 'コピーしました', 'markdown.copyFailed': 'コピーできませんでした',
+  'log.workspace': 'ワークスペースの切り替え', 'detail.root_not_absolute': 'ワークスペースのパスは絶対パスにしてください（~ で始めても可）', 'detail.root_not_directory': 'ワークスペースのパスはフォルダーではありません', 'detail.root_unwritable': 'この場所にワークスペースを作成できません', 'detail.relocate_busy': 'AI の実行中または切り替え中のため、いまは切り替えできません',
   'chat.interrupted': 'コアの再起動により作業が中断されました',
   'lang.name': '日本語',
   'app.title': 'YuMeewADE',

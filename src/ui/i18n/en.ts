@@ -6,6 +6,7 @@ export const en: Record<MessageKey, string> = {
   'tree.search': 'Search projects and tasks…',
   'settings.enterToSend': 'Enter to send, Shift+Enter for a new line', 'chat.placeholderEnter': 'Write instructions… (Enter to send, Shift+Enter for a new line)', 'chat.hintEnter': 'Enter to send, Shift+Enter for a new line', 'chat.hintModifier': '⌘ / Ctrl + Enter to send',
   'markdown.copy': 'Copy code', 'markdown.copied': 'Copied', 'markdown.copyFailed': 'Copy failed',
+  'log.workspace': 'Workspace switched', 'detail.root_not_absolute': 'The workspace path must be absolute (~ is allowed)', 'detail.root_not_directory': 'The workspace path exists but is not a folder', 'detail.root_unwritable': 'Cannot create a workspace at this location', 'detail.relocate_busy': 'An AI is running or a switch is in progress; try again later',
   'chat.interrupted': 'Run interrupted by a core restart',
   'lang.name': 'English',
   'app.title': 'YuMeewADE',
