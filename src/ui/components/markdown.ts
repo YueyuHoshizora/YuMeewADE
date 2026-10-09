@@ -32,7 +32,15 @@ export function markdown(value: string): HTMLElement {
       const language = line.slice(3).trim(); const code: string[] = []; i++;
       while (i < lines.length && !lines[i]?.startsWith('```')) code.push(lines[i++] ?? '');
       const text = code.join('\n'); const pre = el('pre'); pre.append(el('code', '', text));
-      const copy = button(t('markdown.copy'), async () => { await navigator.clipboard.writeText(text); copy.textContent = t('markdown.copied'); window.setTimeout(() => { copy.textContent = t('markdown.copy'); }, 1500); });
+      const copy = button(t('markdown.copy'), async () => {
+        try {
+          await navigator.clipboard.writeText(text);
+          copy.textContent = t('markdown.copied');
+        } catch {
+          copy.textContent = t('markdown.copyFailed');
+        }
+        window.setTimeout(() => { copy.textContent = t('markdown.copy'); }, 1500);
+      });
       const block = el('div', 'code-block'); const bar = el('div', 'code-toolbar'); bar.append(el('span', 'muted', language), copy); block.append(bar, pre); node.append(block); i++; continue;
     }
     if (!line.trim()) { i++; continue; }

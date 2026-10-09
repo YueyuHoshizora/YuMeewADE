@@ -5,7 +5,7 @@ export const zhCN: Record<MessageKey, string> = {
   'connection.reconnecting': '核心连接中断，正在重新连接…',
   'tree.search': '搜索项目与作业…',
   'settings.enterToSend': 'Enter 发送，Shift+Enter 换行', 'chat.placeholderEnter': '写下指示…（Enter 发送，Shift+Enter 换行）', 'chat.hintEnter': 'Enter 发送，Shift+Enter 换行', 'chat.hintModifier': '⌘ / Ctrl + Enter 发送',
-  'markdown.copy': '复制代码', 'markdown.copied': '已复制',
+  'markdown.copy': '复制代码', 'markdown.copied': '已复制', 'markdown.copyFailed': '复制失败',
   'chat.interrupted': '核心重新启动，作业已中断',
   'lang.name': '简体中文',
   'app.title': 'YuMeewADE',

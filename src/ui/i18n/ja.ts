@@ -5,7 +5,7 @@ export const ja: Record<MessageKey, string> = {
   'connection.reconnecting': 'コアとの接続が切れました。再接続中…',
   'tree.search': 'プロジェクトと作業を検索…',
   'settings.enterToSend': 'Enter で送信、Shift+Enter で改行', 'chat.placeholderEnter': '指示を入力…（Enter で送信、Shift+Enter で改行）', 'chat.hintEnter': 'Enter で送信、Shift+Enter で改行', 'chat.hintModifier': '⌘ / Ctrl + Enter で送信',
-  'markdown.copy': 'コードをコピー', 'markdown.copied': 'コピーしました',
+  'markdown.copy': 'コードをコピー', 'markdown.copied': 'コピーしました', 'markdown.copyFailed': 'コピーできませんでした',
   'chat.interrupted': 'コアの再起動により作業が中断されました',
   'lang.name': '日本語',
   'app.title': 'YuMeewADE',

@@ -5,7 +5,7 @@ export const en: Record<MessageKey, string> = {
   'connection.reconnecting': 'Disconnected from core. Reconnecting…',
   'tree.search': 'Search projects and tasks…',
   'settings.enterToSend': 'Enter to send, Shift+Enter for a new line', 'chat.placeholderEnter': 'Write instructions… (Enter to send, Shift+Enter for a new line)', 'chat.hintEnter': 'Enter to send, Shift+Enter for a new line', 'chat.hintModifier': '⌘ / Ctrl + Enter to send',
-  'markdown.copy': 'Copy code', 'markdown.copied': 'Copied',
+  'markdown.copy': 'Copy code', 'markdown.copied': 'Copied', 'markdown.copyFailed': 'Copy failed',
   'chat.interrupted': 'Run interrupted by a core restart',
   'lang.name': 'English',
   'app.title': 'YuMeewADE',
