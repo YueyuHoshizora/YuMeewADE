@@ -1,349 +1,160 @@
-// 對話執行狀態機：每個作業同時只有一輪在跑；執行中送出的指示進隊列，本輪結束後自動出隊。
-// 停止：終止子行程，已收部分存檔並標記 cancelled；隊列不清（人要清可逐筆移除）。
-// 所有狀態變化都以 SSE 事件形式發出（'event', project, task, SseEvent）。
-
+// 每作業的送出／停止串行化；CLI 執行不持鎖，讓補充與取消可立即中止。
 import { randomUUID } from 'node:crypto';
 import { EventEmitter } from 'node:events';
+import path from 'node:path';
 import type { CliProvider, CliRun } from '../cli/provider.ts';
-import type { TaskLedger } from '../ledger/tasks.ts';
 import type { Workspace } from '../ledger/workspace.ts';
-import { resolveLaunch, type Launch } from '../roles/roles.ts';
+import type { ProjectLedger } from '../ledger/projects.ts';
+import type { TaskLedger } from '../ledger/tasks.ts';
+import type { CompletionStore } from '../ledger/completion.ts';
+import type { SettingsStore } from '../ledger/settings.ts';
+import type { OpLog } from '../ledger/oplog.ts';
+import type { WorktreeService } from '../git/worktree.ts';
+import { resolveLaunch } from '../roles/roles.ts';
 import { AppError } from '../shared/errors.ts';
 import { log } from '../shared/log.ts';
-import type { ChatMeta, ChatRow, QueueItem, Roles, RunState, SseEvent, Task } from '../shared/types.ts';
+import type { Ask, Busy, ChatEvent, ChatRow, QueueItem, Roles, RunningInfo, SendInput, SendResult, Task } from '../shared/types.ts';
 import { buildHandoff, buildPreamble, buildPrompt } from './prompt.ts';
-import type { ChatStore } from './store.ts';
-
+import { ChatStore, type ChatMeta } from './store.ts';
+import { attachImages } from './attachments.ts';
+import { parseAsk } from './ask.ts';
 export interface RunnerDeps {
-  ws: Workspace;
-  store: ChatStore;
-  tasks: TaskLedger;
-  roles: () => Promise<Roles>;
+  ws: Workspace; store: ChatStore; projects: ProjectLedger; tasks: TaskLedger; completion: CompletionStore;
+  worktree: WorktreeService; settings: SettingsStore; oplog: OpLog; roles: () => Promise<Roles>;
   providers: Record<string, CliProvider>;
-  limits: { concurrentRuns: number; queueLength: number; handoffChars: number };
-  /** 回傳本輪 CLI 的工作目錄（Phase 3 起為 worktree 副本）。 */
-  prepareCwd: (project: string, task: string) => Promise<string>;
+  limits: { concurrentRuns: number; queueLength: number; handoffChars: number; imagesPerSend: number };
+  publish(project: string, task: string, event: ChatEvent): void;
+  watching(project: string, task: string): boolean;
+  onChanged(project?: string, task?: string): void;
 }
-
-interface TaskRun {
-  running: RunState | null;
-  partial: string;
-  run: CliRun | null;
-}
-
-export interface SendResult {
-  request: string;
-  queued: boolean;
-}
-
+interface Slot { busy: Busy | null; partial: string; run: CliRun | null; finished: Promise<void>; text: string }
 export class ChatRunner extends EventEmitter {
   private readonly deps: RunnerDeps;
-  private readonly state = new Map<string, TaskRun>();
-
-  constructor(deps: RunnerDeps) {
-    super();
-    this.deps = deps;
-  }
-
-  private key(project: string, task: string): string {
-    return `${project}\u0000${task}`;
-  }
-
-  private slot(project: string, task: string): TaskRun {
-    const k = this.key(project, task);
-    let s = this.state.get(k);
-    if (!s) {
-      s = { running: null, partial: '', run: null };
-      this.state.set(k, s);
-    }
+  private readonly slots = new Map<string, Slot>();
+  private readonly locks = new Map<string, Promise<unknown>>();
+  private readonly unreadTasks = new Map<string, { project: string; task: string }>();
+  private readonly jobs = new Set<Promise<void>>();
+  constructor(deps: RunnerDeps) { super(); this.deps = deps; }
+  private slot(p: string, t: string): Slot {
+    const key = `${p}\0${t}`; let s = this.slots.get(key);
+    if (!s) { s = { busy: null, partial: '', run: null, finished: Promise.resolve(), text: '' }; this.slots.set(key, s); }
     return s;
   }
-
-  private emitEvent(project: string, task: string, ev: SseEvent): void {
-    this.emit('event', project, task, ev);
+  private lock<T>(p: string, t: string, fn: () => Promise<T>): Promise<T> {
+    const key = `${p}\0${t}`; const next = (this.locks.get(key) ?? Promise.resolve()).catch(() => {}).then(fn);
+    this.locks.set(key, next); return next;
   }
-
-  /** 所有作業都沒在跑時 resolve（測試與關閉時用）。 */
-  whenIdle(): Promise<void> {
-    if (this.activeRuns === 0) return Promise.resolve();
-    const { promise, resolve } = Promise.withResolvers<void>();
-    const check = () => {
-      if (this.activeRuns === 0) {
-        this.off('event', check);
-        resolve();
-      }
-    };
-    this.on('event', check);
-    return promise;
+  private publish(p: string, t: string, event: ChatEvent): void { this.deps.publish(p, t, event); this.emit('event', p, t, event); }
+  running(): RunningInfo[] {
+    const runs: RunningInfo[] = [];
+    for (const [key, s] of this.slots) if (s.busy) { const [project, task] = key.split('\0'); runs.push({ ...s.busy, project: project!, task: task! }); }
+    return runs;
   }
-
-  private get activeRuns(): number {
-    let n = 0;
-    for (const s of this.state.values()) if (s.running) n++;
-    return n;
+  isRunning(p: string, t: string): boolean { return this.slot(p, t).busy !== null; }
+  unread(): { project: string; task: string }[] { return [...this.unreadTasks.values()]; }
+  markRead(p: string, t: string): void { if (this.unreadTasks.delete(`${p}\0${t}`)) this.deps.onChanged(p, t); }
+  async whenIdle(): Promise<void> { while (this.jobs.size) await Promise.all([...this.jobs]); }
+  async snapshot(p: string, t: string): Promise<{ rows: ChatRow[]; busy: Busy | null; partial: string; queue: QueueItem[] }> {
+    await this.deps.tasks.get(p, t); const s = this.slot(p, t);
+    return { rows: await this.deps.store.readLog(p, t), busy: s.busy, partial: s.partial, queue: await this.deps.store.readQueue(p, t) };
   }
-
-  isRunning(project: string, task: string): boolean {
-    return this.slot(project, task).running !== null;
+  send(input: SendInput): Promise<SendResult> { return this.lock(input.project, input.task, () => this.sendLocked(input)); }
+  private async sendLocked(input: SendInput): Promise<SendResult> {
+    const { project: p, task: t } = input; const s = this.slot(p, t);
+    let chosen = input;
+    if (input.fromQueue) {
+      if (s.busy) throw new AppError('conflict');
+      const q = await this.deps.store.readQueue(p, t); const item = q.find(x => x.id === input.fromQueue);
+      if (!item) throw new AppError('not_found', 'queue_item_missing');
+      chosen = { project: p, task: t, text: item.text, ai: item.ai, mode: 'queue', ...(item.model ? { model: item.model } : {}), ...(item.effort ? { effort: item.effort } : {}), ...(item.images ? { images: item.images } : {}) };
+    }
+    if (typeof chosen.text !== 'string' || (!chosen.text.trim() && !chosen.images?.length)) throw new AppError('bad_request');
+    if (chosen.images && (!Array.isArray(chosen.images) || chosen.images.length > this.deps.limits.imagesPerSend)) throw new AppError('bad_request');
+    if (s.busy && !chosen.mode) throw new AppError('conflict', 'mode_required');
+    const task = await this.deps.tasks.get(p, t); const settings = await this.deps.settings.get();
+    const pick = resolveLaunch(await this.deps.roles(), task, { ...(chosen.ai ? { cli: chosen.ai } : {}), ...(chosen.model ? { model: chosen.model } : {}), ...(chosen.effort ? { effort: chosen.effort } : {}) }, settings.initial);
+    const provider = this.deps.providers[pick.cli];
+    if (!provider) throw new AppError('bad_request', 'cli_unsupported');
+    if (!await provider.available()) throw new AppError('bad_request', 'cli_unavailable');
+    const item: QueueItem = { id: randomUUID(), text: chosen.text, ai: pick.cli, model: pick.model, effort: pick.effort, at: new Date().toISOString(), ...(chosen.images ? { images: chosen.images } : {}) };
+    if (s.busy && chosen.mode === 'queue') {
+      const queue = await this.deps.store.updateQueue(p, t, q => { if (q.length >= this.deps.limits.queueLength) throw new AppError('unavailable', 'queue_full'); return [...q, item]; });
+      this.publish(p, t, { event: 'queue', data: queue }); await this.deps.oplog.record({ action: 'chatqueue', project: p, task: t }); this.deps.onChanged(p, t);
+      return { request: item.id, queued: true };
+    }
+    if (s.busy) {
+      const previous = s.text.slice(0, 400); s.run?.stop(); await s.finished;
+      item.text = chosen.mode === 'redo' ? `（人取消了前一個指示「${previous}」。如果途中改了檔案，必要時先還原，然後只做這個新指示）\n${chosen.text}` : `（人送來補充說明。不要取消目前的指示「${previous}」，延續已做到的部分，並一起處理這個補充）\n${chosen.text}`;
+    }
+    if (this.running().length >= this.deps.limits.concurrentRuns) throw new AppError('unavailable', 'runs_limit');
+    // 先佔槽，再做工作目錄與檔案 I/O，避免跨作業同時超過執行上限。
+    s.busy = { request: item.id, ai: item.ai, model: pick.model, effort: pick.effort, startedAt: new Date().toISOString(), ...(chosen.answer ? { mode: 'answer' } : chosen.mode ? { mode: chosen.mode } : {}) };
+    try {
+      const cwd = await this.deps.worktree.prepare(p, t);
+      const images = await attachImages(this.deps.ws, p, t, chosen.images ?? [], this.deps.limits.imagesPerSend);
+      if (task.state === '完成') await this.deps.completion.revoke(p, t);
+      await this.deps.tasks.update(p, t, { state: '進行中', cli: pick.cli, model: pick.model, effort: pick.effort, ...(chosen.answer ? { question: '' } : {}) });
+      if (input.fromQueue) { const q = await this.deps.store.updateQueue(p, t, q => q.filter(x => x.id !== input.fromQueue)); this.publish(p, t, { event: 'queue', data: q }); }
+      const prior = await this.deps.store.readLog(p, t); const meta = await this.deps.store.readMeta(p, t);
+      const resumeId = item.ai !== 'codex' || meta.models[item.ai] === item.model ? meta.sessions[item.ai] : undefined;
+      const roles = await this.deps.roles(); const project = await this.deps.projects.get(p);
+      const preamble = resumeId ? `繼續作業 ${t}：${this.deps.ws.taskFile(p, t)}。工作目錄：${cwd}。先讀 ${path.join(this.deps.ws.projectDir(p), '.ai/rules.md')}；區切時更新作業檔，不要自己把 state 寫成 完成。\n請使用人類這次指示所使用的相同語言回覆。` : buildPreamble({ project: project.name, projectDir: this.deps.ws.projectDir(p), taskId: t, taskTitle: task.title, taskFile: this.deps.ws.taskFile(p, t), cwd, role: task.role, job: roles.roles[task.role]?.job ?? '', cli: item.ai });
+      const handoff = buildHandoff(resumeId ? unseenRows(prior, meta, item.ai) : prior, this.deps.limits.handoffChars);
+      const user: ChatRow = { at: item.at, role: 'user', text: item.text, to: item.ai, model: pick.model, effort: pick.effort, request: item.id, ...(s.busy.mode ? { mode: s.busy.mode } : {}), ...(images.length ? { images } : {}) };
+      await this.deps.store.append(p, t, user); this.publish(p, t, { event: 'row', data: user }); this.publish(p, t, { event: 'busy', data: s.busy });
+      s.text = item.text; s.partial = '';
+      await this.deps.oplog.record({ action: chosen.mode === 'redo' ? 'chatredo' : chosen.mode === 'amend' ? 'chatamend' : 'chat', project: p, task: t }); this.deps.onChanged(p, t);
+      s.finished = this.execute(p, t, item, provider, meta, { prompt: buildPrompt({ preamble, handoff, text: item.text, images }), cwd, ...(resumeId ? { resumeId } : {}), model: pick.model, effort: pick.effort, fullAccess: settings.fullAccess[item.ai] ?? provider.dangerous, addDirs: [path.join(this.deps.ws.projectDir(p), '.ai')], images });
+      const job = s.finished.then(async () => { await this.lock(p, t, async () => {
+        if (s.busy) return;
+        const queue = await this.deps.store.readQueue(p, t); const first = queue[0];
+        if (!first || first.error || s.text === '') return;
+        try { await this.sendLocked({ project: p, task: t, text: first.text, fromQueue: first.id }); }
+        catch (err) { const q = await this.deps.store.updateQueue(p, t, q => q.map(x => x.id === first.id ? { ...x, error: err instanceof AppError ? err.code : 'internal' } : x)); this.publish(p, t, { event: 'queue', data: q }); this.deps.onChanged(p, t); }
+      }); }).catch(err => { log.error('對話收尾失敗', err, { project: p, task: t }); }).finally(() => { this.jobs.delete(job); });
+      this.jobs.add(job);
+      return { request: item.id, queued: false };
+    } catch (err) { s.busy = null; s.run = null; s.partial = ''; this.deps.onChanged(p, t); throw err; }
   }
-
-  async snapshot(project: string, task: string): Promise<{ running: RunState | null; partial: string; queue: QueueItem[] }> {
-    const s = this.slot(project, task);
-    return { running: s.running, partial: s.partial, queue: await this.deps.store.readQueue(project, task) };
-  }
-
-  /** 送出指示：閒置就立刻執行，執行中則入隊。回 request 編號。 */
-  async send(project: string, task: string, text: string, override: Partial<Launch>): Promise<SendResult> {
-    const taskDoc = await this.deps.tasks.get(project, task);
-    const launch = resolveLaunch(await this.deps.roles(), taskDoc, override);
-    const provider = this.deps.providers[launch.cli];
-    if (!provider) throw new AppError('bad_request', 'cli_unsupported', { field: launch.cli });
-    if (!(await provider.available())) throw new AppError('bad_request', 'cli_unavailable', { field: launch.cli });
-    const item: QueueItem = {
-      request: randomUUID(),
-      text,
-      cli: launch.cli,
-      ...(launch.model ? { model: launch.model } : {}),
-      ...(launch.effort ? { effort: launch.effort } : {}),
-      at: new Date().toISOString(),
-    };
-    const s = this.slot(project, task);
-    if (s.running) {
-      let full = false;
-      const queue = await this.deps.store.updateQueue(project, task, (q) => {
-        if (q.length >= this.deps.limits.queueLength) {
-          full = true;
-          return null;
-        }
-        return [...q, item];
+  private async execute(p: string, t: string, item: QueueItem, provider: CliProvider, meta: ChatMeta, opts: Parameters<CliProvider['send']>[0]): Promise<void> {
+    const s = this.slot(p, t); const started = Date.now(); let result: string | undefined; let sid = opts.resumeId; let error = ''; const asks: Ask[] = []; let writes = Promise.resolve();
+    try {
+      const run = provider.send(opts, ev => {
+        if (ev.type === 'session') sid = ev.id;
+        else if (ev.type === 'delta') { s.partial += ev.text; this.publish(p, t, { event: 'delta', data: { request: item.id, text: ev.text } }); }
+        else if (ev.type === 'result') result = ev.text;
+        else if (ev.type === 'error') { error = 'cli_failed'; log.warn('CLI 回覆失敗', { project: p, task: t }); }
+        else if (ev.type === 'asks') asks.push(...ev.asks);
+        else if (ev.type === 'tool') { const row: ChatRow = { at: new Date().toISOString(), role: 'event', ai: item.ai, tool: true, text: ev.text, request: item.id }; writes = writes.then(async () => { await this.deps.store.append(p, t, row); this.publish(p, t, { event: 'row', data: row }); }); }
       });
-      if (full) throw new AppError('unavailable', 'queue_full');
-      this.emitEvent(project, task, { event: 'queue', data: queue });
-      return { request: item.request, queued: true };
-    }
-    if (this.activeRuns >= this.deps.limits.concurrentRuns) throw new AppError('unavailable', 'runs_limit');
-    this.launch(project, task, item, taskDoc, provider);
-    return { request: item.request, queued: false };
-  }
-
-  /** 同步佔住執行槽再非同步跑，避免兩個 send 同時看到閒置。 */
-  private launch(project: string, task: string, item: QueueItem, taskDoc: Task, provider: CliProvider): void {
-    const s = this.slot(project, task);
-    s.running = { request: item.request, cli: item.cli, ...(item.model ? { model: item.model } : {}), startedAt: new Date().toISOString() };
-    s.partial = '';
-    void this.start(project, task, item, taskDoc, provider).catch((err) => {
-      log.error('對話執行例外', err, { project, task, request: item.request });
-      s.running = null;
-      s.run = null;
-      this.emitEvent(project, task, { event: 'error', data: { request: item.request, code: 'internal' } });
-      this.emitEvent(project, task, { event: 'done', data: { request: item.request } });
-    });
-  }
-
-  /** 停止目前執行；回 false 代表沒有在跑。 */
-  stop(project: string, task: string): boolean {
-    const s = this.slot(project, task);
-    if (!s.run) return false;
-    s.run.stop();
-    return true;
-  }
-
-  async removeQueued(project: string, task: string, request: string): Promise<QueueItem[]> {
-    let found = false;
-    const next = await this.deps.store.updateQueue(project, task, (queue) => {
-      const filtered = queue.filter((q) => q.request !== request);
-      found = filtered.length !== queue.length;
-      return found ? filtered : null;
-    });
-    if (!found) throw new AppError('not_found', 'queue_item_missing');
-    this.emitEvent(project, task, { event: 'queue', data: next });
-    return next;
-  }
-
-  /** 把某筆排隊指示移到最前（取消並重送用）。 */
-  async moveQueuedFirst(project: string, task: string, request: string): Promise<QueueItem[]> {
-    let found = false;
-    const next = await this.deps.store.updateQueue(project, task, (queue) => {
-      const target = queue.find((q) => q.request === request);
-      found = target !== undefined;
-      return target ? [target, ...queue.filter((q) => q !== target)] : null;
-    });
-    if (!found) throw new AppError('not_found', 'queue_item_missing');
-    this.emitEvent(project, task, { event: 'queue', data: next });
-    return next;
-  }
-
-  private async start(project: string, task: string, item: QueueItem, taskDoc: Task, provider: CliProvider): Promise<void> {
-    const { store, ws, tasks, limits } = this.deps;
-    const s = this.slot(project, task);
-    const prior = await store.readLog(project, task);
-    const meta = await store.readMeta(project, task);
-    const resumeId = meta.sessions[item.cli];
-    const unseen = unseenRows(prior, meta, item.cli);
-    const handoff = buildHandoff(unseen, limits.handoffChars);
-
-    const userRow: ChatRow = { at: item.at, role: 'user', text: item.text, cli: item.cli, ...(item.model ? { model: item.model } : {}), request: item.request };
-    await store.append(project, task, userRow);
-    this.emitEvent(project, task, { event: 'log', data: userRow });
-
-    let cwd: string;
-    try {
-      cwd = await this.deps.prepareCwd(project, task);
+      s.run = run; const outcome = await run.done; await writes;
+      const parsed = parseAsk(result ?? s.partial); asks.push(...parsed.asks);
+      if (!outcome.ok && !outcome.stopped) error = 'cli_failed';
+      const row: ChatRow = { at: new Date().toISOString(), role: 'assistant', ai: item.ai, model: item.model ?? '', effort: item.effort ?? '', text: parsed.text, ms: Date.now() - started, request: item.id, ...(error ? { error } : {}), ...(outcome.stopped ? { stopped: true } : {}), ...(asks.length ? { asks } : {}) };
+      await this.deps.store.append(p, t, row); this.publish(p, t, { event: 'row', data: row });
+      if (sid) { meta.sessions[item.ai] = sid; meta.models[item.ai] = item.model ?? ''; } meta.seen[item.ai] = item.id; await this.deps.store.writeMeta(p, t, meta);
+      if (asks.length && !outcome.stopped) await this.deps.tasks.update(p, t, { state: '等待回覆', question: asks.map(x => x.question).join(' / ').slice(0, 300) });
+      if (outcome.stopped || error) s.text = '';
     } catch (err) {
-      await this.finishWithError(project, task, item, 'prepare_failed', err);
-      return;
-    }
-    const roles = await this.deps.roles();
-    const preamble = resumeId
-      ? undefined
-      : buildPreamble({
-          project,
-          projectDir: ws.projectDir(project),
-          taskId: task,
-          taskTitle: taskDoc.title,
-          taskFile: ws.taskFile(project, task),
-          cwd,
-          role: taskDoc.role,
-          job: roles.roles[taskDoc.role]?.job ?? '',
-          cli: item.cli,
-        });
-    const prompt = buildPrompt({ ...(preamble ? { preamble } : {}), ...(handoff ? { handoff } : {}), text: item.text });
-
-    if (taskDoc.state === '未開始') {
-      const updated = await tasks.update(project, task, { state: '進行中' });
-      this.emitEvent(project, task, { event: 'task', data: updated });
-    }
-
-    s.partial = '';
-    let sessionId = resumeId;
-    let result: string | undefined;
-    let errorReason: string | undefined;
-    const run = provider.send(
-      {
-        prompt,
-        cwd,
-        ...(resumeId ? { resumeId } : {}),
-        ...(item.model ? { model: item.model } : {}),
-        ...(item.effort ? { effort: item.effort } : {}),
-        addDirs: [ws.projectDir(project)],
-      },
-      (ev) => {
-        switch (ev.type) {
-          case 'session':
-            sessionId = ev.id;
-            break;
-          case 'delta':
-            s.partial += ev.text;
-            this.emitEvent(project, task, { event: 'delta', data: { request: item.request, text: ev.text } });
-            break;
-          case 'result':
-            result = ev.text;
-            break;
-          case 'error':
-            errorReason = ev.reason;
-            break;
-        }
-      },
-    );
-    s.run = run;
-    log.info('對話開始', { project, task, cli: item.cli, request: item.request, resume: Boolean(resumeId), handoff: handoff.length });
-
-    const outcome = await run.done;
-    const text = result ?? s.partial;
-    const rows: ChatRow[] = [];
-    if (outcome.stopped) {
-      rows.push({ at: new Date().toISOString(), role: 'assistant', text, cli: item.cli, request: item.request, cancelled: true });
-    } else if (outcome.ok && errorReason === undefined) {
-      rows.push({ at: new Date().toISOString(), role: 'assistant', text, cli: item.cli, request: item.request });
-    } else {
-      if (text) rows.push({ at: new Date().toISOString(), role: 'assistant', text, cli: item.cli, request: item.request, interrupted: true });
-      rows.push({ at: new Date().toISOString(), role: 'error', text: 'CLI 執行失敗', cli: item.cli, request: item.request });
-      log.warn('對話失敗', { project, task, cli: item.cli, request: item.request, reason: (errorReason ?? outcome.reason ?? '').slice(0, 500) });
-    }
-    for (const row of rows) {
-      await store.append(project, task, row);
-      this.emitEvent(project, task, { event: 'log', data: row });
-    }
-    const succeeded = outcome.stopped || (outcome.ok && errorReason === undefined);
-    if (succeeded) {
-      if (sessionId) meta.sessions[item.cli] = sessionId;
-      meta.seen[item.cli] = (rows.at(-1) ?? userRow).request;
-    } else if (resumeId) {
-      // 失敗的續聊多半是 session 已失效：丟掉它，下次重新開始並附交接包
-      delete meta.sessions[item.cli];
-    }
-    await store.writeMeta(project, task, meta);
-
-    s.run = null;
-    s.partial = '';
-    // 先把槽位交給下一筆排隊（launch 會同步設 running），外界不會在兩輪之間看到「閒置」
-    const launched = await this.drain(project, task);
-    if (!launched) s.running = null;
-    if (!outcome.ok && !outcome.stopped) this.emitEvent(project, task, { event: 'error', data: { request: item.request, code: 'cli_failed' } });
-    this.emitEvent(project, task, { event: 'done', data: { request: item.request } });
-    log.info('對話結束', { project, task, request: item.request, ok: outcome.ok, stopped: outcome.stopped });
-    // AI 可能在這輪改了作業檔（state／question／步驟）：重讀並廣播
-    try {
-      this.emitEvent(project, task, { event: 'task', data: await tasks.get(project, task) });
-    } catch (err) {
-      log.warn('回合結束重讀作業檔失敗', { project, task, reason: err instanceof Error ? err.message : 'bad' });
+      log.error('對話執行失敗', err, { project: p, task: t }); s.text = '';
+      const row: ChatRow = { at: new Date().toISOString(), role: 'assistant', ai: item.ai, text: s.partial, error: 'internal', ms: Date.now() - started, request: item.id };
+      await this.deps.store.append(p, t, row); this.publish(p, t, { event: 'row', data: row });
+    } finally {
+      s.busy = null; s.run = null; s.partial = '';
+      if (!this.deps.watching(p, t)) this.unreadTasks.set(`${p}\0${t}`, { project: p, task: t });
+      this.publish(p, t, { event: 'idle', data: { request: item.id } }); this.deps.onChanged(p, t);
     }
   }
-
-  private async finishWithError(project: string, task: string, item: QueueItem, code: string, err: unknown): Promise<void> {
-    const s = this.slot(project, task);
-    s.run = null;
-    s.partial = '';
-    log.error('對話無法開始', err, { project, task, request: item.request });
-    const row: ChatRow = { at: new Date().toISOString(), role: 'error', text: '無法開始執行', cli: item.cli, request: item.request };
-    await this.deps.store.append(project, task, row);
-    this.emitEvent(project, task, { event: 'log', data: row });
-    const launched = await this.drain(project, task);
-    if (!launched) s.running = null;
-    this.emitEvent(project, task, { event: 'error', data: { request: item.request, code } });
-    this.emitEvent(project, task, { event: 'done', data: { request: item.request } });
+  stop(p: string, t: string): Promise<boolean> {
+    return this.lock(p, t, async () => { await this.deps.tasks.get(p, t); const s = this.slot(p, t); const stopped = Boolean(s.busy); s.text = ''; s.run?.stop(); await s.finished;
+      const q = await this.deps.store.updateQueue(p, t, () => []); this.publish(p, t, { event: 'queue', data: q }); await this.deps.oplog.record({ action: 'chatstop', project: p, task: t }); this.deps.onChanged(p, t); return stopped; });
   }
-
-  /** 本輪結束後：有排隊就出隊執行。回 true 代表已把槽位交給下一筆。 */
-  private async drain(project: string, task: string): Promise<boolean> {
-    let next: QueueItem | undefined;
-    const queue = await this.deps.store.updateQueue(project, task, (q) => {
-      next = q[0];
-      return next ? q.slice(1) : null;
-    });
-    if (!next) return false;
-    this.emitEvent(project, task, { event: 'queue', data: queue });
-    const provider = this.deps.providers[next.cli];
-    let taskDoc: Task;
-    try {
-      taskDoc = await this.deps.tasks.get(project, task);
-    } catch (err) {
-      void this.finishWithError(project, task, next, 'task_missing', err);
-      return true;
-    }
-    if (!provider) {
-      void this.finishWithError(project, task, next, 'cli_missing', new Error(`provider ${next.cli} 不存在`));
-      return true;
-    }
-    this.launch(project, task, next, taskDoc, provider);
-    return true;
+  unqueue(p: string, t: string, id: string): Promise<QueueItem[]> {
+    return this.lock(p, t, async () => { await this.deps.tasks.get(p, t); const q = await this.deps.store.updateQueue(p, t, q => { if (!q.some(x => x.id === id)) throw new AppError('not_found', 'queue_item_missing'); return q.filter(x => x.id !== id); }); this.publish(p, t, { event: 'queue', data: q }); this.deps.onChanged(p, t); return q; });
   }
 }
-
-/**
- * 某個 CLI 還沒看過的對話列：從它上次收尾的那筆 request 之後算起。
- * 舊版 meta.seen 存的是行數（number），照舊處理。
- */
-export function unseenRows(rows: ChatRow[], meta: ChatMeta, cli: string): ChatRow[] {
-  const mark = meta.seen[cli];
-  if (mark === undefined) return rows;
-  if (typeof mark === 'number') return rows.slice(mark);
-  let idx = -1;
-  for (let i = rows.length - 1; i >= 0; i--) {
-    if (rows[i]?.request === mark) {
-      idx = i;
-      break;
-    }
-  }
-  return idx < 0 ? rows : rows.slice(idx + 1);
+export function unseenRows(rows: ChatRow[], meta: ChatMeta, ai: string): ChatRow[] {
+  const mark = meta.seen[ai]; if (!mark) return rows;
+  const index = rows.findLastIndex(r => r.role === 'assistant' && r.request === mark);
+  return index < 0 ? rows : rows.slice(index + 1);
 }

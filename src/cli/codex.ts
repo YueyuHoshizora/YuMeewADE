@@ -1,58 +1,59 @@
-// codex CLI adapter（實測 0.160.1，PLAN.md A.5）。
-// 指令：{command} {baseArgs} [-m m] [-c model_reasoning_effort=e] [--add-dir d]… [dangerousArgs] [resume sid -]，提示由 stdin 送入。
-// 解析：thread.started.thread_id、item.started（command_execution 摘要）、item.completed（agent_message 文字）、turn.completed／turn.failed／error。
-// 0.160 的 exec --json 沒有逐字增量事件（實測只有 item.completed 整段），所以 agent_message 以整段當 delta 送出。
-
+// Codex --json adapter（含舊版 msg 事件）；工具不混入回答。
 import type { CliCommandConfig } from '../shared/config.ts';
 import { findExecutable, minimalEnv, runLineProcess } from './process.ts';
 import type { CliEvent, CliProvider, CliRun, SendOptions } from './provider.ts';
 
 export function codexArgs(cfg: CliCommandConfig, opts: SendOptions): string[] {
   const args = [...cfg.baseArgs];
+  // exec 子命令後放權限旗標；baseArgs 可由設定檔調整。
+  args.splice(args[0] === 'exec' ? 1 : 0, 0, ...((opts.fullAccess ?? cfg.fullAccess) ? cfg.fullAccessArgs : cfg.safeArgs));
   if (opts.model) args.push('-m', opts.model);
   if (opts.effort) args.push('-c', `model_reasoning_effort=${JSON.stringify(opts.effort)}`);
-  for (const d of opts.addDirs ?? []) args.push('--add-dir', d);
-  if (cfg.dangerous) args.push(...cfg.dangerousArgs);
-  if (opts.resumeId) args.push('resume', opts.resumeId, '-');
+  for (const image of opts.images ?? []) args.push('-i', image);
+  if (opts.resumeId) args.push('resume', opts.resumeId);
+  args.push('-');
   return args;
 }
 
 export function createCodexParser(onEvent: (ev: CliEvent) => void): (obj: Record<string, unknown>) => void {
   let streamed = '';
   let failed = false;
+  const commands = new Set<string>();
+  const appendText = (text: string) => {
+    const delta = (streamed && !streamed.endsWith('\n') ? '\n\n' : '') + text;
+    streamed += delta;
+    onEvent({ type: 'delta', text: delta });
+  };
   return (obj) => {
     switch (obj['type']) {
-      case 'thread.started': {
+      case 'thread.started':
         if (typeof obj['thread_id'] === 'string') onEvent({ type: 'session', id: obj['thread_id'] });
         return;
-      }
       case 'item.started':
       case 'item.completed': {
         const item = obj['item'];
         if (!item || typeof item !== 'object') return;
         const it = item as Record<string, unknown>;
-        if (obj['type'] === 'item.started') {
-          if (it['type'] === 'command_execution' && typeof it['command'] === 'string') {
-            const note = `\n⚙ ${it['command'].slice(0, 120)}\n`;
-            streamed += note;
-            onEvent({ type: 'delta', text: note });
+        if (it['type'] === 'command_execution' && typeof it['command'] === 'string') {
+          const id = typeof it['id'] === 'string' ? it['id'] : undefined;
+          if (!id || !commands.has(id)) {
+            onEvent({ type: 'tool', text: `command: ${it['command']}` });
+            if (id) commands.add(id);
           }
-          return;
-        }
-        if (it['type'] === 'agent_message' && typeof it['text'] === 'string') {
-          const text = (streamed && !streamed.endsWith('\n') ? '\n\n' : '') + it['text'];
-          streamed += text;
-          onEvent({ type: 'delta', text });
-        } else if (it['type'] === 'error') {
-          failed = true;
-          onEvent({ type: 'error', reason: `item error: ${String(it['message'] ?? '').slice(0, 200)}` });
+        } else if (obj['type'] === 'item.completed') {
+          if (it['type'] === 'agent_message' && typeof it['text'] === 'string') appendText(it['text']);
+          else if (it['type'] === 'file_change' && Array.isArray(it['changes'])) {
+            const paths = it['changes'].flatMap((c: unknown) => c && typeof c === 'object' && 'path' in c && typeof c.path === 'string' ? [c.path] : []);
+            onEvent({ type: 'tool', text: `file_change: ${paths.join(', ')}` });
+          } else if (it['type'] === 'error') {
+            onEvent({ type: 'tool', text: `warning: ${String(it['message'] ?? '')}` });
+          }
         }
         return;
       }
-      case 'turn.completed': {
+      case 'turn.completed':
         if (!failed) onEvent({ type: 'result', text: streamed.trim() });
         return;
-      }
       case 'turn.failed':
       case 'error': {
         failed = true;
@@ -61,8 +62,27 @@ export function createCodexParser(onEvent: (ev: CliEvent) => void): (obj: Record
         onEvent({ type: 'error', reason: msg.slice(0, 200) });
         return;
       }
-      default:
-        return;
+    }
+    const legacy = obj['msg'];
+    if (!legacy || typeof legacy !== 'object') return;
+    const m = legacy as Record<string, unknown>;
+    switch (m['type']) {
+      case 'session_configured':
+        if (typeof m['session_id'] === 'string') onEvent({ type: 'session', id: m['session_id'] });
+        break;
+      case 'agent_message':
+        if (typeof m['message'] === 'string') appendText(m['message']);
+        break;
+      case 'exec_command_begin':
+        onEvent({ type: 'tool', text: `command: ${Array.isArray(m['command']) ? m['command'].join(' ') : String(m['command'] ?? '')}` });
+        break;
+      case 'task_complete':
+        if (!failed) onEvent({ type: 'result', text: streamed.trim() });
+        break;
+      case 'error':
+        failed = true;
+        onEvent({ type: 'error', reason: String(m['message'] ?? 'error').slice(0, 200) });
+        break;
     }
   };
 }
@@ -75,19 +95,16 @@ export class CodexCliProvider implements CliProvider {
 
   constructor(cfg: CliCommandConfig, envPassthrough: string[]) {
     this.cfg = cfg;
-    this.dangerous = cfg.dangerous;
+    this.dangerous = cfg.fullAccess;
     this.env = minimalEnv(envPassthrough);
   }
 
-  available(): Promise<boolean> {
-    return findExecutable(this.cfg.command, this.env);
-  }
+  available(): Promise<boolean> { return findExecutable(this.cfg.command, this.env); }
 
   send(opts: SendOptions, onEvent: (ev: CliEvent) => void): CliRun {
-    const proc = runLineProcess(
+    return runLineProcess(
       { command: this.cfg.command, args: codexArgs(this.cfg, opts), cwd: opts.cwd, env: this.env, prompt: opts.prompt, label: 'codex' },
       createCodexParser(onEvent),
     );
-    return { stop: proc.stop, done: proc.done };
   }
 }

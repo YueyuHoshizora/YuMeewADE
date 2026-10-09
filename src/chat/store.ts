@@ -4,7 +4,12 @@ import { promises as fs } from 'node:fs';
 import type { Workspace } from '../ledger/workspace.ts';
 import { appendLine, readJson, writeJson } from '../shared/fsx.ts';
 import { log } from '../shared/log.ts';
-import type { ChatMeta, ChatRow, QueueItem } from '../shared/types.ts';
+import type { ChatRow, QueueItem } from '../shared/types.ts';
+export interface ChatMeta {
+  sessions: Record<string, string>;
+  models: Record<string, string>;
+  seen: Record<string, string>;
+}
 
 export class ChatStore {
   private readonly ws: Workspace;
@@ -38,7 +43,7 @@ export class ChatStore {
 
   async readMeta(project: string, task: string): Promise<ChatMeta> {
     const meta = await readJson<Partial<ChatMeta>>(this.ws.chatFile(project, task, 'json'), {});
-    return { sessions: meta.sessions ?? {}, seen: meta.seen ?? {} };
+    return { sessions: meta.sessions ?? {}, models: meta.models ?? {}, seen: meta.seen ?? {} };
   }
 
   writeMeta(project: string, task: string, meta: ChatMeta): Promise<void> {

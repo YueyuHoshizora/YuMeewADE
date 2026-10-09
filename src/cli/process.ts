@@ -23,7 +23,7 @@ export function minimalEnv(passthrough: string[], source: NodeJS.ProcessEnv = pr
 
 const cache = new Map<string, { at: number; found: boolean }>();
 
-/** 在 PATH 上找得到執行檔即視為可用；結果快取 30 秒。 */
+/** 在 PATH 上找得到執行檔即視為可用；結果快取 5 秒。 */
 export async function findExecutable(command: string, env: NodeJS.ProcessEnv = process.env): Promise<boolean> {
   const hit = cache.get(command);
   if (hit && Date.now() - hit.at < 5_000) return hit.found;
@@ -125,7 +125,7 @@ export function runLineProcess(opts: { command: string; args: string[]; cwd: str
 }
 
 /** 日誌只記旗標形狀：session id、路徑等帶值的旗標以 <…> 取代（安全節 8）。 */
-const VALUE_FLAGS = new Set(['--resume', '--add-dir', '--model', '-m', '-c', '--effort', 'resume']);
+const VALUE_FLAGS: Record<string, true> = { '--resume': true, '--add-dir': true, '--model': true, '-m': true, '-c': true, '--effort': true, resume: true, '-i': true };
 export function redactArgs(args: string[]): string[] {
   const out: string[] = [];
   let hide = false;
@@ -136,7 +136,63 @@ export function redactArgs(args: string[]): string[] {
       continue;
     }
     out.push(a.length > 40 ? a.slice(0, 40) + '…' : a);
-    hide = VALUE_FLAGS.has(a);
+    hide = VALUE_FLAGS[a] === true;
   }
   return out;
+}
+
+export interface CommandCapture {
+  ok: boolean;
+  stdout: string;
+  stderr: string;
+  reason?: string;
+}
+
+/** 非推論指令（版本、模型目錄、更新）；不使用 shell，不記錄輸出。 */
+export function captureCommand(opts: { command: string; args: string[]; cwd?: string; env?: NodeJS.ProcessEnv; timeoutMs: number }): Promise<CommandCapture> {
+  const { promise, resolve } = Promise.withResolvers<CommandCapture>();
+  let stdout = '';
+  let stderr = '';
+  let reason: string | undefined;
+  let settled = false;
+  let timer: NodeJS.Timeout | undefined;
+  let killTimer: NodeJS.Timeout | undefined;
+  const finish = (ok: boolean, failure?: string) => {
+    if (settled) return;
+    settled = true;
+    clearTimeout(timer);
+    clearTimeout(killTimer);
+    resolve({ ok, stdout, stderr, ...(failure ? { reason: failure } : {}) });
+  };
+  let child: ChildProcess;
+  try {
+    child = spawn(opts.command, opts.args, { cwd: opts.cwd, env: opts.env ?? minimalEnv([]), stdio: ['ignore', 'pipe', 'pipe'], windowsHide: true });
+  } catch (err) {
+    finish(false, `spawn 失敗：${(err as Error).message}`);
+    return promise;
+  }
+  const terminate = (failure: string) => {
+    if (reason || settled) return;
+    reason = failure;
+    child.kill('SIGTERM');
+    killTimer = setTimeout(() => child.kill('SIGKILL'), 5000);
+    killTimer.unref();
+  };
+  timer = setTimeout(() => terminate('command timeout'), opts.timeoutMs);
+  child.stdout?.setEncoding('utf8');
+  child.stdout?.on('data', (chunk: string) => {
+    if (stdout.length + chunk.length > 32 * 1024 * 1024) terminate('command output limit exceeded');
+    else stdout += chunk;
+  });
+  child.stderr?.setEncoding('utf8');
+  child.stderr?.on('data', (chunk: string) => {
+    stderr = (stderr + chunk).slice(-STDERR_SNIPPET);
+  });
+  child.on('error', (err) => finish(false, `啟動失敗：${err.message}`));
+  child.on('close', (code, signal) => {
+    if (reason) finish(false, reason);
+    else if (code === 0) finish(true);
+    else finish(false, `exit ${code ?? signal}`);
+  });
+  return promise;
 }

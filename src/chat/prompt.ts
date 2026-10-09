@@ -26,7 +26,8 @@ export function buildPreamble(p: Preamble): string {
     `作業檔：${p.taskFile}（可更新 question／步驟勾選；state 值：未開始／進行中／等待回覆／暫停／完成，但「完成」由人確認，不要自行寫入）`,
     p.cwd === p.projectDir ? `工作目錄：${p.cwd}` : `工作目錄：${p.cwd}（git worktree 副本；只在此修改，收編到主專案由人操作）`,
     `工作規則：先讀 ${p.projectDir}/.ai/rules.md；長對話時依規則把摘要存到 ${p.projectDir}/.ai/memory/。`,
-    '需要人判斷時，把問題寫進作業檔 question 並把 state 設為「等待回覆」。',
+    '區切時更新作業檔：步驟勾選、## 做了什麼、## 下一步。不要自己把 state 寫成 完成；完成由人確認。',
+    '請使用人類這次指示所使用的相同語言回覆。',
   ].join('\n');
 }
 
@@ -37,11 +38,14 @@ export function buildPreamble(p: Preamble): string {
 export function buildHandoff(rows: ChatRow[], limit: number): string {
   const entries = rows
     .filter((r) => (r.role === 'user' || r.role === 'assistant') && r.text.trim() !== '')
-    .map((r) => `[${r.role === 'user' ? '人' : `AI ${r.cli}`}${r.cancelled ? '，已被停止' : r.interrupted ? '，中斷' : ''}]\n${r.text.trim()}`);
+    .map((r) => `[${r.role === 'user' ? '人' : r.role === 'assistant' ? `AI ${r.ai}` : ''}${r.role === 'assistant' && r.stopped ? '，已被停止' : ''}]\n${r.text.trim()}`);
   if (entries.length === 0) return '';
   const header = `<previous_conversation>\n${HANDOFF_NOTICE}\n`;
   const footer = '\n</previous_conversation>';
-  const budget = limit - header.length - footer.length;
+  const truncationNote = '（更早的對話已截去）\n\n';
+  const budget = limit - header.length - footer.length - truncationNote.length;
+  // 不可為了塞入歷史而截掉授權界線；極小上限就不附交接包。
+  if (budget <= 0) return '';
   let kept: string[] = [];
   let used = 0;
   let truncated = false;
@@ -60,14 +64,19 @@ export function buildHandoff(rows: ChatRow[], limit: number): string {
     kept = [last.slice(Math.max(0, last.length - budget))];
     truncated = true;
   }
-  const note = truncated ? '（更早的對話已截去）\n\n' : '';
+  const note = truncated ? truncationNote : '';
   return `${header}${note}${kept.join('\n\n')}${footer}`;
 }
 
-export function buildPrompt(parts: { preamble?: string; handoff?: string; text: string }): string {
-  const blocks: string[] = [];
-  if (parts.preamble) blocks.push(parts.preamble);
-  if (parts.handoff) blocks.push(parts.handoff);
-  blocks.push(parts.text);
-  return blocks.join('\n\n');
+export const ASK_RULE = `# 需要人判斷時
+不要推測，請停下來，在回覆最後用以下格式；不要使用 AskUserQuestion 工具。
+[[question]]
+問題（可複選時最後加「（可複選）」）
+1. 選項（建議的放第一個並加「（建議）」）
+2. 選項
+[[/question]]
+提供 2–4 個選項；多個問題可連續寫。`;
+
+export function buildPrompt(parts: { preamble?: string; handoff?: string; text: string; images?: string[] }): string {
+  return [parts.preamble, ASK_RULE, parts.handoff, `# 這次的指示\n${parts.text}`, parts.images?.length ? `圖片（請用 Read 工具查看）：\n${parts.images.join('\n')}` : ''].filter(Boolean).join('\n\n');
 }

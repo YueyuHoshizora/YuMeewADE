@@ -1,4 +1,6 @@
-// CliProvider 契約（PLAN.md 3.1）。核心只認這個介面；claude／codex／mock 各自實作。
+// CLI 對話契約；核心只認這個介面，工具摘要不混入回答文字。
+
+import type { Ask } from '../shared/types.ts';
 
 export interface SendOptions {
   /** 完整提示（含前言、交接包、使用者指示）。 */
@@ -10,6 +12,10 @@ export interface SendOptions {
   effort?: string;
   /** 額外允許存取的目錄（主專案的 .ai/）。 */
   addDirs?: string[];
+  /** 本輪權限；省略時使用 config 的預設。 */
+  fullAccess?: boolean;
+  /** 已保存的圖片絕對路徑。 */
+  images?: string[];
 }
 
 export type CliEvent =
@@ -17,6 +23,8 @@ export type CliEvent =
   | { type: 'delta'; text: string }
   /** 最終完整回覆（有些 CLI 不逐字串流，只給整段）。 */
   | { type: 'result'; text: string }
+  | { type: 'tool'; text: string }
+  | { type: 'asks'; asks: Ask[] }
   /** 內部原因，只進日誌，不對外。 */
   | { type: 'error'; reason: string };
 
