@@ -1,1 +1,68 @@
-<!doctype html><html lang="zh-Hant"><head><meta charset="utf-8"><title>YuMeewADE</title></head><body><div id="app"></div><script type="module" src="./main.ts"></script></body></html>
+<!doctype html>
+<html lang="zh-Hant">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>YuMeewADE</title>
+    <link rel="stylesheet" href="./style.css" />
+  </head>
+  <body>
+    <div id="app">
+      <aside id="projects" class="col">
+        <header><h1>YuMeewADE</h1><span id="version" class="muted"></span></header>
+        <div class="toolbar">
+          <input id="project-name" placeholder="新專案名稱" maxlength="64" />
+          <button id="project-create">新增專案</button>
+        </div>
+        <ul id="project-list" class="list"></ul>
+        <footer class="muted" id="workspace-root"></footer>
+      </aside>
+      <section id="tasks" class="col">
+        <header><h2 id="tasks-title">作業</h2></header>
+        <div class="toolbar">
+          <input id="task-title" placeholder="新作業標題" maxlength="200" />
+          <select id="task-role"></select>
+          <button id="task-create">新增作業</button>
+        </div>
+        <ul id="task-list" class="list"></ul>
+      </section>
+      <main id="chat" class="col">
+        <header id="chat-header" class="hidden">
+          <div class="row">
+            <h2 id="chat-title"></h2>
+            <select id="task-state"></select>
+            <span id="task-steps" class="muted"></span>
+          </div>
+          <div class="row muted small">
+            <span id="task-meta"></span>
+          </div>
+          <div id="task-question" class="question hidden"></div>
+          <div id="worktree" class="row small"></div>
+        </header>
+        <div id="chat-empty" class="empty">選一個作業開始對話</div>
+        <div id="chat-log" class="log hidden"></div>
+        <div id="queue" class="queue hidden"></div>
+        <form id="composer" class="composer hidden">
+          <textarea id="composer-text" rows="3" placeholder="指示…（Ctrl/⌘+Enter 送出；執行中送出會排隊）"></textarea>
+          <div class="row">
+            <select id="composer-cli"></select>
+            <select id="composer-model"></select>
+            <select id="composer-effort">
+              <option value="">effort：依設定</option>
+              <option value="low">low</option>
+              <option value="medium">medium</option>
+              <option value="high">high</option>
+              <option value="xhigh">xhigh</option>
+            </select>
+            <span class="spacer"></span>
+            <button type="button" id="composer-stop" class="danger" disabled>停止</button>
+            <button type="submit" id="composer-send">送出</button>
+          </div>
+          <div id="status" class="muted small"></div>
+        </form>
+      </main>
+    </div>
+    <div id="toast" class="toast hidden"></div>
+    <script type="module" src="./main.ts"></script>
+  </body>
+</html>

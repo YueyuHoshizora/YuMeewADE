@@ -10,11 +10,11 @@ const TITLE_MAX = 200;
 
 export function registerRoutes(router: Router, app: App): void {
   router.get('/api/bootstrap', async (): Promise<Bootstrap> => {
-    const [projects, roles] = await Promise.all([app.projects.list(), app.roles()]);
+    const [projects, roles, clis] = await Promise.all([app.projects.list(), app.roles(), app.cliInfo()]);
     return {
       version: app.version,
       projects,
-      clis: [],
+      clis,
       roles,
       limits: {
         promptChars: app.config.limits.promptChars,
@@ -60,6 +60,49 @@ export function registerRoutes(router: Router, app: App): void {
       (patch as Record<string, string>)[key] = v;
     }
     await app.projects.get(project);
-    return app.tasks.update(project, task, patch);
+    const updated = await app.tasks.update(project, task, patch);
+    app.sse.publish(`${project}\u0000${task}`, { event: 'task', data: updated });
+    return updated;
+  });
+
+  // ---- 對話 ----
+
+  const locate = async (src: Record<string, unknown> | URLSearchParams): Promise<{ project: string; task: string }> => {
+    const project = reqString(src, 'project', NAME_MAX);
+    const task = reqString(src, 'task', NAME_MAX);
+    await app.tasks.get(project, task);
+    return { project, task };
+  };
+
+  router.get('/api/chat/log', async ({ query }) => {
+    const { project, task } = await locate(query);
+    return app.store.readLog(project, task);
+  });
+
+  router.get('/api/chat/stream', async ({ req, res, query }) => {
+    const { project, task } = await locate(query);
+    const [snap, taskDoc] = await Promise.all([app.runner.snapshot(project, task), app.tasks.get(project, task)]);
+    app.sse.open(req, res, `${project}\u0000${task}`, { event: 'ready', data: { ...snap, task: taskDoc } });
+    return undefined;
+  });
+
+  router.post('/api/chat/send', async ({ body, ip }) => {
+    const { project, task } = await locate(body);
+    const text = reqString(body, 'text', app.config.limits.promptChars);
+    const cli = optString(body, 'cli', 32);
+    const model = optString(body, 'model', 100);
+    const effort = optString(body, 'effort', 16);
+    if (!app.sendLimiter.take(ip)) throw new AppError('too_many_requests');
+    return app.runner.send(project, task, text, { ...(cli ? { cli } : {}), ...(model ? { model } : {}), ...(effort ? { effort } : {}) });
+  });
+
+  router.post('/api/chat/stop', async ({ body }) => {
+    const { project, task } = await locate(body);
+    return { stopped: app.runner.stop(project, task) };
+  });
+
+  router.post('/api/chat/queue/remove', async ({ body }) => {
+    const { project, task } = await locate(body);
+    return app.runner.removeQueued(project, task, reqString(body, 'request', 64));
   });
 }

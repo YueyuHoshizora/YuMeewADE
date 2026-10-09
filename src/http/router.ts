@@ -33,7 +33,7 @@ export function sendJson(res: ServerResponse, status: number, data: unknown): vo
 
 export function sendError(res: ServerResponse, err: unknown): void {
   if (err instanceof AppError) {
-    if (err.status >= 500) log.error('請求失敗', err);
+    if (err.status === 500) log.error('請求失敗', err);
     sendJson(res, err.status, { error: err.code, message: err.publicMessage });
     return;
   }
