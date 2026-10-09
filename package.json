@@ -1,0 +1,28 @@
+{
+  "name": "yumeewade",
+  "version": "0.1.0",
+  "description": "跨平台 AI 專案協作 App：台帳、作業、AI 對話同畫面管理",
+  "license": "Apache-2.0",
+  "private": true,
+  "type": "module",
+  "main": "dist/desktop/main.js",
+  "engines": {
+    "node": ">=24"
+  },
+  "scripts": {
+    "build": "tsc -p tsconfig.build.json && vite build",
+    "typecheck": "tsc --noEmit -p tsconfig.json && tsc --noEmit -p tsconfig.ui.json",
+    "test": "node --test \"src/**/*.test.ts\"",
+    "start": "node dist/server/main.js",
+    "dev": "tsc -p tsconfig.build.json --watch --preserveWatchOutput & vite build --watch & node --watch dist/server/main.js",
+    "desktop": "electron .",
+    "dist": "electron-builder --config electron-builder.yml"
+  },
+  "devDependencies": {
+    "@types/node": "24.19.1",
+    "electron": "44.7.0",
+    "electron-builder": "26.15.3",
+    "typescript": "7.0.2",
+    "vite": "8.3.4"
+  }
+}

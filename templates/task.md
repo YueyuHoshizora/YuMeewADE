@@ -1,15 +1,15 @@
 ---
-id: {{id}}
-title: {{title}}
+id:
+title:
 state: 未開始
 phase:
 owner:
-role: {{role}}
+role:
 cli:
 model:
 effort:
 question:
-updated: {{updated}}
+updated:
 ---
 ## 步驟
 - [ ]
