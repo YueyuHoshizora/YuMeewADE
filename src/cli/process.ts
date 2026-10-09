@@ -54,6 +54,32 @@ export interface LineProcess {
   done: Promise<RunOutcome>;
 }
 
+/** POSIX 使用獨立行程群組；Windows 交給系統工具終止整棵樹。 */
+function signalTree(child: ChildProcess, signal: NodeJS.Signals): void {
+  if (!child.pid) return;
+  if (process.platform === 'win32') {
+    const killer = spawn('taskkill', ['/pid', String(child.pid), '/T', '/F'], { windowsHide: true, stdio: 'ignore' });
+    killer.on('error', (err) => log.warn('CLI 行程樹停止失敗', { message: err.message }));
+    killer.unref();
+    return;
+  }
+  try { process.kill(-child.pid, signal); } catch (err) {
+    if ((err as NodeJS.ErrnoException).code !== 'ESRCH') log.warn('CLI 行程樹停止失敗', { message: (err as Error).message });
+  }
+}
+
+function terminateTree(child: ChildProcess, finish: () => void): () => void {
+  signalTree(child, 'SIGTERM');
+  const kill = setTimeout(() => signalTree(child, 'SIGKILL'), 3000);
+  const bound = setTimeout(() => {
+    child.stdin?.destroy(); child.stdout?.destroy(); child.stderr?.destroy();
+    child.unref();
+    finish();
+  }, 3500);
+  kill.unref(); bound.unref();
+  return () => { clearTimeout(kill); clearTimeout(bound); };
+}
+
 /**
  * 啟動 CLI，把 prompt 寫進 stdin，stdout 逐行交給 onLine（已 JSON.parse；壞行略過）。
  * 結束時 done resolve：exit 0 → ok；stop() → stopped；否則 reason 帶退出碼與 stderr 片段（只進日誌）。
@@ -64,13 +90,15 @@ export function runLineProcess(opts: { command: string; args: string[]; cwd: str
   let stopped = false;
   let stderr = '';
   let settled = false;
+  let cancelStop: (() => void) | undefined;
   const finish = (o: RunOutcome) => {
     if (settled) return;
     settled = true;
+    cancelStop?.();
     resolve(o);
   };
   try {
-    child = spawn(opts.command, opts.args, { cwd: opts.cwd, env: opts.env, stdio: ['pipe', 'pipe', 'pipe'], windowsHide: true });
+    child = spawn(opts.command, opts.args, { cwd: opts.cwd, env: opts.env, stdio: ['pipe', 'pipe', 'pipe'], windowsHide: true, detached: process.platform !== 'win32' });
   } catch (err) {
     finish({ ok: false, stopped: false, reason: `spawn 失敗：${(err as Error).message}` });
     return { stop: () => undefined, done: promise };
@@ -115,10 +143,7 @@ export function runLineProcess(opts: { command: string; args: string[]; cwd: str
     stop: () => {
       if (stopped || settled) return;
       stopped = true;
-      child.kill('SIGTERM');
-      setTimeout(() => {
-        if (!settled) child.kill('SIGKILL');
-      }, 5000).unref();
+      cancelStop = terminateTree(child, () => finish({ ok: false, stopped: true }));
     },
     done: promise,
   };
@@ -156,17 +181,17 @@ export function captureCommand(opts: { command: string; args: string[]; cwd?: st
   let reason: string | undefined;
   let settled = false;
   let timer: NodeJS.Timeout | undefined;
-  let killTimer: NodeJS.Timeout | undefined;
+  let cancelStop: (() => void) | undefined;
   const finish = (ok: boolean, failure?: string) => {
     if (settled) return;
     settled = true;
     clearTimeout(timer);
-    clearTimeout(killTimer);
+    cancelStop?.();
     resolve({ ok, stdout, stderr, ...(failure ? { reason: failure } : {}) });
   };
   let child: ChildProcess;
   try {
-    child = spawn(opts.command, opts.args, { cwd: opts.cwd, env: opts.env ?? minimalEnv([]), stdio: ['ignore', 'pipe', 'pipe'], windowsHide: true });
+    child = spawn(opts.command, opts.args, { cwd: opts.cwd, env: opts.env ?? minimalEnv([]), stdio: ['ignore', 'pipe', 'pipe'], windowsHide: true, detached: process.platform !== 'win32' });
   } catch (err) {
     finish(false, `spawn 失敗：${(err as Error).message}`);
     return promise;
@@ -174,9 +199,7 @@ export function captureCommand(opts: { command: string; args: string[]; cwd?: st
   const terminate = (failure: string) => {
     if (reason || settled) return;
     reason = failure;
-    child.kill('SIGTERM');
-    killTimer = setTimeout(() => child.kill('SIGKILL'), 5000);
-    killTimer.unref();
+    cancelStop = terminateTree(child, () => finish(false, failure));
   };
   timer = setTimeout(() => terminate('command timeout'), opts.timeoutMs);
   child.stdout?.setEncoding('utf8');
