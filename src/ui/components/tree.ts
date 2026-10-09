@@ -26,7 +26,7 @@ export function tree(context: ViewContext): HTMLElement {
     }
   }
   search.oninput = () => { searchText = search.value; const next = tree(context); content.replaceChildren(...Array.from(next.querySelector('.tree-content')!.childNodes)); filter(); };
-  search.onkeydown = event => { if (event.key === 'Escape') { event.preventDefault(); search.value = ''; search.oninput?.(new Event('input')); } };
+  search.onkeydown = event => { if (event.key === 'Escape') { event.preventDefault(); search.value = ''; search.dispatchEvent(new InputEvent('input')); } };
   root.append(search, content);
   const unread = (p: string, task: string) => state.unread.some(u => u.project === p && u.task === task);
   const attentionKeys = new Set<string>();
