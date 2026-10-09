@@ -345,7 +345,7 @@ updated: 2026-10-10 12:00
 ```
 - 作業狀態轉移由 UI 下拉或 `POST /api/task/update` 設定；核心只在「開始執行且狀態為未開始」時自動改為「進行中」。
 - `.ai/chat/{作業ID}.jsonl` 每行 `{ at, role: user|assistant|error, text, cli, model?, request, cancelled?, interrupted? }`。
-- `.ai/chat/{作業ID}.json`：`{ sessions: { claude?: id, codex?: id }, seen: { claude?: n, codex?: n } }`，`seen[cli]` 為該 CLI 已看過的 JSONL 行數，用來決定交接包內容。
+- `.ai/chat/{作業ID}.json`：`{ sessions: { claude?: id, codex?: id }, models: { claude?: m, codex?: m }, seen: { claude?: n, codex?: n }, running?: { request, ai, model?, effort?, startedAt } }`，`seen[cli]` 為該 CLI 已看過的 JSONL 行數，用來決定交接包內容。`running` 為執行中的標記：開始執行時寫入、結束時清除；核心重啟時若發現殘留標記，補一列 `error: 'interrupted'` 的 assistant 列並清除（不自動重跑）。
 - `.ai/chat/{作業ID}.queue.json`：`[{ request, text, cli, model?, effort?, at }]`。
 
 ### A.4 roles.yaml
@@ -386,7 +386,7 @@ electron 44.7.0、vite 8.3.4、electron-builder 26.15.3、typescript 7.0.2、@ty
 - CLI 權限預設（安全節 3 的「危險旗標預設關閉」不變）：claude `baseArgs` 加 `--permission-mode acceptEdits`（只自動接受工作目錄與 `--add-dir` 內的檔案編輯，執行指令仍拒絕）；codex `baseArgs` 加 `-s workspace-write -c approval_policy="never"`（沙箱內不詢問）。沒有這兩項，無頭模式下 AI 連副本內的檔案都無法修改。
 - 環境白名單預設多放行 `CODEX_HOME`、`CLAUDE_CONFIG_DIR`（CLI 設定目錄指標，非憑證；缺少時 codex 找不到登入狀態而回 401）。
 - 續聊失敗處理：某輪失敗（非人工停止）時不保存該輪的 session id，若本輪是 resume 則刪除既有 session（下次重新開始並附交接包），`seen` 也不前進。
-- 桌面版：Electron 主行程以 `utilityProcess.fork` 執行同一份 `dist/server/main.js`；若 port 已有核心回應（例如網頁版已在跑）則直接共用；App 結束時結束核心。設定檔在 `app.getPath('userData')/config.yaml`，首次啟動從範本複製。
+- 桌面版：Electron 主行程以 `utilityProcess.fork` 執行同一份 `dist/server/main.js`；若 port 已有核心回應（例如網頁版已在跑）則直接共用；App 結束時對核心送 `shutdown` 訊號，等核心停止執行中的 AI 並保存紀錄後才結束（逾時才強制 kill）。設定檔在 `app.getPath('userData')/config.yaml`，首次啟動從範本複製。另有單一實例鎖、Dock 徽章、`setBadge`／`focus` IPC 橋接。
 
 ### A.10 Gate 5 安全 checklist（2026-10-10 逐條核對）
 | # | 規則 | 實作位置 | 驗證 |

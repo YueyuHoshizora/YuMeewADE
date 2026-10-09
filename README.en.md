@@ -13,17 +13,17 @@ The workflow draws on [kieiken/project-hub](https://github.com/kieiken/project-h
 
 ## Interface and workflow
 
-- **Left-hand tree**: tasks appear under projects; subtasks are indented with `↳`, and branch tasks are marked `⑂`. Dot colors: red = AI running, yellow = awaiting your reply, blue = awaiting completion confirmation, purple = complete, light green = previously handled, gray = not started. Unread results are marked “Unread.” The context menu (⋯) supports renaming, adding subtasks or branches, and archiving; projects also support pinning, reordering, and adding subprojects.
+- **Left-hand tree**: tasks appear under projects; subtasks are indented with `↳`, and branch tasks are marked `⑂`. Dot colors: red = AI running, yellow = awaiting your reply, blue = awaiting completion confirmation, purple = complete, light green = previously handled, gray = not started. Unread results are marked “Unread.” The context menu (⋯) supports renaming, adding subtasks or branches, and archiving; projects also support pinning, reordering (or drag-and-drop), and adding subprojects. The search box at the top (`/` or Ctrl/⌘+K) filters projects and tasks.
 - **Your turn**: the title-bar button shows task counts for “Awaiting reply” and “Confirm completion.” Open it to “Mark complete” or “Continue.”
 - **New project**: enter a name, description, and phases (defaults: Plan / Implement / Review / Wrap up). Set “Main folder” to an existing code folder (the desktop app has a “Choose…” button); leave it blank to use the ledger folder itself. Providing a “First task (optional)” starts it immediately.
 - **Project overview**: the phase roadmap and tasks in the current phase. Once all tasks in the current phase are complete, “Next phase” is offered. **Quick start**: describe what you want to do, choose an AI, model, and reasoning effort (your last choices are remembered), optionally attach images, and click “Start” to create a task and hand it to AI. “＋ Add task with details” is also available.
 - **Task view**:
-  - Conversation: switch AI, model, or reasoning effort with each message. Switching AI includes the human and AI text messages the new AI has not yet seen (a handoff package); using the same AI continues the existing session.
+  - Conversation: switch AI, model, or reasoning effort with each message. Switching AI includes the human and AI text messages the new AI has not yet seen (a handoff package); using the same AI continues the existing session. Send with ⌘/Ctrl+Enter, or switch to Enter-to-send (Shift+Enter for a new line; IME composition never sends). When the app is in the background, a finished run or a question for you raises a system notification and updates the Dock badge. If the core is interrupted mid-run (e.g. a crash), that round is marked “Interrupted” and queued instructions are kept.
   - Sending while running: **① Cancel and redo**, **② Add context (do together)**, or **③ Continue after this** (queued, starts automatically afterward, and persists across restarts). “Stop” also clears the queue.
   - When AI needs a decision, it asks a question at the end of its response in a fixed format. The interface displays **option buttons**, and you can also type your own answer. Answering moves the task from “Awaiting reply” back to “In progress.”
   - Working copy: shows “N files +a −b” and conflict warnings. You can “View diff,” **Merge into main folder** (automatically saves both sides, then merges with `--no-ff`; success removes the copy and marks the task complete; conflicts abort the merge, leave the main folder unchanged, and move the task to Awaiting reply), or “Exclude from merge.”
   - At the bottom, change the state and phase, check off steps (the `## 步驟` list), and leave notes. Checking all steps or AI writing “完成” puts the task into “Confirm completion,” leaving the decision to a human (“完成” is a literal Chinese ledger value).
-- **Settings**: language (7 languages), default AI for new tasks, AI tools (versions, “Refresh models,” “Update CLI,” and the “Full access” toggle), models shown in menus and their order, roles (written back to `roles.yaml`), and recent activity.
+- **Settings**: language (7 languages), Enter vs ⌘/Ctrl+Enter to send, notifications, default AI for new tasks, AI tools (versions, “Refresh models,” “Update CLI,” and the “Full access” toggle), models shown in menus and their order, roles (written back to `roles.yaml`), and recent activity.
 
 Model lists are read directly from the CLIs' own caches (`~/.codex/models_cache.json`, `~/.claude/cache/model-catalog/`). Available reasoning efforts for each model also come from the cache; built-in lists are used only when the cache cannot be read.
 
@@ -69,6 +69,8 @@ npm run build
 npm start            # 網頁版：瀏覽器開 http://127.0.0.1:4560
 npm run desktop      # 桌面版（開發機）
 ```
+
+> Source mode needs Node 24+. The packaged desktop app's core runs on Electron's bundled Node 22, so the code also stays Node 22 compatible (no Node 24-only APIs). The web version has no separate installer; it is `npm start` on your own machine.
 
 - First startup creates `~/Documents/YuMeewWorkspace/`, `Projects/`, `Work/`, `.yumeewade/`, and `roles.yaml`.
 - New projects copy `.ai/rules.md` (AI work rules), `.ai/memory/INDEX.md`, `CLAUDE.md`, and `AGENTS.md` from `templates/project/`. You can customize the templates.
