@@ -1,9 +1,9 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { runLineProcess, captureCommand } from './process.ts';
+import { runLineProcess, captureCommand, windowsCommandLine, findExecutable } from './process.ts';
+import { setTimeout as delay } from 'node:timers/promises';
 
-const delay = (ms: number) => new Promise<void>((resolve) => setTimeout(resolve, ms));
-
+// 真實行程樹／系統 PID 不受 fake clock 控制，以短輪詢等 OS 回收。
 test('停止會終止持有 stdout 的孫行程並及時完成', { skip: process.platform === 'win32', timeout: 8000 }, async () => {
   let pid = 0;
   const run = runLineProcess({ command: '/bin/sh', args: ['-c', 'sleep 300 & p=$!; printf "{\\"pid\\":%s}\\n" "$p"; wait'], cwd: process.cwd(), env: process.env, prompt: '', label: 'test' }, (row) => { pid = Number(row['pid']); });
@@ -30,4 +30,16 @@ test('沒有換行的超大輸出會失敗而不是無限制累積', { timeout: 
   assert.equal(outcome.ok, false);
   assert.equal(outcome.stopped, false);
   assert.equal(outcome.reason, 'CLI line output limit exceeded');
+});
+
+test('Windows 命令列正確處理空白、引號、反斜線及 cmd 特殊字元', () => {
+  assert.equal(windowsCommandLine('C:\\Program Files\\codex.cmd', ['a b']), '\"C:\\Program^ Files\\codex.cmd ^^^\"a^^^ b^^^\"\"');
+  assert.equal(windowsCommandLine('tool.exe', ['']), '\"tool.exe ^\"^\"\"');
+  assert.equal(windowsCommandLine('tool.exe', ['a\"b', 'a\\\\']), '\"tool.exe ^\"a\\^\"b^\" ^\"a\\\\\\\\^\"\"');
+  assert.equal(windowsCommandLine('tool.cmd', ['()%!^\"<>&|']), '\"tool.cmd ^^^\"^^^(^^^)^^^%^^^!^^^^\\^^^\"^^^<^^^>^^^&^^^|^^^\"\"');
+});
+
+test('執行檔查找回傳完整路徑而不是布林值', async () => {
+  assert.equal(await findExecutable(process.execPath), process.execPath);
+  assert.equal(await findExecutable('yumeewade-missing-executable', { PATH: '' }), null);
 });

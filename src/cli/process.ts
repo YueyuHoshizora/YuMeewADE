@@ -21,32 +21,33 @@ export function minimalEnv(passthrough: string[], source: NodeJS.ProcessEnv = pr
   return out;
 }
 
-const cache = new Map<string, { at: number; found: boolean }>();
+const cache = new Map<string, { at: number; found: string | null }>();
 
 /** 在 PATH 上找得到執行檔即視為可用；結果快取 5 秒。 */
-export async function findExecutable(command: string, env: NodeJS.ProcessEnv = process.env): Promise<boolean> {
-  const hit = cache.get(command);
+export async function findExecutable(command: string, env: NodeJS.ProcessEnv = process.env): Promise<string | null> {
+  const key = JSON.stringify([command, env['PATH'], env['PATHEXT']]);
+  const hit = cache.get(key);
   if (hit && Date.now() - hit.at < 5_000) return hit.found;
   const found = await locate(command, env);
-  cache.set(command, { at: Date.now(), found });
+  cache.set(key, { at: Date.now(), found });
   return found;
 }
 
-async function locate(command: string, env: NodeJS.ProcessEnv): Promise<boolean> {
-  const exts = process.platform === 'win32' ? (env['PATHEXT'] ?? '.EXE;.CMD;.BAT').split(';') : [''];
+async function locate(command: string, env: NodeJS.ProcessEnv): Promise<string | null> {
+  const exts = process.platform === 'win32' ? ['', ...(env['PATHEXT'] ?? '.EXE;.CMD;.BAT').split(';')] : [''];
   const dirs = path.isAbsolute(command) || command.includes(path.sep) ? [''] : (env['PATH'] ?? '').split(path.delimiter);
   for (const dir of dirs) {
     for (const ext of exts) {
       const candidate = dir ? path.join(dir, command + ext) : command + ext;
       try {
         await fs.access(candidate, fs.constants.X_OK);
-        return true;
+        return path.resolve(candidate);
       } catch {
         /* 下一個 */
       }
     }
   }
-  return false;
+  return null;
 }
 
 export interface LineProcess {
@@ -80,11 +81,44 @@ function terminateTree(child: ChildProcess, finish: () => void): () => void {
   return () => { clearTimeout(kill); clearTimeout(bound); };
 }
 
+/** 對齊 cross-spawn：cmd 引號與反斜線規則，npm shim 需要再次跳脫。 */
+export function windowsCommandLine(command: string, args: string[]): string {
+  const meta = /([()\][%!^"`<>&|;, *?])/g;
+  const escapedCommand = command.replace(meta, '^$1');
+  const doubleEscape = /\.(?:cmd|bat)$/i.test(command);
+  const escapedArgs = args.map((arg) => {
+    let escaped = arg.replace(/(\\*)"/g, '$1$1\\"').replace(/(\\*)$/g, '$1$1');
+    escaped = `"${escaped}"`.replace(meta, '^$1');
+    if (doubleEscape) escaped = escaped.replace(meta, '^$1');
+    return escaped;
+  });
+  return `"${[escapedCommand, ...escapedArgs].join(' ')}"`;
+}
+
+function spawnCli(command: string, args: string[], options: Parameters<typeof spawn>[2]): ChildProcess {
+  if (process.platform === 'win32' && /\.(?:cmd|bat)$/i.test(command)) {
+    return spawn(process.env['ComSpec'] || 'cmd.exe', ['/d', '/s', '/c', windowsCommandLine(command, args)], { ...options, windowsVerbatimArguments: true });
+  }
+  return spawn(command, args, options);
+}
+
 /**
  * 啟動 CLI，把 prompt 寫進 stdin，stdout 逐行交給 onLine（已 JSON.parse；壞行略過）。
  * 結束時 done resolve：exit 0 → ok；stop() → stopped；否則 reason 帶退出碼與 stderr 片段（只進日誌）。
  */
 export function runLineProcess(opts: { command: string; args: string[]; cwd: string; env: NodeJS.ProcessEnv; prompt: string; label: string }, onLine: (obj: Record<string, unknown>) => void): LineProcess {
+  let run: LineProcess | undefined;
+  let stopped = false;
+  const done = findExecutable(opts.command, opts.env).then((command) => {
+    if (stopped) return { ok: false, stopped: true };
+    if (!command) return { ok: false, stopped: false, reason: 'CLI executable not found' };
+    run = runResolvedLineProcess({ ...opts, command }, onLine);
+    return run.done;
+  });
+  return { done, stop: () => { stopped = true; run?.stop(); } };
+}
+
+function runResolvedLineProcess(opts: { command: string; args: string[]; cwd: string; env: NodeJS.ProcessEnv; prompt: string; label: string }, onLine: (obj: Record<string, unknown>) => void): LineProcess {
   const { promise, resolve } = Promise.withResolvers<RunOutcome>();
   let child: ChildProcess;
   let stopped = false;
@@ -98,7 +132,7 @@ export function runLineProcess(opts: { command: string; args: string[]; cwd: str
     resolve(o);
   };
   try {
-    child = spawn(opts.command, opts.args, { cwd: opts.cwd, env: opts.env, stdio: ['pipe', 'pipe', 'pipe'], windowsHide: true, detached: process.platform !== 'win32' });
+    child = spawnCli(opts.command, opts.args, { cwd: opts.cwd, env: opts.env, stdio: ['pipe', 'pipe', 'pipe'], windowsHide: true, detached: process.platform !== 'win32' });
   } catch (err) {
     finish({ ok: false, stopped: false, reason: `spawn 失敗：${(err as Error).message}` });
     return { stop: () => undefined, done: promise };
@@ -189,7 +223,10 @@ export interface CommandCapture {
 }
 
 /** 非推論指令（版本、模型目錄、更新）；不使用 shell，不記錄輸出。 */
-export function captureCommand(opts: { command: string; args: string[]; cwd?: string; env?: NodeJS.ProcessEnv; timeoutMs: number }): Promise<CommandCapture> {
+export async function captureCommand(opts: { command: string; args: string[]; cwd?: string; env?: NodeJS.ProcessEnv; timeoutMs: number }): Promise<CommandCapture> {
+  const env = opts.env ?? minimalEnv([]);
+  const command = await findExecutable(opts.command, env);
+  if (!command) return { ok: false, stdout: '', stderr: '', reason: 'CLI executable not found' };
   const { promise, resolve } = Promise.withResolvers<CommandCapture>();
   let stdout = '';
   let stderr = '';
@@ -206,7 +243,7 @@ export function captureCommand(opts: { command: string; args: string[]; cwd?: st
   };
   let child: ChildProcess;
   try {
-    child = spawn(opts.command, opts.args, { cwd: opts.cwd, env: opts.env ?? minimalEnv([]), stdio: ['ignore', 'pipe', 'pipe'], windowsHide: true, detached: process.platform !== 'win32' });
+    child = spawnCli(command, opts.args, { cwd: opts.cwd, env, stdio: ['ignore', 'pipe', 'pipe'], windowsHide: true, detached: process.platform !== 'win32' });
   } catch (err) {
     finish(false, `spawn 失敗：${(err as Error).message}`);
     return promise;

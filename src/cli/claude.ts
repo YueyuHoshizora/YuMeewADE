@@ -107,7 +107,7 @@ export class ClaudeCliProvider implements CliProvider {
     this.env = minimalEnv(envPassthrough);
   }
 
-  available(): Promise<boolean> { return findExecutable(this.cfg.command, this.env); }
+  async available(): Promise<boolean> { return (await findExecutable(this.cfg.command, this.env)) !== null; }
 
   send(opts: SendOptions, onEvent: (ev: CliEvent) => void): CliRun {
     const imagePrompt = opts.images?.length ? `\n\n# 圖片附件\n請用 Read 工具查看以下圖片：\n${opts.images.join('\n')}` : '';

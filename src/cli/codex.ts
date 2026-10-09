@@ -99,7 +99,7 @@ export class CodexCliProvider implements CliProvider {
     this.env = minimalEnv(envPassthrough);
   }
 
-  available(): Promise<boolean> { return findExecutable(this.cfg.command, this.env); }
+  async available(): Promise<boolean> { return (await findExecutable(this.cfg.command, this.env)) !== null; }
 
   send(opts: SendOptions, onEvent: (ev: CliEvent) => void): CliRun {
     return runLineProcess(
