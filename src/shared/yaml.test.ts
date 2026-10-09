@@ -88,6 +88,13 @@ test('序列化後可再解析（往返）', () => {
   assert.deepEqual(parseYamlMap(text), data);
 });
 
+test('行內清單與 map 的分隔符、空白、引號及 Unicode 字串完整往返', () => {
+  const strings = ['build, test', 'A]B', 'x}y', 'A[B', 'x{y', 'a: b', 'a:b', 'a # b', ' lead', 'tail ', '雙語 🌙', 'a"b', "a'b", '"quoted"', "'quoted'", 'a\t#b', 'line\nbreak'];
+  const data = { phases: strings.map((name) => ({ name, state: '進行中', [name]: name })), tags: strings };
+  assert.deepEqual(parseYamlMap(stringifyYaml(data).join('\n')), data);
+  assert.deepEqual(stringifyYaml({ name: 'build, test', bracket: 'A]B', brace: 'x}y' }), ['name: build, test', 'bracket: A]B', 'brace: x}y']);
+});
+
 test('yamlScalar 對特殊字串加引號', () => {
   assert.equal(yamlScalar('plain 文字'), 'plain 文字');
   assert.equal(yamlScalar('true'), '"true"');

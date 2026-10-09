@@ -362,10 +362,15 @@ function isScalar(v: YamlValue): v is string | number | boolean | null {
   return v === null || typeof v !== 'object';
 }
 
+// 行內分隔符與引號不能沿用區塊純量的安全判斷；map 的 key 也以冒號分隔。
+function flowScalar(v: string | number | boolean | null): string {
+  return typeof v === 'string' && /[,[\]{}:'"]/.test(v) ? JSON.stringify(v) : yamlScalar(v);
+}
+
 function inline(v: YamlValue): string {
-  if (isScalar(v)) return yamlScalar(v);
+  if (isScalar(v)) return flowScalar(v);
   if (Array.isArray(v)) return `[${v.map(inline).join(', ')}]`;
-  const parts = Object.entries(v).map(([k, val]) => `${yamlScalar(k)}: ${inline(val)}`);
+  const parts = Object.entries(v).map(([k, val]) => `${flowScalar(k)}: ${inline(val)}`);
   return `{ ${parts.join(', ')} }`;
 }
 
