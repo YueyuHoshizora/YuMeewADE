@@ -1,8 +1,10 @@
 // YuMeewADE 前端：三欄（專案／作業／對話）。vanilla TypeScript，狀態集中在 state 物件，畫面以函式重繪。
 
-import type { Bootstrap, ChatRow, QueueItem, RunState, Task, TaskState, WorktreeStatus } from '../shared/types.ts';
+import type { Bootstrap, ChatRow, ProjectStatus, QueueItem, RunState, Task, TaskState, WorktreeStatus } from '../shared/types.ts';
 import { TASK_STATES } from '../shared/types.ts';
 import { api, ApiFailure } from './api.ts';
+import { applyStatic, getLocale, LOCALES, localeName, setLocale, t as i, type Locale } from './i18n/index.ts';
+import type { MessageKey } from './i18n/zh-TW.ts';
 
 const $ = <T extends HTMLElement>(id: string): T => document.getElementById(id) as T;
 
@@ -33,7 +35,12 @@ async function guard<T>(p: Promise<T>): Promise<T | undefined> {
   try {
     return await p;
   } catch (err) {
-    toast(err instanceof ApiFailure ? `${err.status}：${err.message}` : '連線失敗');
+    if (err instanceof ApiFailure) {
+      const generic = i(`err.${err.code}` as MessageKey);
+      // 伺服器的補充說明是繁中；非預設訊息時附在後面
+      const detail = err.message && err.message !== generic ? `（${err.message}）` : '';
+      toast(`${err.status}：${generic}${detail}`);
+    } else toast(i('err.network'));
     return undefined;
   }
 }
@@ -70,7 +77,7 @@ function renderProjects(): void {
       const li = el('li', { class: p.name === state.project ? 'active' : '' });
       li.append(el('div', {}, p.name));
       const sub = el('div', { class: 'sub' });
-      sub.append(el('span', { class: `badge ${p.status}` }, p.status), el('span', {}, p.updated));
+      sub.append(el('span', { class: `badge ${p.status}` }, i(`state.${p.status as ProjectStatus}` as MessageKey)), el('span', {}, p.updated));
       li.append(sub);
       li.onclick = () => void selectProject(p.name);
       return li;
@@ -78,7 +85,7 @@ function renderProjects(): void {
   );
   fillSelect(
     $('task-role'),
-    [{ value: '', label: '角色：無' }, ...Object.entries(boot.roles.roles).map(([name, r]) => ({ value: name, label: `${name}（${r.main.cli}）` }))],
+    [{ value: '', label: i('app.roleNone') }, ...Object.entries(boot.roles.roles).map(([name, r]) => ({ value: name, label: i('app.roleOption', { name, cli: r.main.cli }) }))],
   );
 }
 
@@ -93,7 +100,7 @@ async function reloadBootstrap(): Promise<void> {
 async function selectProject(name: string): Promise<void> {
   state.project = name;
   renderProjects();
-  $('tasks-title').textContent = `作業 — ${name}`;
+  $('tasks-title').textContent = i('app.tasksOf', { name });
   await reloadTasks();
 }
 
@@ -159,12 +166,14 @@ function renderTaskHeader(): void {
   if (!t) return;
   $('chat-title').textContent = `${t.id}　${t.title}`;
   const sel = $<HTMLSelectElement>('task-state');
-  fillSelect(sel, TASK_STATES.map((s) => ({ value: s, label: s })), false);
+  fillSelect(sel, TASK_STATES.map((s) => ({ value: s, label: i(`state.${s}` as MessageKey) })), false);
   sel.value = t.state;
-  $('task-steps').textContent = t.steps.total ? `步驟 ${t.steps.done}/${t.steps.total}` : '';
-  $('task-meta').textContent = [t.role && `角色 ${t.role}`, t.owner && `負責 ${t.owner}`, t.phase && `階段 ${t.phase}`, `更新 ${t.updated}`].filter(Boolean).join('　');
+  $('task-steps').textContent = t.steps.total ? i('app.steps', { done: t.steps.done, total: t.steps.total }) : '';
+  $('task-meta').textContent = [t.role && i('app.metaRole', { role: t.role }), t.owner && i('app.metaOwner', { owner: t.owner }), t.phase && i('app.metaPhase', { phase: t.phase }), i('app.metaUpdated', { updated: t.updated })]
+    .filter(Boolean)
+    .join('　');
   const q = $('task-question');
-  q.textContent = t.question ? `輪到你了：${t.question}` : '';
+  q.textContent = t.question ? i('app.yourTurnQuestion', { question: t.question }) : '';
   q.classList.toggle('hidden', !t.question);
 }
 
@@ -177,8 +186,8 @@ function renderComposerOptions(): void {
   fillSelect(
     $('composer-cli'),
     [
-      { value: '', label: defaultCli ? `CLI：依設定（${defaultCli}）` : 'CLI：依設定' },
-      ...boot.clis.map((c) => ({ value: c.name, label: `${c.name}${c.available ? '' : '（未安裝）'}${c.dangerous ? '⚠' : ''}`, disabled: !c.available })),
+      { value: '', label: defaultCli ? i('app.cliDefaultWith', { cli: defaultCli }) : i('app.cliDefault') },
+      ...boot.clis.map((c) => ({ value: c.name, label: `${c.name}${c.available ? '' : i('app.notInstalled')}${c.dangerous ? '⚠' : ''}`, disabled: !c.available })),
     ],
   );
   renderModelOptions();
@@ -189,13 +198,13 @@ function renderModelOptions(): void {
   if (!boot) return;
   const cli = $<HTMLSelectElement>('composer-cli').value;
   const models = cli ? (boot.roles.models[cli] ?? []) : [];
-  fillSelect($('composer-model'), [{ value: '', label: '模型：依設定' }, ...models.filter((m) => m !== 'default').map((m) => ({ value: m, label: m }))]);
+  fillSelect($('composer-model'), [{ value: '', label: i('app.modelDefault') }, ...models.filter((m) => m !== 'default').map((m) => ({ value: m, label: m }))]);
 }
 
 function rowNode(r: ChatRow): HTMLElement {
   const node = el('div', { class: `msg ${r.role}` });
-  const who = r.role === 'user' ? '你' : r.role === 'assistant' ? `AI ${r.cli}${r.model ? ` · ${r.model}` : ''}` : '錯誤';
-  const flag = r.cancelled ? '（已停止）' : r.interrupted ? '（中斷）' : '';
+  const who = r.role === 'user' ? i('app.you') : r.role === 'assistant' ? `${i('app.ai', { cli: r.cli })}${r.model ? ` · ${r.model}` : ''}` : i('app.error');
+  const flag = r.cancelled ? i('app.cancelled') : r.interrupted ? i('app.interrupted') : '';
   node.append(el('div', { class: 'meta' }, `${who} ${flag} ${new Date(r.at).toLocaleString()}`), document.createTextNode(r.text));
   return node;
 }
@@ -206,12 +215,12 @@ function renderLog(): void {
   box.replaceChildren(...state.log.map(rowNode));
   if (state.running) {
     const p = el('div', { class: 'msg assistant partial' });
-    p.append(el('div', { class: 'meta' }, `AI ${state.running.cli} 執行中…`), document.createTextNode(state.partial));
+    p.append(el('div', { class: 'meta' }, i('app.running', { cli: state.running.cli })), document.createTextNode(state.partial));
     box.append(p);
   }
   if (atBottom || state.running) box.scrollTop = box.scrollHeight;
   $<HTMLButtonElement>('composer-stop').disabled = !state.running;
-  $('status').textContent = state.running ? `執行中（${state.running.cli}）` : '';
+  $('status').textContent = state.running ? i('app.runningStatus', { cli: state.running.cli }) : '';
 }
 
 function renderQueue(): void {
@@ -221,7 +230,7 @@ function renderQueue(): void {
     el('div', { class: 'muted' }, `排隊中的指示（${state.queue.length}）`),
     ...state.queue.map((q) => {
       const item = el('div', { class: 'item' });
-      const rm = el('button', { type: 'button' }, '移除');
+      const rm = el('button', { type: 'button' }, i('app.remove'));
       rm.onclick = () => void guard(api.removeQueued(state.project, state.task?.id ?? '', q.request));
       item.append(el('span', {}, `${q.cli}：${q.text}`), rm);
       return item;
@@ -273,8 +282,8 @@ function openStream(): void {
     void reloadWorktree();
   });
   es.addEventListener('error', (e) => {
-    if ((e as MessageEvent).data) toast('CLI 執行失敗，詳情見本地日誌');
-    else $('status').textContent = '連線中斷，重連中…';
+    if ((e as MessageEvent).data) toast(i('app.cliFailed'));
+    else $('status').textContent = i('app.disconnected');
   });
   es.addEventListener('queue', (e) => {
     state.queue = parse<QueueItem[]>(e);
@@ -310,17 +319,17 @@ function renderWorktree(): void {
   }
   box.replaceChildren();
   if (!wt.exists) {
-    const btn = el('button', { type: 'button' }, '建立工作副本');
+    const btn = el('button', { type: 'button' }, i('wt.create'));
     btn.onclick = async () => {
       if (await guard(api.worktreeCreate(state.project, t.id))) await reloadWorktree();
     };
-    box.append(el('span', { class: 'muted' }, '尚無工作副本（送出指示時會自動建立）'), btn);
+    box.append(el('span', { class: 'muted' }, i('wt.none')), btn);
     return;
   }
-  box.append(el('span', { class: 'muted' }, `副本 ${wt.branch}　未提交 ${wt.dirty.length} 檔　領先 ${wt.ahead} 次提交`));
-  const diffBtn = el('button', { type: 'button' }, '看 diff');
-  const mergeBtn = el('button', { type: 'button', class: 'primary' }, '收編到主專案');
-  const rmBtn = el('button', { type: 'button', class: 'danger' }, '移除副本');
+  box.append(el('span', { class: 'muted' }, i('wt.summary', { branch: wt.branch, dirty: wt.dirty.length, ahead: wt.ahead })));
+  const diffBtn = el('button', { type: 'button' }, i('wt.diff'));
+  const mergeBtn = el('button', { type: 'button', class: 'primary' }, i('wt.merge'));
+  const rmBtn = el('button', { type: 'button', class: 'danger' }, i('wt.remove'));
   const pre = el('pre', { class: 'diff hidden' });
   diffBtn.onclick = async () => {
     if (!pre.classList.contains('hidden')) {
@@ -329,18 +338,18 @@ function renderWorktree(): void {
     }
     const d = await guard(api.worktreeDiff(state.project, t.id));
     if (!d) return;
-    pre.textContent = (d.diff || '（沒有差異）') + (d.truncated ? '\n…（已截斷）' : '');
+    pre.textContent = (d.diff || i('wt.noDiff')) + (d.truncated ? '\n' + i('wt.truncated') : '');
     pre.classList.remove('hidden');
   };
   mergeBtn.onclick = async () => {
-    if (!confirm(`把 ${wt.branch} 收編到主專案？請先看過 diff。`)) return;
+    if (!confirm(i('wt.confirmMerge', { branch: wt.branch }))) return;
     const r = await guard(api.worktreeMerge(state.project, t.id));
     if (!r) return;
-    toast(r.merged ? `已收編：${r.commit ?? ''}` : `衝突，已中止：${(r.conflicts ?? []).join(', ')}`);
+    toast(r.merged ? i('wt.merged', { commit: r.commit ?? '' }) : i('wt.conflict', { files: (r.conflicts ?? []).join(', ') }));
     await reloadWorktree();
   };
   rmBtn.onclick = async () => {
-    if (!confirm('移除工作副本與分支？未提交的變更會讓移除被拒絕。')) return;
+    if (!confirm(i('wt.confirmRemove'))) return;
     if (await guard(api.worktreeRemove(state.project, t.id))) await reloadWorktree();
   };
   box.append(diffBtn, mergeBtn, rmBtn, pre);
@@ -412,4 +421,33 @@ $('composer-stop').onclick = () => {
   if (state.task) void guard(api.stop(state.project, state.task.id));
 };
 
+// ---- 語言 ----
+
+function renderAll(): void {
+  applyStatic();
+  renderProjects();
+  renderTasks();
+  if (state.task) {
+    renderTaskHeader();
+    renderComposerOptions();
+    renderLog();
+    renderQueue();
+    renderWorktree();
+  }
+  if (state.project) $('tasks-title').textContent = i('app.tasksOf', { name: state.project });
+}
+
+const langSelect = $<HTMLSelectElement>('language');
+fillSelect(
+  langSelect,
+  LOCALES.map((l) => ({ value: l, label: localeName(l) })),
+  false,
+);
+langSelect.value = getLocale();
+langSelect.onchange = () => {
+  setLocale(langSelect.value as Locale);
+  renderAll();
+};
+
+applyStatic();
 void reloadBootstrap();
