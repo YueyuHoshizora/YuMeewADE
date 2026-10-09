@@ -7,6 +7,7 @@ import { newProjectView, projectView } from './views/projects.ts';
 import { taskView } from './views/task.ts';
 import { turnView } from './views/turn.ts';
 import { settingsView } from './views/settings.ts';
+import { stream } from './components/stream.ts';
 
 const header = document.getElementById('header')!; const sidebar = document.getElementById('sidebar')!; const main = document.getElementById('main')!;
 let state: AppState | null = null; let view: View | null = null; let route = ''; let viewTarget = ''; let refreshJob: Promise<void> | null = null; let refreshAgain = false; let debounce: number | undefined;
@@ -62,7 +63,6 @@ window.addEventListener('keydown', event => {
 });
 window.addEventListener('focus', () => { void refresh(); });
 window.setInterval(() => { void refresh(); }, 15_000);
-const events = new EventSource('/api/events');
-events.addEventListener('changed', () => { window.clearTimeout(debounce); debounce = window.setTimeout(() => { void refresh(); }, 150); });
+const events = stream('/api/events', { changed: () => { window.clearTimeout(debounce); debounce = window.setTimeout(() => { void refresh(); }, 150); } }, () => { void refresh(); });
 window.addEventListener('pagehide', () => { events.close(); view?.dispose?.(); });
 void refresh();

@@ -8,6 +8,7 @@ import { markdown } from '../components/markdown.ts';
 import { area, button, confirmModal, disclosure, el, field, input, link, modal, projectHash, readLocal, row, run, select, storeLocal, toast, type View, type ViewContext } from '../components/dom.ts';
 import { aiLabel, effortLabel, localTime, modelLabel } from '../components/display.ts';
 import { shouldSend } from '../components/composer.ts';
+import { stream } from '../components/stream.ts';
 
 export function taskView(context: ViewContext, initialProject: ProjectView, initialTask: TaskView): View {
   let project = initialProject; let task = initialTask; let alive = true;
@@ -177,8 +178,9 @@ export function taskView(context: ViewContext, initialProject: ProjectView, init
       case 'idle': if (busy?.request === event.data.request) { busy = null; partial = ''; removeLive(); } controls(); follow(); void context.refresh(); void run(renderWork); break;
     }
   }
-  const source = new EventSource(query('/api/chat/stream', { project: project.id, task: task.id }));
-  for (const event of ['snapshot', 'busy', 'delta', 'row', 'queue', 'idle'] as const) source.addEventListener(event, message => { try { receive({ event, data: JSON.parse((message as MessageEvent<string>).data) } as ChatEvent); } catch { /* 無效 SSE 不改畫面；重連 snapshot 可恢復。 */ } });
+  const listeners: Record<string, (message: MessageEvent<string>) => void> = {};
+  for (const event of ['snapshot', 'busy', 'delta', 'row', 'queue', 'idle'] as const) listeners[event] = message => { try { receive({ event, data: JSON.parse(message.data) } as ChatEvent); } catch { /* 無效 SSE 不改畫面；重連 snapshot 可恢復。 */ } };
+  const source = stream(query('/api/chat/stream', { project: project.id, task: task.id }), listeners);
   const timer = window.setInterval(clock, 1000); void run(() => request('/api/task/read', { project: project.id, task: task.id }));
   return { node, dispose: () => { alive = false; source.close(); removeLive(); window.clearInterval(timer); cancelAnimationFrame(resizeFrame); upload.dispose(); }, update: (state: AppState) => {
     context.state = state; const nextProject = state.projects.find(p => p.id === project.id); const nextTask = nextProject?.tasks.find(t => t.id === task.id); if (!nextProject || !nextTask) { location.hash = projectHash(project.id); return; }
