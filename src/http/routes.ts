@@ -105,4 +105,36 @@ export function registerRoutes(router: Router, app: App): void {
     const { project, task } = await locate(body);
     return app.runner.removeQueued(project, task, reqString(body, 'request', 64));
   });
+
+  // ---- worktree ----
+
+  router.get('/api/worktree/status', async ({ query }) => {
+    const { project, task } = await locate(query);
+    return app.worktree.status(project, task);
+  });
+
+  router.get('/api/worktree/diff', async ({ query }) => {
+    const { project, task } = await locate(query);
+    return app.worktree.diff(project, task);
+  });
+
+  router.post('/api/worktree/create', async ({ body }) => {
+    const { project, task } = await locate(body);
+    await app.worktree.ensure(project, task);
+    return app.worktree.status(project, task);
+  });
+
+  router.post('/api/worktree/merge', async ({ body }) => {
+    const { project, task } = await locate(body);
+    if (app.runner.isRunning(project, task)) throw new AppError('conflict', '作業執行中，請先停止再收編');
+    const t = await app.tasks.get(project, task);
+    return app.worktree.merge(project, task, t.title);
+  });
+
+  router.post('/api/worktree/remove', async ({ body }) => {
+    const { project, task } = await locate(body);
+    if (app.runner.isRunning(project, task)) throw new AppError('conflict', '作業執行中，不能移除副本');
+    await app.worktree.remove(project, task);
+    return { removed: true };
+  });
 }

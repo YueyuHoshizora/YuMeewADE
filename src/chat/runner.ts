@@ -229,8 +229,14 @@ export class ChatRunner extends EventEmitter {
       await store.append(project, task, row);
       this.emitEvent(project, task, { event: 'log', data: row });
     }
-    if (sessionId) meta.sessions[item.cli] = sessionId;
-    meta.seen[item.cli] = prior.length + 1 + rows.length;
+    const succeeded = outcome.stopped || (outcome.ok && errorReason === undefined);
+    if (succeeded) {
+      if (sessionId) meta.sessions[item.cli] = sessionId;
+      meta.seen[item.cli] = prior.length + 1 + rows.length;
+    } else if (resumeId) {
+      // 失敗的續聊多半是 session 已失效：丟掉它，下次重新開始並附交接包
+      delete meta.sessions[item.cli];
+    }
     await store.writeMeta(project, task, meta);
 
     s.running = null;

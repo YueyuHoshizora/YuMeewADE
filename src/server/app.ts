@@ -3,8 +3,11 @@
 import { createRequire } from 'node:module';
 import { ChatRunner } from '../chat/runner.ts';
 import { ChatStore } from '../chat/store.ts';
+import { ClaudeCliProvider } from '../cli/claude.ts';
+import { CodexCliProvider } from '../cli/codex.ts';
 import { MockCliProvider } from '../cli/mock.ts';
 import type { CliProvider } from '../cli/provider.ts';
+import { WorktreeService } from '../git/worktree.ts';
 import { RateLimiter } from '../http/ratelimit.ts';
 import { SseHub } from '../http/sse.ts';
 import { ProjectLedger } from '../ledger/projects.ts';
@@ -22,6 +25,7 @@ export class App {
   readonly projects: ProjectLedger;
   readonly tasks: TaskLedger;
   readonly store: ChatStore;
+  readonly worktree: WorktreeService;
   readonly providers: Record<string, CliProvider>;
   readonly runner: ChatRunner;
   readonly sse: SseHub;
@@ -34,7 +38,12 @@ export class App {
     this.projects = new ProjectLedger(this.ws);
     this.tasks = new TaskLedger(this.ws);
     this.store = new ChatStore(this.ws);
-    this.providers = options.providers ?? { mock: new MockCliProvider() };
+    this.worktree = new WorktreeService(this.ws, config.limits.diffBytes);
+    this.providers = options.providers ?? {
+      claude: new ClaudeCliProvider(config.cli.claude, config.cli.envPassthrough),
+      codex: new CodexCliProvider(config.cli.codex, config.cli.envPassthrough),
+      mock: new MockCliProvider(),
+    };
     this.runner = new ChatRunner({
       ws: this.ws,
       store: this.store,
@@ -42,7 +51,7 @@ export class App {
       roles: () => this.roles(),
       providers: this.providers,
       limits: config.limits,
-      prepareCwd: async (project) => this.ws.projectDir(project),
+      prepareCwd: (project, task) => this.worktree.ensure(project, task),
     });
     this.sse = new SseHub(config.limits.sseConnections, config.limits.heartbeatSeconds * 1000);
     this.sendLimiter = new RateLimiter(config.limits.sendPerMinute);

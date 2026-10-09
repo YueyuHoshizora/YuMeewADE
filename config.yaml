@@ -19,14 +19,16 @@ workspace:
 cli:
   claude:
     command: claude
-    # 無頭模式必要旗標；adapter 依 stream-json 解析，移除這些旗標會使對話無法運作
-    baseArgs: [-p, --output-format, stream-json, --verbose, --include-partial-messages]
+    # 無頭模式必要旗標；adapter 依 stream-json 解析，移除這些旗標會使對話無法運作。
+    # acceptEdits＝自動接受工作副本（與主專案 .ai/）內的檔案編輯；執行指令仍會被拒，需要時才開 dangerous
+    baseArgs: [-p, --output-format, stream-json, --verbose, --include-partial-messages, --permission-mode, acceptEdits]
     # 危險旗標：跳過所有權限確認。預設關閉；開啟代表 AI 可以用你的權限改檔與執行指令
     dangerous: false
     dangerousArgs: [--dangerously-skip-permissions]
   codex:
     command: codex
-    baseArgs: [exec, --json, --skip-git-repo-check]
+    # workspace-write 沙箱內可改檔、可執行指令，不詢問；要跳出沙箱才開 dangerous
+    baseArgs: [exec, --json, --skip-git-repo-check, -s, workspace-write, -c, 'approval_policy="never"']
     dangerous: false
     dangerousArgs: [--dangerously-bypass-approvals-and-sandbox]
   # 子行程環境變數採白名單；除了內建的 PATH／HOME／LANG 等基本變數外，額外要放行的名稱寫在這裡

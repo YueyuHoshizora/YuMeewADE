@@ -38,13 +38,15 @@ export const DEFAULT_CONFIG: Config = {
   cli: {
     claude: {
       command: 'claude',
-      baseArgs: ['-p', '--output-format', 'stream-json', '--verbose', '--include-partial-messages'],
+      // acceptEdits：自動接受工作目錄（含 --add-dir）內的檔案編輯；Bash 等仍被拒絕，要全開才用 dangerous
+      baseArgs: ['-p', '--output-format', 'stream-json', '--verbose', '--include-partial-messages', '--permission-mode', 'acceptEdits'],
       dangerous: false,
       dangerousArgs: ['--dangerously-skip-permissions'],
     },
     codex: {
       command: 'codex',
-      baseArgs: ['exec', '--json', '--skip-git-repo-check'],
+      // workspace-write 沙箱＋不詢問；要跳過沙箱才用 dangerous
+      baseArgs: ['exec', '--json', '--skip-git-repo-check', '-s', 'workspace-write', '-c', 'approval_policy="never"'],
       dangerous: false,
       dangerousArgs: ['--dangerously-bypass-approvals-and-sandbox'],
     },

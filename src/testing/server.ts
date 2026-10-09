@@ -5,6 +5,7 @@ import net from 'node:net';
 import os from 'node:os';
 import path from 'node:path';
 import { createHttpServer, listen } from '../http/server.ts';
+import { MockCliProvider } from '../cli/mock.ts';
 import { App } from '../server/app.ts';
 import { parseConfig } from '../shared/config.ts';
 
@@ -32,7 +33,7 @@ export async function startTestServer(configYaml = ''): Promise<TestServer> {
   const dir = await fs.mkdtemp(path.join(os.tmpdir(), 'yumeewade-http-'));
   const port = await freePort();
   const config = parseConfig(`server:\n  port: ${port}\nworkspace:\n  root: ${JSON.stringify(path.join(dir, 'root'))}\n${configYaml}`, null);
-  const app = new App(config);
+  const app = new App(config, { providers: { mock: new MockCliProvider(5) } });
   await app.init();
   const server = createHttpServer(app);
   await listen(server, '127.0.0.1', port);
