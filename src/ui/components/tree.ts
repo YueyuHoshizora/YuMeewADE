@@ -1,10 +1,11 @@
 import type { AppState, ProjectView, TaskView } from '../../shared/types.ts';
 import { request } from '../api.ts';
 import { t } from '../i18n/index.ts';
-import { button, confirmModal, disclosure, el, input, link, projectHash, renameModal, taskHash, type ViewContext } from './dom.ts';
+import { button, confirmModal, disclosure, el, input, link, projectHash, renameModal, run, taskHash, type ViewContext } from './dom.ts';
 
 const collapsed = new Set<string>(); const seenAttention = new Set<string>();
 let searchText = '';
+let dragging = '';
 export function needsReply(task: TaskView): boolean { return task.state !== '完成' && (task.state === '等待回覆' || !!task.question); }
 export function taskTone(state: AppState, project: string, task: TaskView): string {
   if (state.running.some(r => r.project === project && r.task === task.id)) return 'running';
@@ -96,6 +97,18 @@ export function tree(context: ViewContext): HTMLElement {
     const tones = p.tasks.map(task => taskTone(state, p.id, task));
     const tone = p.status === '完成' ? 'done' : ['running', 'reply', 'confirm', 'processed', 'untouched', 'paused', 'done'].find(t => tones.includes(t)) ?? 'untouched';
     const line = el('div', 'tree-row'); const title = link(`${p.pinned ? '◆ ' : ''}${p.parent ? '↳ ' : ''}${p.name}`, projectHash(p.id), 'tree-title');
+    line.draggable = true;
+    line.ondragstart = event => { dragging = p.id; event.dataTransfer?.setData('text/plain', p.id); if (event.dataTransfer) event.dataTransfer.effectAllowed = 'move'; };
+    function clearDrop(): void { line.classList.remove('drop-before', 'drop-after'); }
+    function validDrag(): ProjectView | undefined { return state.projects.find(other => other.id === dragging && other.id !== p.id && other.parent === p.parent && other.pinned === p.pinned); }
+    line.ondragover = event => { if (!validDrag()) return; event.preventDefault(); clearDrop(); line.classList.add(event.clientY < line.getBoundingClientRect().top + line.offsetHeight / 2 ? 'drop-before' : 'drop-after'); if (event.dataTransfer) event.dataTransfer.dropEffect = 'move'; };
+    line.ondragleave = clearDrop;
+    line.ondragend = () => { dragging = ''; document.querySelectorAll('.drop-before,.drop-after').forEach(node => node.classList.remove('drop-before', 'drop-after')); };
+    line.ondrop = event => {
+      const source = validDrag(); const after = line.classList.contains('drop-after'); clearDrop(); if (!source) return; event.preventDefault(); dragging = '';
+      const siblings = ordered(p.parent).filter(other => other.id !== source.id); const at = siblings.findIndex(other => other.id === p.id); siblings.splice(at + Number(after), 0, source);
+      void run(async () => { await request('/api/order', { parent: p.parent, order: siblings.map(other => other.id) }); await refresh(); });
+    };
     if (location.hash === title.hash) line.classList.add('selected');
     line.append(toggle(key, true, attention), el('span', `dot ${tone}`), title, menu([
       { label: t('common.rename'), action: async () => { const name = await renameModal(p.name); if (name) { await request('/api/project/update', { project: p.id, patch: { name } }); await refresh(); } } },
