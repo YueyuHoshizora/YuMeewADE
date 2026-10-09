@@ -56,6 +56,10 @@ function refresh(): Promise<void> {
   return refreshJob;
 }
 window.addEventListener('hashchange', () => { void run(async () => navigate()); });
+window.addEventListener('keydown', event => {
+  if (event.isComposing || event.keyCode === 229 || (event.target instanceof Element && event.target.closest('input,textarea,select,[contenteditable]'))) return;
+  if (event.key === '/' || ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === 'k')) { event.preventDefault(); document.body.classList.add('sidebar-open'); sidebar.querySelector<HTMLInputElement>('.tree-search')?.focus(); }
+});
 window.addEventListener('focus', () => { void refresh(); });
 window.setInterval(() => { void refresh(); }, 15_000);
 const events = new EventSource('/api/events');

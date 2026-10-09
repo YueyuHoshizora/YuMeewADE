@@ -1,6 +1,7 @@
 import type { MessageKey } from './zh-TW.ts';
 
 export const de: Record<MessageKey, string> = {
+  'tree.search': 'Projekte und Aufgaben suchen…',
   'settings.enterToSend': 'Enter sendet, Shift+Enter fügt eine neue Zeile ein', 'chat.placeholderEnter': 'Anweisungen schreiben… (Enter sendet, Shift+Enter für neue Zeile)', 'chat.hintEnter': 'Enter sendet, Shift+Enter für neue Zeile', 'chat.hintModifier': '⌘ / Ctrl + Enter zum Senden',
   'markdown.copy': 'Code kopieren', 'markdown.copied': 'Kopiert',
   'chat.interrupted': 'Aufgabe durch Neustart des Kerns unterbrochen',
