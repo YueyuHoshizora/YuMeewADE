@@ -2,7 +2,7 @@
 
 import path from 'node:path';
 import { createHttpServer, listen } from '../http/server.ts';
-import { ConfigError, loadConfig } from '../shared/config.ts';
+import { ConfigError, hostAuthority, loadConfig } from '../shared/config.ts';
 import { log } from '../shared/log.ts';
 import { App } from './app.ts';
 
@@ -13,7 +13,7 @@ async function main(): Promise<void> {
   await app.init();
   const server = createHttpServer(app);
   await listen(server, config.server.host, config.server.port);
-  const url = `http://${config.server.host}:${config.server.port}`;
+  const url = `http://${hostAuthority(config.server.host, config.server.port)}`;
   log.info('YuMeewADE 已啟動', { url, root: app.ws.root, config: config.source ?? '(預設)', version: app.version });
   process.stdout.write(`YuMeewADE ${app.version} ${url}\n`);
   const shutdown = () => {

@@ -6,7 +6,7 @@ import { promises as fs } from 'node:fs';
 
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { loadConfig } from '../shared/config.ts';
+import { hostAuthority, loadConfig } from '../shared/config.ts';
 import { probe, waitForCore } from './probe.ts';
 
 const HERE = path.dirname(fileURLToPath(import.meta.url));
@@ -102,7 +102,7 @@ app
     const config = await loadConfig();
     const { host, port } = config.server;
     await startCore(host, port);
-    const url = `http://${host}:${port}/`;
+    const url = `http://${hostAuthority(host, port)}/`;
     createWindow(url);
     app.on('activate', () => {
       if (BrowserWindow.getAllWindows().length === 0) createWindow(url);

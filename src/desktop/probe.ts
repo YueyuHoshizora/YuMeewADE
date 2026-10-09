@@ -1,11 +1,12 @@
 // 桌面版啟動前的核心探測：純 node:http，不依賴 Electron，可單元測試。
 
 import http from 'node:http';
+import { hostAuthority } from '../shared/config.ts';
 
 /** 該 port 是否已有 YuMeewADE 核心在回應（可能是另一個網頁版實例）；別的程式佔用同 port 回 false。 */
 export function probe(host: string, port: number, timeoutMs = 1500): Promise<boolean> {
   const { promise, resolve } = Promise.withResolvers<boolean>();
-  const req = http.get({ host, port, path: '/api/ping', headers: { Host: `${host}:${port}` }, timeout: timeoutMs }, (res) => {
+  const req = http.get({ host, port, path: '/api/ping', headers: { Host: hostAuthority(host, port) }, timeout: timeoutMs }, (res) => {
     let body = '';
     res.setEncoding('utf8');
     res.on('data', (c: string) => {

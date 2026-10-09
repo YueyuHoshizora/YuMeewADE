@@ -93,6 +93,11 @@ export function isLoopbackHost(host: string): boolean {
   return host === '127.0.0.1' || host === 'localhost' || host === '::1';
 }
 
+/** URL／Host header 用的 authority；IPv6 字面值要加中括號。 */
+export function hostAuthority(host: string, port: number): string {
+  return `${host.includes(':') ? `[${host}]` : host}:${port}`;
+}
+
 function section(map: YamlMap, key: string): YamlMap {
   const v = map[key];
   if (v === undefined || v === null) return {};
