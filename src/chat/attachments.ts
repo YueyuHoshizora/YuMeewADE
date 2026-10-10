@@ -6,6 +6,12 @@ import { AppError } from '../shared/errors.ts';
 import type { UploadResult } from '../shared/types.ts';
 const ID = /^[0-9a-f-]{36}\.(png|jpe?g|webp|gif)$/u;
 export const IMAGE_TYPES: Record<string, string> = { png: 'image/png', jpg: 'image/jpeg', jpeg: 'image/jpeg', webp: 'image/webp', gif: 'image/gif' };
+const PNG = Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]);
+const JPEG = Buffer.from([0xff, 0xd8, 0xff]);
+const GIF87 = Buffer.from('GIF87a');
+const GIF89 = Buffer.from('GIF89a');
+const RIFF = Buffer.from('RIFF');
+const WEBP = Buffer.from('WEBP');
 export function uploadPath(ws: Workspace, project: string, id: string): string {
   if (!ID.test(id)) throw new AppError('bad_request');
   return path.join(ws.uploadsDir(project), id);
@@ -13,6 +19,11 @@ export function uploadPath(ws: Workspace, project: string, id: string): string {
 export async function saveUpload(ws: Workspace, project: string, name: string, raw: Buffer): Promise<UploadResult> {
   const ext = path.extname(name).slice(1).toLowerCase();
   if (!IMAGE_TYPES[ext] || !raw.length) throw new AppError('bad_request');
+  const matches = ext === 'png' ? raw.subarray(0, PNG.length).equals(PNG)
+    : ext === 'jpg' || ext === 'jpeg' ? raw.subarray(0, JPEG.length).equals(JPEG)
+    : ext === 'gif' ? raw.subarray(0, 6).equals(GIF87) || raw.subarray(0, 6).equals(GIF89)
+    : raw.length >= 12 && raw.subarray(0, 4).equals(RIFF) && raw.subarray(8, 12).equals(WEBP);
+  if (!matches) throw new AppError('bad_request', undefined, { field: 'name' });
   const id = `${randomUUID()}.${ext}`;
   await fs.mkdir(ws.uploadsDir(project), { recursive: true });
   await fs.writeFile(uploadPath(ws, project, id), raw, { flag: 'wx' });
