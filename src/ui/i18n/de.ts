@@ -2,6 +2,7 @@ import type { MessageKey } from './zh-TW.ts';
 
 export const de: Record<MessageKey, string> = {
   'chat.earlier': 'Ältere Nachrichten laden',
+  'search.title': 'Alle Gespräche durchsuchen', 'search.placeholder': 'Aufgaben und Gesprächsinhalte durchsuchen…', 'search.truncated': 'Zu viele Ergebnisse. Suche eingrenzen.',
   'settings.notifications': 'Bei Abschluss oder nötiger Antwort benachrichtigen', 'settings.notificationPermission': 'Systembenachrichtigungen erlauben', 'notification.done': 'Die KI hat ihre Antwort abgeschlossen', 'notification.answer': 'Die KI benötigt deine Antwort',
   'connection.reconnecting': 'Verbindung zum Kern getrennt. Erneute Verbindung…',
   'tree.search': 'Projekte und Aufgaben suchen…',

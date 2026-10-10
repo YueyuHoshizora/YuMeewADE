@@ -27,7 +27,7 @@ export function tree(context: ViewContext): HTMLElement {
   }
   search.oninput = () => { searchText = search.value; filter(); };
   search.onkeydown = event => { if (event.key === 'Escape') { event.preventDefault(); search.value = ''; search.dispatchEvent(new InputEvent('input')); } };
-  root.append(search, content);
+  root.append(search, link(t('search.title'), '#/search', 'search-link'), content);
   const unreadKeys = new Set(state.unread.map(item => `${item.project}/${item.task}`));
   const unread = (p: string, task: string) => unreadKeys.has(`${p}/${task}`);
   const attentionKeys = new Set<string>();

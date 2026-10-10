@@ -11,13 +11,33 @@ import { area, button, confirmModal, disclosure, el, field, input, link, modal, 
 import { aiLabel, effortLabel, localTime, modelLabel } from '../components/display.ts';
 import { shouldSend } from '../components/composer.ts';
 import { stream } from '../components/stream.ts';
-export function taskView(context: ViewContext, initialProject: ProjectView, initialTask: TaskView): View {
+export function taskView(context: ViewContext, initialProject: ProjectView, initialTask: TaskView, params = new URLSearchParams()): View {
   let project = initialProject;
   let task = initialTask;
   let alive = true;
   let rows: ChatRow[] = [];
   const history = new HistoryWindow();
   let loadingHistory: Promise<void> | null = null;
+  const requestedIndex = params.has('index') ? Number(params.get('index')) : -1;
+  let focusIndex = Number.isSafeInteger(requestedIndex) && requestedIndex >= 0 ? requestedIndex : -1;
+  async function focusHistory(): Promise<void> {
+    if (focusIndex < 0) return;
+    following = false;
+    const revision = history.revision;
+    while (alive && revision === history.revision && history.start > focusIndex) {
+      const before = history.start;
+      await loadEarlier();
+      if (history.start === before) return;
+    }
+    if (!alive || revision !== history.revision) return;
+    const target = transcriptRows.querySelector<HTMLElement>(`[data-index="${focusIndex}"]`);
+    if (!target) return;
+    target.closest('details')?.setAttribute('open', '');
+    target.scrollIntoView({ block: 'center' });
+    target.classList.add('search-highlight');
+    focusIndex = -1;
+    window.setTimeout(() => target.classList.remove('search-highlight'), 2500);
+  }
   let busy: Busy | null = null;
   let partial = '';
   let queue: QueueItem[] = [];
@@ -578,6 +598,7 @@ export function taskView(context: ViewContext, initialProject: ProjectView, init
     queue = event.data.queue;
     renderTranscript();
     controls();
+    void run(focusHistory);
     break;
     case 'busy':
     busy = event.data;

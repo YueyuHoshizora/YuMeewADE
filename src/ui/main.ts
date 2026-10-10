@@ -9,6 +9,7 @@ import { turnView } from './views/turn.ts';
 import { settingsView } from './views/settings.ts';
 import { stream } from './components/stream.ts';
 import { attention } from './components/attention.ts';
+import { searchView } from './views/search.ts';
 
 const header = document.getElementById('header')!; const sidebar = document.getElementById('sidebar')!; const main = document.getElementById('main')!;
 let state: AppState | null = null; let view: View | null = null; let route = ''; let viewTarget = ''; let refreshJob: Promise<void> | null = null; let refreshAgain = false; let debounce: number | undefined;
@@ -48,8 +49,9 @@ function navigate(force = false): void {
   if (waiting) view = { node: el('div', 'page empty', t('common.loading')) };
   else if (parts[0] === 'new') view = newProjectView(context, params);
   else if (parts[0] === 'settings') view = settingsView(context, () => { drawShell(); navigate(true); });
+  else if (parts[0] === 'search') view = searchView();
   else if (parts[0] === 'p' && project) view = projectView(context, project, params);
-  else if (parts[0] === 't' && project && task) view = taskView(context, project, task);
+  else if (parts[0] === 't' && project && task) view = taskView(context, project, task, params);
   else view = turnView(context);
   main.classList.toggle('task-main', parts[0] === 't' && !waiting);
   main.replaceChildren(view.node); main.scrollTop = 0; document.body.classList.remove('sidebar-open'); drawShell();
@@ -71,6 +73,11 @@ function refresh(): Promise<void> {
 }
 window.addEventListener('hashchange', () => { void run(async () => navigate()); });
 window.addEventListener('keydown', event => {
+  if ((event.ctrlKey || event.metaKey) && event.shiftKey && event.key.toLowerCase() === 'f') {
+    event.preventDefault();
+    location.hash = '#/search';
+    return;
+  }
   if (event.isComposing || event.keyCode === 229 || (event.target instanceof Element && event.target.closest('input,textarea,select,[contenteditable]'))) return;
   if (event.key === '/' || ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === 'k')) { event.preventDefault(); document.body.classList.add('sidebar-open'); sidebar.querySelector<HTMLInputElement>('.tree-search')?.focus(); }
 });
