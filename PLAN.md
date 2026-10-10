@@ -456,5 +456,5 @@ electron 44.7.0、vite 8.3.4、electron-builder 26.15.3、typescript 7.0.2、@ty
 
 ### B.6 額度與輸出速度（底部列）
 - 資料來源只取 CLI 自己回報的值，不讀憑證、不呼叫帳號 API：Claude 為 stream-json 的 `rate_limit_event`（`unifiedWindows` 的 5 小時／7 天使用率）；Codex `exec --json` 不輸出額度，回合結束後讀 `$CODEX_HOME/sessions/YYYY/MM/DD/rollout-*-{thread}.jsonl` 尾端最後一筆 `rate_limits`，核心啟動時也從最新的 rollout 補一次。
-- 速度：Claude 每則訊息從第一個內容增量到 `message_delta` 的 `output_tokens`／秒（不含排隊與首字延遲）；Codex 只在 `turn.completed` 給用量，為整回合平均，含工具執行時間。少於 10 tokens 或 250ms 的樣本不回報。
-- `src/ai/usage.ts` 的 `UsageBoard` 只存記憶體；額度依資料時間只前進不倒退。`GET /api/state` 帶 `usage`，變更時全域 SSE 推 `usage`。重置時間已過的窗口在 UI 顯示為「—」，等下一次回報。
+- 即時 tok/s（右下角單一數字）：所有執行中對話合計、最近 4 秒內每秒輸出的 token 數，每秒重算、閒置歸零。Claude 串流中逐段計入：文字、可見思考、工具參數依字元估算（中日韓字 1 token／字，其餘 4 字元／token）；不公開的思考 `thinking_delta.thinking` 為空，改用 CLI 附的 `estimated_tokens`（每段增量，加總與實際 `thinking_tokens` 相符）；每則訊息結束時以 `message_delta.usage.output_tokens` 補差額，差額攤回整則訊息的時間，不在結尾擠成尖峰。Codex `exec --json` 不串流、回合結束才給 usage，無法即時計入。
+- `src/ai/usage.ts` 的 `UsageBoard` 只存記憶體；額度依資料時間只前進不倒退。`GET /api/state` 帶 `usage`（`{ais, tokensPerSecond}`），額度變更或 tok/s 改變時全域 SSE 推 `usage`。重置時間已過的窗口在 UI 顯示為「—」，等下一次回報。
