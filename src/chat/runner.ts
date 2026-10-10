@@ -256,7 +256,6 @@ export class ChatRunner extends EventEmitter {
         request: item.id, ai: item.ai, model: pick.model,
         effort: pick.effort, startedAt: s.busy.startedAt,
       };
-      await this.deps.store.writeMeta(p, t, meta);
       await this.deps.store.append(p, t, user);
       this.publish(p, t, { event: 'row', data: user });
       this.publish(p, t, { event: 'busy', data: s.busy });
@@ -267,6 +266,7 @@ export class ChatRunner extends EventEmitter {
         project: p, task: t,
       });
       this.deps.onChanged(p, t);
+      await this.deps.store.writeMeta(p, t, meta);
       s.finished = this.execute(p, t, item, provider, meta, {
         prompt: buildPrompt({ preamble, handoff, text: item.text, images }), cwd,
         ...(resumeId ? { resumeId } : {}), model: pick.model, effort: pick.effort,

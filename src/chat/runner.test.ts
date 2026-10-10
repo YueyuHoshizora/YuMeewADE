@@ -158,3 +158,18 @@ test('內部執行失敗也清除 resume、保留原 seen 並清除 marker', () 
   assert.ok(failedRow?.role === 'assistant');
   assert.equal(failedRow.error, 'internal');
 }));
+
+test('啟動前追加失敗不留下 running marker 或中斷回覆', () => withTmpWorkspace(async ws => {
+  const s = await setup(ws);
+  const append = s.store.append.bind(s.store);
+  s.store.append = async () => { throw new Error('append failed'); };
+  await assert.rejects(s.send('cannot append'), /append failed/u);
+  assert.equal(s.runner.isRunning('P', s.task.id), false);
+  assert.equal((await s.store.readMeta('P', s.task.id)).running, undefined);
+  s.store.append = append;
+  await s.store.recoverInterrupted();
+  assert.deepEqual(await s.store.readLog('P', s.task.id), []);
+  await s.send('retry normally');
+  await s.runner.whenIdle();
+  assert.equal((await s.store.readLog('P', s.task.id)).at(-1)?.text, 'ok');
+}));
