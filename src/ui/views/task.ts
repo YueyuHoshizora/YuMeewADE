@@ -83,12 +83,22 @@ export function taskView(
         el('p', '', t('verify.result', { code: result.exitCode ?? t('common.none'), seconds: (result.ms / 1000).toFixed(1) })),
         ...(result.timedOut ? [el('p', 'warning', t('verify.timedOut'))] : []),
         ...(result.truncated ? [el('p', 'warning', t('verify.truncated'))] : []),
-        el('pre', 'verify-output', result.output));
+        el('pre', 'verify-output', result.output),
+        ...(result.ok ? [] : [sendFix(result)]));
     } finally {
       verifying = false;
       updateHeaderActions();
     }
   });
+  /** 驗證失敗時，把輸出尾段當成下一個指示交給 AI 修正。 */
+  function sendFix(result: VerifyResult): HTMLButtonElement {
+    const fix = button(t('verify.sendFix'), () => run(async () => {
+      fix.closest('dialog')?.close();
+      const output = result.output.length > 8000 ? result.output.slice(-8000) : result.output;
+      await send(busy ? 'queue' : undefined, t('verify.fixPrompt', { code: result.exitCode ?? t('common.none'), output }));
+    }), 'primary');
+    return fix;
+  }
   function updateHeaderActions(): void {
     verifyButton.hidden = !project.verify?.trim() || !!busy;
     verifyButton.disabled = verifying;

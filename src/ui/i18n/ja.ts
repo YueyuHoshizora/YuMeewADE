@@ -6,6 +6,7 @@ export const ja: Record<MessageKey, string> = {
   'verify.run': '検証を実行', 'verify.running': '検証中…', 'verify.pass': '成功', 'verify.fail': '失敗',
   'verify.result': '終了コード {code} · {seconds} 秒', 'verify.timedOut': '検証がタイムアウトし、停止しました。',
   'verify.truncated': '出力が長いため末尾のみ表示します。',
+  'verify.sendFix': 'AI に修正を依頼', 'verify.fixPrompt': '検証コマンドが失敗しました（終了コード {code}）。出力の末尾は次のとおりです。原因を調べて修正し、修正後に自分でもう一度検証して確認してください。\n\n```\n{output}\n```',
   'chat.copy': 'メッセージをコピー', 'chat.retry': '再試行', 'chat.export': 'Markdown をエクスポート',
   'chat.rollback': 'この指示の前に戻す', 'chat.rollbackConfirm': '作業コピーをこの指示の開始前に戻します。この指示以降のファイル変更は破棄されます（会話は残ります）。戻しますか？', 'chat.rollbackDone': '作業コピーを戻しました',
   'chat.changes': 'このターンの変更 {files} ファイル +{added} −{removed}',

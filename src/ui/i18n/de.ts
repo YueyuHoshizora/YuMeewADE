@@ -6,6 +6,7 @@ export const de: Record<MessageKey, string> = {
   'verify.run': 'Prüfung starten', 'verify.running': 'Prüfung läuft…', 'verify.pass': 'Bestanden', 'verify.fail': 'Fehlgeschlagen',
   'verify.result': 'Exit-Code {code} · {seconds} s', 'verify.timedOut': 'Zeitlimit überschritten; Prüfung gestoppt.',
   'verify.truncated': 'Ausgabe zu lang; nur das Ende wird angezeigt.',
+  'verify.sendFix': 'KI zur Korrektur auffordern', 'verify.fixPrompt': 'Der Prüfbefehl ist fehlgeschlagen (Exit-Code {code}). Das Ende der Ausgabe steht unten. Finde die Ursache, behebe sie und führe die Prüfung danach selbst erneut aus.\n\n```\n{output}\n```',
   'chat.copy': 'Nachricht kopieren', 'chat.retry': 'Erneut versuchen', 'chat.export': 'Markdown exportieren',
   'chat.rollback': 'Auf Stand davor zurücksetzen', 'chat.rollbackConfirm': 'Die Arbeitskopie kehrt in den Zustand vor dieser Anweisung zurück; Dateiänderungen ab hier werden verworfen (der Chat bleibt erhalten). Zurücksetzen?', 'chat.rollbackDone': 'Arbeitskopie zurückgesetzt',
   'chat.changes': 'Diese Runde: {files} Dateien +{added} −{removed}',

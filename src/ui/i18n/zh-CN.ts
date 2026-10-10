@@ -6,6 +6,7 @@ export const zhCN: Record<MessageKey, string> = {
   'verify.run': '执行验证', 'verify.running': '验证中…', 'verify.pass': '通过', 'verify.fail': '失败',
   'verify.result': '退出码 {code} · {seconds} 秒', 'verify.timedOut': '验证超时，已停止。',
   'verify.truncated': '输出过长，只显示最后一段。',
+  'verify.sendFix': '交给 AI 修复', 'verify.fixPrompt': '验证命令失败（退出码 {code}），输出尾段如下。请找出原因并修复，修复后自行再跑一次验证确认。\n\n```\n{output}\n```',
   'chat.copy': '复制消息', 'chat.retry': '重试', 'chat.export': '导出 Markdown',
   'chat.rollback': '还原到此之前', 'chat.rollbackConfirm': '工作副本会回到这条指示开始之前，这条指示及之后的文件变更都会丢弃（对话记录保留）。确定还原？', 'chat.rollbackDone': '已还原工作副本',
   'chat.changes': '本轮变更 {files} 个文件 +{added} −{removed}',

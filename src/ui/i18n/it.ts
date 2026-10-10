@@ -6,6 +6,7 @@ export const it: Record<MessageKey, string> = {
   'verify.run': 'Esegui verifica', 'verify.running': 'Verifica in corso…', 'verify.pass': 'Superata', 'verify.fail': 'Fallita',
   'verify.result': 'Codice di uscita {code} · {seconds} s', 'verify.timedOut': 'Tempo scaduto; verifica interrotta.',
   'verify.truncated': 'Output troppo lungo; viene mostrata solo la parte finale.',
+  'verify.sendFix': 'Chiedi all’IA di correggere', 'verify.fixPrompt': 'Il comando di verifica è fallito (codice di uscita {code}). In fondo trovi la parte finale dell’output. Trova la causa e correggila, poi riesegui tu stesso la verifica per confermare.\n\n```\n{output}\n```',
   'chat.copy': 'Copia messaggio', 'chat.retry': 'Riprova', 'chat.export': 'Esporta Markdown',
   'chat.rollback': 'Ripristina a prima di questo', 'chat.rollbackConfirm': 'La copia di lavoro torna allo stato precedente a questa istruzione; le modifiche ai file da qui in poi vengono scartate (la conversazione resta). Ripristinare?', 'chat.rollbackDone': 'Copia di lavoro ripristinata',
   'chat.changes': 'Questo turno: {files} file +{added} −{removed}',
