@@ -16,28 +16,65 @@ export interface ChatMeta {
 
 export class ChatStore {
   private readonly ws: Workspace;
+  private readonly logCache = new Map<string, {
+    size: number; mtimeMs: number; ino: number; boundary: boolean; rows: ChatRow[];
+  }>();
   constructor(ws: Workspace) {
     this.ws = ws;
   }
 
   async readLog(project: string, task: string): Promise<ChatRow[]> {
-    let text: string;
+    const file = this.ws.chatFile(project, task, 'jsonl');
+    let handle;
     try {
-      text = await fs.readFile(this.ws.chatFile(project, task, 'jsonl'), 'utf8');
+      handle = await fs.open(file, 'r');
     } catch (err) {
-      if ((err as NodeJS.ErrnoException).code === 'ENOENT') return [];
+      if ((err as NodeJS.ErrnoException).code === 'ENOENT') {
+        this.logCache.delete(file);
+        return [];
+      }
       throw err;
     }
-    const rows: ChatRow[] = [];
-    for (const line of text.split('\n')) {
-      if (line.trim() === '') continue;
-      try {
-        rows.push(JSON.parse(line) as ChatRow);
-      } catch {
-        log.warn('略過壞掉的對話行', { project, task });
+    try {
+      const stat = await handle.stat();
+      const cached = this.logCache.get(file);
+      this.logCache.delete(file);
+      if (cached && cached.ino === stat.ino && cached.size === stat.size && cached.mtimeMs === stat.mtimeMs) {
+        this.logCache.set(file, cached);
+        return structuredClone(cached.rows);
       }
+      // Only a complete previous line can be reused; otherwise the tail may
+      // finish an incomplete JSON value (or UTF-8 character).
+      const offset = cached && cached.ino === stat.ino && stat.size > cached.size && cached.boundary
+        ? cached.size : 0;
+      const bytes = Buffer.alloc(stat.size - offset);
+      let length = 0;
+      while (length < bytes.length) {
+        const { bytesRead } = await handle.read(bytes, length, bytes.length - length, offset + length);
+        if (!bytesRead) break;
+        length += bytesRead;
+      }
+      const content = bytes.subarray(0, length);
+      const rows = offset && cached ? [...cached.rows] : [];
+      for (const line of content.toString('utf8').split('\n')) {
+        if (line.trim() === '') continue;
+        try {
+          rows.push(JSON.parse(line) as ChatRow);
+        } catch {
+          log.warn('略過壞掉的對話行', { project, task });
+        }
+      }
+      const entry = {
+        size: offset + length, mtimeMs: stat.mtimeMs, ino: stat.ino,
+        boundary: length === 0 ? offset === 0 || Boolean(cached?.boundary) : content.at(-1) === 0x0a,
+        rows,
+      };
+      this.logCache.set(file, entry);
+      if (this.logCache.size > 32) this.logCache.delete(this.logCache.keys().next().value!);
+      return structuredClone(rows);
+    } finally {
+      await handle.close();
     }
-    return rows;
   }
 
   append(project: string, task: string, row: ChatRow): Promise<void> {
