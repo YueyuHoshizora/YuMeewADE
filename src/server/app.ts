@@ -16,6 +16,7 @@ import { ProjectLedger } from '../ledger/projects.ts';
 import { SettingsStore } from '../ledger/settings.ts';
 import { TaskLedger } from '../ledger/tasks.ts';
 import { Workspace } from '../ledger/workspace.ts';
+import { LedgerWatcher } from '../ledger/watch.ts';
 import { loadRoles } from '../roles/roles.ts';
 import type { Config } from '../shared/config.ts';
 import { AppError } from '../shared/errors.ts';
@@ -56,6 +57,7 @@ export class App {
   private changeTimer: NodeJS.Timeout | null = null;
   private pendingChange: { project?: string; task?: string } | null = null;
   private readonly ownsSse: boolean;
+  private watcher: LedgerWatcher | null = null;
 
   constructor(config: Config, options: AppOptions = {}) {
     this.config = config;
@@ -94,6 +96,8 @@ export class App {
   async init(): Promise<void> {
     await this.ws.init();
     await this.store.recoverInterrupted();
+    this.watcher = new LedgerWatcher(this.ws, (project, task) => this.changed(project, task));
+    await this.watcher.start();
   }
 
   /** 每次讀檔：roles.yaml 可手改，不快取。 */
@@ -125,7 +129,8 @@ export class App {
   }
 
   close(): void {
-    if (this.changeTimer) clearTimeout(this.changeTimer);
+    clearTimeout(this.changeTimer ?? undefined);
+    this.watcher?.close();
     if (this.ownsSse) this.sse.closeAll();
   }
 }
