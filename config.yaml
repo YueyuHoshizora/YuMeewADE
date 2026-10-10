@@ -34,6 +34,8 @@ cli:
     fullAccess: true
     fullAccessArgs: [--dangerously-bypass-approvals-and-sandbox]
     safeArgs: [-s, workspace-write, -c, 'approval_policy="never"']   # 工作目錄沙箱內可改檔與執行指令
+    # 查帳號即時額度用的子命令（app-server：與 CLI 同一份後端資料）；留空則只讀本機紀錄的最後一筆。
+    quotaArgs: [app-server]
   # 子行程環境變數採白名單；除了內建的 PATH／HOME／LANG 等基本變數外，額外要放行的名稱寫在這裡
   envPassthrough: []
 

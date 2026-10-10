@@ -56,3 +56,23 @@ test('啟動載入只問有本機紀錄的 CLI，單一 CLI 讀取失敗不影�
   } satisfies Record<string, CliProvider>);
   assert.deepEqual(board.snapshot().ais.map(entry => [entry.ai, entry.windows[0]?.usedPercent]), [['codex', 55]]);
 });
+
+test('poll：啟動查一次並定期重查，額度隨 CLI 回報更新、關閉後不再查', async () => {
+  const pushed: UsageState[] = [];
+  const board = new UsageBoard(usage => pushed.push(usage));
+  let used = 10;
+  let calls = 0;
+  const provider: CliProvider = {
+    name: 'codex', dangerous: false, available: async () => true, send: () => { throw new Error('unused'); },
+    quota: async () => { calls++; used += 10; return quota(new Date().toISOString(), used); },
+  };
+  await board.poll({ codex: provider }, 20);
+  assert.equal(board.snapshot().ais[0]?.windows[0]?.usedPercent, 20);
+  await new Promise(resolve => setTimeout(resolve, 120));
+  board.close();
+  const after = calls;
+  assert.ok(after >= 3, `重查次數 ${after}`);
+  assert.equal(board.snapshot().ais[0]?.windows[0]?.usedPercent, used);
+  await new Promise(resolve => setTimeout(resolve, 80));
+  assert.equal(calls, after);
+});

@@ -23,6 +23,7 @@ export class UsageBoard {
   private samples: Sample[] = [];
   private rate = 0;
   private timer: NodeJS.Timeout | null = null;
+  private pollTimer: NodeJS.Timeout | null = null;
 
   constructor(onChange: (usage: UsageState) => void, now: () => number = Date.now) {
     this.onChange = onChange;
@@ -60,10 +61,23 @@ export class UsageBoard {
     return Math.max(0, Math.round(tokens / (RATE_WINDOW_MS / 1000)));
   }
 
-  /** 停止計時器（核心關閉或換工作區）。 */
+  /** 停止所有計時器（核心關閉或換工作區）。 */
   close(): void {
+    this.stopRate();
+    clearInterval(this.pollTimer ?? undefined);
+    this.pollTimer = null;
+  }
+
+  private stopRate(): void {
     clearInterval(this.timer ?? undefined);
     this.timer = null;
+  }
+
+  /** 啟動時讀一次，之後固定間隔向各 CLI 重新查詢；額度在終端機或其他裝置上也會變，不能只靠本程式送出的回合。 */
+  async poll(providers: Record<string, CliProvider>, intervalMs: number): Promise<void> {
+    this.pollTimer ??= setInterval(() => { void this.load(providers); }, intervalMs);
+    this.pollTimer.unref();
+    await this.load(providers);
   }
 
   /** 啟動時從各 CLI 的本機紀錄補最近一次額度；讀不到只記日誌。 */
@@ -86,6 +100,6 @@ export class UsageBoard {
       this.onChange(this.snapshot());
     }
     // 窗口內已沒有樣本且已推送過 0：停表，閒置時不空轉。
-    if (!this.samples.length && rate === 0) this.close();
+    if (!this.samples.length && rate === 0) this.stopRate();
   }
 }

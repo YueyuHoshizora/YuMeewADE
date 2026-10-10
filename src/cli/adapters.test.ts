@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import { DEFAULT_CONFIG } from '../shared/config.ts';
 import { ClaudeCliProvider, claudeArgs, claudeQuota, createClaudeParser } from './claude.ts';
-import { CodexCliProvider, codexArgs, codexQuota, createCodexParser, readCodexQuota } from './codex.ts';
+import { CodexCliProvider, codexAppServerQuota, codexArgs, codexQuota, createCodexParser, fetchCodexQuota, readCodexQuota } from './codex.ts';
 import { captureCommand, redactArgs } from './process.ts';
 import { MockCliProvider } from './mock.ts';
 import { createProviders } from './providers.ts';
@@ -342,4 +342,48 @@ test('turn usage is exact, optional, and independent of live tokens', async () =
   await new MockCliProvider({ chunkMs: 0, events: [{ type: 'usage', usage: { input: 7, output: 6 } }] })
     .send({ prompt: '', cwd: '/w' }, e => mockEvents.push(e)).done;
   assert.deepEqual(mockEvents.find(e => e.type === 'usage'), { type: 'usage', usage: { input: 7, output: 6 } });
+});
+
+test('Codex app-server 額度回應轉成窗口（5h／7d、重置時間、達上限旗標）', () => {
+  const snapshot = {
+    limitId: 'codex',
+    primary: { usedPercent: 86, windowDurationMins: 300, resetsAt: 1791678946 },
+    secondary: { usedPercent: 90, windowDurationMins: 10080, resetsAt: 1791948855 },
+    rateLimitReachedType: null,
+  };
+  const quota = codexAppServerQuota({ rateLimits: { limitId: 'x' }, rateLimitsByLimitId: { codex: snapshot } }, 'T');
+  assert.deepEqual(quota, {
+    type: 'quota', at: 'T', limited: false,
+    windows: [
+      { label: '5h', usedPercent: 86, resetsAt: new Date(1791678946_000).toISOString() },
+      { label: '7d', usedPercent: 90, resetsAt: new Date(1791948855_000).toISOString() },
+    ],
+  });
+  // 沒有分桶時退回舊版單桶；達上限旗標照帶。
+  const limited = codexAppServerQuota({ rateLimits: { ...snapshot, rateLimitReachedType: 'primary' }, rateLimitsByLimitId: null }, 'T');
+  assert.equal(limited?.limited, true);
+  assert.equal(codexAppServerQuota({}, 'T'), null);
+});
+
+test('即時額度查詢：走 initialize → rateLimits/read 取得回應，錯誤或逾時都 reject', async () => {
+  const dir = await fs.mkdtemp(path.join(os.tmpdir(), 'codex-quota-'));
+  try {
+    const write = async (name: string, body: string) => { const file = path.join(dir, name); await fs.writeFile(file, body); return file; };
+    const ok = await write('ok.ts', `
+      let buf = '';
+      process.stdin.on('data', d => { buf += d; for (let i = buf.indexOf('\\n'); i >= 0; i = buf.indexOf('\\n')) {
+        const m = JSON.parse(buf.slice(0, i)); buf = buf.slice(i + 1);
+        if (m.method === 'initialize') console.log(JSON.stringify({ id: m.id, result: {} }));
+        if (m.method === 'account/rateLimits/read') console.log(JSON.stringify({ id: m.id, result: { rateLimits: { primary: { usedPercent: 12, windowDurationMins: 300, resetsAt: null }, secondary: null, rateLimitReachedType: null } } }));
+      } });`);
+    const quota = await fetchCodexQuota(process.execPath, [ok], process.env);
+    assert.deepEqual(quota?.windows, [{ label: '5h', usedPercent: 12, resetsAt: null }]);
+    const failing = await write('fail.ts', `process.stdin.on('data', d => { for (const l of String(d).split('\\n').filter(Boolean)) { const m = JSON.parse(l); if (m.method === 'initialize') console.log(JSON.stringify({ id: 1, result: {} })); if (m.id === 2) console.log(JSON.stringify({ id: 2, error: { code: -1, message: 'x' } })); } });`);
+    await assert.rejects(fetchCodexQuota(process.execPath, [failing], process.env), /rateLimits\/read failed/);
+    const silent = await write('silent.ts', `process.stdin.resume(); setInterval(() => {}, 1000);`);
+    await assert.rejects(fetchCodexQuota(process.execPath, [silent], process.env, 300), /timed out/);
+    await assert.rejects(fetchCodexQuota('no-such-codex-binary', [], process.env), /not found/);
+  } finally {
+    await fs.rm(dir, { recursive: true, force: true });
+  }
 });

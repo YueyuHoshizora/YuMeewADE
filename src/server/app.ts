@@ -29,6 +29,9 @@ import { buildState, type StateSnapshot } from '../state/state.ts';
 
 const pkg = createRequire(import.meta.url)('../../package.json') as { version: string };
 
+/** 向 CLI 重新查額度的間隔；額度在終端機或其他裝置上也會變。 */
+const USAGE_POLL_MS = 120_000;
+
 export interface AppOptions {
   /** 測試用：取代真實 CLI。 */
   providers?: Record<string, CliProvider>;
@@ -125,8 +128,8 @@ export class App {
     this.uploadTimer.unref();
     this.watcher = new LedgerWatcher(this.ws, (project, task) => this.changed(project, task));
     await this.watcher.start();
-    // 讀 CLI 本機紀錄不擋啟動；讀完會以 usage 事件推給客戶端。
-    void this.usage.load(this.providers);
+    // 向各 CLI 查帳號目前額度（Codex 走 app-server，失敗退回本機紀錄）；不擋啟動，查到會以 usage 事件推給客戶端，之後定期更新。
+    void this.usage.poll(this.providers, USAGE_POLL_MS);
   }
 
   /** 每次讀檔：roles.yaml 可手改，不快取。 */

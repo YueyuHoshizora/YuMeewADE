@@ -16,6 +16,8 @@ export interface CliCommandConfig {
   fullAccessArgs: string[];
   /** fullAccess 關閉時改用的權限旗標。 */
   safeArgs: string[];
+  /** 查詢帳號即時額度的子命令（Codex：app-server）；空陣列＝該 CLI 沒有，只靠回合中的回報。 */
+  quotaArgs: string[];
 }
 
 export interface Config {
@@ -53,6 +55,7 @@ export const DEFAULT_CONFIG: Config = {
       fullAccessArgs: ['--dangerously-skip-permissions'],
       // 只自動接受檔案編輯；執行指令會被拒
       safeArgs: ['--permission-mode', 'acceptEdits'],
+      quotaArgs: [],
     },
     codex: {
       command: 'codex',
@@ -61,6 +64,7 @@ export const DEFAULT_CONFIG: Config = {
       fullAccessArgs: ['--dangerously-bypass-approvals-and-sandbox'],
       // 工作目錄沙箱內可改檔與執行指令，不詢問
       safeArgs: ['-s', 'workspace-write', '-c', 'approval_policy="never"'],
+      quotaArgs: ['app-server'],
     },
     envPassthrough: [],
   },
@@ -159,6 +163,7 @@ function cliSection(map: YamlMap, name: 'claude' | 'codex'): CliCommandConfig {
     fullAccess: bool(s, 'fullAccess', d.fullAccess, where),
     fullAccessArgs: strList(s, 'fullAccessArgs', d.fullAccessArgs, where),
     safeArgs: strList(s, 'safeArgs', d.safeArgs, where),
+    quotaArgs: strList(s, 'quotaArgs', d.quotaArgs, where),
   };
 }
 

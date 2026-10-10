@@ -1,9 +1,11 @@
 // Codex --json adapter（含舊版 msg 事件）；工具不混入回答。
+import { spawn } from 'node:child_process';
 import { promises as fs } from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import type { CliCommandConfig } from '../shared/config.ts';
 import type { QuotaWindow } from '../shared/types.ts';
+import { log } from '../shared/log.ts';
 import { findExecutable, minimalEnv, runLineProcess } from './process.ts';
 import type { CliEvent, CliProvider, CliRun, SendOptions } from './provider.ts';
 
@@ -44,6 +46,61 @@ export function codexQuota(limits: unknown, at: string): QuotaEvent | null {
   }
   const limited = l['rate_limit_reached_type'] !== null && l['rate_limit_reached_type'] !== undefined;
   return windows.length || limited ? { type: 'quota', windows, limited, at } : null;
+}
+
+/** app-server `account/rateLimits/read` 的回應（camelCase、同一份後端即時資料）→ 額度窗口；沿用 rollout 的解析。 */
+export function codexAppServerQuota(result: unknown, at: string): QuotaEvent | null {
+  if (!result || typeof result !== 'object') return null;
+  const r = result as Record<string, unknown>;
+  const byId = r['rateLimitsByLimitId'];
+  const snapshot = byId && typeof byId === 'object' && 'codex' in byId && byId.codex ? byId.codex : r['rateLimits'];
+  if (!snapshot || typeof snapshot !== 'object') return null;
+  const s = snapshot as Record<string, unknown>;
+  const snake: Record<string, unknown> = { rate_limit_reached_type: s['rateLimitReachedType'] };
+  for (const key of ['primary', 'secondary']) {
+    const w = s[key];
+    if (!w || typeof w !== 'object') continue;
+    const v = w as Record<string, unknown>;
+    snake[key] = { used_percent: v['usedPercent'], window_minutes: v['windowDurationMins'], resets_at: v['resetsAt'] };
+  }
+  return codexQuota(snake, at);
+}
+
+/** 即時額度查詢逾時；app-server 要連後端，網路差時不能卡住啟動或重新整理。 */
+const QUOTA_TIMEOUT_MS = 15_000;
+
+/** 以 `{command} {quotaArgs}`（app-server）查帳號目前額度：initialize → account/rateLimits/read，拿到就結束子行程。 */
+export async function fetchCodexQuota(command: string, args: string[], env: NodeJS.ProcessEnv, timeoutMs = QUOTA_TIMEOUT_MS): Promise<QuotaEvent | null> {
+  const exe = await findExecutable(command, env);
+  if (!exe) throw new Error('CLI executable not found');
+  const { promise, resolve, reject } = Promise.withResolvers<QuotaEvent | null>();
+  const child = spawn(exe, args, { env, stdio: ['pipe', 'pipe', 'ignore'] });
+  const timer = setTimeout(() => reject(new Error('quota query timed out')), timeoutMs);
+  let buffer = '';
+  child.on('error', reject);
+  child.on('close', () => reject(new Error('app-server exited')));
+  child.stdin.on('error', () => { /* 子行程已結束：由 close 處理。 */ });
+  child.stdout.setEncoding('utf8');
+  child.stdout.on('data', (chunk: string) => {
+    buffer += chunk;
+    for (let nl = buffer.indexOf('\n'); nl >= 0; nl = buffer.indexOf('\n')) {
+      const line = buffer.slice(0, nl);
+      buffer = buffer.slice(nl + 1);
+      let msg: { id?: unknown; result?: unknown; error?: unknown };
+      try { msg = JSON.parse(line); } catch { continue; }
+      if (msg.id === 1 && !msg.error) {
+        child.stdin.write(`${JSON.stringify({ method: 'initialized' })}\n${JSON.stringify({ method: 'account/rateLimits/read', id: 2 })}\n`);
+      } else if (msg.id === 1) {
+        reject(new Error('initialize failed'));
+      } else if (msg.id === 2) {
+        if (msg.error) reject(new Error('rateLimits/read failed'));
+        else resolve(codexAppServerQuota(msg.result, new Date().toISOString()));
+      }
+    }
+  });
+  child.stdin.write(`${JSON.stringify({ method: 'initialize', id: 1, params: { clientInfo: { name: 'yumeewade', title: null, version: '1' }, capabilities: null } })}\n`);
+  try { return await promise; }
+  finally { clearTimeout(timer); child.kill(); }
 }
 
 /** rollout 檔尾端最後一筆帶 rate_limits 的事件。 */
@@ -209,7 +266,14 @@ export class CodexCliProvider implements CliProvider {
 
   async available(): Promise<boolean> { return (await findExecutable(this.cfg.command, this.env)) !== null; }
 
-  quota(): Promise<QuotaEvent | null> { return readCodexQuota(this.home); }
+  /** 優先問 app-server 取得帳號即時額度（與其他裝置／終端機的用量一致）；沒設定或失敗才退回本機 rollout 的最後一筆。 */
+  async quota(): Promise<QuotaEvent | null> {
+    if (this.cfg.quotaArgs.length) {
+      try { return await fetchCodexQuota(this.cfg.command, this.cfg.quotaArgs, this.env); }
+      catch (err) { log.warn('Codex 即時額度查詢失敗，改讀本機紀錄', { reason: err instanceof Error ? err.message.slice(0, 200) : 'unknown' }); }
+    }
+    return readCodexQuota(this.home);
+  }
 
   send(opts: SendOptions, onEvent: (ev: CliEvent) => void): CliRun {
     let completed = false;
