@@ -2,6 +2,25 @@ import { request } from '../api.ts';
 import { el, button } from './dom.ts';
 import { t } from '../i18n/index.ts';
 
+export async function copyText(text: string): Promise<void> {
+  try {
+    await navigator.clipboard.writeText(text);
+  } catch {
+    const previous = document.activeElement;
+    const fallback = el('textarea', 'visually-hidden');
+    fallback.value = text;
+    fallback.readOnly = true;
+    document.body.append(fallback);
+    fallback.select();
+    try {
+      if (!document.execCommand('copy')) throw new Error('copy');
+    } finally {
+      fallback.remove();
+      if (previous instanceof HTMLElement) previous.focus();
+    }
+  }
+}
+
 // 不使用 HTML parser：AI 回覆也視為不可信任的文字，網址只接受 HTTP(S)。
 function inline(parent: HTMLElement, value: string): void {
   const pattern = /(`[^`]+`|\[[^\]]+\]\([^)]+\)|\*\*[^*]+\*\*|https?:\/\/[^\s<>]+|[A-Za-z]:\\(?:[^\\\s]+\\)*[^\\\s]+|(?:\/[\w.@+-]+){2,}(?:\/[\w.@+-]*)?)/g;
@@ -34,7 +53,7 @@ export function markdown(value: string): HTMLElement {
       const text = code.join('\n'); const pre = el('pre'); pre.append(el('code', '', text));
       const copy = button(t('markdown.copy'), async () => {
         try {
-          await navigator.clipboard.writeText(text);
+          await copyText(text);
           copy.textContent = t('markdown.copied');
         } catch {
           copy.textContent = t('markdown.copyFailed');

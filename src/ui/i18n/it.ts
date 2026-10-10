@@ -1,6 +1,16 @@
 import type { MessageKey } from './zh-TW.ts';
 
 export const it: Record<MessageKey, string> = {
+  'project.verify': 'Comando di verifica',
+  'project.verifyHint': 'Eseguito nel worktree dell’attività (es. npm test); salvato in PROJECT.md.',
+  'verify.run': 'Esegui verifica', 'verify.running': 'Verifica in corso…', 'verify.pass': 'Superata', 'verify.fail': 'Fallita',
+  'verify.result': 'Codice di uscita {code} · {seconds} s', 'verify.timedOut': 'Tempo scaduto; verifica interrotta.',
+  'verify.truncated': 'Output troppo lungo; viene mostrata solo la parte finale.',
+  'chat.copy': 'Copia messaggio', 'chat.retry': 'Riprova', 'chat.export': 'Esporta Markdown',
+  'chat.turnUsage': 'input {input} · output {output}', 'chat.cachedUsage': ' · cache {cached}',
+  'chat.usageHint': 'Questi conteggi di token sono riportati dalla CLI.',
+  'chat.queuePaused': 'Coda in pausa: il primo elemento è fallito. I successivi attendono la sua rimozione o l’avvio manuale.',
+  'copy.leftover': 'Unione riuscita, ma questi file senza commit non sono stati uniti; il worktree è stato conservato.',
   'chat.earlier': 'Carica i messaggi precedenti',
   'search.title': 'Cerca in tutte le conversazioni', 'search.placeholder': 'Cerca nelle attività e nelle conversazioni…', 'search.truncated': 'Troppi risultati. Affina la ricerca.',
   'settings.theme': 'Aspetto', 'settings.theme.system': 'Sistema', 'settings.theme.light': 'Chiaro', 'settings.theme.dark': 'Scuro',

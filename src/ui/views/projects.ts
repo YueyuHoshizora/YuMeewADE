@@ -4,7 +4,7 @@ import { t } from '../i18n/index.ts';
 import { attachments } from '../components/attachments.ts';
 import { aiPicker } from '../components/picker.ts';
 import { markdown } from '../components/markdown.ts';
-import { area, button, card, confirmModal, disclosure, el, field, input, lines, link, projectHash, readLocal, row, run, select, storeLocal, taskHash, type View, type ViewContext } from '../components/dom.ts';
+import { area, button, card, confirmModal, disclosure, el, field, input, lines, link, projectHash, readLocal, row, run, select, storeLocal, taskHash, toast, type View, type ViewContext } from '../components/dom.ts';
 import { localTime } from '../components/display.ts';
 import { shouldSend } from '../components/composer.ts';
 
@@ -84,6 +84,17 @@ export function projectView(context: ViewContext, project: ProjectView, params: 
       }, 'danger'),
     );
     overview.append(header, actions, disclosure(t('project.notes'), markdown(project.description + '\n\n' + project.notes)));
+    const verify = input(project.verify);
+    verify.maxLength = 500;
+    const verifyHint = el('p', 'muted', t('project.verifyHint'));
+    verifyHint.id = 'project-verify-hint';
+    verify.setAttribute('aria-describedby', verifyHint.id);
+    overview.append(disclosure(t('project.verify'), field(t('project.verify'), verify), verifyHint,
+      button(t('common.save'), async () => {
+        await request('/api/project/update', { project: project.id, patch: { verify: verify.value.trim() } });
+        await context.refresh();
+        toast(t('common.saved'));
+      })));
     if (project.phases.length) {
       const road = el('div', 'phase-road');
       for (const [i, phase] of project.phases.entries()) road.append(el('div', `phase ${phase.name === project.currentPhase ? 'current' : ''} ${phase.state === '完成' ? 'complete' : ''}`, `${i + 1} · ${phase.name}`));

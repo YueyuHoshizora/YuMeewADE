@@ -1,6 +1,16 @@
 import type { MessageKey } from './zh-TW.ts';
 
 export const en: Record<MessageKey, string> = {
+  'project.verify': 'Verification command',
+  'project.verifyHint': 'Runs in the task’s worktree (e.g. npm test); stored in PROJECT.md.',
+  'verify.run': 'Run verification', 'verify.running': 'Verifying…', 'verify.pass': 'Passed', 'verify.fail': 'Failed',
+  'verify.result': 'Exit code {code} · {seconds} s', 'verify.timedOut': 'Verification timed out and was stopped.',
+  'verify.truncated': 'Output is too long; only the tail is shown.',
+  'chat.copy': 'Copy message', 'chat.retry': 'Retry', 'chat.export': 'Export Markdown',
+  'chat.turnUsage': 'in {input} · out {output}', 'chat.cachedUsage': ' · cached {cached}',
+  'chat.usageHint': 'These token counts are reported by the CLI.',
+  'chat.queuePaused': 'Queue paused: the first item failed. Later items wait until it is removed or started manually.',
+  'copy.leftover': 'Merge succeeded, but these uncommitted files were not merged; the worktree was kept.',
   'chat.earlier': 'Load earlier messages',
   'search.title': 'Search all conversations', 'search.placeholder': 'Search tasks and conversation content…', 'search.truncated': 'Too many results. Refine your search.',
   'settings.theme': 'Appearance', 'settings.theme.system': 'System', 'settings.theme.light': 'Light', 'settings.theme.dark': 'Dark',

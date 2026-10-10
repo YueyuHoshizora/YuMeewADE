@@ -1,6 +1,16 @@
 import type { MessageKey } from './zh-TW.ts';
 
 export const zhCN: Record<MessageKey, string> = {
+  'project.verify': '验证指令',
+  'project.verifyHint': '在作业的工作副本执行（例如 npm test）；指令保存在 PROJECT.md。',
+  'verify.run': '执行验证', 'verify.running': '验证中…', 'verify.pass': '通过', 'verify.fail': '失败',
+  'verify.result': '退出码 {code} · {seconds} 秒', 'verify.timedOut': '验证超时，已停止。',
+  'verify.truncated': '输出过长，只显示最后一段。',
+  'chat.copy': '复制消息', 'chat.retry': '重试', 'chat.export': '导出 Markdown',
+  'chat.turnUsage': '输入 {input} · 输出 {output}', 'chat.cachedUsage': ' · 缓存 {cached}',
+  'chat.usageHint': '这些 token 用量由 CLI 报告。',
+  'chat.queuePaused': '队列已暂停：第一条指令失败，后续指令会等待，直到移除失败项或手动开始。',
+  'copy.leftover': '合并成功，但以下未提交的文件未被合并；工作副本已保留。',
   'chat.earlier': '载入更早的消息',
   'search.title': '搜索所有对话', 'search.placeholder': '搜索作业和对话内容…', 'search.truncated': '结果过多，请缩小搜索范围。',
   'settings.theme': '外观', 'settings.theme.system': '跟随系统', 'settings.theme.light': '浅色', 'settings.theme.dark': '深色',

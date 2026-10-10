@@ -1,6 +1,16 @@
 import type { MessageKey } from './zh-TW.ts';
 
 export const ja: Record<MessageKey, string> = {
+  'project.verify': '検証コマンド',
+  'project.verifyHint': '作業の worktree で実行（例：npm test）。PROJECT.md に保存されます。',
+  'verify.run': '検証を実行', 'verify.running': '検証中…', 'verify.pass': '成功', 'verify.fail': '失敗',
+  'verify.result': '終了コード {code} · {seconds} 秒', 'verify.timedOut': '検証がタイムアウトし、停止しました。',
+  'verify.truncated': '出力が長いため末尾のみ表示します。',
+  'chat.copy': 'メッセージをコピー', 'chat.retry': '再試行', 'chat.export': 'Markdown をエクスポート',
+  'chat.turnUsage': '入力 {input} · 出力 {output}', 'chat.cachedUsage': ' · キャッシュ {cached}',
+  'chat.usageHint': 'これらのトークン数は CLI が報告した値です。',
+  'chat.queuePaused': 'キューは一時停止中：先頭の指示が失敗しました。削除するか手動で開始するまで後続の指示は待機します。',
+  'copy.leftover': 'マージは成功しましたが、以下の未コミットファイルはマージされず、worktree は保持されました。',
   'chat.earlier': '以前のメッセージを読み込む',
   'search.title': 'すべての会話を検索', 'search.placeholder': '作業と会話の内容を検索…', 'search.truncated': '結果が多すぎます。検索を絞り込んでください。',
   'settings.theme': '外観', 'settings.theme.system': 'システム', 'settings.theme.light': 'ライト', 'settings.theme.dark': 'ダーク',

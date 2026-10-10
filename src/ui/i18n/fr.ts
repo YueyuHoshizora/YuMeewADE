@@ -1,6 +1,16 @@
 import type { MessageKey } from './zh-TW.ts';
 
 export const fr: Record<MessageKey, string> = {
+  'project.verify': 'Commande de vérification',
+  'project.verifyHint': 'Exécutée dans le worktree de la tâche (ex. npm test) ; enregistrée dans PROJECT.md.',
+  'verify.run': 'Lancer la vérification', 'verify.running': 'Vérification…', 'verify.pass': 'Réussie', 'verify.fail': 'Échouée',
+  'verify.result': 'Code de sortie {code} · {seconds} s', 'verify.timedOut': 'Délai dépassé ; vérification arrêtée.',
+  'verify.truncated': 'Sortie trop longue ; seule la fin est affichée.',
+  'chat.copy': 'Copier le message', 'chat.retry': 'Réessayer', 'chat.export': 'Exporter en Markdown',
+  'chat.turnUsage': 'entrée {input} · sortie {output}', 'chat.cachedUsage': ' · cache {cached}',
+  'chat.usageHint': 'Ces nombres de tokens sont rapportés par la CLI.',
+  'chat.queuePaused': 'File en pause : le premier élément a échoué. Les suivants attendent son retrait ou son lancement manuel.',
+  'copy.leftover': 'Fusion réussie, mais ces fichiers non commités ne sont pas fusionnés ; le worktree est conservé.',
   'chat.earlier': 'Charger les messages précédents',
   'search.title': 'Rechercher dans les conversations', 'search.placeholder': 'Rechercher des tâches et des conversations…', 'search.truncated': 'Trop de résultats. Affinez la recherche.',
   'settings.theme': 'Apparence', 'settings.theme.system': 'Système', 'settings.theme.light': 'Clair', 'settings.theme.dark': 'Sombre',

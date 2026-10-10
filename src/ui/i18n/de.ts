@@ -1,6 +1,16 @@
 import type { MessageKey } from './zh-TW.ts';
 
 export const de: Record<MessageKey, string> = {
+  'project.verify': 'Prüfbefehl',
+  'project.verifyHint': 'Wird im Worktree der Aufgabe ausgeführt (z. B. npm test); in PROJECT.md gespeichert.',
+  'verify.run': 'Prüfung starten', 'verify.running': 'Prüfung läuft…', 'verify.pass': 'Bestanden', 'verify.fail': 'Fehlgeschlagen',
+  'verify.result': 'Exit-Code {code} · {seconds} s', 'verify.timedOut': 'Zeitlimit überschritten; Prüfung gestoppt.',
+  'verify.truncated': 'Ausgabe zu lang; nur das Ende wird angezeigt.',
+  'chat.copy': 'Nachricht kopieren', 'chat.retry': 'Erneut versuchen', 'chat.export': 'Markdown exportieren',
+  'chat.turnUsage': 'Eingabe {input} · Ausgabe {output}', 'chat.cachedUsage': ' · Cache {cached}',
+  'chat.usageHint': 'Diese Tokenzahlen werden von der CLI gemeldet.',
+  'chat.queuePaused': 'Warteschlange pausiert: Der erste Eintrag ist fehlgeschlagen. Weitere warten, bis er entfernt oder manuell gestartet wird.',
+  'copy.leftover': 'Zusammenführung erfolgreich, aber diese nicht committeten Dateien wurden nicht übernommen; der Worktree wurde behalten.',
   'chat.earlier': 'Ältere Nachrichten laden',
   'search.title': 'Alle Gespräche durchsuchen', 'search.placeholder': 'Aufgaben und Gesprächsinhalte durchsuchen…', 'search.truncated': 'Zu viele Ergebnisse. Suche eingrenzen.',
   'settings.theme': 'Darstellung', 'settings.theme.system': 'System', 'settings.theme.light': 'Hell', 'settings.theme.dark': 'Dunkel',

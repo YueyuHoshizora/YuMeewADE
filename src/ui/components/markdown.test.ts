@@ -23,7 +23,7 @@ Object.defineProperty(globalThis, 'document', {
   configurable: true,
 });
 // Locale initialization reads browser globals at import time; load after the fixture exists.
-const { markdown } = await import('./markdown.ts');
+const { markdown, copyText } = await import('./markdown.ts');
 function shape(node: Element): unknown {
   return [node.tag, node.textContent, node.href, node.style, node.children.map(shape)];
 }
@@ -75,4 +75,47 @@ test('completed blocks are drained once while open fences stay in the tail', () 
   buffer.push('```\n\nnext');
   assert.deepEqual(buffer.takeCompleted(), ['```\ncode\n\n```\n\n']);
   assert.equal(buffer.tail(), 'next');
+});
+
+test('copy uses the clipboard directly when available', async () => {
+  let copied = '';
+  Object.defineProperty(globalThis, 'navigator', { value: { clipboard: { writeText: async (text: string) => { copied = text; } } }, configurable: true });
+  await copyText('user <script>text</script>');
+  assert.equal(copied, 'user <script>text</script>');
+});
+
+test('clipboard rejection falls back to selected text and restores focus', async () => {
+  const originalDocument = globalThis.document;
+  const previous = new Element('button');
+  let focused = false;
+  let selected = false;
+  let removed = false;
+  let commandResult = true;
+  let fallback: (Element & { value: string }) | undefined;
+  Object.assign(previous, { focus: () => { focused = true; } });
+  Object.defineProperty(globalThis, 'HTMLElement', { value: Element, configurable: true });
+  Object.defineProperty(globalThis, 'navigator', { value: { clipboard: { writeText: async () => { throw new Error('denied'); } } }, configurable: true });
+  Object.defineProperty(globalThis, 'document', {
+    value: {
+      activeElement: previous,
+      createElement: (tag: string) => Object.assign(new Element(tag), {
+        value: '', select: () => { selected = true; }, remove: () => { removed = true; },
+      }),
+      body: { append: (node: typeof fallback) => { fallback = node; } },
+      execCommand: (command: string) => { assert.equal(command, 'copy'); return commandResult; },
+    },
+    configurable: true,
+  });
+  try {
+    await copyText('assistant text');
+    assert.equal(fallback!.value, 'assistant text');
+    assert.ok(selected && removed && focused);
+    commandResult = false;
+    removed = false;
+    focused = false;
+    await assert.rejects(copyText('failure'));
+    assert.ok(removed && focused);
+  } finally {
+    Object.defineProperty(globalThis, 'document', { value: originalDocument, configurable: true });
+  }
 });

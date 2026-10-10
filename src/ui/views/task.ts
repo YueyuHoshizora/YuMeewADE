@@ -1,13 +1,13 @@
 import type {
   AppState, Busy, ChatEvent, ChatHistory, ChatRow, ProjectView,
-  QueueItem, SendMode, TaskView,
+  QueueItem, SendMode, TaskView, VerifyResult,
 } from '../../shared/types.ts';
 import { TASK_STATES } from '../../shared/types.ts';
 import { api, query, request } from '../api.ts';
-import { t } from '../i18n/index.ts';
+import { getLocale, t } from '../i18n/index.ts';
 import { attachments } from '../components/attachments.ts';
 import { aiPicker } from '../components/picker.ts';
-import { markdown } from '../components/markdown.ts';
+import { copyText, markdown } from '../components/markdown.ts';
 import { MarkdownStream } from '../components/markdown-stream.ts';
 import { HistoryWindow } from '../components/history.ts';
 import {
@@ -18,6 +18,7 @@ import {
 import { aiLabel, effortLabel, localTime, modelLabel } from '../components/display.ts';
 import { shouldSend } from '../components/composer.ts';
 import { stream } from '../components/stream.ts';
+import { parseDiff } from '../components/diff.ts';
 
 export function taskView(
   context: ViewContext,
@@ -69,12 +70,42 @@ export function taskView(
     });
   };
   const stateChip = el('span', 'state-chip', t(`state.${task.state}`));
+  let verifying = false;
+  const verifyButton = button(t('verify.run'), async () => {
+    if (busy || verifying) return;
+    verifying = true;
+    updateHeaderActions();
+    try {
+      const result = await request<VerifyResult>('/api/task/verify', { project: project.id, task: task.id });
+      if (!alive) return;
+      modal(t('verify.run'),
+        el('strong', result.ok ? 'verify-pass' : 'error-mark', t(result.ok ? 'verify.pass' : 'verify.fail')),
+        el('p', '', t('verify.result', { code: result.exitCode ?? t('common.none'), seconds: (result.ms / 1000).toFixed(1) })),
+        ...(result.timedOut ? [el('p', 'warning', t('verify.timedOut'))] : []),
+        ...(result.truncated ? [el('p', 'warning', t('verify.truncated'))] : []),
+        el('pre', 'verify-output', result.output));
+    } finally {
+      verifying = false;
+      updateHeaderActions();
+    }
+  });
+  function updateHeaderActions(): void {
+    verifyButton.hidden = !project.verify?.trim() || !!busy;
+    verifyButton.disabled = verifying;
+    verifyButton.textContent = t(verifying ? 'verify.running' : 'verify.run');
+    verifyButton.setAttribute('aria-busy', String(verifying));
+    for (const retry of transcriptRows.querySelectorAll<HTMLButtonElement>('.retry-message')) retry.hidden = !!busy;
+  }
+  const exportLink = link(t('chat.export'), query('/api/chat/export', { project: project.id, task: task.id }), 'export-chat');
+  exportLink.download = `${task.title}.md`;
   header.append(
     link(t('common.back', { name: project.name }), projectHash(project.id), 'back-link'),
     row(
       title,
       stateChip,
-      button(t('common.open'), () => request('/api/open', { path: task.workdir || project.bodyPath }))
+      button(t('common.open'), () => request('/api/open', { path: task.workdir || project.bodyPath })),
+      exportLink,
+      verifyButton
     ),
     work);
   const transcript = el('div', 'transcript');
@@ -158,15 +189,18 @@ export function taskView(
   const upload = attachments(project.id, context.state.limits, draft);
   const actions = el('div', 'send-actions');
   const running = el('p', 'running-line');
-  async function send(mode?: SendMode, text = draft.value.trim(), answer = false): Promise<void> {
-    await upload.ready();
-    if (!text && !upload.ids().length) {
+  async function send(mode?: SendMode, text = draft.value.trim(), answer = false, retry?: Extract<ChatRow, { role: 'user' }>): Promise<void> {
+    if (retry && busy) return;
+    if (!retry) await upload.ready();
+    const images = retry ? (retry.images ?? []).map(path => path.split(/[\\/]/).pop()!) : answer ? [] : upload.ids();
+    const selection = retry ? { ai: retry.to, ...(retry.model ? { model: retry.model } : {}), ...(retry.effort ? { effort: retry.effort } : {}) } : pick.value();
+    if (!text && !images.length) {
       toast(t('chat.needText'));
       return;
     }
-    await api.send({ project: project.id, task: task.id, text, ...pick.value(), ...(busy ? { mode: mode ?? 'queue' } : {}), answer, images: answer ? [] : upload.ids() });
-    storeLocal(pickKey, pick.value());
-    if (!answer) {
+    await api.send({ project: project.id, task: task.id, text, ...selection, ...(busy ? { mode: mode ?? 'queue' } : {}), answer, images });
+    if (!retry) storeLocal(pickKey, pick.value());
+    if (!answer && !retry) {
       draft.value = '';
       resizeDraft();
       storeLocal(draftKey, '');
@@ -193,6 +227,7 @@ export function taskView(
     }
     clock();
     renderQueue();
+    updateHeaderActions();
   }
   function clock(): void {
     if (!busy) {
@@ -232,6 +267,9 @@ export function taskView(
       }
       return q;
     }));
+    if (queue.some(item => item.error)) {
+      queueNode.prepend(el('p', 'warning queue-paused', t('chat.queuePaused')));
+    }
     queueNode.hidden = !queue.length;
   }
   let live: HTMLElement | null = null;
@@ -352,12 +390,43 @@ export function taskView(
         el('span', '', `${modelLabel(context.state, entry.ai, entry.model)} · ${effortLabel(entry.effort)}`),
         el('time', '', localTime(entry.at)),
         el('span', '', t('chat.duration', { seconds: Math.round(entry.ms / 1000) })));
+      if (entry.usage) {
+        const format = new Intl.NumberFormat(getLocale(), { notation: 'compact', maximumFractionDigits: 1 });
+        const usage = el('span', 'turn-usage', t('chat.turnUsage', { input: format.format(entry.usage.input), output: format.format(entry.usage.output) })
+          + (entry.usage.cached === undefined ? '' : t('chat.cachedUsage', { cached: format.format(entry.usage.cached) })));
+        usage.title = t('chat.usageHint');
+        metadata.append(usage);
+      }
+      if (entry.error || entry.stopped) {
+        const retry = button(t('chat.retry'), async () => {
+          while (alive && !busy) {
+            let at = rows.indexOf(entry);
+            while (at > 0) {
+              const previous = rows[--at]!;
+              if (previous.role === 'user') {
+                await send(undefined, previous.text, false, previous);
+                return;
+              }
+            }
+            if (history.start === 0) return;
+            const before = history.start;
+            await loadEarlier();
+            if (history.start === before) return;
+          }
+        }, 'retry-message');
+        retry.hidden = !!busy;
+        metadata.append(retry);
+      }
       if (entry.stopped) metadata.append(el('span', 'stopped-mark', t('chat.stopped')));
       if (entry.error) {
         metadata.append(el('span', 'error-mark', t(entry.error === 'interrupted' ? 'chat.interrupted' : 'chat.error')));
       }
       item.append(metadata, markdown(entry.text));
     }
+    metadata.append(button(t('chat.copy'), async () => {
+      try { await copyText(entry.text); toast(t('markdown.copied')); }
+      catch { toast(t('markdown.copyFailed')); }
+    }, 'copy-message'));
     target.insertBefore(item, before);
   }
   function renderTranscript(): void {
@@ -436,9 +505,16 @@ export function taskView(
     if (following) transcript.scrollTop = transcript.scrollHeight;
   }
   let previewSerial = 0;
+  let mergeLeftover: string[] = [];
   async function renderWork(): Promise<void> {
     const serial = ++previewSerial;
     work.replaceChildren();
+    if (mergeLeftover.length) {
+      const notice = el('div', 'warning merge-leftover');
+      notice.setAttribute('role', 'status');
+      notice.append(el('p', '', t('copy.leftover')), el('pre', '', mergeLeftover.join('\n')));
+      work.append(notice);
+    }
     if (task.copyMissing) {
       work.append(
         el('span', 'warning', t('copy.missing')),
@@ -461,12 +537,14 @@ export function taskView(
         async () => {
           if (!await confirmModal(t('copy.merge'), t('copy.confirmMerge'), t('copy.merge'))) return;
           const result = await api.merge(project.id, task.id);
+          mergeLeftover = result.leftover ?? [];
           if (result.conflicts?.length) {
             modal(t('copy.conflict'), el('pre', '', result.conflicts.join('\n')));
           } else {
             toast(t('copy.merged'));
           }
           await context.refresh();
+          await renderWork();
         },
         'primary');
       mergeButton.disabled = true;
@@ -484,10 +562,22 @@ export function taskView(
         t('copy.diff'),
         async () => {
           const diff = await api.diff(project.id, task.id);
-          modal(
-            t('copy.diff'),
-            el('pre', 'diff', diff.diff),
-            ...(diff.truncated ? [el('p', 'warning', t('copy.truncated'))] : []));
+          const viewer = el('div', 'diff-viewer');
+          if (diff.truncated) viewer.append(el('p', 'warning diff-warning', t('copy.truncated')));
+          const files = parseDiff(diff.diff);
+          if (!files.length) viewer.append(el('p', 'muted', t('copy.noChanges')));
+          for (const [index, file] of files.entries()) {
+            const section = disclosure('');
+            section.className = 'diff-file';
+            section.open = index < 3;
+            section.querySelector('summary')!.append(el('span', 'diff-path', file.path || t('copy.diff')),
+              el('span', 'diff-added', `+${file.added}`), el('span', 'diff-removed', `−${file.removed}`));
+            const content = el('pre', 'diff-lines');
+            for (const line of file.lines) content.append(el('span', `diff-line diff-${line.kind}`, line.text));
+            section.append(content);
+            viewer.append(section);
+          }
+          modal(t('copy.diff'), viewer);
         }
       ));
     const preview = await api.preview(project.id, task.id);
@@ -686,6 +776,7 @@ export function taskView(
       stateChip.textContent = t(`state.${task.state}`);
       if (document.activeElement !== title) title.value = task.title;
       renderQuestion();
+      updateHeaderActions();
       if (footerChanged) renderFooter();
       if (workChanged) void run(renderWork);
     },

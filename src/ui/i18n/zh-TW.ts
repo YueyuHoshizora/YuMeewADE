@@ -1,5 +1,15 @@
 // 繁體中文定義訊息契約；專案內容與 AI 輸出不翻譯。
 export const zhTW = {
+  'project.verify': '驗證指令',
+  'project.verifyHint': '在作業的工作副本執行（例如 npm test）；指令儲存在 PROJECT.md。',
+  'verify.run': '執行驗證', 'verify.running': '驗證中…', 'verify.pass': '通過', 'verify.fail': '失敗',
+  'verify.result': '結束碼 {code} · {seconds} 秒', 'verify.timedOut': '驗證逾時，已停止。',
+  'verify.truncated': '輸出過長，只顯示最後一段。',
+  'chat.copy': '複製訊息', 'chat.retry': '重試', 'chat.export': '匯出 Markdown',
+  'chat.turnUsage': '輸入 {input} · 輸出 {output}', 'chat.cachedUsage': ' · 快取 {cached}',
+  'chat.usageHint': '這些 token 用量由 CLI 回報。',
+  'chat.queuePaused': '隊列已暫停：第一筆指示失敗，後續指示會等待，直到移除失敗項目或手動開始。',
+  'copy.leftover': '合併成功，但以下未提交的檔案未被合併；工作副本已保留。',
   'chat.earlier': '載入較早的訊息',
   'search.title': '搜尋所有對話', 'search.placeholder': '搜尋作業與對話內容…', 'search.truncated': '結果過多，請縮小搜尋範圍。',
   'settings.theme': '外觀', 'settings.theme.system': '跟隨系統', 'settings.theme.light': '淺色', 'settings.theme.dark': '深色',
