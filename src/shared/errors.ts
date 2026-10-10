@@ -78,6 +78,7 @@ export const DETAIL_MESSAGES = {
   worktree_exists: '副本仍存在，不能清除紀錄',
   unmerge_unavailable: '主資料夾之後已有變更或未提交的內容，無法自動撤銷這次合併',
   fork_while_running: '作業執行中，請先停止再分支',
+  file_missing: '找不到這個檔案',
   // ---- BackendChat ----
   mode_required: '執行中送出請選擇取消重做、補充說明或做完接續',
   rollback_while_running: '作業執行中，請先停止再還原',

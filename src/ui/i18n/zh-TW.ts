@@ -9,6 +9,7 @@ export const zhTW = {
   'verify.sendFix': '交給 AI 修正', 'verify.fixPrompt': '驗證指令失敗（結束碼 {code}），輸出尾段如下。請找出原因並修正，修正後自行再跑一次驗證確認。\n\n```\n{output}\n```',
   'review.add': '點一下對這行留下評論', 'review.placeholder': '寫下對這行的意見…', 'review.send': '把 {n} 則評論交給 AI', 'review.prompt': '請依以下 code review 意見修改（行號為變更後的檔案行號），改完自行驗證：', 'review.removedAt': '{path}（刪除前第 {line} 行）',
   'chat.copy': '複製訊息', 'chat.retry': '重試', 'chat.export': '匯出 Markdown',
+  'files.open': '檔案', 'files.title': '瀏覽檔案', 'files.search': '搜尋檔名…', 'files.more': '共 {total} 個檔案，只列出前 {n} 個，請再輸入關鍵字', 'files.empty': '沒有符合的檔案', 'files.binary': '二進位檔，不顯示內容', 'files.truncated': '檔案過大，只顯示前 256 KB', 'detail.file_missing': '找不到這個檔案',
   'chat.rollback': '還原到此之前', 'chat.rollbackConfirm': '工作副本會回到這則指示開始之前，這則指示及之後的檔案變更都會丟棄（對話紀錄保留）。確定還原？', 'chat.rollbackDone': '已還原工作副本',
   'chat.fork': '從這裡分支', 'chat.forked': '已建立分支作業', 'detail.fork_while_running': '作業執行中，請先停止再分支', 'log.task.fork': '從指示分支作業',
   'chat.changes': '本輪變更 {files} 檔 +{added} −{removed}',

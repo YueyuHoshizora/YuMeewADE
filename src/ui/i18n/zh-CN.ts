@@ -10,6 +10,7 @@ export const zhCN: Record<MessageKey, string> = {
   'verify.sendFix': '交给 AI 修复', 'verify.fixPrompt': '验证命令失败（退出码 {code}），输出尾段如下。请找出原因并修复，修复后自行再跑一次验证确认。\n\n```\n{output}\n```',
   'review.add': '点一下对这行留下评论', 'review.placeholder': '写下对这行的意见…', 'review.send': '把 {n} 条评论交给 AI', 'review.prompt': '请依以下 code review 意见修改（行号为变更后的文件行号），改完自行验证：', 'review.removedAt': '{path}（删除前第 {line} 行）',
   'chat.copy': '复制消息', 'chat.retry': '重试', 'chat.export': '导出 Markdown',
+  'files.open': '文件', 'files.title': '浏览文件', 'files.search': '搜索文件名…', 'files.more': '共 {total} 个文件，只列出前 {n} 个，请再输入关键字', 'files.empty': '没有匹配的文件', 'files.binary': '二进制文件，不显示内容', 'files.truncated': '文件过大，只显示前 256 KB', 'detail.file_missing': '找不到这个文件',
   'chat.rollback': '还原到此之前', 'chat.rollbackConfirm': '工作副本会回到这条指示开始之前，这条指示及之后的文件变更都会丢弃（对话记录保留）。确定还原？', 'chat.rollbackDone': '已还原工作副本',
   'chat.fork': '从这里分支', 'chat.forked': '已创建分支任务', 'detail.fork_while_running': '任务运行中，请先停止再分支', 'log.task.fork': '从指示分支任务',
   'chat.changes': '本轮变更 {files} 个文件 +{added} −{removed}',

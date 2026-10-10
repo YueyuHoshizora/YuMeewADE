@@ -10,6 +10,7 @@ export const ja: Record<MessageKey, string> = {
   'verify.sendFix': 'AI に修正を依頼', 'verify.fixPrompt': '検証コマンドが失敗しました（終了コード {code}）。出力の末尾は次のとおりです。原因を調べて修正し、修正後に自分でもう一度検証して確認してください。\n\n```\n{output}\n```',
   'review.add': 'クリックしてこの行にコメント', 'review.placeholder': 'この行へのコメントを入力…', 'review.send': '{n} 件のコメントを AI に送る', 'review.prompt': '以下のコードレビューの指摘に沿って修正し（行番号は変更後のファイルの行）、修正後に自分で検証してください：', 'review.removedAt': '{path}（削除された行、元の {line} 行目）',
   'chat.copy': 'メッセージをコピー', 'chat.retry': '再試行', 'chat.export': 'Markdown をエクスポート',
+  'files.open': 'ファイル', 'files.title': 'ファイルを見る', 'files.search': 'ファイル名を検索…', 'files.more': '{total} 件中、先頭の {n} 件を表示しています。キーワードを足して絞り込んでください', 'files.empty': '一致するファイルはありません', 'files.binary': 'バイナリファイルのため内容は表示しません', 'files.truncated': 'ファイルが大きいため先頭の 256 KB のみ表示します', 'detail.file_missing': 'ファイルが見つかりません',
   'chat.rollback': 'この指示の前に戻す', 'chat.rollbackConfirm': '作業コピーをこの指示の開始前に戻します。この指示以降のファイル変更は破棄されます（会話は残ります）。戻しますか？', 'chat.rollbackDone': '作業コピーを戻しました',
   'chat.fork': 'ここから分岐', 'chat.forked': '分岐タスクを作成しました', 'detail.fork_while_running': '実行中のタスクを停止してから分岐してください', 'log.task.fork': '指示から作業を分岐',
   'chat.changes': 'このターンの変更 {files} ファイル +{added} −{removed}',

@@ -334,3 +334,32 @@ test('prepareFrom grows a new copy from a checkpoint without touching the main f
   await assert.rejects(wt.prepareFrom('P', forked.id, 'a'.repeat(40)), (e: unknown) => e instanceof AppError && e.detail === 'checkpoint_missing');
   await assert.rejects(wt.prepareFrom('P', forked.id, 'bad'), (e: unknown) => e instanceof AppError && e.detail === 'checkpoint_missing');
 }));
+
+test('file viewing lists tracked and new files, hides secrets, and refuses anything outside the copy', () => withTmpWorkspace(async ws => {
+  const projects = new ProjectLedger(ws);
+  const tasks = new TaskLedger(ws);
+  await projects.create({ name: 'P' });
+  const task = await tasks.create('P', { title: '看檔' });
+  const wt = new WorktreeService({ ws, projects, tasks, diffBytes: 100_000 });
+  assert.ok((await wt.listFiles('P', task.id)).includes('AGENTS.md'), 'before a copy exists the main folder is shown');
+  const dir = await wt.prepare('P', task.id);
+  await fs.mkdir(path.join(dir, 'src'), { recursive: true });
+  await fs.writeFile(path.join(dir, 'src', 'a.ts'), 'export const a = 1;\n');
+  await fs.writeFile(path.join(dir, '.env'), 'SECRET=1\n');
+  await fs.writeFile(path.join(dir, 'blob.bin'), Buffer.from([1, 2, 0, 3]));
+  await fs.writeFile(path.join(dir, 'big.txt'), 'x'.repeat(300 * 1024));
+  const outside = path.join(ws.root, 'outside.txt');
+  await fs.writeFile(outside, 'private\n');
+  await fs.symlink(outside, path.join(dir, 'link.txt'));
+  const files = await wt.listFiles('P', task.id);
+  assert.ok(files.includes('src/a.ts') && files.includes('AGENTS.md'));
+  assert.ok(!files.includes('.env'), 'local secrets are never listed');
+  assert.deepEqual(await wt.readFile('P', task.id, 'src/a.ts'), { path: 'src/a.ts', size: 20, truncated: false, binary: false, text: 'export const a = 1;\n' });
+  assert.equal((await wt.readFile('P', task.id, 'blob.bin')).binary, true);
+  const big = await wt.readFile('P', task.id, 'big.txt');
+  assert.equal(big.truncated, true);
+  assert.equal(big.text.length, 256 * 1024);
+  for (const bad of ['.env', '../outside.txt', '/etc/hosts', 'link.txt', 'nope.txt', 'src']) {
+    await assert.rejects(wt.readFile('P', task.id, bad), (e: unknown) => e instanceof AppError && e.detail === 'file_missing', bad);
+  }
+}));

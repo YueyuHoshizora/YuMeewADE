@@ -7,12 +7,13 @@ import type { TaskLedger } from '../ledger/tasks.ts';
 import { CompletionStore } from '../ledger/completion.ts';
 import { OpLog } from '../ledger/oplog.ts';
 import { AppError } from '../shared/errors.ts';
-import { pathExists, withFileLocks } from '../shared/fsx.ts';
+import { isInside, pathExists, withFileLocks } from '../shared/fsx.ts';
 import { log } from '../shared/log.ts';
-import type { MergePreview, MergeResult, Task, TaskOverlap, TurnChanges } from '../shared/types.ts';
+import type { FileView, MergePreview, MergeResult, Task, TaskOverlap, TurnChanges } from '../shared/types.ts';
 import { branchExists, commitAll, ensureRepo, git, gitOk, isLocalSecret, isRepo } from './git.ts';
 
 const SHA = /^[0-9a-f]{40}$/;
+const FILE_VIEW_MAX = 256 * 1024;
 const MERGE_TRAILER = 'YuMeewADE-Task: ';
 
 export class MergeConflictError extends AppError {
@@ -83,6 +84,36 @@ export class WorktreeService {
     }
     if (record.workdir !== dir) await this.tasks.update(project, task, { workdir: dir });
     return dir;
+  }
+  /** 檔案檢視／@ 提及的根：有副本用副本，否則用主資料夾（AI 開始時會看到的內容）。 */
+  private async viewRoot(project: string, task: string): Promise<string> {
+    const { repo, dir } = await this.copy(project, task);
+    return dir && await pathExists(path.join(dir, '.git')) ? dir : repo;
+  }
+  /** 可檢視的檔案（git 追蹤的＋未被忽略的新檔，不含本機機密檔）。 */
+  async listFiles(project: string, task: string): Promise<string[]> {
+    const root = await this.viewRoot(project, task);
+    if (!(await isRepo(root))) return [];
+    const tracked = splitNull(await gitOk(root, ['ls-files', '-z']));
+    const fresh = splitNull(await gitOk(root, ['ls-files', '--others', '--exclude-standard', '-z']));
+    return [...new Set([...tracked, ...fresh])].filter(file => !isLocalSecret(file)).sort();
+  }
+  /** 唯讀取檔：路徑必須在 listFiles 內、解析後仍在根目錄內（擋符號連結逃出）、只取前 FILE_VIEW_MAX 位元組。 */
+  async readFile(project: string, task: string, relative: string): Promise<FileView> {
+    if (!(await this.listFiles(project, task)).includes(relative)) throw new AppError('not_found', 'file_missing');
+    const root = await fs.realpath(await this.viewRoot(project, task));
+    const full = await fs.realpath(path.join(root, relative)).catch(() => null);
+    if (!full || !isInside(root, full)) throw new AppError('not_found', 'file_missing');
+    const handle = await fs.open(full, 'r');
+    try {
+      const stat = await handle.stat();
+      if (!stat.isFile()) throw new AppError('not_found', 'file_missing');
+      const buffer = Buffer.alloc(Math.min(stat.size, FILE_VIEW_MAX));
+      const { bytesRead } = await handle.read(buffer, 0, buffer.length, 0);
+      const head = buffer.subarray(0, bytesRead);
+      const binary = head.subarray(0, 8000).includes(0);
+      return { path: relative, size: stat.size, truncated: stat.size > FILE_VIEW_MAX, binary, text: binary ? '' : head.toString('utf8') };
+    } finally { await handle.close(); }
   }
   private async verifyFamily(repo: string, dir: string): Promise<void> {
     if (!(await pathExists(path.join(dir, '.git')))) throw new AppError('conflict', 'worktree_not_git');

@@ -466,6 +466,17 @@ export interface TaskOverlap {
   paths: string[];
 }
 
+/** 唯讀檔案檢視（`GET /api/task/file`）。 */
+export interface FileView {
+  path: string;
+  size: number;
+  /** 只回傳前段（檔案超過上限）。 */
+  truncated: boolean;
+  /** 二進位檔不回內容。 */
+  binary: boolean;
+  text: string;
+}
+
 export interface MergePreview {
   files: number;
   added: number;

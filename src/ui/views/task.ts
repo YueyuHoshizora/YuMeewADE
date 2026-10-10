@@ -20,6 +20,8 @@ import { shouldSend } from '../components/composer.ts';
 import { stream } from '../components/stream.ts';
 import { parseDiff, type DiffLine } from '../components/diff.ts';
 import { buildReviewPrompt, type ReviewItem } from '../components/review.ts';
+import { openFileBrowser } from '../components/files.ts';
+import { attachMention } from '../components/mention.ts';
 
 export function taskView(
   context: ViewContext,
@@ -141,6 +143,7 @@ export function taskView(
       button(t('common.open'), () => request('/api/open', { path: task.workdir || project.bodyPath })),
       exportLink,
       verifyButton,
+      button(t('files.open'), () => openFileBrowser(project.id, task.id)),
       gitToggle
     ));
   const transcript = el('div', 'transcript');
@@ -806,7 +809,8 @@ export function taskView(
   }
   const composerControls = row(pick.node, upload.node, actions);
   composerControls.classList.add('composer-controls');
-  composer.append(queueNode, draft, upload.strip, running, composerControls);
+  const mentions = attachMention(draft, async q => (await request<{ files: string[] }>(query('/api/task/files', { project: project.id, task: task.id, q }))).files);
+  composer.append(queueNode, mentions, draft, upload.strip, running, composerControls);
   const column = el('div', 'task-column');
   column.append(header, transcript, latest, composer, footer);
   node.append(column, gitPanel);

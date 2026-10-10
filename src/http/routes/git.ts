@@ -22,6 +22,15 @@ export function registerGitRoutes(router: Router, app: App): void {
     app.changed(project, task);
     return result;
   });
+  router.get('/api/task/files', async ({ query }) => {
+    const needle = (query.get('q') ?? '').toLowerCase().slice(0, 200);
+    const all = await app.worktree.listFiles(reqString(query, 'project', 120), reqString(query, 'task', 120));
+    const base = (file: string) => file.slice(file.lastIndexOf('/') + 1).toLowerCase();
+    const hits = needle ? all.filter(file => file.toLowerCase().includes(needle)) : all;
+    hits.sort((a, b) => Number(!base(a).startsWith(needle)) - Number(!base(b).startsWith(needle)) || a.length - b.length || a.localeCompare(b));
+    return { files: hits.slice(0, 50), total: hits.length };
+  });
+  router.get('/api/task/file', async ({ query }) => app.worktree.readFile(reqString(query, 'project', 120), reqString(query, 'task', 120), reqString(query, 'path', 1000)));
   router.post('/api/task/merge-exclusion', async ({ body }) => {
     const project = reqString(body, 'project', 120);
     const task = reqString(body, 'task', 120);

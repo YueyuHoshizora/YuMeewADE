@@ -407,3 +407,13 @@ body { height: 100dvh; display: grid; grid-template-rows: 64px minmax(0, 1fr) au
 .diff-line.reviewed { box-shadow: inset 3px 0 0 var(--accent); }
 .review-input { display: block; width: calc(100% - 24px); margin: 4px 12px; padding: 6px 8px; border: 1px solid var(--accent); border-radius: 6px; background: var(--panel); color: inherit; white-space: pre-wrap; resize: vertical; }
 .review-bar { position: sticky; bottom: 0; display: flex; justify-content: flex-end; padding: 8px 0; background: var(--panel); }
+.mention-list { margin: 0 0 4px; padding: 4px; list-style: none; max-height: 168px; overflow: auto; border: 1px solid var(--border); border-radius: 8px; background: var(--panel); font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 12px; }
+.mention-list li { padding: 3px 8px; border-radius: 5px; cursor: pointer; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.mention-list li.active { background: color-mix(in srgb, var(--accent) 22%, transparent); }
+.file-viewer { display: grid; grid-template-columns: minmax(180px, 1fr) minmax(0, 2fr); gap: 12px; min-height: 360px; }
+.file-list { min-width: 0; }
+.file-results { margin: 6px 0 0; padding: 0; list-style: none; max-height: 52vh; overflow: auto; }
+.file-result { display: block; width: 100%; padding: 3px 8px; border: 0; background: transparent; text-align: left; font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 12px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.file-pane { min-width: 0; }
+.file-content { margin: 6px 0 0; padding: 8px 10px; max-height: 52vh; overflow: auto; border: 1px solid var(--border); border-radius: 8px; white-space: pre; font-size: 12px; }
+@media (max-width: 700px) { .file-viewer { grid-template-columns: 1fr; } }
