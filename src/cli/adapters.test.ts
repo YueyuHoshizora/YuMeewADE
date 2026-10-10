@@ -132,10 +132,10 @@ test('claude：工具摘要只從完整 assistant 發出，忽略部分輸入並
     const feed = createClaudeParser(ev => events.push(ev));
     feed({ type: 'stream_event', event: { type: 'content_block_start', content_block: { type: 'tool_use', id: 'tool1', name: fixture.name, input: {} } } });
     feed({ type: 'stream_event', event: { type: 'content_block_delta', delta: { type: 'input_json_delta', partial_json: '{"file_path":' } } });
-    assert.deepEqual(events, []);
+    assert.deepEqual(events.filter(ev => ev.type !== 'tokens'), []);
     const complete = { type: 'assistant', message: { content: [{ type: 'tool_use', id: 'tool1', name: fixture.name, input: fixture.input }] } };
     feed(complete); feed(complete);
-    assert.deepEqual(events, [{ type: 'tool', text: fixture.text }]);
+    assert.deepEqual(events.filter(ev => ev.type !== 'tokens'), [{ type: 'tool', text: fixture.text }]);
   }
 });
 
@@ -252,21 +252,30 @@ test('claude：rate_limit_event 轉成額度窗口，舊版單一窗口與被拒
   assert.equal(claudeQuota({ status: 'allowed' }), null);
 });
 
-test('claude：速度從第一個內容增量量到 message_delta，太短的樣本不回報', () => {
+test('claude：串流中逐段估算輸出 token，訊息結束時以實際用量補差額', () => {
   let clock = 0;
-  const message = (tokens: number, start: number, firstDelta: number, end: number) => [
-    () => { clock = start; return { type: 'stream_event', event: { type: 'message_start', message: { usage: { output_tokens: 1 } } } }; },
-    () => { clock = firstDelta; return { type: 'stream_event', event: { type: 'content_block_delta', delta: { type: 'thinking_delta', thinking: '…' } } }; },
-    () => { clock = end; return { type: 'stream_event', event: { type: 'message_delta', usage: { output_tokens: tokens } } }; },
-  ];
   const events: CliEvent[] = [];
   const feed = createClaudeParser(ev => events.push(ev), () => clock);
-  // 首字前的 5 秒排隊不算進生成時間；4 個 token 的訊息不足以量速度。
-  for (const line of [...message(300, 0, 5000, 8000), ...message(4, 9000, 9100, 9400)]) feed(line());
-  assert.deepEqual(events.filter(ev => ev.type === 'speed'), [{ type: 'speed', tokensPerSecond: 100 }]);
+  const delta = (at: number, d: Record<string, unknown>, index = 0) => { clock = at; feed({ type: 'stream_event', event: { type: 'content_block_delta', index, delta: d } }); };
+  feed({ type: 'stream_event', event: { type: 'message_start', message: { usage: { output_tokens: 1 } } } });
+  // 不公開的思考：thinking 為空，estimated_tokens 是這段的增量（2026-10-10 claude 2.1.296 實測，加總≈實際 thinking_tokens）。
+  delta(500, { type: 'thinking_delta', thinking: '', estimated_tokens: 50 });
+  delta(800, { type: 'thinking_delta', thinking: '', estimated_tokens: 100 });
+  delta(1000, { type: 'thinking_delta', thinking: '貓貓' }, 1);
+  delta(1500, { type: 'signature_delta', signature: 'x'.repeat(400) });
+  delta(2000, { type: 'text_delta', text: 'abcdefgh' }, 2);
+  delta(2500, { type: 'input_json_delta', partial_json: '{"a":1}' }, 3);
+  clock = 3000;
+  feed({ type: 'stream_event', event: { type: 'message_delta', usage: { output_tokens: 160 } } });
+  // 中日韓字 1 token／字、其他 4 字元／token；簽章不算輸出。差額攤回整則訊息的時間。
+  assert.deepEqual(events.filter(ev => ev.type === 'tokens'), [
+    { type: 'tokens', count: 50 }, { type: 'tokens', count: 100 },
+    { type: 'tokens', count: 2 }, { type: 'tokens', count: 2 }, { type: 'tokens', count: 1.75 },
+    { type: 'tokens', count: 4.25, spanMs: 3000 },
+  ]);
 });
 
-test('codex：rate_limits 依窗口長度命名、回報已達上限；速度為整回合平均', () => {
+test('codex：rate_limits 依窗口長度命名、回報已達上限', () => {
   const at = '2026-10-10T16:57:59.661Z';
   assert.deepEqual(codexQuota({
     primary: { used_percent: 1, window_minutes: 300, resets_at: 1791660799 },
@@ -281,13 +290,6 @@ test('codex：rate_limits 依窗口長度命名、回報已達上限；速度為
   });
   assert.equal(codexQuota({ primary: { used_percent: 100, window_minutes: 90 }, rate_limit_reached_type: 'primary' }, at)?.limited, true);
   assert.equal(codexQuota({ primary: null, secondary: null, rate_limit_reached_type: null }, at), null);
-  let clock = 0;
-  const events: CliEvent[] = [];
-  const feed = createCodexParser(ev => events.push(ev), () => clock);
-  feed({ type: 'turn.started' });
-  clock = 4000;
-  feed({ type: 'turn.completed', usage: { output_tokens: 200 } });
-  assert.deepEqual(events, [{ type: 'speed', tokensPerSecond: 50 }, { type: 'result', text: '' }]);
 });
 
 test('codex：從 rollout 讀額度，指定會話時往舊日期找，最新額度跳過沒有 rate_limits 的事件', async () => {

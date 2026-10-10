@@ -135,7 +135,7 @@ export class App {
         if (this.stateFlight === flight) this.stateFlight = null;
       }
     }
-    return { ...value, running: this.runner.running(), unread: this.runner.unread(), usage: this.usage.list() };
+    return { ...value, running: this.runner.running(), unread: this.runner.unread(), usage: this.usage.snapshot() };
   }
 
   /** 通知所有客戶端重抓 /api/state；100ms 內的多次變更合併成一次。 */
@@ -162,6 +162,7 @@ export class App {
   close(): void {
     clearTimeout(this.changeTimer ?? undefined);
     this.watcher?.close();
+    this.usage.close();
     if (this.ownsSse) this.sse.closeAll();
   }
 }

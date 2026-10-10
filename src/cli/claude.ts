@@ -13,9 +13,14 @@ export function claudeArgs(cfg: CliCommandConfig, opts: SendOptions): string[] {
   return args;
 }
 
-/** 速度樣本太短（少量 token 或極短時間）時數字只是雜訊，不回報。 */
-const MIN_SPEED_TOKENS = 10;
-const MIN_SPEED_MS = 250;
+/**
+ * 串流中途 CLI 不給 token 數，只能從文字估：中日韓字約 1 token／字，其餘約 4 字元／token。
+ * 每則訊息結束時 message_delta 給實際 output_tokens，差額再補回，所以長期總量是準的。
+ */
+function estimateTokens(text: string): number {
+  const cjk = text.match(/[\p{Script=Han}\p{Script=Hiragana}\p{Script=Katakana}\p{Script=Hangul}]/gu)?.length ?? 0;
+  return cjk + (text.length - cjk) / 4;
+}
 
 /** `rate_limit_event.rate_limit_info` → 額度窗口；utilization 為 0–1、resetsAt 為秒。認不得的格式回 null。 */
 export function claudeQuota(info: unknown): { windows: QuotaWindow[]; limited: boolean } | null {
@@ -44,8 +49,9 @@ export function createClaudeParser(onEvent: (ev: CliEvent) => void, now: () => n
   let streamed = '';
   let sawStream = false;
   let sessionSent = false;
-  /** 本則訊息第一個內容增量的時間；量的是生成速度，不含排隊與首字延遲。 */
+  /** 本則訊息開始的時間與已估算的 token 數；結束時以實際用量校正。 */
   let generating: number | null = null;
+  let estimated = 0;
   const tools = new Set<string>();
   const handleTool = (block: Record<string, unknown>) => {
     const name = block['name'];
@@ -91,19 +97,31 @@ export function createClaudeParser(onEvent: (ev: CliEvent) => void, now: () => n
         const e = ev as Record<string, unknown>;
         if (e['type'] === 'message_start') {
           sawStream = false;
-          generating = null;
+          // 從訊息開始算：估算與實際的差額要攤回整則訊息的時間，才不會在結尾擠成尖峰。
+          generating = now();
+          estimated = 0;
         }
-        if (e['type'] === 'content_block_delta') generating ??= now();
         if (e['type'] === 'message_delta' && generating !== null) {
           const usage = e['usage'];
-          const tokens = usage && typeof usage === 'object' && 'output_tokens' in usage && typeof usage.output_tokens === 'number' ? usage.output_tokens : 0;
-          const ms = now() - generating;
+          const exact = usage && typeof usage === 'object' && 'output_tokens' in usage && typeof usage.output_tokens === 'number' ? usage.output_tokens : null;
+          if (exact !== null && exact !== estimated) onEvent({ type: 'tokens', count: exact - estimated, spanMs: now() - generating });
           generating = null;
-          if (tokens >= MIN_SPEED_TOKENS && ms >= MIN_SPEED_MS) onEvent({ type: 'speed', tokensPerSecond: Math.round(tokens / (ms / 1000)) });
+          estimated = 0;
         }
         if (e['type'] === 'content_block_delta') {
           const delta = e['delta'];
-          if (delta && typeof delta === 'object' && 'type' in delta && delta.type === 'text_delta' && 'text' in delta && typeof delta.text === 'string') {
+          if (!delta || typeof delta !== 'object') return;
+          // 思考內容不公開時 thinking 是空字串，CLI 改附這段思考的估算 token 數（增量，非累計；加總與實際 thinking_tokens 相符）。
+          // 其餘從文字估：思考與工具參數也是輸出 token；signature_delta 不是。
+          const count = 'estimated_tokens' in delta && typeof delta.estimated_tokens === 'number' ? delta.estimated_tokens
+            : estimateTokens('text' in delta && typeof delta.text === 'string' ? delta.text
+              : 'thinking' in delta && typeof delta.thinking === 'string' ? delta.thinking
+              : 'partial_json' in delta && typeof delta.partial_json === 'string' ? delta.partial_json : '');
+          if (count > 0 && generating !== null) {
+            estimated += count;
+            onEvent({ type: 'tokens', count });
+          }
+          if ('type' in delta && delta.type === 'text_delta' && 'text' in delta && typeof delta.text === 'string') {
             sawStream = true;
             streamed += delta.text;
             onEvent({ type: 'delta', text: delta.text });

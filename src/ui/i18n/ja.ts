@@ -6,7 +6,7 @@ export const ja: Record<MessageKey, string> = {
   'settings.theme': '外観', 'settings.theme.system': 'システム', 'settings.theme.light': 'ライト', 'settings.theme.dark': 'ダーク',
   'settings.notifications': '作業の完了や回答が必要なときに通知', 'settings.notificationPermission': 'システム通知を許可', 'notification.done': 'AI の返信が完了しました', 'notification.answer': 'AI があなたの回答を待っています',
   'connection.reconnecting': 'コアとの接続が切れました。再接続中…',
-  'usage.region': 'アカウントの利用枠と出力速度', 'usage.none': '利用枠データはまだありません。次の指示を送ると更新されます', 'usage.quotaAt': '利用枠データの時刻 {at}', 'usage.window': '{label} 枠：{percent} 使用、{reset} にリセット', 'usage.windowNoReset': '{label} 枠：{percent} 使用', 'usage.windowReset': '{label} 枠は {reset} にリセット済み。次の報告を待っています', 'usage.limited': '上限到達', 'usage.speed': '直近の出力速度（{at}）。Claude は1メッセージの生成速度、Codex はツール実行時間を含むターン全体の平均です。', 'usage.speedNone': '出力速度はまだありません。次の指示を送ると更新されます',
+  'usage.region': 'アカウントの利用枠と出力速度', 'usage.none': '利用枠データはまだありません。次の指示を送ると更新されます', 'usage.quotaAt': '利用枠データの時刻 {at}', 'usage.window': '{label} 枠：{percent} 使用、{reset} にリセット', 'usage.windowNoReset': '{label} 枠：{percent} 使用', 'usage.windowReset': '{label} 枠は {reset} にリセット済み。次の報告を待っています', 'usage.limited': '上限到達', 'usage.speed': '実行中のすべての会話の合計で、直近 4 秒間に毎秒出力された token 数。Claude はストリームから推定し、各メッセージの終了時に実際の使用量で補正します（非公開の思考は CLI 自身の推定値を使用）。Codex は出力をストリームしないため、リアルタイムには計上できません。',
   'tree.search': 'プロジェクトと作業を検索…',
   'settings.enterToSend': 'Enter で送信、Shift+Enter で改行', 'chat.placeholderEnter': '指示を入力…（Enter で送信、Shift+Enter で改行）', 'chat.hintEnter': 'Enter で送信、Shift+Enter で改行', 'chat.hintModifier': '⌘ / Ctrl + Enter で送信',
   'markdown.copy': 'コードをコピー', 'markdown.copied': 'コピーしました', 'markdown.copyFailed': 'コピーできませんでした',

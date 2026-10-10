@@ -9,9 +9,6 @@ import type { CliEvent, CliProvider, CliRun, SendOptions } from './provider.ts';
 
 type QuotaEvent = Extract<CliEvent, { type: 'quota' }>;
 
-/** 速度樣本太短時數字只是雜訊，不回報。 */
-const MIN_SPEED_TOKENS = 10;
-const MIN_SPEED_MS = 250;
 /** rollout 檔只讀尾端；token_count 每回合寫一次，最後一筆一定在尾端附近。 */
 const ROLLOUT_TAIL_BYTES = 512 * 1024;
 /** 啟動時找「最近一次」額度最多翻幾個 rollout 檔。 */
@@ -107,10 +104,10 @@ export async function readCodexQuota(home: string, thread?: string): Promise<Quo
   return null;
 }
 
-export function createCodexParser(onEvent: (ev: CliEvent) => void, now: () => number = Date.now): (obj: Record<string, unknown>) => void {
+// Codex exec --json 不串流輸出、回合結束才給 usage，無法計入即時 tok/s。
+export function createCodexParser(onEvent: (ev: CliEvent) => void): (obj: Record<string, unknown>) => void {
   let streamed = '';
   let failed = false;
-  let turnStarted: number | null = null;
   const commands = new Set<string>();
   const appendText = (text: string) => {
     const delta = (streamed && !streamed.endsWith('\n') ? '\n\n' : '') + text;
@@ -144,19 +141,9 @@ export function createCodexParser(onEvent: (ev: CliEvent) => void, now: () => nu
         }
         return;
       }
-      case 'turn.started':
-        turnStarted = now();
-        return;
-      case 'turn.completed': {
-        // Codex 只在回合結束給 usage，速度是整回合平均（含工具執行時間）。
-        const usage = obj['usage'];
-        const tokens = usage && typeof usage === 'object' && 'output_tokens' in usage && typeof usage.output_tokens === 'number' ? usage.output_tokens : 0;
-        const ms = turnStarted === null ? 0 : now() - turnStarted;
-        turnStarted = null;
-        if (tokens >= MIN_SPEED_TOKENS && ms >= MIN_SPEED_MS) onEvent({ type: 'speed', tokensPerSecond: Math.round(tokens / (ms / 1000)) });
+      case 'turn.completed':
         if (!failed) onEvent({ type: 'result', text: streamed.trim() });
         return;
-      }
       case 'turn.failed':
       case 'error': {
         failed = true;

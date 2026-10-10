@@ -6,7 +6,7 @@ export const zhCN: Record<MessageKey, string> = {
   'settings.theme': '外观', 'settings.theme.system': '跟随系统', 'settings.theme.light': '浅色', 'settings.theme.dark': '深色',
   'settings.notifications': '作业完成或需要回答时通知', 'settings.notificationPermission': '允许系统通知', 'notification.done': 'AI 已完成回复', 'notification.answer': 'AI 需要你的回答',
   'connection.reconnecting': '核心连接中断，正在重新连接…',
-  'usage.region': '账号额度与输出速度', 'usage.none': '暂无额度数据；发送一次指示后更新', 'usage.quotaAt': '额度数据时间 {at}', 'usage.window': '{label} 时间窗已用 {percent}，{reset} 重置', 'usage.windowNoReset': '{label} 时间窗已用 {percent}', 'usage.windowReset': '{label} 时间窗已于 {reset} 重置，等待下一次回报', 'usage.limited': '已达上限', 'usage.speed': '最近一次输出速度（{at}）。Claude 为单条消息的生成速度；Codex 为整轮平均，含工具执行时间。', 'usage.speedNone': '暂无输出速度；发送一次指示后更新',
+  'usage.region': '账号额度与输出速度', 'usage.none': '暂无额度数据；发送一次指示后更新', 'usage.quotaAt': '额度数据时间 {at}', 'usage.window': '{label} 时间窗已用 {percent}，{reset} 重置', 'usage.windowNoReset': '{label} 时间窗已用 {percent}', 'usage.windowReset': '{label} 时间窗已于 {reset} 重置，等待下一次回报', 'usage.limited': '已达上限', 'usage.speed': '所有运行中对话合计、最近 4 秒内每秒输出的 token 数。Claude 依流式内容估算，每条消息结束时以实际用量校正（不公开的思考采用 CLI 自己的估算）；Codex 不流式输出，无法实时计入。',
   'tree.search': '搜索项目与作业…',
   'settings.enterToSend': 'Enter 发送，Shift+Enter 换行', 'chat.placeholderEnter': '写下指示…（Enter 发送，Shift+Enter 换行）', 'chat.hintEnter': 'Enter 发送，Shift+Enter 换行', 'chat.hintModifier': '⌘ / Ctrl + Enter 发送',
   'markdown.copy': '复制代码', 'markdown.copied': '已复制', 'markdown.copyFailed': '复制失败',

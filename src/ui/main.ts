@@ -1,4 +1,4 @@
-import type { AiUsage, AppState } from '../shared/types.ts';
+import type { AppState, UsageState } from '../shared/types.ts';
 import { api } from './api.ts';
 import { getLocale, t } from './i18n/index.ts';
 import { button, el, link, readLocal, run, showError, taskHash, type View, type ViewContext } from './components/dom.ts';
@@ -13,7 +13,7 @@ import { searchView } from './views/search.ts';
 import { usageBar } from './components/usage.ts';
 
 const header = document.getElementById('header')!; const sidebar = document.getElementById('sidebar')!; const main = document.getElementById('main')!; const footer = document.getElementById('footer')!;
-let state: AppState | null = null; let usage: AiUsage[] = []; let view: View | null = null; let route = ''; let viewTarget = ''; let refreshJob: Promise<void> | null = null; let refreshAgain = false; let debounce: number | undefined;
+let state: AppState | null = null; let usage: UsageState = { ais: [], tokensPerSecond: 0 }; let view: View | null = null; let route = ''; let viewTarget = ''; let refreshJob: Promise<void> | null = null; let refreshAgain = false; let debounce: number | undefined;
 function notify(previous: AppState | null, next: AppState): void {
   const items = attention(next); window.yumeewade?.setBadge?.(items.length);
   if (!previous || !readLocal('yumeewade.notifications', true) || !('Notification' in window) || Notification.permission !== 'granted' || (!document.hidden && document.hasFocus())) return;
@@ -90,7 +90,7 @@ window.addEventListener('focus', () => { void refresh(); });
 window.setInterval(() => { void refresh(); }, 15_000);
 const events = stream('/api/events', {
   changed: () => { window.clearTimeout(debounce); debounce = window.setTimeout(() => { void refresh(); }, 150); },
-  usage: event => { usage = JSON.parse(event.data) as AiUsage[]; drawFooter(); },
+  usage: event => { usage = JSON.parse(event.data) as UsageState; drawFooter(); },
 }, () => { void refresh(); });
 window.addEventListener('pagehide', () => { events.close(); view?.dispose?.(); });
 void refresh();

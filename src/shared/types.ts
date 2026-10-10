@@ -195,7 +195,7 @@ export interface QuotaWindow {
   resetsAt: string | null;
 }
 
-/** 各 AI 帳號的額度與最近輸出速度；只在記憶體，核心重啟後等下一次回報。 */
+/** 各 AI 帳號的額度；只在記憶體，核心重啟後等下一次回報。 */
 export interface AiUsage {
   ai: string;
   windows: QuotaWindow[];
@@ -203,9 +203,12 @@ export interface AiUsage {
   limited: boolean;
   /** 額度資料取得時間（ISO）；尚無資料為 null。 */
   quotaAt: string | null;
-  /** 最近一次量到的輸出 tokens／秒；尚無資料為 null。 */
-  tokensPerSecond: number | null;
-  speedAt: string | null;
+}
+
+export interface UsageState {
+  ais: AiUsage[];
+  /** 所有執行中對話合計、最近幾秒內每秒輸出的 token 數；閒置為 0。 */
+  tokensPerSecond: number;
 }
 
 export interface Settings {
@@ -411,7 +414,7 @@ export type ChatEvent =
 export type GlobalEvent =
   | { event: 'ready'; data: { version: string } }
   | { event: 'changed'; data: { project?: string; task?: string } }
-  | { event: 'usage'; data: AiUsage[] };
+  | { event: 'usage'; data: UsageState };
 
 // ---- 工作副本／合併 ----
 
@@ -464,7 +467,7 @@ export interface AppState {
   running: RunningInfo[];
   unread: { project: string; task: string }[];
   ais: AiInfo[];
-  usage: AiUsage[];
+  usage: UsageState;
   settings: Settings;
   roles: Roles;
   limits: Limits;

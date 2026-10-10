@@ -43,8 +43,8 @@ export interface RunnerDeps {
   publish(project: string, task: string, event: ChatEvent): void;
   watching(project: string, task: string): boolean;
   onChanged(project?: string, task?: string): void;
-  /** CLI 回報的帳號額度／輸出速度（帳號層級，不寫進對話）。 */
-  onUsage(ai: string, ev: Extract<CliEvent, { type: 'quota' | 'speed' }>): void;
+  /** CLI 回報的帳號額度／輸出 token（帳號層級，不寫進對話）。 */
+  onUsage(ai: string, ev: Extract<CliEvent, { type: 'quota' | 'tokens' }>): void;
 }
 interface Slot {
   busy: Busy | null;
@@ -351,7 +351,7 @@ export class ChatRunner extends EventEmitter {
           error = 'cli_failed';
           log.warn('CLI 回覆失敗', { project: p, task: t });
         } else if (ev.type === 'asks') asks.push(...ev.asks);
-        else if (ev.type === 'quota' || ev.type === 'speed') this.deps.onUsage(item.ai, ev);
+        else if (ev.type === 'quota' || ev.type === 'tokens') this.deps.onUsage(item.ai, ev);
         else if (ev.type === 'tool') {
           const row: ChatRow = {
             at: new Date().toISOString(), role: 'event', ai: item.ai,

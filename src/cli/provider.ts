@@ -27,8 +27,8 @@ export type CliEvent =
   | { type: 'asks'; asks: Ask[] }
   /** 帳號額度（CLI 回報；at＝資料時間 ISO）。 */
   | { type: 'quota'; windows: QuotaWindow[]; limited: boolean; at: string }
-  /** 量到的輸出速度（tokens／秒）。 */
-  | { type: 'speed'; tokensPerSecond: number }
+  /** 剛輸出的 token 數（串流中為估算）；spanMs＝這些 token 平均分布在過去多少毫秒（校正用），省略＝就在此刻。 */
+  | { type: 'tokens'; count: number; spanMs?: number }
   /** 內部原因，只進日誌，不對外。 */
   | { type: 'error'; reason: string };
 

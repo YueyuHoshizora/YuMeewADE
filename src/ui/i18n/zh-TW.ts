@@ -5,7 +5,7 @@ export const zhTW = {
   'settings.theme': '外觀', 'settings.theme.system': '跟隨系統', 'settings.theme.light': '淺色', 'settings.theme.dark': '深色',
   'settings.notifications': '作業完成或需要回答時通知', 'settings.notificationPermission': '允許系統通知', 'notification.done': 'AI 已完成回覆', 'notification.answer': 'AI 需要你的回答',
   'connection.reconnecting': '核心連線中斷，重新連線中…',
-  'usage.region': '帳號額度與輸出速度', 'usage.none': '尚無額度資料；送出一次指示後更新', 'usage.quotaAt': '額度資料時間 {at}', 'usage.window': '{label} 時間窗已用 {percent}，{reset} 重置', 'usage.windowNoReset': '{label} 時間窗已用 {percent}', 'usage.windowReset': '{label} 時間窗已於 {reset} 重置，等待下一次回報', 'usage.limited': '已達上限', 'usage.speed': '最近一次輸出速度（{at}）。Claude 為單則訊息的生成速度；Codex 為整回合平均，含工具執行時間。', 'usage.speedNone': '尚無輸出速度；送出一次指示後更新',
+  'usage.region': '帳號額度與輸出速度', 'usage.none': '尚無額度資料；送出一次指示後更新', 'usage.quotaAt': '額度資料時間 {at}', 'usage.window': '{label} 時間窗已用 {percent}，{reset} 重置', 'usage.windowNoReset': '{label} 時間窗已用 {percent}', 'usage.windowReset': '{label} 時間窗已於 {reset} 重置，等待下一次回報', 'usage.limited': '已達上限', 'usage.speed': '所有執行中對話合計、最近 4 秒內每秒輸出的 token 數。Claude 依串流內容估算，每則訊息結束時以實際用量校正（不公開的思考採用 CLI 自己的估算）；Codex 不串流輸出，無法即時計入。',
   'tree.search': '搜尋專案與作業…',
   'settings.enterToSend': 'Enter 送出，Shift+Enter 換行', 'chat.placeholderEnter': '寫下指示…（Enter 送出，Shift+Enter 換行）', 'chat.hintEnter': 'Enter 送出，Shift+Enter 換行', 'chat.hintModifier': '⌘ / Ctrl + Enter 送出',
   'markdown.copy': '複製程式碼', 'markdown.copied': '已複製', 'markdown.copyFailed': '複製失敗',

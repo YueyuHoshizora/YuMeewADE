@@ -1,4 +1,4 @@
-import type { AiUsage, AppState, QuotaWindow } from '../../shared/types.ts';
+import type { AiUsage, AppState, QuotaWindow, UsageState } from '../../shared/types.ts';
 import { t } from '../i18n/index.ts';
 import { aiLabel, localTime } from './display.ts';
 import { el } from './dom.ts';
@@ -42,13 +42,11 @@ function usageItem(ai: string, usage: AiUsage | undefined, now: number): HTMLEle
   return item;
 }
 
-/** 底部狀態列：已安裝的 AI（以及任何回報過額度的 AI）各一格額度，最右邊一個最近量到的 tok/s。 */
-export function usageBar(state: AppState, usage: AiUsage[], now = Date.now()): HTMLElement[] {
+/** 底部狀態列：已安裝的 AI（以及任何回報過額度的 AI）各一格額度，最右邊是所有對話合計的即時 tok/s。 */
+export function usageBar(state: AppState, usage: UsageState, now = Date.now()): HTMLElement[] {
   const names = state.ais.filter(info => info.name !== 'mock' && info.available).map(info => info.name as string);
-  for (const entry of usage) if (!names.includes(entry.ai)) names.push(entry.ai);
-  const latest = usage.filter(entry => entry.speedAt).sort((a, b) => b.speedAt!.localeCompare(a.speedAt!))[0];
-  const speed = el('span', 'usage-speed', `${latest?.tokensPerSecond ?? '—'} tok/s`);
-  speed.title = latest?.speedAt ? `${aiLabel(latest.ai)} · ${t('usage.speed', { at: localTime(latest.speedAt) })}` : t('usage.speedNone');
-  if (latest && state.running.some(run => run.ai === latest.ai)) speed.classList.add('running');
-  return [...names.map(ai => usageItem(ai, usage.find(entry => entry.ai === ai), now)), speed];
+  for (const entry of usage.ais) if (!names.includes(entry.ai)) names.push(entry.ai);
+  const speed = el('span', usage.tokensPerSecond > 0 ? 'usage-speed running' : 'usage-speed', `${usage.tokensPerSecond} tok/s`);
+  speed.title = t('usage.speed');
+  return [...names.map(ai => usageItem(ai, usage.ais.find(entry => entry.ai === ai), now)), speed];
 }
