@@ -1,4 +1,4 @@
-import type { AppState } from '../shared/types.ts';
+import type { AiUsage, AppState } from '../shared/types.ts';
 import { api } from './api.ts';
 import { getLocale, t } from './i18n/index.ts';
 import { button, el, link, readLocal, run, showError, taskHash, type View, type ViewContext } from './components/dom.ts';
@@ -10,9 +10,10 @@ import { settingsView } from './views/settings.ts';
 import { stream } from './components/stream.ts';
 import { attention } from './components/attention.ts';
 import { searchView } from './views/search.ts';
+import { usageBar } from './components/usage.ts';
 
-const header = document.getElementById('header')!; const sidebar = document.getElementById('sidebar')!; const main = document.getElementById('main')!;
-let state: AppState | null = null; let view: View | null = null; let route = ''; let viewTarget = ''; let refreshJob: Promise<void> | null = null; let refreshAgain = false; let debounce: number | undefined;
+const header = document.getElementById('header')!; const sidebar = document.getElementById('sidebar')!; const main = document.getElementById('main')!; const footer = document.getElementById('footer')!;
+let state: AppState | null = null; let usage: AiUsage[] = []; let view: View | null = null; let route = ''; let viewTarget = ''; let refreshJob: Promise<void> | null = null; let refreshAgain = false; let debounce: number | undefined;
 function notify(previous: AppState | null, next: AppState): void {
   const items = attention(next); window.yumeewade?.setBadge?.(items.length);
   if (!previous || !readLocal('yumeewade.notifications', true) || !('Notification' in window) || Notification.permission !== 'granted' || (!document.hidden && document.hasFocus())) return;
@@ -32,7 +33,11 @@ function drawShell(): void {
   const searching = document.activeElement instanceof HTMLInputElement && document.activeElement.classList.contains('tree-search'); const top = sidebar.scrollTop;
   sidebar.replaceChildren(el('div', 'sidebar-heading', t('nav.projects')), tree({ state, refresh }), link(t('nav.new'), '#/new', 'new-project'));
   sidebar.scrollTop = top; if (searching) sidebar.querySelector<HTMLInputElement>('.tree-search')?.focus({ preventScroll: true });
-  document.documentElement.lang = getLocale();
+  document.documentElement.lang = getLocale(); drawFooter();
+}
+function drawFooter(): void {
+  if (!state) return;
+  footer.setAttribute('aria-label', t('usage.region')); footer.replaceChildren(...usageBar(state, usage));
 }
 function navigate(force = false): void {
   if (!state) return;
@@ -62,7 +67,7 @@ function refresh(): Promise<void> {
   refreshJob = (async () => {
     try {
       do {
-        refreshAgain = false; const next = await api.state(); notify(state, next); state = next; drawShell();
+        refreshAgain = false; const next = await api.state(); notify(state, next); state = next; usage = next.usage; drawShell();
         navigate(); view?.update?.(state);
       } while (refreshAgain);
     } catch (error) {
@@ -83,6 +88,9 @@ window.addEventListener('keydown', event => {
 });
 window.addEventListener('focus', () => { void refresh(); });
 window.setInterval(() => { void refresh(); }, 15_000);
-const events = stream('/api/events', { changed: () => { window.clearTimeout(debounce); debounce = window.setTimeout(() => { void refresh(); }, 150); } }, () => { void refresh(); });
+const events = stream('/api/events', {
+  changed: () => { window.clearTimeout(debounce); debounce = window.setTimeout(() => { void refresh(); }, 150); },
+  usage: event => { usage = JSON.parse(event.data) as AiUsage[]; drawFooter(); },
+}, () => { void refresh(); });
 window.addEventListener('pagehide', () => { events.close(); view?.dispose?.(); });
 void refresh();

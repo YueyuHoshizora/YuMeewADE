@@ -257,11 +257,26 @@
 
 /* 固定外殼尺寸；只有各畫面的捲動區能捲動，聊天控制項不擠壓整個頁面。 */
 html, body { width: 100%; height: 100%; overflow: hidden; }
-body { height: 100dvh; display: grid; grid-template-rows: 64px minmax(0, 1fr); }
+body { height: 100dvh; display: grid; grid-template-rows: 64px minmax(0, 1fr) auto; }
 .app-header { min-height: 0; }
 .workspace { height: auto; min-height: 0; overflow: hidden; }
 #main { min-height: 0; height: 100%; overflow: auto; }
 #main.task-main { overflow: hidden; }
+/* 底部額度列：固定在外殼最下排，不隨畫面捲動。 */
+.app-footer { display: flex; align-items: center; gap: 18px; min-height: 30px; padding: 4px 24px; border-top: 1px solid var(--border); background: var(--c-141723); color: var(--muted); font-size: 12px; line-height: 1.4; overflow-x: auto; white-space: nowrap; font-variant-numeric: tabular-nums; }
+.app-footer:empty { display: none; }
+.usage-item { display: flex; align-items: center; gap: 8px; }
+.usage-ai { color: var(--c-e7eaf4); font-weight: 600; }
+.usage-quota { display: flex; align-items: center; gap: 10px; }
+.usage-window { display: inline-flex; align-items: center; gap: 5px; }
+.usage-meter { width: 42px; height: 5px; border-radius: 3px; background: var(--border); overflow: hidden; }
+.usage-meter-fill { display: block; height: 100%; background: var(--green); }
+.usage-window.warn .usage-meter-fill { background: var(--yellow); }
+.usage-window.danger .usage-meter-fill { background: var(--red); }
+.usage-window.danger .usage-percent, .usage-limited { color: var(--red); }
+.usage-window.stale { opacity: .6; }
+.usage-speed { margin-left: auto; padding-left: 12px; }
+.usage-speed.running { color: var(--accent); }
 .task-page { height: 100%; min-height: 0; overflow: hidden; }
 .transcript { flex: 1 1 0; min-height: 0; overflow: auto; }
 .question-area { padding: 0; }
@@ -307,7 +322,8 @@ body { height: 100dvh; display: grid; grid-template-rows: 64px minmax(0, 1fr); }
 .decision-modal { width: min(520px, 90vw); }
 .decision-modal > .row { justify-content: flex-end; margin-top: 20px; }
 @media (max-width: 760px) {
-  body { grid-template-rows: 58px minmax(0, 1fr); }
+  body { grid-template-rows: 58px minmax(0, 1fr) auto; }
+  .app-footer { padding: 4px 12px; gap: 14px; }
   .workspace { height: auto; }
   .question-area { padding: 0; }
   .composer, .task-footer { padding-left: 12px; padding-right: 12px; }
@@ -317,7 +333,7 @@ body { height: 100dvh; display: grid; grid-template-rows: 64px minmax(0, 1fr); }
 .code-block{min-width:0;margin:12px 0}.code-toolbar{display:flex;align-items:center;justify-content:space-between;gap:8px}.code-toolbar button{font-size:12px;padding:3px 8px}.code-block pre{margin-top:4px;overflow:auto}.table-scroll{max-width:100%;overflow-x:auto}.table-scroll table{border-collapse:collapse}.table-scroll th,.table-scroll td{border:1px solid var(--border);padding:6px 10px}
 .tree-search{width:100%;margin:4px 0 10px}.tree-node[hidden]{display:none}
 .tree-row.drop-before{box-shadow:0 -3px var(--accent)}.tree-row.drop-after{box-shadow:0 3px var(--accent)}.project-node>.tree-row[draggable]{cursor:grab}
-.connection-status{position:fixed;bottom:8px;left:8px;z-index:60;padding:4px 10px;border:1px solid var(--border);border-radius:8px;background:var(--panel);color:var(--yellow);font-size:12px}.connection-status[hidden]{display:none}
+.connection-status{position:fixed;bottom:40px;left:8px;z-index:60;padding:4px 10px;border:1px solid var(--border);border-radius:8px;background:var(--panel);color:var(--yellow);font-size:12px}.connection-status[hidden]{display:none}
 @media (max-width:760px){
   .app-header{min-width:0}.app-header .turn-button{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.app-header .settings-button,.app-header .brand,.menu-toggle{flex-shrink:0}
   .sidebar-open .sidebar{width:min(285px,85vw)}.workspace,#main,.task-header,.composer,.task-footer,.transcript,.chat-card,.markdown,.row{min-width:0;max-width:100%}
