@@ -1,4 +1,7 @@
-import type { AppState, Busy, ChatEvent, ChatHistory, ChatRow, ProjectView, QueueItem, SendMode, TaskView } from '../../shared/types.ts';
+import type {
+  AppState, Busy, ChatEvent, ChatHistory, ChatRow, ProjectView,
+  QueueItem, SendMode, TaskView,
+} from '../../shared/types.ts';
 import { TASK_STATES } from '../../shared/types.ts';
 import { api, query, request } from '../api.ts';
 import { t } from '../i18n/index.ts';
@@ -7,12 +10,21 @@ import { aiPicker } from '../components/picker.ts';
 import { markdown } from '../components/markdown.ts';
 import { MarkdownStream } from '../components/markdown-stream.ts';
 import { HistoryWindow } from '../components/history.ts';
-import { area, button, confirmModal, disclosure, el, field, input, link, modal, projectHash, readLocal, row, run, select, storeLocal, toast, type View, type ViewContext } from '../components/dom.ts';
+import {
+  area, button, confirmModal, disclosure, el, field, iconButton, input, link, modal,
+  projectHash, readLocal, row, run, select, statusRegion, storeLocal, toast,
+  type View, type ViewContext,
+} from '../components/dom.ts';
 import { aiLabel, effortLabel, localTime, modelLabel } from '../components/display.ts';
 import { shouldSend } from '../components/composer.ts';
 import { stream } from '../components/stream.ts';
-import { iconButton, statusRegion } from '../components/dom.ts';
-export function taskView(context: ViewContext, initialProject: ProjectView, initialTask: TaskView, params = new URLSearchParams()): View {
+
+export function taskView(
+  context: ViewContext,
+  initialProject: ProjectView,
+  initialTask: TaskView,
+  params = new URLSearchParams(),
+): View {
   let project = initialProject;
   let task = initialTask;
   let alive = true;
@@ -169,14 +181,16 @@ export function taskView(context: ViewContext, initialProject: ProjectView, init
     }
   };
   function controls(): void {
-    if (busy)
-    actions.replaceChildren(
-      button(t('chat.stop'), () => request('/api/chat/stop', { project: project.id, task: task.id }), 'danger'),
-      button(t('chat.redo'), () => send('redo'), 'danger'),
-      button(t('chat.amend'), () => send('amend')),
-      button(t('chat.queue'), () => send('queue'), 'primary'));
-    else
-    actions.replaceChildren(button(t('chat.send'), () => send(), 'primary'));
+    if (busy) {
+      actions.replaceChildren(
+        button(t('chat.stop'), () => request('/api/chat/stop', { project: project.id, task: task.id }), 'danger'),
+        button(t('chat.redo'), () => send('redo'), 'danger'),
+        button(t('chat.amend'), () => send('amend')),
+        button(t('chat.queue'), () => send('queue'), 'primary'),
+      );
+    } else {
+      actions.replaceChildren(button(t('chat.send'), () => send(), 'primary'));
+    }
     clock();
     renderQueue();
   }
@@ -191,8 +205,7 @@ export function taskView(context: ViewContext, initialProject: ProjectView, init
     running.hidden = false;
     running.textContent = t('chat.running', { ai: aiLabel(busy.ai), model: modelLabel(context.state, busy.ai, busy.model), time });
     const timer = transcript.querySelector<HTMLElement>('.live-time');
-    if (timer)
-    timer.textContent = time;
+    if (timer) timer.textContent = time;
   }
   function renderQueue(): void {
     queueNode.replaceChildren(...queue.map((item, index) => {
@@ -205,21 +218,20 @@ export function taskView(context: ViewContext, initialProject: ProjectView, init
           'muted',
           `${aiLabel(item.ai)} · ${modelLabel(context.state, item.ai, item.model)} · ${effortLabel(item.effort)}`
         ));
-      if (item.error)
-      q.append(el('span', 'error-mark', t('chat.error')));
+      if (item.error) q.append(el('span', 'error-mark', t('chat.error')));
       q.append(iconButton('×', `${t('common.remove')}: ${t('chat.next', { n: index + 1 })}`, async () => {
         queue = await request<QueueItem[]>('/api/chat/unqueue', { project: project.id, task: task.id, id: item.id });
         renderQueue();
       }));
-      if (!busy && index === 0)
-      q.append(button(
-        t('chat.startQueued'),
-        () => api.send({ project: project.id, task: task.id, text: '', fromQueue: item.id }),
-        'primary'
-      ));
+      if (!busy && index === 0) {
+        q.append(button(
+          t('chat.startQueued'),
+          () => api.send({ project: project.id, task: task.id, text: '', fromQueue: item.id }),
+          'primary',
+        ));
+      }
       return q;
-    }
-    ));
+    }));
     queueNode.hidden = !queue.length;
   }
   let live: HTMLElement | null = null;
@@ -241,8 +253,7 @@ export function taskView(context: ViewContext, initialProject: ProjectView, init
   let toolGroup: HTMLDetailsElement | null = null;
   let toolCount = 0;
   function follow(): void {
-    if (following)
-    transcript.scrollTop = transcript.scrollHeight;
+    if (following) transcript.scrollTop = transcript.scrollHeight;
     latest.hidden = following;
   }
   function removeLive(): void {
@@ -255,8 +266,7 @@ export function taskView(context: ViewContext, initialProject: ProjectView, init
   }
   function addLive(): void {
     removeLive();
-    if (!busy)
-    return;
+    if (!busy) return;
     live = el('article', 'chat-card assistant live');
     liveBody = el('div', 'markdown-stream');
     liveMarkdown = new MarkdownStream();
@@ -312,14 +322,11 @@ export function taskView(context: ViewContext, initialProject: ProjectView, init
           '',
           `→ ${aiLabel(entry.to)} · ${modelLabel(context.state, entry.to, entry.model)} · ${effortLabel(entry.effort)}`
         ));
-      if (entry.mode)
-      metadata.append(el('span', 'mode-tag', t(`chat.mode.${entry.mode}`)));
+      if (entry.mode) metadata.append(el('span', 'mode-tag', t(`chat.mode.${entry.mode}`)));
       item.append(metadata, el('p', 'user-text', entry.text));
       if (entry.images?.length) {
         const images = el('div', 'image-strip');
-        for (
-        const path
-        of entry.images) {
+        for (const path of entry.images) {
           const name = path.split(/[\\/]/).pop() ?? '';
           const img = el('img', 'transcript-image');
           img.src = query('/api/attachment', { project: project.id, task: task.id, name });
@@ -339,17 +346,16 @@ export function taskView(context: ViewContext, initialProject: ProjectView, init
         }
         item.append(images);
       }
-    }
-    else {
+    } else {
       metadata.append(
         el('strong', '', aiLabel(entry.ai)),
         el('span', '', `${modelLabel(context.state, entry.ai, entry.model)} · ${effortLabel(entry.effort)}`),
         el('time', '', localTime(entry.at)),
         el('span', '', t('chat.duration', { seconds: Math.round(entry.ms / 1000) })));
-      if (entry.stopped)
-      metadata.append(el('span', 'stopped-mark', t('chat.stopped')));
-      if (entry.error)
-      metadata.append(el('span', 'error-mark', t(entry.error === 'interrupted' ? 'chat.interrupted' : 'chat.error')));
+      if (entry.stopped) metadata.append(el('span', 'stopped-mark', t('chat.stopped')));
+      if (entry.error) {
+        metadata.append(el('span', 'error-mark', t(entry.error === 'interrupted' ? 'chat.interrupted' : 'chat.error')));
+      }
       item.append(metadata, markdown(entry.text));
     }
     target.insertBefore(item, before);
@@ -364,8 +370,7 @@ export function taskView(context: ViewContext, initialProject: ProjectView, init
     }
     addLive();
     renderQuestion();
-    if (!following)
-    transcript.scrollTop = top;
+    if (!following) transcript.scrollTop = top;
     follow();
   }
   function renderQuestion(): void {
@@ -373,44 +378,39 @@ export function taskView(context: ViewContext, initialProject: ProjectView, init
     const lastAssistant = [...rows].reverse().find((entry): entry is Extract<ChatRow, { role: 'assistant' }> => entry.role === 'assistant' && !!entry.asks?.length);
     const asks = lastAssistant?.asks ?? [];
     const key = task.question ? JSON.stringify([task.question, asks]) : '';
-    if (question.dataset['key'] === key)
-    return;
+    if (question.dataset['key'] === key) return;
     question.dataset['key'] = key;
     question.replaceChildren();
-    if (!task.question)
-    return;
+    if (!task.question) return;
     const panel = el('div', 'question-card');
     announcer.textContent = t('chat.question');
     panel.append(el('h3', '', t('chat.question')));
     const answerParts: string[][] = asks.map(() => []);
-    if (asks.length)
-    for (
-    const [i, ask]
-    of asks.entries()) {
-      const group = el('div', 'question-group');
-      group.append(el('p', '', ask.question));
-      if (ask.multi) {
-        for (
-        const option
-        of ask.options) {
-          const check = input();
-          check.type = 'checkbox';
-          check.onchange = () => {
-            answerParts[i] = Array.from(group.querySelectorAll<HTMLInputElement>('input:checked')).map(c => c.value);
-          };
-          check.value = option;
-          group.append(field(option, check));
+    if (asks.length) {
+      for (const [i, ask] of asks.entries()) {
+        const group = el('div', 'question-group');
+        group.append(el('p', '', ask.question));
+        if (ask.multi) {
+          for (const option of ask.options) {
+            const check = input();
+            check.type = 'checkbox';
+            check.onchange = () => {
+              answerParts[i] = Array.from(group.querySelectorAll<HTMLInputElement>('input:checked'))
+                .map(c => c.value);
+            };
+            check.value = option;
+            group.append(field(option, check));
+          }
+        } else {
+          for (const option of ask.options) {
+            group.append(button(option, () => send(busy ? 'queue' : undefined, option, true), 'option-button'));
+          }
         }
+        panel.append(group);
       }
-      else
-      for (
-      const option
-      of ask.options)
-      group.append(button(option, () => send(busy ? 'queue' : undefined, option, true), 'option-button'));
-      panel.append(group);
+    } else {
+      panel.append(el('p', '', task.question));
     }
-    else
-    panel.append(el('p', '', task.question));
     const free = area('', t('chat.freeAnswer'));
     panel.append(
       free,
@@ -419,8 +419,7 @@ export function taskView(context: ViewContext, initialProject: ProjectView, init
           t('chat.send'),
           async () => {
             const answers = answerParts.flat();
-            if (free.value.trim())
-            answers.push(free.value.trim());
+            if (free.value.trim()) answers.push(free.value.trim());
             await send(busy ? 'queue' : undefined, answers.join('\n'), true);
           }
         ),
@@ -434,8 +433,7 @@ export function taskView(context: ViewContext, initialProject: ProjectView, init
         )
       ));
     question.append(panel);
-    if (following)
-    transcript.scrollTop = transcript.scrollHeight;
+    if (following) transcript.scrollTop = transcript.scrollHeight;
   }
   let previewSerial = 0;
   async function renderWork(): Promise<void> {
@@ -453,22 +451,21 @@ export function taskView(context: ViewContext, initialProject: ProjectView, init
         ));
       return;
     }
-    if (!task.copy)
-    return;
+    if (!task.copy) return;
     let mergeButton: HTMLButtonElement | null = null;
-    if (task.mergeExcluded)
-    work.append(el('span', 'muted', t('copy.excluded')));
-    else {
+    if (task.mergeExcluded) {
+      work.append(el('span', 'muted', t('copy.excluded')));
+    } else {
       mergeButton = button(
         t('copy.merge'),
         async () => {
-          if (!await confirmModal(t('copy.merge'), t('copy.confirmMerge'), t('copy.merge')))
-          return;
+          if (!await confirmModal(t('copy.merge'), t('copy.confirmMerge'), t('copy.merge'))) return;
           const result = await api.merge(project.id, task.id);
-          if (result.conflicts?.length)
-          modal(t('copy.conflict'), el('pre', '', result.conflicts.join('\n')));
-          else
-          toast(t('copy.merged'));
+          if (result.conflicts?.length) {
+            modal(t('copy.conflict'), el('pre', '', result.conflicts.join('\n')));
+          } else {
+            toast(t('copy.merged'));
+          }
           await context.refresh();
         },
         'primary');
@@ -494,19 +491,17 @@ export function taskView(context: ViewContext, initialProject: ProjectView, init
         }
       ));
     const preview = await api.preview(project.id, task.id);
-    if (!alive || serial !== previewSerial || !preview)
-    return;
-    if (mergeButton)
-    mergeButton.disabled = preview.files === 0;
+    if (!alive || serial !== previewSerial || !preview) return;
+    if (mergeButton) mergeButton.disabled = preview.files === 0;
     work.prepend(el(
       'span',
       'copy-stats',
       preview.files === 0 ? t('copy.noChanges') : t('copy.stats', { files: preview.files, added: preview.added, removed: preview.removed })
     ));
-    if (preview.conflict)
-    work.append(disclosure(t('copy.conflict'), el('pre', 'warning', preview.conflictPaths.join('\n'))));
-    if (preview.mainDirty)
-    work.append(el('span', 'muted', t('copy.mainDirty')));
+    if (preview.conflict) {
+      work.append(disclosure(t('copy.conflict'), el('pre', 'warning', preview.conflictPaths.join('\n'))));
+    }
+    if (preview.mainDirty) work.append(el('span', 'muted', t('copy.mainDirty')));
   }
   const footer = el('div', 'task-footer');
   function renderFooter(): void {
@@ -551,8 +546,7 @@ export function taskView(context: ViewContext, initialProject: ProjectView, init
       button(
         t('common.add'),
         async () => {
-          if (!add.value.trim())
-          return;
+          if (!add.value.trim()) return;
           await request('/api/task/step', { project: project.id, task: task.id, add: add.value.trim() });
           await context.refresh();
         }
@@ -570,8 +564,7 @@ export function taskView(context: ViewContext, initialProject: ProjectView, init
     const leaveMemo = button(
       t('task.leaveMemo'),
       async () => {
-        if (!memo.value.trim())
-        return;
+        if (!memo.value.trim()) return;
         await request('/api/task/memo', { project: project.id, task: task.id, text: memo.value.trim() });
         await context.refresh();
       });
@@ -588,106 +581,113 @@ export function taskView(context: ViewContext, initialProject: ProjectView, init
   const resizeFrame = requestAnimationFrame(resizeDraft);
   function receive(event: ChatEvent): void {
     switch (event.event) {
-    case 'snapshot':
-    history.reset({ rows: event.data.rows, start: event.data.start });
-    rows = history.rows;
-    earlier.hidden = history.start === 0;
-    busy = event.data.busy;
-    partial = event.data.partial;
-    queue = event.data.queue;
-    renderTranscript();
-    controls();
-    void run(focusHistory);
-    break;
-    case 'busy':
-    busy = event.data;
-    announcer.textContent = '';
-    partial = '';
-    addLive();
-    controls();
-    break;
-    case 'delta':
-    if (busy?.request === event.data.request) {
-      partial += event.data.text;
-      liveMarkdown.push(event.data.text);
-      if (!liveFrame)
-      liveFrame = requestAnimationFrame(() => {
-        liveFrame = 0;
-        renderLive();
+      case 'snapshot':
+        history.reset({ rows: event.data.rows, start: event.data.start });
+        rows = history.rows;
+        earlier.hidden = history.start === 0;
+        busy = event.data.busy;
+        partial = event.data.partial;
+        queue = event.data.queue;
+        renderTranscript();
+        controls();
+        void run(focusHistory);
+        break;
+      case 'busy':
+        busy = event.data;
+        announcer.textContent = '';
+        partial = '';
+        addLive();
+        controls();
+        break;
+      case 'delta':
+        if (busy?.request === event.data.request) {
+          partial += event.data.text;
+          liveMarkdown.push(event.data.text);
+          if (!liveFrame) {
+            liveFrame = requestAnimationFrame(() => {
+              liveFrame = 0;
+              renderLive();
+              follow();
+            });
+          }
+        }
+        break;
+      case 'row':
+        rows.push(event.data);
+        if (event.data.role === 'assistant' && event.data.request === busy?.request) {
+          partial = '';
+          removeLive();
+        }
+        appendRow(event.data, history.start + rows.length - 1);
+        renderQuestion();
         follow();
-      });
-    }
-    break;
-    case 'row':
-    rows.push(event.data);
-    if (event.data.role === 'assistant' && event.data.request === busy?.request) {
-      partial = '';
-      removeLive();
-    }
-    appendRow(event.data, history.start + rows.length - 1);
-    renderQuestion();
-    follow();
-    break;
-    case 'queue':
-    queue = event.data;
-    renderQueue();
-    break;
-    case 'idle':
-    if (busy?.request === event.data.request) {
-      busy = null;
-      partial = '';
-      removeLive();
-      announcer.textContent = task.question ? t('chat.question') : t('notification.done');
-    }
-    controls();
-    follow();
-    void context.refresh();
-    void run(renderWork);
-    break;
+        break;
+      case 'queue':
+        queue = event.data;
+        renderQueue();
+        break;
+      case 'idle':
+        if (busy?.request === event.data.request) {
+          busy = null;
+          partial = '';
+          removeLive();
+          announcer.textContent = task.question ? t('chat.question') : t('notification.done');
+        }
+        controls();
+        follow();
+        void context.refresh();
+        void run(renderWork);
+        break;
     }
   }
   const listeners: Record<string, (message: MessageEvent<string>) => void> = {};
-  for (
-  const event
-  of ['snapshot', 'busy', 'delta', 'row', 'queue', 'idle'] as const)
-  listeners[event] = message => {
-    try {
-      receive({ event, data: JSON.parse(message.data) } as ChatEvent);
-    }
-    catch {
-      /* 無效 SSE 不改畫面；重連 snapshot 可恢復。 */
-    }
-  };
+  for (const event of ['snapshot', 'busy', 'delta', 'row', 'queue', 'idle'] as const) {
+    listeners[event] = message => {
+      try {
+        receive({ event, data: JSON.parse(message.data) } as ChatEvent);
+      } catch {
+        /* 無效 SSE 不改畫面；重連 snapshot 可恢復。 */
+      }
+    };
+  }
   const source = stream(query('/api/chat/stream', { project: project.id, task: task.id }), listeners);
   const timer = window.setInterval(clock, 1000);
   void run(() => request('/api/task/read', { project: project.id, task: task.id }));
-  return { node, dispose: () => {
-    alive = false;
-    source.close();
-    removeLive();
-    window.clearInterval(timer);
-    cancelAnimationFrame(resizeFrame);
-    upload.dispose();
-  }, update: (state: AppState) => {
-    context.state = state;
-    const nextProject = state.projects.find(p => p.id === project.id);
-    const nextTask = nextProject?.tasks.find(t => t.id === task.id);
-    if (!nextProject || !nextTask) {
-      location.hash = projectHash(project.id);
-      return;
-    }
-    const workChanged = JSON.stringify([task.copy, task.copyMissing, task.mergeExcluded, task.workdir, task.updated]) !== JSON.stringify([nextTask.copy, nextTask.copyMissing, nextTask.mergeExcluded, nextTask.workdir, nextTask.updated]);
-    const footerChanged = JSON.stringify([task.state, task.phase, task.steps, task.memo]) !== JSON.stringify([nextTask.state, nextTask.phase, nextTask.steps, nextTask.memo]);
-    project = nextProject;
-    task = nextTask;
-    stateChip.textContent = t(`state.${task.state}`);
-    if (document.activeElement !== title)
-    title.value = task.title;
-    renderQuestion();
-    if (footerChanged)
-    renderFooter();
-    if (workChanged)
-    void run(renderWork);
-  }
+  return {
+    node,
+    dispose: () => {
+      alive = false;
+      source.close();
+      removeLive();
+      window.clearInterval(timer);
+      cancelAnimationFrame(resizeFrame);
+      upload.dispose();
+    },
+    update: (state: AppState) => {
+      context.state = state;
+      const nextProject = state.projects.find(p => p.id === project.id);
+      const nextTask = nextProject?.tasks.find(t => t.id === task.id);
+      if (!nextProject || !nextTask) {
+        location.hash = projectHash(project.id);
+        return;
+      }
+      const workChanged = JSON.stringify([
+        task.copy, task.copyMissing, task.mergeExcluded, task.workdir, task.updated,
+      ]) !== JSON.stringify([
+        nextTask.copy, nextTask.copyMissing, nextTask.mergeExcluded, nextTask.workdir, nextTask.updated,
+      ]);
+      const footerChanged = JSON.stringify([
+        task.state, task.phase, task.steps, task.memo,
+      ]) !== JSON.stringify([
+        nextTask.state, nextTask.phase, nextTask.steps, nextTask.memo,
+      ]);
+      project = nextProject;
+      task = nextTask;
+      stateChip.textContent = t(`state.${task.state}`);
+      if (document.activeElement !== title) title.value = task.title;
+      renderQuestion();
+      if (footerChanged) renderFooter();
+      if (workChanged) void run(renderWork);
+    },
   };
 }
