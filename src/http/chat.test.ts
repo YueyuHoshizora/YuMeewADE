@@ -9,7 +9,7 @@ test('HTTP roleless send, snapshot first, stop queue and attachment preview', as
   try {
     assert.equal((await s.api('POST', '/api/project/new', { name: 'P' })).status, 200);
     const created = await s.api('POST', '/api/task/new', { project: 'P', title: 'T', workspace: 'direct' }); assert.equal(created.status, 200); const task = created.json as Task;
-    const upload = await fetch(`${s.base}/api/upload?project=P&name=test.png`, { method: 'POST', body: Buffer.from([1, 2, 3]) }); assert.equal(upload.status, 200); const image = await upload.json() as UploadResult;
+    const upload = await fetch(`${s.base}/api/upload?project=P&name=test.png`, { method: 'POST', body: Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a, 1, 2, 3]) }); assert.equal(upload.status, 200); const image = await upload.json() as UploadResult;
     const preview = await fetch(s.base + image.url); assert.equal(preview.headers.get('content-type'), 'image/png');
     assert.equal((await s.api('POST', '/api/chat/send', { project: 'P', task: task.id, text: '[slow] go', images: [image.id] })).status, 200);
     assert.equal((await s.api('POST', '/api/chat/send', { project: 'P', task: task.id, text: 'missing mode' })).status, 409);

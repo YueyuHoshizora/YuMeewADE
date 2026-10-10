@@ -27,7 +27,10 @@ test('external task edits identify project/task; later projects and task directo
     await fs.mkdir(ws.tasksDir('First'), { recursive: true });
     await watcher.start();
     await fs.writeFile(ws.taskFile('First', 'task-1'), 'external');
-    await until(() => events.some(event => event.project === 'First' && event.task === 'task-1'));
+    // macOS FSEvents 可能漏掉監看剛建立時的第一個事件，所以重寫直到收到。
+    await until(() => events.some(event => event.project === 'First' && event.task === 'task-1'), async () => {
+      await fs.writeFile(ws.taskFile('First', 'task-1'), 'external');
+    });
     await fs.mkdir(path.join(ws.projectDir('Later'), '.ai'), { recursive: true });
     await until(() => events.some(event => event.project === 'Later'), async () => {
       await fs.writeFile(path.join(ws.projectDir('Later'), 'PROJECT.md'), 'project');
@@ -36,7 +39,12 @@ test('external task edits identify project/task; later projects and task directo
     await until(() => events.some(event => event.project === 'Later' && event.task === 'task-2'), async () => {
       await fs.writeFile(ws.taskFile('Later', 'task-2'), 'new task');
     });
-    const before = events.length;
+    // 前面重試寫入的事件可能延遲送達；等事件數穩定後才量測「不該出現的事件」。
+    let before = -1;
+    while (before !== events.length) {
+      before = events.length;
+      await delay(200);
+    }
     await fs.mkdir(path.join(ws.workDir, 'Later'), { recursive: true });
     await fs.writeFile(path.join(ws.workDir, 'Later', 'body.txt'), 'ignored');
     await fs.mkdir(path.join(ws.projectDir('Later'), 'node_modules'));
