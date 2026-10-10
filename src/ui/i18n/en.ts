@@ -11,6 +11,7 @@ export const en: Record<MessageKey, string> = {
   'review.add': 'Click to comment on this line', 'review.placeholder': 'Write your comment on this line…', 'review.send': 'Send {n} comments to AI', 'review.prompt': 'Please make changes according to the code review comments below (line numbers refer to the changed file), and verify afterwards:', 'review.removedAt': '{path} (removed line, was line {line})',
   'chat.copy': 'Copy message', 'chat.retry': 'Retry', 'chat.export': 'Export Markdown',
   'chat.rollback': 'Restore to before this', 'chat.rollbackConfirm': 'The working copy goes back to how it was before this instruction; file changes from it and everything after are discarded (the conversation is kept). Restore?', 'chat.rollbackDone': 'Working copy restored',
+  'chat.fork': 'Branch from here', 'chat.forked': 'Branch task created', 'detail.fork_while_running': 'Stop the running task before branching', 'log.task.fork': 'Task branched from an instruction',
   'chat.changes': 'This turn: {files} files +{added} −{removed}',
   'chat.turnUsage': 'in {input} · out {output}', 'chat.cachedUsage': ' · cached {cached}',
   'chat.usageHint': 'These token counts are reported by the CLI.',

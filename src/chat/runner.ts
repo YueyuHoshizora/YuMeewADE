@@ -15,7 +15,7 @@ import { AppError } from '../shared/errors.ts';
 import { log } from '../shared/log.ts';
 import type {
   Ask, Busy, ChatEvent, ChatHistory, ChatRow, QueueItem, Roles, RunningInfo,
-  SendInput, SendResult, TurnUsage,
+  SendInput, SendResult, Task, TurnUsage,
 } from '../shared/types.ts';
 import { HISTORY_PAGE } from '../shared/types.ts';
 import { buildHandoff, buildPreamble, buildPrompt } from './prompt.ts';
@@ -471,6 +471,41 @@ export class ChatRunner extends EventEmitter {
       await this.deps.oplog.record({ action: 'chatstop', project: p, task: t });
       this.deps.onChanged(p, t);
       return stopped;
+    });
+  }
+
+  /** 從某則指示開始之前分支出新作業：副本長自該輪的檢查點，並帶走之前的對話當背景。 */
+  fork(p: string, t: string, request: string): Promise<Task> {
+    return this.lock(p, t, async () => {
+      const source = await this.deps.tasks.get(p, t);
+      if (this.slot(p, t).busy) throw new AppError('conflict', 'fork_while_running');
+      const rows = await this.deps.store.readLog(p, t);
+      const at = rows.findIndex(r => r.role === 'user' && r.request === request);
+      const point = rows[at];
+      if (point?.role !== 'user' || !point.checkpoint) throw new AppError('not_found', 'checkpoint_missing');
+      const created = await this.deps.tasks.create(p, {
+        title: `${source.title}（分支）`, kind: 'derived', derivedFrom: t, workspace: 'isolated',
+        phase: source.phase, role: source.role, cli: source.cli, model: source.model, effort: source.effort,
+      });
+      try {
+        await this.deps.worktree.prepareFrom(p, created.id, point.checkpoint);
+        for (const row of rows.slice(0, at)) {
+          if (row.role === 'user') {
+            const { images: _images, ...plain } = row; // 附件檔屬於原作業，分支作業看不到
+            await this.deps.store.append(p, created.id, plain);
+          } else await this.deps.store.append(p, created.id, row);
+        }
+        await this.deps.store.append(p, created.id, {
+          at: new Date().toISOString(), role: 'event',
+          text: `從作業「${source.title}」的指示「${point.text.slice(0, 120)}」之前分支出來；工作副本是當時的狀態，之後的檔案變更不在這裡。`,
+        });
+      } catch (err) {
+        await this.deps.tasks.archive(p, created.id).catch(() => undefined);
+        throw err;
+      }
+      await this.deps.oplog.record({ action: 'task.fork', project: p, task: created.id });
+      this.deps.onChanged(p, created.id);
+      return this.deps.tasks.get(p, created.id);
     });
   }
 

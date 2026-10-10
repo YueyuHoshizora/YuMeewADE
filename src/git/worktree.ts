@@ -51,7 +51,16 @@ export class WorktreeService {
   async prepare(project: string, task: string): Promise<string> {
     return this.mutate(project, () => this.prepareLocked(project, task));
   }
-  private async prepareLocked(project: string, task: string): Promise<string> {
+  /** 新作業的副本從某個檢查點長出來（分支作業用）；不動主資料夾。 */
+  async prepareFrom(project: string, task: string, sha: string): Promise<string> {
+    if (!SHA.test(sha)) throw new AppError('not_found', 'checkpoint_missing');
+    return this.mutate(project, async () => {
+      const known = await git(await this.bodyPath(project), ['cat-file', '-e', `${sha}^{commit}`]);
+      if (known.code !== 0) throw new AppError('not_found', 'checkpoint_missing');
+      return this.prepareLocked(project, task, sha);
+    });
+  }
+  private async prepareLocked(project: string, task: string, from?: string): Promise<string> {
     const record = await this.tasks.get(project, task);
     const repo = await this.bodyPath(project);
     if (record.workspace === 'direct') {
@@ -63,13 +72,13 @@ export class WorktreeService {
     if (await pathExists(dir)) {
       await this.verifyFamily(repo, dir);
     } else {
-      await commitAll(repo, 'YuMeewADE：開始前儲存');
+      if (!from) await commitAll(repo, 'YuMeewADE：開始前儲存');
       await fs.mkdir(path.dirname(dir), { recursive: true });
       await gitOk(repo, ['worktree', 'prune']);
       const branch = this.branch(task);
       await gitOk(repo, await branchExists(repo, branch)
         ? ['worktree', 'add', '-q', dir, branch]
-        : ['worktree', 'add', '-q', '-b', branch, dir, 'HEAD']);
+        : ['worktree', 'add', '-q', '-b', branch, dir, from ?? 'HEAD']);
       await copyLocalSecrets(repo, dir);
     }
     if (record.workdir !== dir) await this.tasks.update(project, task, { workdir: dir });

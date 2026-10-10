@@ -112,6 +112,7 @@ HTTP JSON plus SSE, identical in desktop and web versions. Types are defined in 
 | `POST /api/chat/send` | Send `{project, task, text, ai?, model?, effort?, mode?, answer?, images?, fromQueue?}`; while running, `mode` is required: `redo`／`amend`／`queue` |
 | `POST /api/chat/stop`、`/api/chat/unqueue` | Stop (and clear the queue), remove queued instructions |
 | `POST /api/chat/rollback` | `{project, task, request}`: restore the working copy to just before that instruction (a checkpoint is saved before every turn); 409 while running, 404 without a checkpoint |
+| `POST /api/chat/fork` | `{project, task, request}`: branch a new (derived) task from just before that instruction; its working copy grows from the checkpoint and it carries over the earlier conversation without attachments. Returns the new task; 409 while running, 404 without a checkpoint |
 | `GET /api/chat/turn-diff?project=&task=&request=` | Diff of a single turn (checkpoint before it → checkpoint at its end); 404 without checkpoints |
 | `GET /api/project/rules?project=`、`POST /api/project/rules` | Read and write the project’s AI rules (`.ai/rules.md`, up to 20,000 characters; write `{project, text}`) |
 | `POST /api/upload`、`GET /api/upload`、`GET /api/attachment` | Image upload, preview, conversation attachments |

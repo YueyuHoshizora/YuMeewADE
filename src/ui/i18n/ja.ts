@@ -11,6 +11,7 @@ export const ja: Record<MessageKey, string> = {
   'review.add': 'クリックしてこの行にコメント', 'review.placeholder': 'この行へのコメントを入力…', 'review.send': '{n} 件のコメントを AI に送る', 'review.prompt': '以下のコードレビューの指摘に沿って修正し（行番号は変更後のファイルの行）、修正後に自分で検証してください：', 'review.removedAt': '{path}（削除された行、元の {line} 行目）',
   'chat.copy': 'メッセージをコピー', 'chat.retry': '再試行', 'chat.export': 'Markdown をエクスポート',
   'chat.rollback': 'この指示の前に戻す', 'chat.rollbackConfirm': '作業コピーをこの指示の開始前に戻します。この指示以降のファイル変更は破棄されます（会話は残ります）。戻しますか？', 'chat.rollbackDone': '作業コピーを戻しました',
+  'chat.fork': 'ここから分岐', 'chat.forked': '分岐タスクを作成しました', 'detail.fork_while_running': '実行中のタスクを停止してから分岐してください', 'log.task.fork': '指示から作業を分岐',
   'chat.changes': 'このターンの変更 {files} ファイル +{added} −{removed}',
   'chat.turnUsage': '入力 {input} · 出力 {output}', 'chat.cachedUsage': ' · キャッシュ {cached}',
   'chat.usageHint': 'これらのトークン数は CLI が報告した値です。',

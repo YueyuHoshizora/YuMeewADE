@@ -11,6 +11,7 @@ export const de: Record<MessageKey, string> = {
   'review.add': 'Klicken, um diese Zeile zu kommentieren', 'review.placeholder': 'Kommentar zu dieser Zeile…', 'review.send': '{n} Kommentare an die KI senden', 'review.prompt': 'Bitte ändere den Code gemäß den folgenden Review-Kommentaren (Zeilennummern beziehen sich auf die geänderte Datei) und prüfe danach selbst:', 'review.removedAt': '{path} (entfernte Zeile, war Zeile {line})',
   'chat.copy': 'Nachricht kopieren', 'chat.retry': 'Erneut versuchen', 'chat.export': 'Markdown exportieren',
   'chat.rollback': 'Auf Stand davor zurücksetzen', 'chat.rollbackConfirm': 'Die Arbeitskopie kehrt in den Zustand vor dieser Anweisung zurück; Dateiänderungen ab hier werden verworfen (der Chat bleibt erhalten). Zurücksetzen?', 'chat.rollbackDone': 'Arbeitskopie zurückgesetzt',
+  'chat.fork': 'Ab hier verzweigen', 'chat.forked': 'Zweig-Aufgabe erstellt', 'detail.fork_while_running': 'Laufende Aufgabe vor dem Verzweigen stoppen', 'log.task.fork': 'Aufgabe ab Anweisung verzweigt',
   'chat.changes': 'Diese Runde: {files} Dateien +{added} −{removed}',
   'chat.turnUsage': 'Eingabe {input} · Ausgabe {output}', 'chat.cachedUsage': ' · Cache {cached}',
   'chat.usageHint': 'Diese Tokenzahlen werden von der CLI gemeldet.',

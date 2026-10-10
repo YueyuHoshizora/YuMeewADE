@@ -309,3 +309,28 @@ test('unmerge rewinds the main folder and revives the copy, but only while the m
   await assert.rejects(wt.unmerge('P', task.id), (e: unknown) => e instanceof AppError && e.detail === 'unmerge_unavailable');
   assert.equal(await fs.readFile(path.join(repo, 'later.txt'), 'utf8'), 'later\n');
 }));
+
+test('prepareFrom grows a new copy from a checkpoint without touching the main folder', () => withTmpWorkspace(async ws => {
+  const projects = new ProjectLedger(ws);
+  const tasks = new TaskLedger(ws);
+  await projects.create({ name: 'P' });
+  const task = await tasks.create('P', { title: '原作業' });
+  const wt = new WorktreeService({ ws, projects, tasks, diffBytes: 100_000 });
+  const dir = await wt.prepare('P', task.id);
+  await fs.writeFile(path.join(dir, 'early.txt'), 'early\n');
+  const point = (await wt.checkpoint('P', task.id))!;
+  await fs.writeFile(path.join(dir, 'late.txt'), 'late\n');
+  await wt.checkpoint('P', task.id);
+  const repo = ws.projectDir('P');
+  await fs.writeFile(path.join(repo, 'main-only.txt'), 'dirty main\n');
+  const forked = await tasks.create('P', { title: '分支', kind: 'derived', derivedFrom: task.id });
+  const copy = await wt.prepareFrom('P', forked.id, point);
+  assert.equal(await fs.readFile(path.join(copy, 'early.txt'), 'utf8'), 'early\n');
+  await assert.rejects(fs.access(path.join(copy, 'late.txt')));
+  await assert.rejects(fs.access(path.join(copy, 'main-only.txt')), 'uncommitted main changes are neither committed nor copied');
+  assert.equal((await gitOk(repo, ['status', '--porcelain'])).trim(), '?? main-only.txt', 'main folder untouched');
+  assert.equal((await tasks.get('P', forked.id)).workdir, copy);
+  assert.equal((await gitOk(copy, ['rev-parse', 'HEAD'])).trim(), point);
+  await assert.rejects(wt.prepareFrom('P', forked.id, 'a'.repeat(40)), (e: unknown) => e instanceof AppError && e.detail === 'checkpoint_missing');
+  await assert.rejects(wt.prepareFrom('P', forked.id, 'bad'), (e: unknown) => e instanceof AppError && e.detail === 'checkpoint_missing');
+}));

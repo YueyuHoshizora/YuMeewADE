@@ -1,6 +1,6 @@
 import type {
   AppState, Busy, ChatEvent, ChatHistory, ChatRow, ProjectView,
-  QueueItem, SendMode, TaskView, VerifyResult,
+  QueueItem, SendMode, Task, TaskView, VerifyResult,
 } from '../../shared/types.ts';
 import { TASK_STATES } from '../../shared/types.ts';
 import { api, query, request } from '../api.ts';
@@ -12,7 +12,7 @@ import { MarkdownStream } from '../components/markdown-stream.ts';
 import { HistoryWindow } from '../components/history.ts';
 import {
   area, button, confirmModal, disclosure, el, field, iconButton, input, link, modal,
-  projectHash, readLocal, row, run, select, statusRegion, storeLocal, toast,
+  projectHash, readLocal, row, run, select, statusRegion, storeLocal, taskHash, toast,
   type View, type ViewContext,
 } from '../components/dom.ts';
 import { aiLabel, effortLabel, localTime, modelLabel } from '../components/display.ts';
@@ -404,6 +404,15 @@ export function taskView(
         }), 'retry-message');
         undo.hidden = !!busy;
         metadata.append(undo);
+        const branch = button(t('chat.fork'), () => run(async () => {
+          if (busy) return;
+          const created = await request<Task>('/api/chat/fork', { project: project.id, task: task.id, request: entry.request });
+          await context.refresh();
+          toast(t('chat.forked'));
+          location.hash = taskHash(project.id, created.id);
+        }), 'retry-message');
+        branch.hidden = !!busy;
+        metadata.append(branch);
       }
       item.append(metadata, el('p', 'user-text', entry.text));
       if (entry.images?.length) {
