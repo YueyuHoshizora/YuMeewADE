@@ -319,6 +319,9 @@ export class ChatRunner extends EventEmitter {
     let error = '';
     const asks: Ask[] = [];
     let writes = Promise.resolve();
+    const previousSeen = meta.seen[item.ai];
+    const previousSession = meta.sessions[item.ai];
+    const previousModel = meta.models[item.ai];
     try {
       if (this.shuttingDown) throw new AppError('unavailable');
       const run = provider.send(opts, ev => {
@@ -358,11 +361,18 @@ export class ChatRunner extends EventEmitter {
       await this.deps.store.append(p, t, row);
       this.publish(p, t, { event: 'row', data: row });
       delete meta.running;
-      if (sid) {
-        meta.sessions[item.ai] = sid;
-        meta.models[item.ai] = item.model ?? '';
+      if (error && !outcome.stopped) {
+        if (opts.resumeId) {
+          delete meta.sessions[item.ai];
+          delete meta.models[item.ai];
+        }
+      } else {
+        if (sid) {
+          meta.sessions[item.ai] = sid;
+          meta.models[item.ai] = item.model ?? '';
+        }
+        meta.seen[item.ai] = item.id;
       }
-      meta.seen[item.ai] = item.id;
       await this.deps.store.writeMeta(p, t, meta);
       if (asks.length && !outcome.stopped) {
         await this.deps.tasks.update(p, t, {
@@ -377,6 +387,14 @@ export class ChatRunner extends EventEmitter {
         at: new Date().toISOString(), role: 'assistant', ai: item.ai,
         text: s.partial, error: 'internal', ms: Date.now() - started, request: item.id,
       };
+      delete meta.running;
+      if (previousSeen === undefined) delete meta.seen[item.ai];
+      else meta.seen[item.ai] = previousSeen;
+      if (opts.resumeId || previousSession === undefined) delete meta.sessions[item.ai];
+      else meta.sessions[item.ai] = previousSession;
+      if (opts.resumeId || previousModel === undefined) delete meta.models[item.ai];
+      else meta.models[item.ai] = previousModel;
+      await this.deps.store.writeMeta(p, t, meta);
       await this.deps.store.append(p, t, row);
       this.publish(p, t, { event: 'row', data: row });
     } finally {

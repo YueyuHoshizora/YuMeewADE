@@ -98,3 +98,63 @@ test('執行開始持久化 marker，正常完成後清除', () => withTmpWorksp
   await s.runner.whenIdle();
   assert.equal((await s.store.readMeta('P', s.task.id)).running, undefined);
 }));
+
+test('失敗續聊清除 session 與模型、不推進 seen，下輪附完整交接', () => withTmpWorkspace(async ws => {
+  const s = await setup(ws);
+  const first = await s.send('first successful instruction');
+  await s.runner.whenIdle();
+  const initial = await s.store.readMeta('P', s.task.id);
+  assert.ok(initial.sessions.codex);
+  assert.equal(initial.seen.codex, first.request);
+  await s.send('broken resume [fail]');
+  await s.runner.whenIdle();
+  const failed = await s.store.readMeta('P', s.task.id);
+  assert.equal(failed.sessions.codex, undefined);
+  assert.equal(failed.models.codex, undefined);
+  assert.equal(failed.seen.codex, first.request);
+  const failedRow = (await s.store.readLog('P', s.task.id)).at(-1);
+  assert.ok(failedRow?.role === 'assistant');
+  assert.equal(failedRow.error, 'cli_failed');
+  await s.send('next instruction');
+  await s.runner.whenIdle();
+  assert.equal(s.calls[2]?.resumeId, undefined);
+  assert.match(s.calls[2]!.prompt, /first successful instruction/u);
+  assert.match(s.calls[2]!.prompt, /broken resume/u);
+  assert.ok((await s.store.readMeta('P', s.task.id)).sessions.codex);
+}));
+
+test('新回合失敗不保存新 session，人工停止仍保留 session', () => withTmpWorkspace(async ws => {
+  const s = await setup(ws);
+  await s.send('fresh [fail]');
+  await s.runner.whenIdle();
+  const failed = await s.store.readMeta('P', s.task.id);
+  assert.equal(failed.sessions.codex, undefined);
+  assert.equal(failed.seen.codex, undefined);
+  const stopped = await s.send('human stop [slow]');
+  await s.runner.stop('P', s.task.id);
+  await s.runner.whenIdle();
+  const meta = await s.store.readMeta('P', s.task.id);
+  assert.ok(meta.sessions.codex);
+  assert.equal(meta.seen.codex, stopped.request);
+}));
+
+test('內部執行失敗也清除 resume、保留原 seen 並清除 marker', () => withTmpWorkspace(async ws => {
+  const s = await setup(ws, {
+    text: opts => {
+      if (opts.resumeId) throw new Error('scripted internal failure');
+      return 'ok';
+    },
+  });
+  const first = await s.send('first');
+  await s.runner.whenIdle();
+  await s.send('second');
+  await s.runner.whenIdle();
+  const meta = await s.store.readMeta('P', s.task.id);
+  assert.equal(meta.sessions.codex, undefined);
+  assert.equal(meta.models.codex, undefined);
+  assert.equal(meta.seen.codex, first.request);
+  assert.equal(meta.running, undefined);
+  const failedRow = (await s.store.readLog('P', s.task.id)).at(-1);
+  assert.ok(failedRow?.role === 'assistant');
+  assert.equal(failedRow.error, 'internal');
+}));

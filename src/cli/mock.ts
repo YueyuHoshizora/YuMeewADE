@@ -34,7 +34,7 @@ export class MockCliProvider implements CliProvider {
     const resumed = opts.resumeId ? `（續聊 ${opts.resumeId}）` : '';
     const reply = typeof this.options.text === 'function' ? this.options.text(opts) : this.options.text ?? `已收到：${userLine}${resumed}${opts.model ? `［模型 ${opts.model}］` : ''}`;
     const slow = opts.prompt.includes('[slow]');
-    const fail = opts.prompt.includes('[fail]');
+    const fail = userLine.includes('[fail]');
     const pieces = reply.match(/.{1,6}/gsu) ?? [reply];
     let stopped = false;
     let settled = false;
