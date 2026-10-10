@@ -21,7 +21,9 @@
   - 對話：每次送出可以換 AI、模型、思考強度。換 AI 時會附上新 AI 還沒看過的人與 AI 文字對話（交接包）；同一個 AI 則接續原本的會話。可用 ⌘/Ctrl+Enter 或設定成 Enter 送出（Shift+Enter 換行，中文輸入法選字不會誤送）。App 在背景時，AI 做完或需要你回覆會發系統通知並更新 Dock 徽章；核心若在執行中被中斷（例如崩潰），該輪會標成「已中斷」，排隊指示保留。
   - 執行中送出：**① 取消並重做**、**② 補充說明（一起做）**、**③ 做完再接續**（排隊，做完自動開始；重啟後也保留），以及「停止」（同時清空排隊）。
   - AI 需要你決定時，會在回覆最後用固定格式提問，畫面顯示成**選項按鈕**，也能自己寫答案。回答後作業從「等待回覆」回到「進行中」。
-  - 工作副本：顯示「N 個檔案 +a −b」與衝突預警。可以看差異、**合併到主資料夾**（自動儲存兩邊再 `--no-ff` 合併，成功後移除副本並把作業標為完成；衝突就中止、主資料夾不變，作業轉為等待回覆），或排除合併。
+  - 工作副本：顯示「N 個檔案 +a −b」與衝突預警。可以看差異（依檔案分段、可收合、逐檔顯示 +/−）、**合併到主資料夾**（自動儲存兩邊再 `--no-ff` 合併，成功後移除副本並把作業標為完成；衝突就中止、主資料夾不變，作業轉為等待回覆。副本內若還有不會被提交的檔案，例如新增的 `.env*`，合併仍成功，但副本會保留並列出這些檔案），或排除合併。
+  - 驗證：專案可設定「驗證指令」（例如 `npm test`，存在 `PROJECT.md`），作業標題列的「執行驗證」會在該作業的工作副本執行它，顯示通過／失敗、exit code、耗時與輸出尾段。指令只來自台帳，不接受請求傳入；逾時會終止整個行程樹。
+  - 對話：每則訊息有複製鈕；失敗或被停止的回覆有「重試」；回覆顯示 CLI 回報的本輪 token 用量（輸入／輸出／快取）；標題列「匯出 Markdown」下載整段對話。
   - 下方可以改狀態與階段、勾選步驟（`## 步驟` 清單）、留下備註。步驟全勾或 AI 自己寫了「完成」時，會進入「確認完成」，由人決定。
 - **設定**：語言（7 種）、Enter／⌘+Enter 送出、通知開關、工作區根目錄（可直接切換，寫回設定檔；桌面版可用「選擇…」挑資料夾）、新作業預設 AI、AI 工具（版本、重新取得模型、更新 CLI、完整權限開關）、選單顯示的模型與順序、角色分工（寫回 `roles.yaml`）、最近操作紀錄。
 
@@ -88,7 +90,7 @@ npm run desktop      # 桌面版（開發機）
 | `workspace` | `root` | 工作區根目錄，預設 `~/Documents/YuMeewWorkspace`；設定頁切換時會改寫這一行 |
 | `cli.claude` / `cli.codex` | `command`、`baseArgs`、`fullAccess`、`fullAccessArgs`、`safeArgs` | 指令與無頭模式旗標；`fullAccess` 是預設權限，設定頁的開關優先 |
 | `cli` | `envPassthrough` | 額外放行給 CLI 子行程的環境變數（預設只給 PATH／HOME／LANG 等） |
-| `limits` | `bodyBytes`、`promptChars`、`sendPerMinute`、`concurrentRuns`、`sseConnections`、`queueLength`、`handoffChars`、`heartbeatSeconds`、`diffBytes`、`uploadBytes`、`imagesPerSend` | 各種上限 |
+| `limits` | `bodyBytes`、`promptChars`、`sendPerMinute`、`concurrentRuns`、`sseConnections`、`queueLength`、`handoffChars`、`heartbeatSeconds`、`diffBytes`、`uploadBytes`、`imagesPerSend`、`verifySeconds`（驗證逾時，預設 600）、`verifyOutputBytes`（驗證輸出保留尾端位元組，預設 65536） | 各種上限 |
 
 ## 協定摘要（UI ⇄ 核心）
 
@@ -100,6 +102,7 @@ HTTP JSON 加 SSE，桌面版與網頁版完全相同。型別定義在 [`src/sh
 | `GET /api/events` | SSE（全域）：`changed` 時重抓 `/api/state`；`usage` 帶最新額度與輸出速度 |
 | `GET /api/chat/stream?project=&task=` | SSE（單一作業）：`snapshot`（最後 200 列與 `start`）／`busy`／`delta`／`row`／`queue`／`idle` |
 | `GET /api/chat/history?project=&task=&before=` | 補讀 `before` 之前的 200 列對話 |
+| `GET /api/chat/export?project=&task=&tools=` | 下載對話 Markdown（`tools=1` 含工具呼叫；不含工作區絕對路徑） |
 | `GET /api/search?q=` | 跨專案搜尋作業標題與對話內容（最多 50 筆） |
 | `POST /api/project/new`、`/api/project/update`、`/api/project/archive` | 專案 |
 | `POST /api/phase/next`、`/api/phase/continue` | 階段 |
@@ -110,6 +113,7 @@ HTTP JSON 加 SSE，桌面版與網頁版完全相同。型別定義在 [`src/sh
 | `POST /api/chat/stop`、`/api/chat/unqueue` | 停止（並清空排隊）、移除排隊 |
 | `POST /api/upload`、`GET /api/upload`、`GET /api/attachment` | 圖片上傳、預覽、對話附件 |
 | `GET /api/task/preview`、`GET /api/task/diff`、`POST /api/task/merge`、`/api/task/merge-exclusion`、`/api/task/copyclear` | 工作副本 |
+| `POST /api/task/verify` | 在作業工作副本執行專案的驗證指令，回 `{ok, exitCode, timedOut, ms, output, truncated}`；AI 執行中、已有驗證在跑或超過 `concurrentRuns` 回 409 |
 | `GET /api/ai`、`POST /api/ai/refresh`、`POST /api/ai/update` | AI 工具與模型清單 |
 | `POST /api/settings`、`POST /api/roles`、`GET /api/log` | 設定、角色、操作紀錄 |
 | `POST /api/open` | 用系統開啟資料夾或檔案 |

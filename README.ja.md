@@ -21,7 +21,9 @@
   - 会話：送信ごとに AI、モデル、推論の強度を変更できます。AI を切り替えると、新しい AI がまだ見ていない人間と AI のテキスト会話を引き継ぎパッケージとして添付します。同じ AI なら既存のセッションを継続します。⌘/Ctrl+Enter で送信するか、Enter で送信する設定に切り替えられます（Shift+Enter で改行。IME の変換中は送信しません）。アプリがバックグラウンドのとき、AI の完了や回答待ちをシステム通知と Dock バッジで知らせます。実行中にコアが中断された場合（クラッシュなど）、その回は「中断」と表示し、キューは保持します。
   - 実行中の送信：**① 中止してやり直す**、**② 補足（同時に実行）**、**③ 終了後に続ける**（キューに追加し、終了後に自動実行。再起動しても保持します）を選べます。「停止」はキューも同時に空にします。
   - AI が判断を求める場合、応答の最後に決まった形式で質問します。画面では**選択肢ボタン**として表示し、自分で回答を書くこともできます。回答すると、タスクは「回答待ち」から「進行中」に戻ります。
-  - 作業コピー：「N ファイル +a −b」と競合の警告を表示します。「差分を見る」、**メインフォルダーにマージ**（両側を自動保存してから `--no-ff` でマージ。成功するとコピーを削除してタスクを完了にします。競合するとマージを中止し、メインフォルダーは変更せず、タスクを回答待ちにします）、または「マージから除外」を選べます。
+  - 作業コピー：「N ファイル +a −b」と競合の警告を表示します。「差分を見る」（ファイルごとに分割・折りたたみ可能、ファイル別の +/− 付き）、**メインフォルダーにマージ**（両側を自動保存してから `--no-ff` でマージ。成功するとコピーを削除してタスクを完了にします。競合するとマージを中止し、メインフォルダーは変更せず、タスクを回答待ちにします。新規の `.env*` などコミットされないファイルがコピーに残っている場合、マージは成功しますがコピーは保持し、そのファイルを一覧表示します）、または「マージから除外」を選べます。
+  - 検証：プロジェクトに「検証コマンド」（例：`npm test`、`PROJECT.md` に保存）を設定でき、タスクのヘッダーにある「検証を実行」でそのタスクの作業コピー内で実行し、成功／失敗、exit code、所要時間、出力の末尾を表示します。コマンドは台帳からのみ取得し、リクエストでは受け付けません。タイムアウトするとプロセスツリー全体を終了します。
+  - 会話：各メッセージにコピーボタン、失敗または停止した応答に「再試行」、応答に CLI が報告したターンごとのトークン使用量（入力／出力／キャッシュ）を表示します。ヘッダーの「Markdown を書き出す」で会話全体をダウンロードできます。
   - 下部では状態やフェーズの変更、手順（`## 步驟` のリスト）のチェック、メモの記入ができます。すべての手順をチェックするか、AI が自分で「完成」と書くと「完了を確認」に進み、人間が判断します（「完成」は台帳に記録する中国語の値です）。
 - **設定**：言語（7言語）、Enter／⌘+Enter での送信、通知、ワークスペースのルート（その場で切り替え、設定ファイルに保存。デスクトップ版は「選択…」でフォルダーを選べます）、新規タスクの既定 AI、AI ツール（バージョン、「モデルを更新」、「CLI を更新」、「フルアクセス」の切り替え）、メニューに表示するモデルと順序、役割分担（`roles.yaml` に書き戻します）、最近の操作を設定・確認できます。
 
@@ -88,7 +90,7 @@ npm run desktop      # 桌面版（開發機）
 | `workspace` | `root` | ワークスペースのルート。既定は `~/Documents/YuMeewWorkspace`。設定画面で切り替えるとこの行が書き換わります |
 | `cli.claude` / `cli.codex` | `command`、`baseArgs`、`fullAccess`、`fullAccessArgs`、`safeArgs` | コマンドとヘッドレスモードのフラグ。`fullAccess` は既定の権限で、設定画面の切り替えが優先 |
 | `cli` | `envPassthrough` | CLI 子プロセスに追加で渡す環境変数（既定では PATH／HOME／LANG などのみ） |
-| `limits` | `bodyBytes`、`promptChars`、`sendPerMinute`、`concurrentRuns`、`sseConnections`、`queueLength`、`handoffChars`、`heartbeatSeconds`、`diffBytes`、`uploadBytes`、`imagesPerSend` | 各種上限 |
+| `limits` | `bodyBytes`、`promptChars`、`sendPerMinute`、`concurrentRuns`、`sseConnections`、`queueLength`、`handoffChars`、`heartbeatSeconds`、`diffBytes`、`uploadBytes`、`imagesPerSend`、`verifySeconds`（検証のタイムアウト、既定 600）、`verifyOutputBytes`（検証出力の末尾保持バイト数、既定 65536） | 各種上限 |
 
 ## プロトコル概要（UI ⇄ コア）
 
@@ -100,6 +102,7 @@ HTTP JSON と SSE を使い、デスクトップ版と Web 版で完全に共通
 | `GET /api/events` | SSE（全体）：`changed` 時に `/api/state` を再取得、`usage` は最新の利用枠と出力速度 |
 | `GET /api/chat/stream?project=&task=` | SSE（単一タスク）：`snapshot`（最後の 200 行と `start`）／`busy`／`delta`／`row`／`queue`／`idle` |
 | `GET /api/chat/history?project=&task=&before=` | `before` より前の 200 行を読み込む |
+| `GET /api/chat/export?project=&task=&tools=` | 会話を Markdown としてダウンロード（`tools=1` でツール呼び出しを含む。ワークスペースの絶対パスは含まない） |
 | `GET /api/search?q=` | プロジェクト横断でタスク名と会話内容を検索（最大 50 件） |
 | `POST /api/project/new`、`/api/project/update`、`/api/project/archive` | プロジェクト |
 | `POST /api/phase/next`、`/api/phase/continue` | フェーズ |
@@ -110,6 +113,7 @@ HTTP JSON と SSE を使い、デスクトップ版と Web 版で完全に共通
 | `POST /api/chat/stop`、`/api/chat/unqueue` | 停止（キューも消去）、キューから削除 |
 | `POST /api/upload`、`GET /api/upload`、`GET /api/attachment` | 画像アップロード、プレビュー、会話の添付ファイル |
 | `GET /api/task/preview`、`GET /api/task/diff`、`POST /api/task/merge`、`/api/task/merge-exclusion`、`/api/task/copyclear` | 作業コピー |
+| `POST /api/task/verify` | タスクの作業コピーでプロジェクトの検証コマンドを実行し、`{ok, exitCode, timedOut, ms, output, truncated}` を返す。AI 実行中、検証が実行中、または `concurrentRuns` 超過のとき 409 |
 | `GET /api/ai`、`POST /api/ai/refresh`、`POST /api/ai/update` | AI ツールとモデル一覧 |
 | `POST /api/settings`、`POST /api/roles`、`GET /api/log` | 設定、役割、操作記録 |
 | `POST /api/open` | システムでフォルダーやファイルを開く |

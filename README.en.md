@@ -21,7 +21,9 @@ The workflow draws on [kieiken/project-hub](https://github.com/kieiken/project-h
   - Conversation: switch AI, model, or reasoning effort with each message. Switching AI includes the human and AI text messages the new AI has not yet seen (a handoff package); using the same AI continues the existing session. Send with ⌘/Ctrl+Enter, or switch to Enter-to-send (Shift+Enter for a new line; IME composition never sends). When the app is in the background, a finished run or a question for you raises a system notification and updates the Dock badge. If the core is interrupted mid-run (e.g. a crash), that round is marked “Interrupted” and queued instructions are kept.
   - Sending while running: **① Cancel and redo**, **② Add context (do together)**, or **③ Continue after this** (queued, starts automatically afterward, and persists across restarts). “Stop” also clears the queue.
   - When AI needs a decision, it asks a question at the end of its response in a fixed format. The interface displays **option buttons**, and you can also type your own answer. Answering moves the task from “Awaiting reply” back to “In progress.”
-  - Working copy: shows “N files +a −b” and conflict warnings. You can “View diff,” **Merge into main folder** (automatically saves both sides, then merges with `--no-ff`; success removes the copy and marks the task complete; conflicts abort the merge, leave the main folder unchanged, and move the task to Awaiting reply), or “Exclude from merge.”
+  - Working copy: shows “N files +a −b” and conflict warnings. You can “View diff” (split per file, collapsible, with +/− counts per file), **Merge into main folder** (automatically saves both sides, then merges with `--no-ff`; success removes the copy and marks the task complete; conflicts abort the merge, leave the main folder unchanged, and move the task to Awaiting reply; if the copy still holds files that cannot be committed, such as a new `.env*`, the merge still succeeds but the copy is kept and those files are listed), or “Exclude from merge.”
+  - Verification: a project can define a “verify command” (for example `npm test`, stored in `PROJECT.md`). “Run verification” in the task header runs it in that task’s working copy and shows pass/fail, exit code, duration and the output tail. The command only comes from the ledger, never from a request; a timeout kills the whole process tree.
+  - Chat: every message has a copy button; failed or stopped replies have “Retry”; replies show the per-turn token usage reported by the CLI (input/output/cached); “Export Markdown” in the header downloads the whole conversation.
   - At the bottom, change the state and phase, check off steps (the `## 步驟` list), and leave notes. Checking all steps or AI writing “完成” puts the task into “Confirm completion,” leaving the decision to a human (“完成” is a literal Chinese ledger value).
 - **Settings**: language (7 languages), Enter vs ⌘/Ctrl+Enter to send, notifications, workspace root (switch it in place; saved back to the config file; the desktop app has a “Choose…” folder picker), default AI for new tasks, AI tools (versions, “Refresh models,” “Update CLI,” and the “Full access” toggle), models shown in menus and their order, roles (written back to `roles.yaml`), and recent activity.
 
@@ -88,7 +90,7 @@ Configuration lookup order: the `YUMEEWADE_CONFIG` environment variable → `con
 | `workspace` | `root` | Workspace root; default `~/Documents/YuMeewWorkspace`. Switching it in Settings rewrites this line |
 | `cli.claude` / `cli.codex` | `command`、`baseArgs`、`fullAccess`、`fullAccessArgs`、`safeArgs` | Commands and headless-mode flags; `fullAccess` sets the default permissions, overridden by the toggle in Settings |
 | `cli` | `envPassthrough` | Additional environment variables allowed through to CLI child processes (by default, only PATH / HOME / LANG and similar variables) |
-| `limits` | `bodyBytes`、`promptChars`、`sendPerMinute`、`concurrentRuns`、`sseConnections`、`queueLength`、`handoffChars`、`heartbeatSeconds`、`diffBytes`、`uploadBytes`、`imagesPerSend` | Resource and request limits |
+| `limits` | `bodyBytes`、`promptChars`、`sendPerMinute`、`concurrentRuns`、`sseConnections`、`queueLength`、`handoffChars`、`heartbeatSeconds`、`diffBytes`、`uploadBytes`、`imagesPerSend`、`verifySeconds` (verification timeout, default 600)、`verifyOutputBytes` (tail bytes of verification output kept, default 65536) | Resource and request limits |
 
 ## Protocol summary (UI ⇄ core)
 
@@ -100,6 +102,7 @@ HTTP JSON plus SSE, identical in desktop and web versions. Types are defined in 
 | `GET /api/events` | SSE (global): refetch `/api/state` on `changed`; `usage` carries the latest quota and output speed |
 | `GET /api/chat/stream?project=&task=` | SSE (single task): `snapshot` (last 200 rows plus `start`)／`busy`／`delta`／`row`／`queue`／`idle` |
 | `GET /api/chat/history?project=&task=&before=` | Load the 200 chat rows before `before` |
+| `GET /api/chat/export?project=&task=&tools=` | Download the conversation as Markdown (`tools=1` includes tool calls; no absolute workspace paths) |
 | `GET /api/search?q=` | Search task titles and chat text across projects (up to 50 hits) |
 | `POST /api/project/new`、`/api/project/update`、`/api/project/archive` | Projects |
 | `POST /api/phase/next`、`/api/phase/continue` | Phases |
@@ -110,6 +113,7 @@ HTTP JSON plus SSE, identical in desktop and web versions. Types are defined in 
 | `POST /api/chat/stop`、`/api/chat/unqueue` | Stop (and clear the queue), remove queued instructions |
 | `POST /api/upload`、`GET /api/upload`、`GET /api/attachment` | Image upload, preview, conversation attachments |
 | `GET /api/task/preview`、`GET /api/task/diff`、`POST /api/task/merge`、`/api/task/merge-exclusion`、`/api/task/copyclear` | Working copies |
+| `POST /api/task/verify` | Run the project’s verify command in the task’s working copy; returns `{ok, exitCode, timedOut, ms, output, truncated}`; 409 while the AI is running, a verification is already running, or `concurrentRuns` is exceeded |
 | `GET /api/ai`、`POST /api/ai/refresh`、`POST /api/ai/update` | AI tools and model lists |
 | `POST /api/settings`、`POST /api/roles`、`GET /api/log` | Settings, roles, activity log |
 | `POST /api/open` | Open a folder or file using the system |
