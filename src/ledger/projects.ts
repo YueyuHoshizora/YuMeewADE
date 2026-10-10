@@ -45,13 +45,17 @@ export class ProjectLedger {
       if (it && typeof it === 'object' && !Array.isArray(it)) return [{ text: String(it['text'] ?? ''), level: String(it['level'] ?? '') }];
       return [];
     });
-    return { id, name: s('name') || id, status: PROJECT_STATUSES.includes(s('status') as ProjectStatus) ? s('status') as ProjectStatus : '未開始', updated: s('updated'), description: s('description'), parent: s('parent'), body: s('body'), phases, related: Array.isArray(data['related']) ? data['related'].filter((v): v is string => typeof v === 'string') : [], issues,
+    return { id, name: s('name') || id, status: PROJECT_STATUSES.includes(s('status') as ProjectStatus) ? s('status') as ProjectStatus : '未開始', updated: s('updated'), description: s('description'), parent: s('parent'), body: s('body'), verify: s('verify'), phases, related: Array.isArray(data['related']) ? data['related'].filter((v): v is string => typeof v === 'string') : [], issues,
       notes: body.split(/\r?\n/).filter(line => line.trim() && !/^#\s|^\s*<!--/.test(line)).join('\n') };
   }
 
   private async validate(patch: ProjectPatch, id?: string): Promise<void> {
     if (patch.name !== undefined && !isValidProjectName(patch.name)) throw new AppError('bad_request', 'invalid_project_name');
     for (const key of ['description', 'parent', 'body'] as const) if (patch[key] !== undefined && typeof patch[key] !== 'string') throw new AppError('bad_request', 'field_type', { field: key });
+    if (patch.verify !== undefined) {
+      if (typeof patch.verify !== 'string' || /[\r\n\0]/u.test(patch.verify)) throw new AppError('bad_request', 'field_type', { field: 'verify' });
+      if (patch.verify.trim().length > 500) throw new AppError('bad_request', 'field_too_long', { field: 'verify' });
+    }
     if (patch.status !== undefined && !PROJECT_STATUSES.includes(patch.status)) throw new AppError('bad_request', 'invalid_state');
     if (patch.body) {
       if (!path.isAbsolute(patch.body) || !(await fs.stat(patch.body).catch(() => null))?.isDirectory()) throw new AppError('bad_request', 'field_type', { field: 'body' });
@@ -82,7 +86,7 @@ export class ProjectLedger {
       await fs.cp(path.join(TEMPLATES_DIR, 'project'), dir, { recursive: true, force: false });
       await Promise.all(['tasks', 'chat', 'uploads'].map(name => fs.mkdir(path.join(dir, '.ai', name), { recursive: true })));
       const template = parseFrontmatter(await fs.readFile(path.join(TEMPLATES_DIR, 'PROJECT.md'), 'utf8'));
-      const values: Record<string, YamlValue> = { name: input.name, status: '進行中', updated: todayDate(), description: input.description ?? '', parent: input.parent ?? '', body: input.body ?? '', phases: patch.phases.map(p => ({ ...p })), related: input.related ?? [], issues: [] };
+      const values: Record<string, YamlValue> = { name: input.name, status: '進行中', updated: todayDate(), description: input.description ?? '', parent: input.parent ?? '', body: input.body ?? '', verify: input.verify?.trim() ?? '', phases: patch.phases.map(p => ({ ...p })), related: input.related ?? [], issues: [] };
       await atomicWrite(this.ws.projectFile(input.name), serializeFrontmatter(patchHeaderLines(template.headerLines, values), template.body));
       await atomicWrite(path.join(dir, '.gitignore'), PROJECT_GITIGNORE);
       if (!input.body) await ensureRepo(dir);
@@ -100,6 +104,7 @@ export class ProjectLedger {
     const fm = parseFrontmatter(await fs.readFile(this.ws.projectFile(id), 'utf8'));
     const values: Record<string, YamlValue> = {};
     for (const key of ['name', 'status', 'description', 'parent', 'body', 'related'] as const) if (patch[key] !== undefined) values[key] = patch[key] as YamlValue;
+    if (patch.verify !== undefined) values['verify'] = patch.verify.trim();
     if (patch.phases !== undefined) values['phases'] = patch.phases.map(p => ({ ...p }));
     if (!Object.keys(values).length) throw new AppError('bad_request', 'no_updatable_fields');
     values['updated'] = todayDate();

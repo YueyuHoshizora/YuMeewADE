@@ -49,3 +49,5 @@ limits:
   diffBytes: 2000000       # 合併前 diff 顯示上限
   uploadBytes: 20971520    # 單張圖片上限（20 MiB）
   imagesPerSend: 10        # 每次送出最多幾張圖片
+  verifySeconds: 600       # 驗證指令逾時秒數
+  verifyOutputBytes: 65536 # 驗證 stdout/stderr 合計保留尾端位元組

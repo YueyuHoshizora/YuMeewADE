@@ -34,6 +34,8 @@ export interface Config {
     diffBytes: number;
     uploadBytes: number;
     imagesPerSend: number;
+    verifySeconds: number;
+    verifyOutputBytes: number;
   };
   /** 實際採用的設定檔路徑；null＝全部用預設值。 */
   source: string | null;
@@ -73,6 +75,8 @@ export const DEFAULT_CONFIG: Config = {
     diffBytes: 2_000_000,
     uploadBytes: 20_971_520,
     imagesPerSend: 10,
+    verifySeconds: 600,
+    verifyOutputBytes: 65_536,
   },
   source: null,
 };
@@ -189,6 +193,8 @@ export function parseConfig(text: string, source: string | null): Config {
       diffBytes: int(limits, 'diffBytes', L.diffBytes, 'limits'),
       uploadBytes: int(limits, 'uploadBytes', L.uploadBytes, 'limits'),
       imagesPerSend: int(limits, 'imagesPerSend', L.imagesPerSend, 'limits'),
+      verifySeconds: int(limits, 'verifySeconds', L.verifySeconds, 'limits'),
+      verifyOutputBytes: int(limits, 'verifyOutputBytes', L.verifyOutputBytes, 'limits'),
     },
     source,
   };

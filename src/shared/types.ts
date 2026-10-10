@@ -59,6 +59,8 @@ export interface Project {
   issues: ProjectIssue[];
   /** 正文（# 備註 之後的說明），唯讀顯示用。 */
   notes: string;
+  /** 驗證指令（在作業工作副本執行，例如 `npm test`）；空字串＝未設定。 */
+  verify: string;
 }
 
 export interface NewProjectInput {
@@ -69,9 +71,10 @@ export interface NewProjectInput {
   parent?: string;
   body?: string;
   related?: string[];
+  verify?: string;
 }
 
-export type ProjectPatch = Partial<Pick<Project, 'name' | 'status' | 'description' | 'parent' | 'body' | 'related'>> & { phases?: Phase[] };
+export type ProjectPatch = Partial<Pick<Project, 'name' | 'status' | 'description' | 'parent' | 'body' | 'related' | 'verify'>> & { phases?: Phase[] };
 
 // ---- 作業 ----
 
@@ -286,6 +289,8 @@ export type ChatRow =
       stopped?: boolean;
       /** 本輪耗時毫秒。 */
       ms: number;
+      /** CLI 回報的本輪 token 用量；CLI 沒回報就不帶。 */
+      usage?: TurnUsage;
       request: string;
       asks?: Ask[];
     }
@@ -418,6 +423,28 @@ export type GlobalEvent =
 
 // ---- 工作副本／合併 ----
 
+/** 一輪對話的 token 用量（CLI 自己回報的值，不估算）。 */
+export interface TurnUsage {
+  input: number;
+  output: number;
+  /** 命中快取的輸入 token（有回報才帶）。 */
+  cached?: number;
+}
+
+/** 作業工作副本的驗證指令執行結果（`POST /api/task/verify`）。 */
+export interface VerifyResult {
+  /** 正常結束且 exit code 為 0。 */
+  ok: boolean;
+  /** 行程 exit code；逾時或被訊號終止為 null。 */
+  exitCode: number | null;
+  timedOut: boolean;
+  ms: number;
+  /** stdout＋stderr 的尾段（有上限）。 */
+  output: string;
+  /** 輸出超過上限，只保留尾段。 */
+  truncated: boolean;
+}
+
 export interface MergePreview {
   files: number;
   added: number;
@@ -436,6 +463,8 @@ export interface MergeResult {
   conflicts?: string[];
   /** 已經合併過（副本沒有新東西）。 */
   already?: boolean;
+  /** 合併成功但副本仍有未提交檔案，因此保留副本。 */
+  leftover?: string[];
 }
 
 // ---- 操作紀錄 ----

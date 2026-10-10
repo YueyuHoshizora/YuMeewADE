@@ -32,13 +32,22 @@ export function registerLedgerRoutes(router: Router, app: App): void {
   const ids = (body: Record<string, unknown>) => ({ project: reqString(body, 'project', 120), task: reqString(body, 'task', 120) });
   router.post('/api/project/new', async ({ body }) => {
     reqString(body, 'name', 60);
+    if (body.verify !== undefined) {
+      if (typeof body.verify !== 'string' || /[\r\n\0]/u.test(body.verify)) throw new AppError('bad_request', 'field_type', { field: 'verify' });
+      if (body.verify.trim().length > 500) throw new AppError('bad_request', 'field_too_long', { field: 'verify' });
+    }
     const project = await app.projects.create(body as unknown as NewProjectInput);
     await changed('project.new', project.id);
     return project;
   });
   router.post('/api/project/update', async ({ body }) => {
     const project = reqString(body, 'project', 120);
-    const result = await app.projects.update(project, object(body.patch) as ProjectPatch);
+    const patch = object(body.patch);
+    if (patch.verify !== undefined) {
+      if (typeof patch.verify !== 'string' || /[\r\n\0]/u.test(patch.verify)) throw new AppError('bad_request', 'field_type', { field: 'verify' });
+      if (patch.verify.trim().length > 500) throw new AppError('bad_request', 'field_too_long', { field: 'verify' });
+    }
+    const result = await app.projects.update(project, patch as ProjectPatch);
     await changed('project.update', project);
     return result;
   });

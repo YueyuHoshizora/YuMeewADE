@@ -9,6 +9,7 @@ import { registerLedgerRoutes } from './ledger.ts';
 import { registerStateRoutes } from './state.ts';
 import { registerSystemRoutes } from './system.ts';
 import { registerSearchRoutes } from './search.ts';
+import { registerVerifyRoutes } from './verify.ts';
 
 export function registerRoutes(router: Router, app: App): void {
   registerStateRoutes(router, app);
@@ -18,4 +19,5 @@ export function registerRoutes(router: Router, app: App): void {
   registerChatRoutes(router, app);
   registerAiRoutes(router, app);
   registerSearchRoutes(router, app);
+  registerVerifyRoutes(router, app);
 }

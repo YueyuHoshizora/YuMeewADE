@@ -5,9 +5,11 @@ import { AiCatalog } from '../ai/catalog.ts';
 import { UsageBoard } from '../ai/usage.ts';
 import { ChatRunner } from '../chat/runner.ts';
 import { ChatStore } from '../chat/store.ts';
+import { cleanupUploads } from '../chat/attachments.ts';
 import type { CliProvider } from '../cli/provider.ts';
 import { createProviders } from '../cli/providers.ts';
 import { WorktreeService } from '../git/worktree.ts';
+import { VerifyService } from '../git/verify.ts';
 import { RateLimiter } from '../http/ratelimit.ts';
 import { GLOBAL, SseHub, taskKey } from '../http/sse.ts';
 import { CompletionStore } from '../ledger/completion.ts';
@@ -21,6 +23,7 @@ import { LedgerWatcher } from '../ledger/watch.ts';
 import { loadRoles } from '../roles/roles.ts';
 import type { Config } from '../shared/config.ts';
 import { AppError } from '../shared/errors.ts';
+import { log } from '../shared/log.ts';
 import type { AppState, Roles } from '../shared/types.ts';
 import { buildState, type StateSnapshot } from '../state/state.ts';
 
@@ -48,6 +51,7 @@ export class App {
   readonly order: OrderStore;
   readonly oplog: OpLog;
   readonly worktree: WorktreeService;
+  readonly verify: VerifyService;
   readonly ai: AiCatalog;
   readonly store: ChatStore;
   readonly runner: ChatRunner;
@@ -58,6 +62,8 @@ export class App {
   readonly relocate: (root: string) => Promise<string>;
 
   private changeTimer: NodeJS.Timeout | null = null;
+  private uploadTimer: NodeJS.Timeout | null = null;
+  private uploadCleanup: Promise<void> | null = null;
   private pendingChange: { project?: string; task?: string } | null = null;
   private readonly ownsSse: boolean;
   private watcher: LedgerWatcher | null = null;
@@ -76,6 +82,7 @@ export class App {
     this.order = new OrderStore(this.ws);
     this.oplog = new OpLog(this.ws);
     this.worktree = new WorktreeService({ ws: this.ws, projects: this.projects, tasks: this.tasks, diffBytes: config.limits.diffBytes });
+    this.verify = new VerifyService({ ws: this.ws, projects: this.projects, tasks: this.tasks, config, isRunning: (project, task) => this.runner.isRunning(project, task) });
     this.ai = new AiCatalog({ config, ws: this.ws, settings: this.settings, ...(options.home ? { home: options.home } : {}) });
     this.store = new ChatStore(this.ws);
     this.ownsSse = !options.sse;
@@ -105,6 +112,14 @@ export class App {
   async init(): Promise<void> {
     await this.ws.init();
     await this.store.recoverInterrupted();
+    await cleanupUploads(this.ws, this.store);
+    this.uploadTimer = setInterval(() => {
+      if (this.uploadCleanup) return;
+      this.uploadCleanup = cleanupUploads(this.ws, this.store)
+        .catch(err => { log.error('附件清理失敗', err); })
+        .finally(() => { this.uploadCleanup = null; });
+    }, 60 * 60 * 1000);
+    this.uploadTimer.unref();
     this.watcher = new LedgerWatcher(this.ws, (project, task) => this.changed(project, task));
     await this.watcher.start();
     // 讀 CLI 本機紀錄不擋啟動；讀完會以 usage 事件推給客戶端。
@@ -155,12 +170,15 @@ export class App {
   }
 
   async shutdown(): Promise<void> {
-    try { await this.runner.stopAll(); }
+    try { await Promise.all([this.runner.stopAll(), this.verify.stopAll()]); }
     finally { this.close(); }
   }
 
   close(): void {
+    this.verify.close();
     clearTimeout(this.changeTimer ?? undefined);
+    clearInterval(this.uploadTimer ?? undefined);
+    this.uploadTimer = null;
     this.watcher?.close();
     this.usage.close();
     if (this.ownsSse) this.sse.closeAll();
