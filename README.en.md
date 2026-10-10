@@ -116,6 +116,7 @@ HTTP JSON plus SSE, identical in desktop and web versions. Types are defined in 
 | `GET /api/project/rules?project=`、`POST /api/project/rules` | Read and write the project’s AI rules (`.ai/rules.md`, up to 20,000 characters; write `{project, text}`) |
 | `POST /api/upload`、`GET /api/upload`、`GET /api/attachment` | Image upload, preview, conversation attachments |
 | `GET /api/task/preview`、`GET /api/task/diff`、`POST /api/task/merge`、`/api/task/merge-exclusion`、`/api/task/copyclear` | Working copies |
+| `GET /api/task/merged`, `POST /api/task/unmerge` | Returns the hash when the main folder’s latest commit is this task’s merge (`YuMeewADE-Task:` trailer). Undo merge: the main folder goes back to before the merge, the branch and working copy are recreated and the task returns to in progress. 409 if newer commits or uncommitted content exist |
 | `POST /api/task/verify` | Run the project’s verify command in the task’s working copy; returns `{ok, exitCode, timedOut, ms, output, truncated}`; 409 while the AI is running, a verification is already running, or `concurrentRuns` is exceeded |
 | `GET /api/ai`、`POST /api/ai/refresh`、`POST /api/ai/update` | AI tools and model lists |
 | `POST /api/settings`、`POST /api/roles`、`GET /api/log` | Settings, roles, activity log |

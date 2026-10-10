@@ -13,6 +13,7 @@ import type { MergePreview, MergeResult, Task, TaskOverlap, TurnChanges } from '
 import { branchExists, commitAll, ensureRepo, git, gitOk, isLocalSecret, isRepo } from './git.ts';
 
 const SHA = /^[0-9a-f]{40}$/;
+const MERGE_TRAILER = 'YuMeewADE-Task: ';
 
 export class MergeConflictError extends AppError {
   readonly conflicts: string[];
@@ -217,7 +218,7 @@ export class WorktreeService {
     if (ancestor.code !== 0 && ancestor.code !== 1) throw new AppError('internal', 'git_failed');
     const already = ancestor.code === 0;
     if (!already) {
-      const merged = await git(repo, ['merge', '--no-ff', '--no-edit', '-m', `合併：${record.title}`, source]);
+      const merged = await git(repo, ['merge', '--no-ff', '--no-edit', '-m', `合併：${record.title}`, '-m', `${MERGE_TRAILER}${task}`, source]);
       if (merged.code !== 0) {
         const ownMerge = await mergeHead(repo) === source && (await gitOk(repo, ['rev-parse', 'HEAD'])).trim() === before;
         const conflicts = splitNull(await gitOk(repo, ['diff', '--name-only', '--diff-filter=U', '-z']));
@@ -248,6 +249,34 @@ export class WorktreeService {
     await this.tasks.appendMemo(project, task, `已合併到主資料夾 ${commit}`);
     await new OpLog(this.ws).record({ action: 'merge', project, task, commit, already });
     return { merged: true, commit, ...(already ? { already: true } : {}), ...(leftover.length ? { leftover } : {}) };
+  }
+  /** 主資料夾最新的 commit 若正是這個作業的合併 commit，回其短 hash；否則 null（之後有人改過就不能自動撤銷）。 */
+  async mergedInfo(project: string, task: string): Promise<{ commit: string } | null> {
+    const repo = await this.bodyPath(project);
+    if (!(await isRepo(repo))) return null;
+    const message = await git(repo, ['log', '-1', '--format=%P%n%B']);
+    if (message.code !== 0 || message.truncated) return null;
+    const [parents = '', ...body] = message.stdout.split('\n');
+    if (parents.trim().split(' ').length !== 2 || !body.some(line => line.trim() === `${MERGE_TRAILER}${task}`)) return null;
+    return { commit: (await gitOk(repo, ['rev-parse', '--short', 'HEAD'])).trim() };
+  }
+  /** 撤銷剛完成的合併：主資料夾回到合併前，作業分支與副本重建，狀態回到進行中。 */
+  async unmerge(project: string, task: string): Promise<Task> {
+    return this.mutate(project, async () => {
+      const repo = await this.bodyPath(project);
+      const record = await this.tasks.get(project, task);
+      if (!(await this.mergedInfo(project, task)) || (await gitOk(repo, ['status', '--porcelain'])).length > 0) throw new AppError('conflict', 'unmerge_unavailable');
+      const before = (await gitOk(repo, ['rev-parse', 'HEAD^1'])).trim();
+      const source = (await gitOk(repo, ['rev-parse', 'HEAD^2'])).trim();
+      const branch = this.branch(task);
+      if (!(await branchExists(repo, branch))) await gitOk(repo, ['branch', branch, source]);
+      await gitOk(repo, ['reset', '-q', '--hard', before]);
+      const revived = await this.prepareLocked(project, task);
+      await new CompletionStore(this.ws).revoke(project, task);
+      await this.tasks.appendMemo(project, task, '已撤銷合併，工作副本已重建');
+      await new OpLog(this.ws).record({ action: 'unmerge', project, task });
+      return this.tasks.update(project, task, { state: '進行中', workdir: revived, ...(record.question ? { question: '' } : {}) });
+    });
   }
   async exclusion(project: string, task: string, excluded: boolean): Promise<Task> {
     return this.mutate(project, () => this.tasks.update(project, task, { mergeExcluded: excluded }));

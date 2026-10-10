@@ -86,6 +86,7 @@ export const zhTW = {
   'copy.noChanges': '沒有變更',
   'git.title': 'Git 資訊', 'git.show': '顯示 Git 資訊', 'git.hide': '隱藏 Git 資訊', 'git.branch': '作業分支', 'git.target': '合併目標', 'git.files': '變更檔案（{n}）', 'git.moreFiles': '另有 {n} 個檔案未列出', 'git.direct': '這個作業直接在主資料夾工作，沒有獨立的 Git 副本。', 'git.noCopy': '尚未建立工作副本，第一次送出指示時會自動建立。',
   'git.overlap': '另有 {n} 個作業也改了同樣的檔案，合併時可能衝突',
+  'git.merged': '已合併到主資料夾（{commit}）。', 'git.unmerge': '撤銷合併', 'git.unmergeConfirm': '主資料夾會退回合併前的狀態，作業的工作副本會重建，狀態回到進行中。只有在合併之後主資料夾沒有新變更時才能撤銷。', 'git.unmerged': '已撤銷合併', 'detail.unmerge_unavailable': '主資料夾之後已有變更或未提交的內容，無法自動撤銷這次合併', 'log.unmerge': '撤銷合併',
   'log.project.new': '建立專案', 'log.project.update': '更新專案', 'log.project.archive': '封存專案', 'log.project.pin': '釘選專案', 'log.phase.next': '前往下一階段', 'log.phase.continue': '繼續目前階段', 'log.order.update': '調整專案順序',
   'log.task.new': '新增作業', 'log.task.update': '更新作業', 'log.task.step': '更新步驟', 'log.task.memo': '留下備註', 'log.task.approve': '標為完成', 'log.task.continue': '繼續進行', 'log.task.archive': '封存作業', 'log.task.merge-exclusion': '變更合併排除', 'log.task.copyclear': '清除副本紀錄', 'log.merge': '合併到主資料夾',
   'log.quickstart': '快速開始', 'log.chat': '送出指示', 'log.chatqueue': '排隊指示', 'log.chatredo': '取消並重做', 'log.chatamend': '補充說明', 'log.chatstop': '停止', 'log.modelrefresh': '重新取得模型', 'log.cliupdate': '更新 CLI', 'log.settings': '變更設定', 'log.roles': '儲存角色分工',

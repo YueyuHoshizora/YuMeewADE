@@ -644,7 +644,20 @@ export function taskView(
       return;
     }
     if (!task.copy) {
-      work.append(el('p', 'muted', t(task.workspace === 'direct' ? 'git.direct' : 'git.noCopy')));
+      const note = el('p', 'muted', t(task.workspace === 'direct' ? 'git.direct' : 'git.noCopy'));
+      work.append(note);
+      if (task.workspace !== 'direct' && task.state === '完成') {
+        const merged = await request<{ commit: string } | null>(query('/api/task/merged', { project: project.id, task: task.id }));
+        if (serial === previewSerial && merged) {
+          note.remove();
+          work.append(el('p', '', t('git.merged', { commit: merged.commit })), button(t('git.unmerge'), async () => {
+            if (!await confirmModal(t('git.unmerge'), t('git.unmergeConfirm'), t('git.unmerge'))) return;
+            await request('/api/task/unmerge', { project: project.id, task: task.id });
+            await context.refresh();
+            toast(t('git.unmerged'));
+          }, 'danger'));
+        }
+      }
       return;
     }
     const info = el('div', 'git-info');

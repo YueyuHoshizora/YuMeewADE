@@ -273,3 +273,39 @@ test('preview lists other tasks whose copies touch the same files', () => withTm
   await wt.exclusion('P', b.id, true);
   assert.deepEqual((await wt.preview('P', a.id))?.overlaps, []);
 }));
+
+test('unmerge rewinds the main folder and revives the copy, but only while the merge is the latest commit and main is clean', () => withTmpWorkspace(async ws => {
+  const projects = new ProjectLedger(ws);
+  const tasks = new TaskLedger(ws);
+  await projects.create({ name: 'P' });
+  const task = await tasks.create('P', { title: '可撤銷' });
+  const wt = new WorktreeService({ ws, projects, tasks, diffBytes: 100_000 });
+  const repo = ws.projectDir('P');
+  assert.equal(await wt.mergedInfo('P', task.id), null, 'nothing merged yet');
+  const dir = await wt.prepare('P', task.id);
+  await fs.writeFile(path.join(dir, 'feature.txt'), 'feature\n');
+  const before = (await gitOk(repo, ['rev-parse', 'HEAD'])).trim();
+  const merged = await wt.merge('P', task.id);
+  assert.equal((await wt.mergedInfo('P', task.id))?.commit, merged.commit);
+  assert.equal(await fs.readFile(path.join(repo, 'feature.txt'), 'utf8'), 'feature\n');
+
+  await fs.writeFile(path.join(repo, 'scratch.txt'), 'uncommitted\n');
+  await assert.rejects(wt.unmerge('P', task.id), (e: unknown) => e instanceof AppError && e.detail === 'unmerge_unavailable');
+  await fs.rm(path.join(repo, 'scratch.txt'));
+
+  const revived = await wt.unmerge('P', task.id);
+  assert.equal(revived.state, '進行中');
+  assert.equal((await gitOk(repo, ['rev-parse', 'HEAD'])).trim(), before);
+  await assert.rejects(fs.access(path.join(repo, 'feature.txt')));
+  assert.equal(await fs.readFile(path.join(revived.workdir, 'feature.txt'), 'utf8'), 'feature\n');
+  assert.equal(await new CompletionStore(ws).isApproved('P', task.id), false);
+  assert.equal(await wt.mergedInfo('P', task.id), null);
+
+  // Merge again, then let somebody commit on top: the merge is no longer the latest commit.
+  await wt.merge('P', task.id);
+  await fs.writeFile(path.join(repo, 'later.txt'), 'later\n');
+  await commitAll(repo, '之後的修改');
+  assert.equal(await wt.mergedInfo('P', task.id), null);
+  await assert.rejects(wt.unmerge('P', task.id), (e: unknown) => e instanceof AppError && e.detail === 'unmerge_unavailable');
+  assert.equal(await fs.readFile(path.join(repo, 'later.txt'), 'utf8'), 'later\n');
+}));

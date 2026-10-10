@@ -243,6 +243,7 @@ export const zhCN: Record<MessageKey, string> = {
   'copy.noChanges': '没有变更',
   'git.title': 'Git 信息', 'git.show': '显示 Git 信息', 'git.hide': '隐藏 Git 信息', 'git.branch': '任务分支', 'git.target': '合并目标', 'git.files': '变更文件（{n}）', 'git.moreFiles': '另有 {n} 个文件未列出', 'git.direct': '这个任务直接在主文件夹工作，没有独立的 Git 副本。', 'git.noCopy': '尚未创建工作副本，第一次发送指示时会自动创建。',
   'git.overlap': '另有 {n} 个任务也改了同样的文件，合并时可能冲突',
+  'git.merged': '已合并到主文件夹（{commit}）。', 'git.unmerge': '撤销合并', 'git.unmergeConfirm': '主文件夹会退回合并前的状态，任务的工作副本会重建，状态回到进行中。只有在合并之后主文件夹没有新变更时才能撤销。', 'git.unmerged': '已撤销合并', 'detail.unmerge_unavailable': '主文件夹之后已有变更或未提交的内容，无法自动撤销这次合并', 'log.unmerge': '撤销合并',
   'log.project.new': '创建项目', 'log.project.update': '更新项目', 'log.project.archive': '归档项目', 'log.project.pin': '置顶项目', 'log.phase.next': '进入下一阶段', 'log.phase.continue': '继续当前阶段', 'log.order.update': '调整项目顺序',
   'log.task.new': '新增任务', 'log.task.update': '更新任务', 'log.task.step': '更新步骤', 'log.task.memo': '留下备注', 'log.task.approve': '标为完成', 'log.task.continue': '继续进行', 'log.task.archive': '归档任务', 'log.task.merge-exclusion': '变更合并排除', 'log.task.copyclear': '清除副本记录', 'log.merge': '合并到主文件夹',
   'log.quickstart': '快速开始', 'log.chat': '发送指示', 'log.chatqueue': '排队指示', 'log.chatredo': '取消并重做', 'log.chatamend': '补充说明', 'log.chatstop': '停止', 'log.modelrefresh': '重新获取模型', 'log.cliupdate': '更新 CLI', 'log.settings': '变更设置', 'log.roles': '保存角色分工',

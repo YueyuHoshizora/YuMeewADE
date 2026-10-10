@@ -13,6 +13,15 @@ export function registerGitRoutes(router: Router, app: App): void {
     app.changed(project, task);
     return result;
   });
+  router.get('/api/task/merged', async ({ query }) => app.worktree.mergedInfo(reqString(query, 'project', 120), reqString(query, 'task', 120)));
+  router.post('/api/task/unmerge', async ({ body }) => {
+    const project = reqString(body, 'project', 120);
+    const task = reqString(body, 'task', 120);
+    if (app.runner.isRunning(project, task)) throw new AppError('conflict', 'merge_while_running');
+    const result = await app.worktree.unmerge(project, task);
+    app.changed(project, task);
+    return result;
+  });
   router.post('/api/task/merge-exclusion', async ({ body }) => {
     const project = reqString(body, 'project', 120);
     const task = reqString(body, 'task', 120);

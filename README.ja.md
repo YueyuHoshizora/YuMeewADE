@@ -116,6 +116,7 @@ HTTP JSON と SSE を使い、デスクトップ版と Web 版で完全に共通
 | `GET /api/project/rules?project=`、`POST /api/project/rules` | プロジェクトの AI ルール（`.ai/rules.md`、20,000 文字まで）の読み書き。書き込みは `{project, text}` |
 | `POST /api/upload`、`GET /api/upload`、`GET /api/attachment` | 画像アップロード、プレビュー、会話の添付ファイル |
 | `GET /api/task/preview`、`GET /api/task/diff`、`POST /api/task/merge`、`/api/task/merge-exclusion`、`/api/task/copyclear` | 作業コピー |
+| `GET /api/task/merged`、`POST /api/task/unmerge` | メインフォルダの最新コミットがこのタスクのマージ（`YuMeewADE-Task:` トレーラー）ならそのハッシュを返す。マージの取り消し：メインフォルダをマージ前に戻し、ブランチと作業コピーを再作成してタスクを進行中に戻す。新しいコミットや未コミットの内容があると 409 |
 | `POST /api/task/verify` | タスクの作業コピーでプロジェクトの検証コマンドを実行し、`{ok, exitCode, timedOut, ms, output, truncated}` を返す。AI 実行中、検証が実行中、または `concurrentRuns` 超過のとき 409 |
 | `GET /api/ai`、`POST /api/ai/refresh`、`POST /api/ai/update` | AI ツールとモデル一覧 |
 | `POST /api/settings`、`POST /api/roles`、`GET /api/log` | 設定、役割、操作記録 |
