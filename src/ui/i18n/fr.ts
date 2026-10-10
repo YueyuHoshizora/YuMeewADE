@@ -3,6 +3,7 @@ import type { MessageKey } from './zh-TW.ts';
 export const fr: Record<MessageKey, string> = {
   'project.verify': 'Commande de vérification',
   'project.verifyHint': 'Exécutée dans le worktree de la tâche (ex. npm test) ; enregistrée dans PROJECT.md.',
+  'project.autoFix': 'Corriger automatiquement une vérification échouée', 'project.autoFixHint': 'Quand l’IA a terminé une instruction, la commande de vérification ci-dessus s’exécute automatiquement ; en cas d’échec, la sortie retourne à la même IA, jusqu’au nombre d’essais défini. Nécessite une commande de vérification ; une nouvelle instruction de ta part remet le compteur à zéro.', 'project.autoFixOff': 'Désactivé', 'project.autoFixTimes': 'Jusqu’à {n} fois',
   'project.rules': 'Règles pour l’IA', 'project.rulesHint': 'L’IA lit ces règles (.ai/rules.md) au début de chaque exécution. Les modifications s’appliquent dès la prochaine instruction.', 'project.rulesPlaceholder': 'Conventions, interdits, façon de tester…', 'log.project.rules': 'Règles de l’IA mises à jour',
   'verify.run': 'Lancer la vérification', 'verify.running': 'Vérification…', 'verify.pass': 'Réussie', 'verify.fail': 'Échouée',
   'verify.result': 'Code de sortie {code} · {seconds} s', 'verify.timedOut': 'Délai dépassé ; vérification arrêtée.',

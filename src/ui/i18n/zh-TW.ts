@@ -2,6 +2,7 @@
 export const zhTW = {
   'project.verify': '驗證指令',
   'project.verifyHint': '在作業的工作副本執行（例如 npm test）；指令儲存在 PROJECT.md。',
+  'project.autoFix': '驗證失敗自動修正', 'project.autoFixHint': 'AI 做完一則指示後自動跑上面的驗證指令；失敗就把輸出交回同一個 AI，最多重試設定的次數。需要先填驗證指令；你下新指示會重新計數。', 'project.autoFixOff': '關閉', 'project.autoFixTimes': '最多 {n} 次',
   'project.rules': 'AI 規則', 'project.rulesHint': '每次執行時 AI 都會先讀這份規則（.ai/rules.md）。修改後下一則指示就會生效。', 'project.rulesPlaceholder': '寫下這個專案的慣例、禁止事項、測試方式…', 'log.project.rules': '更新 AI 規則',
   'verify.run': '執行驗證', 'verify.running': '驗證中…', 'verify.pass': '通過', 'verify.fail': '失敗',
   'verify.result': '結束碼 {code} · {seconds} 秒', 'verify.timedOut': '驗證逾時，已停止。',

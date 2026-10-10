@@ -1,4 +1,4 @@
-import type { NewTaskInput, ProjectView } from '../../shared/types.ts';
+import { AUTO_FIX_MAX, type NewTaskInput, type ProjectView } from '../../shared/types.ts';
 import { api, query, request } from '../api.ts';
 import { t } from '../i18n/index.ts';
 import { attachments } from '../components/attachments.ts';
@@ -89,9 +89,13 @@ export function projectView(context: ViewContext, project: ProjectView, params: 
     const verifyHint = el('p', 'muted', t('project.verifyHint'));
     verifyHint.id = 'project-verify-hint';
     verify.setAttribute('aria-describedby', verifyHint.id);
-    overview.append(disclosure(t('project.verify'), field(t('project.verify'), verify), verifyHint,
+    const autoFix = select(Array.from({ length: AUTO_FIX_MAX + 1 }, (_, n) => ({ value: String(n), label: n ? t('project.autoFixTimes', { n }) : t('project.autoFixOff') })), String(project.autoFix));
+    const autoFixHint = el('p', 'muted', t('project.autoFixHint'));
+    autoFixHint.id = 'project-autofix-hint';
+    autoFix.setAttribute('aria-describedby', autoFixHint.id);
+    overview.append(disclosure(t('project.verify'), field(t('project.verify'), verify), verifyHint, field(t('project.autoFix'), autoFix), autoFixHint,
       button(t('common.save'), async () => {
-        await request('/api/project/update', { project: project.id, patch: { verify: verify.value.trim() } });
+        await request('/api/project/update', { project: project.id, patch: { verify: verify.value.trim(), autoFix: Number(autoFix.value) } });
         await context.refresh();
         toast(t('common.saved'));
       })));

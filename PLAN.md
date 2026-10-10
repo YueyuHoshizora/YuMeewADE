@@ -461,6 +461,7 @@ electron 44.7.0、vite 8.3.4、electron-builder 26.15.3、typescript 7.0.2、@ty
 
 ### B.7 驗證、合併安全與對話工具（使用者裁示「自行補足 ADE 欠缺功能」，2026-10-11）
 - 驗證指令：`PROJECT.md` frontmatter `verify`（單行、≤500 字、無換行／NUL，空字串＝未設定）。`POST /api/task/verify` 在作業工作副本（沒有副本的直接作業用主資料夾）以平台 shell 執行，環境與 CLI 子行程相同的白名單，輸出只留尾段（`limits.verifyOutputBytes`），逾時（`limits.verifySeconds`）終止整個行程樹。指令**只來自台帳**，請求不能帶指令；操作紀錄只記 ok／exit code／耗時，輸出不進日誌；AI 執行中、同作業已有驗證、或同時數超過 `limits.concurrentRuns` 回 409；關閉核心時一併終止。驗證結果不擋合併，由人判斷。
+- 驗證失敗自動修正：`PROJECT.md` frontmatter `autoFix`（整數 0–5，預設 0＝關閉；缺漏或非法值讀成 0）。人下的指示正常做完、隊列已空、作業不在等待回覆、專案有驗證指令時，核心在回合結束後跑驗證；失敗（含逾時）就把輸出尾段（≤8000 字）加註「第 n/m 次自動修正」送回同一個作業，結果與一般指示相同走 `execute`。通過、用完次數、AI 失敗／被停止、驗證本身無法執行都結束這一串；人下任何新指示（含隊列指示）次數歸零。次數只存記憶體，重啟後不續。
 - 合併安全：合併成功後只在副本乾淨時才移除（不再 `--force`）。副本內若還有未提交且不會被提交的檔案（例如新出現的 `.env*`），合併仍成功並回 `leftover`，副本與分支保留。同一 repo 的 prepare／合併／copyclear／排除合併以 keyed 佇列序列化，兩次同時合併第二次得到「已合併」。git 子行程有 120 秒期限（`GIT_TIMEOUT_MS`，逾時終止行程樹，回 `git_failed`）；`gitOk` 遇到輸出被截斷視為失敗，不再回傳不完整結果。
 - 單一擁有者：核心啟動時在 `{root}/.yumeewade/core.lock` 以排他建立寫入 pid／port／token，已有存活的 pid 就拒絕啟動；死掉的 pid 視為過期鎖並接手；關閉時只釋放自己的鎖。優雅關閉超過 6 秒仍未完成時以 exit 1 結束（完成才 exit 0）。
 - 本輪用量：Claude 取最終 `result.usage`（`input_tokens`＋`cache_creation_input_tokens`＝input、`cache_read_input_tokens`＝cached），Codex 取 `turn.completed.usage`；只收 CLI 回報的數值、不估算，存在助理列的 `usage`（舊紀錄沒有就不顯示），失敗與停止的回合有數值也存。

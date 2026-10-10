@@ -3,6 +3,7 @@ import type { MessageKey } from './zh-TW.ts';
 export const de: Record<MessageKey, string> = {
   'project.verify': 'Prüfbefehl',
   'project.verifyHint': 'Wird im Worktree der Aufgabe ausgeführt (z. B. npm test); in PROJECT.md gespeichert.',
+  'project.autoFix': 'Fehlgeschlagene Prüfung automatisch beheben', 'project.autoFixHint': 'Nachdem die KI eine Anweisung beendet hat, läuft der Prüfbefehl oben automatisch; bei Fehlschlag geht die Ausgabe an dieselbe KI zurück, höchstens so oft wie hier eingestellt. Erfordert einen Prüfbefehl; eine neue Anweisung von dir setzt den Zähler zurück.', 'project.autoFixOff': 'Aus', 'project.autoFixTimes': 'Bis zu {n}-mal',
   'project.rules': 'KI-Regeln', 'project.rulesHint': 'Die KI liest diese Regeln (.ai/rules.md) zu Beginn jedes Laufs. Änderungen gelten ab der nächsten Anweisung.', 'project.rulesPlaceholder': 'Konventionen, Verbote, Testvorgehen…', 'log.project.rules': 'KI-Regeln aktualisiert',
   'verify.run': 'Prüfung starten', 'verify.running': 'Prüfung läuft…', 'verify.pass': 'Bestanden', 'verify.fail': 'Fehlgeschlagen',
   'verify.result': 'Exit-Code {code} · {seconds} s', 'verify.timedOut': 'Zeitlimit überschritten; Prüfung gestoppt.',

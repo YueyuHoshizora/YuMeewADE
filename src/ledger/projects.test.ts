@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';
 import { promises as fs } from 'node:fs';
 import path from 'node:path';
 import { test } from 'node:test';
-import type { ProjectPatch } from '../shared/types.ts';
+import { AUTO_FIX_MAX, type ProjectPatch } from '../shared/types.ts';
 import { withTmpWorkspace } from '../testing/tmp.ts';
 import { ProjectLedger, RULES_MAX } from './projects.ts';
 
@@ -24,6 +24,15 @@ test('verify command rejects invalid types, multiline, NUL and excess length', (
     await assert.rejects(projects.create({ name: 'Invalid', verify } as unknown as Parameters<ProjectLedger['create']>[0]), { status: 400 });
   }
   assert.equal((await projects.update('P', { verify: 'x'.repeat(500) })).verify.length, 500);
+}));
+
+test('autoFix persists as a bounded integer and defaults to 0', () => withTmpWorkspace(async ws => {
+  const projects = new ProjectLedger(ws);
+  assert.equal((await projects.create({ name: 'P' })).autoFix, 0);
+  assert.equal((await projects.update('P', { autoFix: AUTO_FIX_MAX })).autoFix, AUTO_FIX_MAX);
+  assert.equal((await projects.update('P', { description: 'x' })).autoFix, AUTO_FIX_MAX);
+  for (const autoFix of [-1, AUTO_FIX_MAX + 1, 1.5, '2', null]) await assert.rejects(projects.update('P', { autoFix } as unknown as ProjectPatch), { status: 400 });
+  assert.equal((await projects.update('P', { autoFix: 0 })).autoFix, 0);
 }));
 
 test('project rules round-trip, can be cleared, and are bounded', () => withTmpWorkspace(async ws => {

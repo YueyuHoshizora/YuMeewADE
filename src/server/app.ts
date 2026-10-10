@@ -99,6 +99,7 @@ export class App {
       worktree: this.worktree,
       settings: this.settings,
       oplog: this.oplog,
+      verify: (project, task) => this.verify.run(project, task),
       roles: () => this.roles(),
       providers: this.providers,
       limits: config.limits,

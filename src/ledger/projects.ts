@@ -6,12 +6,13 @@ import { parseFrontmatter, patchHeaderLines, serializeFrontmatter } from '../sha
 import { atomicWrite, pathExists, withFileLocks } from '../shared/fsx.ts';
 import { log } from '../shared/log.ts';
 import { isValidProjectName } from '../shared/names.ts';
-import { PHASE_STATES, PROJECT_STATUSES, type NewProjectInput, type Phase, type Project, type ProjectPatch, type ProjectStatus } from '../shared/types.ts';
+import { AUTO_FIX_MAX, PHASE_STATES, PROJECT_STATUSES, type NewProjectInput, type Phase, type Project, type ProjectPatch, type ProjectStatus } from '../shared/types.ts';
 import { type YamlValue } from '../shared/yaml.ts';
 import { ensureRepo } from '../git/git.ts';
 import { TEMPLATES_DIR, type Workspace } from './workspace.ts';
 
 export const RULES_MAX = 20_000;
+
 
 export const PROJECT_GITIGNORE = ['# 台帳與對話不進版本控制', '.ai/', '', '# 本機機密', '.env', '.env.*', '.npmrc', '.dev.vars*', '.DS_Store', ''].join('\n');
 export function todayDate(now = new Date()): string {
@@ -47,7 +48,7 @@ export class ProjectLedger {
       if (it && typeof it === 'object' && !Array.isArray(it)) return [{ text: String(it['text'] ?? ''), level: String(it['level'] ?? '') }];
       return [];
     });
-    return { id, name: s('name') || id, status: PROJECT_STATUSES.includes(s('status') as ProjectStatus) ? s('status') as ProjectStatus : '未開始', updated: s('updated'), description: s('description'), parent: s('parent'), body: s('body'), verify: s('verify'), phases, related: Array.isArray(data['related']) ? data['related'].filter((v): v is string => typeof v === 'string') : [], issues,
+    return { id, name: s('name') || id, status: PROJECT_STATUSES.includes(s('status') as ProjectStatus) ? s('status') as ProjectStatus : '未開始', updated: s('updated'), description: s('description'), parent: s('parent'), body: s('body'), verify: s('verify'), autoFix: typeof data['autoFix'] === 'number' && Number.isInteger(data['autoFix']) ? Math.min(AUTO_FIX_MAX, Math.max(0, data['autoFix'])) : 0, phases, related: Array.isArray(data['related']) ? data['related'].filter((v): v is string => typeof v === 'string') : [], issues,
       notes: body.split(/\r?\n/).filter(line => line.trim() && !/^#\s|^\s*<!--/.test(line)).join('\n') };
   }
 
@@ -58,6 +59,7 @@ export class ProjectLedger {
       if (typeof patch.verify !== 'string' || /[\r\n\0]/u.test(patch.verify)) throw new AppError('bad_request', 'field_type', { field: 'verify' });
       if (patch.verify.trim().length > 500) throw new AppError('bad_request', 'field_too_long', { field: 'verify' });
     }
+    if (patch.autoFix !== undefined && (typeof patch.autoFix !== 'number' || !Number.isInteger(patch.autoFix) || patch.autoFix < 0 || patch.autoFix > AUTO_FIX_MAX)) throw new AppError('bad_request', 'field_type', { field: 'autoFix' });
     if (patch.status !== undefined && !PROJECT_STATUSES.includes(patch.status)) throw new AppError('bad_request', 'invalid_state');
     if (patch.body) {
       if (!path.isAbsolute(patch.body) || !(await fs.stat(patch.body).catch(() => null))?.isDirectory()) throw new AppError('bad_request', 'field_type', { field: 'body' });
@@ -107,6 +109,7 @@ export class ProjectLedger {
     const values: Record<string, YamlValue> = {};
     for (const key of ['name', 'status', 'description', 'parent', 'body', 'related'] as const) if (patch[key] !== undefined) values[key] = patch[key] as YamlValue;
     if (patch.verify !== undefined) values['verify'] = patch.verify.trim();
+    if (patch.autoFix !== undefined) values['autoFix'] = patch.autoFix;
     if (patch.phases !== undefined) values['phases'] = patch.phases.map(p => ({ ...p }));
     if (!Object.keys(values).length) throw new AppError('bad_request', 'no_updatable_fields');
     values['updated'] = todayDate();

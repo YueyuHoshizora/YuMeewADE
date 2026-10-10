@@ -15,7 +15,7 @@ import { AppError } from '../shared/errors.ts';
 import { log } from '../shared/log.ts';
 import type {
   Ask, Busy, ChatEvent, ChatHistory, ChatRow, QueueItem, Roles, RunningInfo,
-  SendInput, SendResult, Task, TurnUsage,
+  SendInput, SendResult, Task, TurnUsage, VerifyResult,
 } from '../shared/types.ts';
 import { HISTORY_PAGE } from '../shared/types.ts';
 import { buildHandoff, buildPreamble, buildPrompt } from './prompt.ts';
@@ -43,6 +43,8 @@ export interface RunnerDeps {
   };
   publish(project: string, task: string, event: ChatEvent): void;
   watching(project: string, task: string): boolean;
+  /** 在作業副本跑專案的驗證指令；省略＝不做自動驗證。 */
+  verify?: (project: string, task: string) => Promise<VerifyResult>;
   onChanged(project?: string, task?: string): void;
   /** CLI 回報的帳號額度／輸出 token（帳號層級，不寫進對話）。 */
   onUsage(ai: string, ev: Extract<CliEvent, { type: 'quota' | 'tokens' }>): void;
@@ -59,6 +61,8 @@ export class ChatRunner extends EventEmitter {
   private readonly deps: RunnerDeps;
   private readonly slots = new Map<string, Slot>();
   private readonly locks = new Map<string, Promise<unknown>>();
+  /** 目前這一串自動修正已用掉的次數；人下新指示就歸零。 */
+  private readonly autoFixes = new Map<string, number>();
   private readonly unreadTasks = new Map<string, { project: string; task: string }>();
   private readonly jobs = new Set<Promise<void>>();
   private shuttingDown = false;
@@ -185,9 +189,10 @@ export class ChatRunner extends EventEmitter {
     return this.lock(input.project, input.task, () => this.sendLocked(input));
   }
 
-  private async sendLocked(input: SendInput): Promise<SendResult> {
+  private async sendLocked(input: SendInput, auto = false): Promise<SendResult> {
     if (this.shuttingDown) throw new AppError('unavailable');
     const { project: p, task: t } = input;
+    if (!auto) this.autoFixes.delete(`${p}\0${t}`);
     const s = this.slot(p, t);
     let chosen = input;
     if (input.fromQueue) {
@@ -319,11 +324,11 @@ export class ChatRunner extends EventEmitter {
 
   private trackQueuedRun(p: string, t: string, s: Slot): void {
     const job = s.finished.then(async () => {
-      await this.lock(p, t, async () => {
-        if (s.busy || this.shuttingDown) return;
+      const sent = await this.lock(p, t, async () => {
+        if (s.busy || this.shuttingDown) return false;
         const queue = await this.deps.store.readQueue(p, t);
         const first = queue[0];
-        if (!first || first.error || s.text === '') return;
+        if (!first || first.error || s.text === '') return false;
         try {
           await this.sendLocked({ project: p, task: t, text: first.text, fromQueue: first.id });
         } catch (err) {
@@ -332,13 +337,37 @@ export class ChatRunner extends EventEmitter {
           this.publish(p, t, { event: 'queue', data: q });
           this.deps.onChanged(p, t);
         }
+        return true;
       });
+      // 只有人下的指令正常做完、隊列已空時才驗證；失敗、被停止、等人回答都不驗證。
+      if (!sent && s.text !== '') await this.autoFix(p, t);
     }).catch(err => {
       log.error('對話收尾失敗', err, { project: p, task: t });
     }).finally(() => {
       this.jobs.delete(job);
     });
     this.jobs.add(job);
+  }
+
+  /** 專案開了 autoFix 時：驗證失敗就把輸出交回同一個 AI，直到通過或用完次數。 */
+  private async autoFix(p: string, t: string): Promise<void> {
+    const verify = this.deps.verify;
+    const key = `${p}\0${t}`;
+    if (!verify || this.shuttingDown) return;
+    const project = await this.deps.projects.get(p);
+    const task = await this.deps.tasks.get(p, t);
+    if (!project.verify.trim() || project.autoFix < 1 || task.state === '等待回覆') { this.autoFixes.delete(key); return; }
+    const result = await verify(p, t).catch(err => { log.warn('自動驗證失敗', { project: p, task: t, err: String(err) }); return null; });
+    const used = this.autoFixes.get(key) ?? 0;
+    if (!result || result.ok || used >= project.autoFix) { this.autoFixes.delete(key); return; }
+    const output = result.output.length > 8000 ? result.output.slice(-8000) : result.output;
+    const text = `（自動驗證：驗證指令 ${project.verify.trim()} ${result.timedOut ? '逾時' : `失敗，結束碼 ${result.exitCode ?? '無'}`}，這是第 ${used + 1}/${project.autoFix} 次自動修正）\n輸出尾段如下。請找出原因並修正，修正後自行再跑一次驗證確認。\n\n\`\`\`\n${output}\n\`\`\``;
+    await this.lock(p, t, async () => {
+      if (this.slot(p, t).busy || this.shuttingDown || (await this.deps.store.readQueue(p, t)).length) return;
+      this.autoFixes.set(key, used + 1);
+      try { await this.sendLocked({ project: p, task: t, text }, true); }
+      catch (err) { this.autoFixes.delete(key); log.warn('自動修正送出失敗', { project: p, task: t, err: String(err) }); }
+    });
   }
 
   private async execute(

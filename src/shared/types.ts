@@ -61,7 +61,12 @@ export interface Project {
   notes: string;
   /** 驗證指令（在作業工作副本執行，例如 `npm test`）；空字串＝未設定。 */
   verify: string;
+  /** 驗證失敗時最多自動請 AI 修正幾次（0＝關閉）；需要先設定驗證指令。 */
+  autoFix: number;
 }
+
+/** `Project.autoFix` 的上限。 */
+export const AUTO_FIX_MAX = 5;
 
 export interface NewProjectInput {
   name: string;
@@ -74,7 +79,7 @@ export interface NewProjectInput {
   verify?: string;
 }
 
-export type ProjectPatch = Partial<Pick<Project, 'name' | 'status' | 'description' | 'parent' | 'body' | 'related' | 'verify'>> & { phases?: Phase[] };
+export type ProjectPatch = Partial<Pick<Project, 'name' | 'status' | 'description' | 'parent' | 'body' | 'related' | 'verify' | 'autoFix'>> & { phases?: Phase[] };
 
 // ---- 作業 ----
 

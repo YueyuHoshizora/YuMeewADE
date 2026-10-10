@@ -3,6 +3,7 @@ import type { MessageKey } from './zh-TW.ts';
 export const en: Record<MessageKey, string> = {
   'project.verify': 'Verification command',
   'project.verifyHint': 'Runs in the task’s worktree (e.g. npm test); stored in PROJECT.md.',
+  'project.autoFix': 'Auto-fix failed verification', 'project.autoFixHint': 'After the AI finishes an instruction, the verification command above runs automatically; if it fails, the output goes back to the same AI, up to the number of tries set here. Needs a verification command; a new instruction from you resets the count.', 'project.autoFixOff': 'Off', 'project.autoFixTimes': 'Up to {n} times',
   'project.rules': 'AI rules', 'project.rulesHint': 'The AI reads these rules (.ai/rules.md) at the start of every run. Changes apply from the next instruction.', 'project.rulesPlaceholder': 'Conventions, things to avoid, how to test…', 'log.project.rules': 'AI rules updated',
   'verify.run': 'Run verification', 'verify.running': 'Verifying…', 'verify.pass': 'Passed', 'verify.fail': 'Failed',
   'verify.result': 'Exit code {code} · {seconds} s', 'verify.timedOut': 'Verification timed out and was stopped.',

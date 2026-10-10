@@ -12,7 +12,7 @@ import { loadRoles } from '../roles/roles.ts';
 import { withTmpWorkspace } from '../testing/tmp.ts';
 import type { Workspace } from '../ledger/workspace.ts';
 import type { WorktreeService } from '../git/worktree.ts';
-import type { ChatEvent } from '../shared/types.ts';
+import type { ChatEvent, VerifyResult } from '../shared/types.ts';
 import { HISTORY_PAGE } from '../shared/types.ts';
 import { promises as fs } from 'node:fs';
 import { registerChatRoutes } from '../http/routes/chat.ts';
@@ -382,3 +382,47 @@ test('idle slots and locks are reclaimed without racing a new send', () => withT
   assert.equal(users.length, 3);
   assert.equal(maps.slots.size, 0); assert.equal(maps.locks.size, 0);
 }));
+
+async function autoFixSetup(ws: Workspace, autoFix: number, results: boolean[], options: MockOptions = {}) {
+  const s = await setup(ws, options);
+  await new ProjectLedger(ws).update('P', { verify: 'npm test', autoFix });
+  const verified: string[] = [];
+  (s.runner as unknown as { deps: { verify: () => Promise<VerifyResult> } }).deps.verify = async () => {
+    const ok = results[Math.min(verified.length, results.length - 1)]!;
+    verified.push(ok ? 'ok' : 'fail');
+    return { ok, exitCode: ok ? 0 : 1, timedOut: false, ms: 1, output: `run ${verified.length} output`, truncated: false };
+  };
+  const users = async () => (await s.store.readLog('P', s.task.id)).filter(r => r.role === 'user').map(r => r.text);
+  return { ...s, verified, users };
+}
+
+test('驗證持續失敗時自動修正到上限就停，每次都附上輸出與次數', () => withTmpWorkspace(async ws => {
+  const s = await autoFixSetup(ws, 2, [false]);
+  await s.send('build it'); await s.runner.whenIdle();
+  const users = await s.users();
+  assert.equal(users.length, 3);
+  assert.match(users[1]!, /第 1\/2 次自動修正[\s\S]*run 1 output/u);
+  assert.match(users[2]!, /第 2\/2 次自動修正[\s\S]*run 2 output/u);
+  assert.equal(s.verified.length, 3);
+}));
+
+test('驗證通過就不再修正；人下新指示後次數重新計算', () => withTmpWorkspace(async ws => {
+  const s = await autoFixSetup(ws, 1, [false, true, false, false]);
+  await s.send('first'); await s.runner.whenIdle();
+  assert.equal((await s.users()).length, 2);
+  await s.send('second'); await s.runner.whenIdle();
+  assert.equal((await s.users()).length, 4);
+  assert.deepEqual(s.verified, ['fail', 'ok', 'fail', 'fail']);
+}));
+
+for (const [name, autoFix, text, instruction] of [
+  ['autoFix 為 0', 0, undefined, 'plain'],
+  ['執行失敗', 2, undefined, 'broken [fail]'],
+  ['等待回答', 2, 'done\n[[question]]\nWhich?\n1. A\n2. B\n[[/question]]', 'go'],
+] as const) {
+  test(`${name}時不自動驗證`, () => withTmpWorkspace(async ws => {
+    const s = await autoFixSetup(ws, autoFix, [false], text ? { text } : {});
+    await s.send(instruction); await s.runner.whenIdle();
+    assert.equal(s.verified.length, 0);
+  }));
+}
