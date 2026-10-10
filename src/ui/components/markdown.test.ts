@@ -1,0 +1,78 @@
+import assert from 'node:assert/strict';
+import test from 'node:test';
+import { MarkdownStream } from './markdown-stream.ts';
+
+// Minimal text-only DOM fixture: markup must be represented as elements, never parsed HTML.
+class Element {
+  tag: string;
+  children: Element[] = [];
+  textContent = '';
+  className = '';
+  href = '';
+  style: Record<string, string> = {};
+  constructor(tag: string) { this.tag = tag; }
+  append(...nodes: Element[]): void { this.children.push(...nodes); }
+}
+Object.defineProperty(globalThis, 'localStorage', { value: { getItem: () => null }, configurable: true });
+Object.defineProperty(globalThis, 'navigator', { value: { language: 'en' }, configurable: true });
+Object.defineProperty(globalThis, 'document', {
+  value: {
+    createElement: (tag: string) => new Element(tag),
+    createTextNode: (text: string) => Object.assign(new Element('#text'), { textContent: text }),
+  },
+  configurable: true,
+});
+// Locale initialization reads browser globals at import time; load after the fixture exists.
+const { markdown } = await import('./markdown.ts');
+function shape(node: Element): unknown {
+  return [node.tag, node.textContent, node.href, node.style, node.children.map(shape)];
+}
+function elements(node: Element): Element[] {
+  return [node, ...node.children.flatMap(elements)];
+}
+
+test('markdown keeps raw HTML as text and links only HTTP(S)', () => {
+  const raw = '<img src=x onerror=alert(1)> <script>alert(2)</script>';
+  const root = markdown(`${raw}\n[bad](javascript:alert) [data](data:text/html,x) [good](https://example.com) http://example.org`) as unknown as Element;
+  const nodes = elements(root);
+  assert.equal(nodes.some(node => node.tag === 'img' || node.tag === 'script'), false);
+  assert.ok(nodes.some(node => node.textContent.includes(raw)));
+  assert.deepEqual(nodes.filter(node => node.tag === 'a').map(node => node.href), ['https://example.com', 'http://example.org']);
+  assert.ok(nodes.some(node => node.textContent.includes('[bad](javascript:alert)')));
+});
+
+test('incremental blank-line blocks produce exactly the full markdown children', () => {
+  for (const source of [
+    'first **paragraph**\nsecond line\n\n# Heading\n\nlast',
+    '- one\n- two\n\n1. next\n2. item\n\nend\n',
+    'before\n\n```ts\nconst x = 1;\n\nconst y = 2;\n```\n\nafter',
+    '| A | B |\n| --- | ---: |\n| one | two |\n\nnext',
+    '```\nunclosed\n\nfence',
+    'a\r\n\r\nb\n\n',
+  ]) {
+    for (const size of [1, 3, 11, source.length]) {
+      const buffer = new MarkdownStream();
+      const completed: Element[] = [];
+      for (let at = 0; at < source.length; at += size) {
+        buffer.push(source.slice(at, at + size));
+        for (const block of buffer.takeCompleted()) {
+          completed.push(...(markdown(block) as unknown as Element).children);
+        }
+      }
+      completed.push(...(markdown(buffer.tail()) as unknown as Element).children);
+      const full = markdown(source) as unknown as Element;
+      assert.deepEqual(completed.map(shape), full.children.map(shape), `chunk size ${size}: ${source}`);
+    }
+  }
+});
+
+test('completed blocks are drained once while open fences stay in the tail', () => {
+  const buffer = new MarkdownStream();
+  buffer.push('done\n\n```\ncode\n\n');
+  assert.deepEqual(buffer.takeCompleted(), ['done\n\n']);
+  assert.deepEqual(buffer.takeCompleted(), []);
+  assert.equal(buffer.tail(), '```\ncode\n\n');
+  buffer.push('```\n\nnext');
+  assert.deepEqual(buffer.takeCompleted(), ['```\ncode\n\n```\n\n']);
+  assert.equal(buffer.tail(), 'next');
+});

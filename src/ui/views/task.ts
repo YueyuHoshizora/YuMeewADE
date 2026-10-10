@@ -5,6 +5,7 @@ import { t } from '../i18n/index.ts';
 import { attachments } from '../components/attachments.ts';
 import { aiPicker } from '../components/picker.ts';
 import { markdown } from '../components/markdown.ts';
+import { MarkdownStream } from '../components/markdown-stream.ts';
 import { area, button, confirmModal, disclosure, el, field, input, link, modal, projectHash, readLocal, row, run, select, storeLocal, toast, type View, type ViewContext } from '../components/dom.ts';
 import { aiLabel, effortLabel, localTime, modelLabel } from '../components/display.ts';
 import { shouldSend } from '../components/composer.ts';
@@ -164,6 +165,19 @@ export function taskView(context: ViewContext, initialProject: ProjectView, init
   }
   let live: HTMLElement | null = null;
   let liveBody: HTMLElement | null = null;
+  let liveTail: HTMLElement | null = null;
+  let liveMarkdown = new MarkdownStream();
+  function renderLive(): void {
+    if (!liveBody) return;
+    for (const block of liveMarkdown.takeCompleted()) {
+      const rendered = markdown(block);
+      liveBody.insertBefore(rendered, liveTail);
+    }
+    const next = markdown(liveMarkdown.tail() || (partial ? '' : '…'));
+    if (liveTail) liveTail.replaceWith(next);
+    else liveBody.append(next);
+    liveTail = next;
+  }
   let liveFrame = 0;
   let toolGroup: HTMLDetailsElement | null = null;
   let toolCount = 0;
@@ -178,13 +192,17 @@ export function taskView(context: ViewContext, initialProject: ProjectView, init
     live?.remove();
     live = null;
     liveBody = null;
+    liveTail = null;
   }
   function addLive(): void {
     removeLive();
     if (!busy)
     return;
     live = el('article', 'chat-card assistant live');
-    liveBody = markdown(partial || '…');
+    liveBody = el('div', 'markdown-stream');
+    liveMarkdown = new MarkdownStream();
+    liveMarkdown.push(partial);
+    renderLive();
     live.append(
       row(
         el('span', 'dot running'),
@@ -525,14 +543,11 @@ export function taskView(context: ViewContext, initialProject: ProjectView, init
     case 'delta':
     if (busy?.request === event.data.request) {
       partial += event.data.text;
+      liveMarkdown.push(event.data.text);
       if (!liveFrame)
       liveFrame = requestAnimationFrame(() => {
         liveFrame = 0;
-        if (!liveBody)
-        return;
-        const next = markdown(partial || '…');
-        liveBody.replaceWith(next);
-        liveBody = next;
+        renderLive();
         follow();
       });
     }
