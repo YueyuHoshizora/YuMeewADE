@@ -658,6 +658,10 @@ export function taskView(
     if (preview.conflict) {
       info.append(disclosure(t('copy.conflict'), el('pre', 'warning', preview.conflictPaths.join('\n'))));
     }
+    if (preview.overlaps.length) {
+      const lines = preview.overlaps.map(o => `${o.title}（${o.task}）\n${o.paths.map(p => `  ${p}`).join('\n')}`).join('\n');
+      info.append(disclosure(t('git.overlap', { n: preview.overlaps.length }), el('pre', 'warning', lines)));
+    }
     if (preview.mainDirty) info.append(el('p', 'muted', t('copy.mainDirty')));
   }
   const footer = el('div', 'task-footer');

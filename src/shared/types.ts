@@ -459,6 +459,13 @@ export interface VerifyResult {
   truncated: boolean;
 }
 
+/** 另一個作業的副本也改了同樣的檔案（合併時容易互相衝突）。 */
+export interface TaskOverlap {
+  task: string;
+  title: string;
+  paths: string[];
+}
+
 export interface MergePreview {
   files: number;
   added: number;
@@ -470,6 +477,7 @@ export interface MergePreview {
   conflict: boolean;
   conflictPaths: string[];
   paths: string[];
+  overlaps: TaskOverlap[];
   /** 主資料夾有未提交的變更（合併前會自動儲存）。 */
   mainDirty: boolean;
 }

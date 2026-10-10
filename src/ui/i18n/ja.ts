@@ -239,6 +239,7 @@ export const ja: Record<MessageKey, string> = {
   'source.cli-cache': 'CLI キャッシュ', 'source.cli': 'CLI 検出', 'source.builtin': '内蔵一覧',
   'copy.noChanges': '変更なし',
   'git.title': 'Git 情報', 'git.show': 'Git 情報を表示', 'git.hide': 'Git 情報を隠す', 'git.branch': '作業のブランチ', 'git.target': '取り込み先', 'git.files': '変更ファイル（{n}）', 'git.moreFiles': 'ほか {n} 個のファイルは省略', 'git.direct': 'この作業はメインフォルダで直接作業するため、独立した Git コピーはありません。', 'git.noCopy': '作業コピーはまだありません。最初の指示を送ると自動で作成されます。',
+  'git.overlap': '他の {n} 件の作業も同じファイルを変更しています。マージ時に競合する可能性があります',
   'log.project.new': 'プロジェクト作成', 'log.project.update': 'プロジェクト更新', 'log.project.archive': 'プロジェクトをアーカイブ', 'log.project.pin': 'プロジェクトをピン留め', 'log.phase.next': '次のフェーズへ', 'log.phase.continue': '今のフェーズを続ける', 'log.order.update': 'プロジェクトの並び替え',
   'log.task.new': '作業を追加', 'log.task.update': '作業を更新', 'log.task.step': '手順を更新', 'log.task.memo': 'メモを残す', 'log.task.approve': '完了にする', 'log.task.continue': '続ける', 'log.task.archive': '作業をアーカイブ', 'log.task.merge-exclusion': '取り込み対象の変更', 'log.task.copyclear': 'コピー記録を片付け', 'log.merge': '本体に取り込み',
   'log.quickstart': 'すぐ始める', 'log.chat': '指示を送信', 'log.chatqueue': '順番待ちに追加', 'log.chatredo': '取り消してやり直す', 'log.chatamend': '追加説明', 'log.chatstop': '停止', 'log.modelrefresh': 'モデルを再取得', 'log.cliupdate': 'CLI を更新', 'log.settings': '設定を変更', 'log.roles': '役割分担を保存',

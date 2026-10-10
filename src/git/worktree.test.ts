@@ -256,3 +256,20 @@ test('finishTurn summarizes one turn and rangeDiff shows only that turn', () => 
   await assert.rejects(wt.rangeDiff('P', task.id, start2, 'e'.repeat(40)), (e: unknown) => e instanceof AppError && e.detail === 'checkpoint_missing');
   await assert.rejects(wt.finishTurn('P', task.id, '--bad'), (e: unknown) => e instanceof AppError && e.detail === 'checkpoint_missing');
 }));
+
+test('preview lists other tasks whose copies touch the same files', () => withTmpWorkspace(async ws => {
+  const projects = new ProjectLedger(ws);
+  const tasks = new TaskLedger(ws);
+  await projects.create({ name: 'P' });
+  const [a, b, c] = [await tasks.create('P', { title: 'A' }), await tasks.create('P', { title: 'B' }), await tasks.create('P', { title: 'C' })];
+  const wt = new WorktreeService({ ws, projects, tasks, diffBytes: 100_000 });
+  const [dirA, dirB, dirC] = [await wt.prepare('P', a.id), await wt.prepare('P', b.id), await wt.prepare('P', c.id)];
+  await fs.writeFile(path.join(dirA, 'shared.txt'), 'a\n');
+  await fs.writeFile(path.join(dirA, 'only-a.txt'), 'a\n');
+  await fs.writeFile(path.join(dirB, 'shared.txt'), 'b\n');
+  await fs.writeFile(path.join(dirC, 'only-c.txt'), 'c\n');
+  const preview = await wt.preview('P', a.id);
+  assert.deepEqual(preview?.overlaps, [{ task: b.id, title: 'B', paths: ['shared.txt'] }]);
+  await wt.exclusion('P', b.id, true);
+  assert.deepEqual((await wt.preview('P', a.id))?.overlaps, []);
+}));

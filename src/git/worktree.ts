@@ -9,7 +9,7 @@ import { OpLog } from '../ledger/oplog.ts';
 import { AppError } from '../shared/errors.ts';
 import { pathExists, withFileLocks } from '../shared/fsx.ts';
 import { log } from '../shared/log.ts';
-import type { MergePreview, MergeResult, Task, TurnChanges } from '../shared/types.ts';
+import type { MergePreview, MergeResult, Task, TaskOverlap, TurnChanges } from '../shared/types.ts';
 import { branchExists, commitAll, ensureRepo, git, gitOk, isLocalSecret, isRepo } from './git.ts';
 
 const SHA = /^[0-9a-f]{40}$/;
@@ -97,6 +97,7 @@ export class WorktreeService {
     if ((tree.code !== 0 && tree.code !== 1) || tree.truncated) throw new AppError('internal', 'git_failed');
     const branch = (await gitOk(dir, ['rev-parse', '--abbrev-ref', 'HEAD'])).trim();
     const target = (await gitOk(repo, ['rev-parse', '--abbrev-ref', 'HEAD'])).trim();
+    const all = [...new Set([...paths, ...untracked])];
     return {
       branch,
       target,
@@ -105,9 +106,33 @@ export class WorktreeService {
       removed: Number(stat.match(/(\d+) deletions?/)?.[1] ?? 0),
       conflict: tree.code === 1,
       conflictPaths: tree.code === 1 ? splitNull(tree.stdout).slice(1) : [],
-      paths: [...new Set([...paths, ...untracked])],
+      paths: all,
+      overlaps: await this.overlaps(project, task, repo, all),
       mainDirty: (await gitOk(repo, ['status', '--porcelain'])).length > 0,
     };
+  }
+  /** 同專案其他有副本的作業，與這個作業改到同樣檔案的清單；別人的副本壞了不影響這個作業的預覽。 */
+  private async overlaps(project: string, task: string, repo: string, paths: string[]): Promise<TaskOverlap[]> {
+    if (paths.length === 0) return [];
+    const mine = new Set(paths);
+    const found: TaskOverlap[] = [];
+    for (const other of await this.tasks.list(project)) {
+      if (other.id === task || !other.workdir || other.mergeExcluded) continue;
+      try {
+        if (!(await pathExists(path.join(other.workdir, '.git')))) continue;
+        await this.verifyFamily(repo, other.workdir);
+        const base = (await gitOk(repo, ['merge-base', 'HEAD', (await gitOk(other.workdir, ['rev-parse', 'HEAD'])).trim()])).trim();
+        const changed = [
+          ...splitNull(await gitOk(other.workdir, ['diff', '--name-only', '-z', base])),
+          ...splitNull(await gitOk(other.workdir, ['ls-files', '--others', '--exclude-standard', '-z'])).filter(f => !isLocalSecret(f)),
+        ];
+        const shared = [...new Set(changed.filter(p => mine.has(p)))];
+        if (shared.length > 0) found.push({ task: other.id, title: other.title, paths: shared });
+      } catch (err) {
+        log.warn('比對其他作業的變更失敗', { project, task: other.id, err: String(err) });
+      }
+    }
+    return found;
   }
   async diff(project: string, task: string): Promise<{ diff: string; truncated: boolean }> {
     const { repo, dir } = await this.copy(project, task);
