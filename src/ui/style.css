@@ -381,3 +381,24 @@ body { height: 100dvh; display: grid; grid-template-rows: 64px minmax(0, 1fr) au
 .turn-usage { font-variant-numeric: tabular-nums; }
 .queue-paused { flex-basis: 100%; margin: 0 0 6px; }
 .export-chat { white-space: nowrap; }
+/* 作業頁：左側聊天欄＋右側可隱藏的 Git 資訊面板。 */
+.task-page { flex-direction: row; }
+.task-column { flex: 1 1 0; min-width: 0; min-height: 0; height: 100%; display: flex; flex-direction: column; }
+.git-panel { flex: 0 0 320px; width: 320px; min-height: 0; overflow: auto; padding: 14px 16px; border-left: 1px solid var(--border); background: var(--c-161a25); }
+.git-panel[hidden] { display: none; }
+.git-panel-head { display: flex; align-items: center; justify-content: space-between; margin-bottom: 10px; }
+.git-panel-head h2 { margin: 0; font-size: 14px; }
+.git-panel .work-info { display: block; margin: 0; }
+.git-panel h3 { margin: 14px 0 6px; font-size: 12px; color: var(--muted); font-weight: 600; }
+.git-panel p { margin: 6px 0; }
+.git-row { display: flex; flex-direction: column; margin-bottom: 6px; font-size: 12px; }
+.git-row code { overflow-wrap: anywhere; }
+.git-actions { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 14px; }
+.git-files { list-style: none; margin: 0; padding: 0; }
+.git-file { display: block; width: 100%; max-width: 100%; padding: 3px 6px; border: none; background: none; text-align: left; font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 12px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.git-file:hover { background: color-mix(in srgb, var(--accent) 10%, transparent); }
+.git-toggle.active { border-color: var(--accent); }
+.git-toggle.git-conflict { color: var(--yellow); border-color: var(--yellow); }
+@media (max-width: 1000px) {
+  .git-panel { position: absolute; top: 0; right: 0; bottom: 0; z-index: 20; width: min(340px, 92vw); box-shadow: -8px 0 24px color-mix(in srgb, #000 35%, transparent); }
+}

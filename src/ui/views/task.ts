@@ -96,6 +96,30 @@ export function taskView(
     verifyButton.setAttribute('aria-busy', String(verifying));
     for (const retry of transcriptRows.querySelectorAll<HTMLButtonElement>('.retry-message')) retry.hidden = !!busy;
   }
+  const gitPanelKey = 'yumeewade.gitPanel';
+  // 第一次使用時，寬螢幕預設展開、窄螢幕預設收起；之後沿用使用者的選擇。
+  let gitOpen = readLocal<boolean | null>(gitPanelKey, null) ?? window.matchMedia('(min-width: 1000px)').matches;
+  const gitPanel = el('aside', 'git-panel');
+  gitPanel.id = 'git-panel';
+  gitPanel.setAttribute('aria-label', t('git.title'));
+  const gitToggle = button('Git', () => setGitPanel(!gitOpen), 'git-toggle');
+  gitToggle.setAttribute('aria-controls', 'git-panel');
+  function setGitPanel(open: boolean, persist = true): void {
+    gitOpen = open;
+    if (persist) storeLocal(gitPanelKey, open);
+    gitPanel.hidden = !open;
+    gitToggle.setAttribute('aria-expanded', String(open));
+    gitToggle.title = t(open ? 'git.hide' : 'git.show');
+    gitToggle.classList.toggle('active', open);
+  }
+  function setGitBadge(changes = 0, conflict = false): void {
+    gitToggle.textContent = changes ? `Git · ${changes}` : 'Git';
+    gitToggle.classList.toggle('git-conflict', conflict);
+  }
+  const gitPanelHead = el('div', 'git-panel-head');
+  gitPanelHead.append(el('h2', '', t('git.title')), iconButton('×', t('git.hide'), () => setGitPanel(false), 'subtle'));
+  gitPanel.append(gitPanelHead, work);
+  setGitPanel(gitOpen, false);
   const exportLink = link(t('chat.export'), query('/api/chat/export', { project: project.id, task: task.id }), 'export-chat');
   exportLink.download = `${task.title}.md`;
   header.append(
@@ -105,9 +129,9 @@ export function taskView(
       stateChip,
       button(t('common.open'), () => request('/api/open', { path: task.workdir || project.bodyPath })),
       exportLink,
-      verifyButton
-    ),
-    work);
+      verifyButton,
+      gitToggle
+    ));
   const transcript = el('div', 'transcript');
   transcript.setAttribute('role', 'region');
   transcript.setAttribute('aria-label', task.title);
@@ -506,9 +530,38 @@ export function taskView(
   }
   let previewSerial = 0;
   let mergeLeftover: string[] = [];
+  async function openDiff(focusPath = ''): Promise<void> {
+    const diff = await api.diff(project.id, task.id);
+    const viewer = el('div', 'diff-viewer');
+    if (diff.truncated) viewer.append(el('p', 'warning diff-warning', t('copy.truncated')));
+    const files = parseDiff(diff.diff);
+    if (!files.length) viewer.append(el('p', 'muted', t('copy.noChanges')));
+    let focused: HTMLElement | null = null;
+    for (const [index, file] of files.entries()) {
+      const section = disclosure('');
+      section.className = 'diff-file';
+      section.open = index < 3 || file.path === focusPath;
+      section.querySelector('summary')!.append(el('span', 'diff-path', file.path || t('copy.diff')),
+        el('span', 'diff-added', `+${file.added}`), el('span', 'diff-removed', `−${file.removed}`));
+      const content = el('pre', 'diff-lines');
+      for (const line of file.lines) content.append(el('span', `diff-line diff-${line.kind}`, line.text));
+      section.append(content);
+      viewer.append(section);
+      if (focusPath && file.path === focusPath) focused = section;
+    }
+    modal(t('copy.diff'), viewer);
+    focused?.scrollIntoView({ block: 'start' });
+  }
+  const gitFileLimit = 200;
+  function gitRow(label: string, value: string): HTMLElement {
+    const item = el('div', 'git-row');
+    item.append(el('span', 'muted', label), el('code', '', value));
+    return item;
+  }
   async function renderWork(): Promise<void> {
     const serial = ++previewSerial;
     work.replaceChildren();
+    setGitBadge();
     if (mergeLeftover.length) {
       const notice = el('div', 'warning merge-leftover');
       notice.setAttribute('role', 'status');
@@ -517,7 +570,7 @@ export function taskView(
     }
     if (task.copyMissing) {
       work.append(
-        el('span', 'warning', t('copy.missing')),
+        el('p', 'warning', t('copy.missing')),
         button(
           t('copy.clear'),
           async () => {
@@ -527,10 +580,16 @@ export function taskView(
         ));
       return;
     }
-    if (!task.copy) return;
+    if (!task.copy) {
+      work.append(el('p', 'muted', t(task.workspace === 'direct' ? 'git.direct' : 'git.noCopy')));
+      return;
+    }
+    const info = el('div', 'git-info');
+    const actions = el('div', 'git-actions');
+    work.append(info, actions);
     let mergeButton: HTMLButtonElement | null = null;
     if (task.mergeExcluded) {
-      work.append(el('span', 'muted', t('copy.excluded')));
+      info.append(el('p', 'muted', t('copy.excluded')));
     } else {
       mergeButton = button(
         t('copy.merge'),
@@ -548,9 +607,9 @@ export function taskView(
         },
         'primary');
       mergeButton.disabled = true;
-      work.append(mergeButton);
+      actions.append(mergeButton);
     }
-    work.append(
+    actions.append(
       button(
         t(task.mergeExcluded ? 'copy.restore' : 'copy.exclude'),
         async () => {
@@ -558,40 +617,35 @@ export function taskView(
           await context.refresh();
         }
       ),
-      button(
-        t('copy.diff'),
-        async () => {
-          const diff = await api.diff(project.id, task.id);
-          const viewer = el('div', 'diff-viewer');
-          if (diff.truncated) viewer.append(el('p', 'warning diff-warning', t('copy.truncated')));
-          const files = parseDiff(diff.diff);
-          if (!files.length) viewer.append(el('p', 'muted', t('copy.noChanges')));
-          for (const [index, file] of files.entries()) {
-            const section = disclosure('');
-            section.className = 'diff-file';
-            section.open = index < 3;
-            section.querySelector('summary')!.append(el('span', 'diff-path', file.path || t('copy.diff')),
-              el('span', 'diff-added', `+${file.added}`), el('span', 'diff-removed', `−${file.removed}`));
-            const content = el('pre', 'diff-lines');
-            for (const line of file.lines) content.append(el('span', `diff-line diff-${line.kind}`, line.text));
-            section.append(content);
-            viewer.append(section);
-          }
-          modal(t('copy.diff'), viewer);
-        }
-      ));
+      button(t('copy.diff'), () => openDiff()));
     const preview = await api.preview(project.id, task.id);
     if (!alive || serial !== previewSerial || !preview) return;
     if (mergeButton) mergeButton.disabled = preview.files === 0;
-    work.prepend(el(
-      'span',
-      'copy-stats',
-      preview.files === 0 ? t('copy.noChanges') : t('copy.stats', { files: preview.files, added: preview.added, removed: preview.removed })
-    ));
-    if (preview.conflict) {
-      work.append(disclosure(t('copy.conflict'), el('pre', 'warning', preview.conflictPaths.join('\n'))));
+    setGitBadge(preview.files, preview.conflict);
+    info.append(
+      gitRow(t('git.branch'), preview.branch),
+      gitRow(t('git.target'), preview.target),
+      el('p', 'copy-stats', preview.files === 0
+        ? t('copy.noChanges')
+        : t('copy.stats', { files: preview.files, added: preview.added, removed: preview.removed })));
+    if (preview.paths.length) {
+      const list = el('ul', 'git-files');
+      for (const file of preview.paths.slice(0, gitFileLimit)) {
+        const item = el('li');
+        const open = button(file, () => openDiff(file), 'subtle git-file');
+        open.title = file;
+        item.append(open);
+        list.append(item);
+      }
+      info.append(el('h3', '', t('git.files', { n: preview.paths.length })), list);
+      if (preview.paths.length > gitFileLimit) {
+        info.append(el('p', 'muted', t('git.moreFiles', { n: preview.paths.length - gitFileLimit })));
+      }
     }
-    if (preview.mainDirty) work.append(el('span', 'muted', t('copy.mainDirty')));
+    if (preview.conflict) {
+      info.append(disclosure(t('copy.conflict'), el('pre', 'warning', preview.conflictPaths.join('\n'))));
+    }
+    if (preview.mainDirty) info.append(el('p', 'muted', t('copy.mainDirty')));
   }
   const footer = el('div', 'task-footer');
   function renderFooter(): void {
@@ -664,7 +718,9 @@ export function taskView(
   const composerControls = row(pick.node, upload.node, actions);
   composerControls.classList.add('composer-controls');
   composer.append(queueNode, draft, upload.strip, running, composerControls);
-  node.append(header, transcript, latest, composer, footer);
+  const column = el('div', 'task-column');
+  column.append(header, transcript, latest, composer, footer);
+  node.append(column, gitPanel);
   controls();
   renderFooter();
   void run(renderWork);
