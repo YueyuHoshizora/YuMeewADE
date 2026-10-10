@@ -263,7 +263,7 @@ export function taskView(
         button(t('chat.queue'), () => send('queue'), 'primary'),
       );
     } else {
-      actions.replaceChildren(button(t('chat.send'), () => send(), 'primary'));
+      actions.replaceChildren();
     }
     clock();
     renderQueue();
@@ -832,10 +832,10 @@ export function taskView(
     footer.title = task.memo;
     footer.replaceChildren(row(state, phase, detail, memo, leaveMemo));
   }
-  const composerControls = row(pick.node, upload.node, snippetsButton(draft), actions);
+  const composerControls = row(pick.node, upload.node, snippetsButton(draft));
   composerControls.classList.add('composer-controls');
   const mentions = attachMention(draft, async q => (await request<{ files: string[] }>(query('/api/task/files', { project: project.id, task: task.id, q }))).files);
-  composer.append(queueNode, mentions, draft, upload.strip, running, composerControls);
+  composer.append(queueNode, mentions, draft, upload.strip, running, composerControls, actions);
   const column = el('div', 'task-column');
   column.append(header, transcript, latest, composer, footer);
   node.append(column, gitPanel);
