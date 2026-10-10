@@ -8,6 +8,8 @@ import type { CliCommandConfig } from '../shared/config.ts';
 import type { QuotaWindow } from '../shared/types.ts';
 import { findExecutable, minimalEnv, runLineProcess } from './process.ts';
 import type { CliEvent, CliProvider, CliRun, SendOptions } from './provider.ts';
+import { codexPrompts, expandCodexPrompt, slashName } from './commands.ts';
+import { AppError } from '../shared/errors.ts';
 
 type QuotaEvent = Extract<CliEvent, { type: 'quota' }>;
 
@@ -286,6 +288,17 @@ export class CodexCliProvider implements CliProvider {
     const env = configDir ? { ...this.env, CODEX_HOME: configDir } : this.env;
     if (this.cfg.quotaArgs.length) return fetchCodexQuota(this.cfg.command, this.cfg.quotaArgs, env);
     return readCodexQuota(configDir ?? this.home);
+  }
+
+  async commands(_cwd: string, configDir?: string) {
+    return (await codexPrompts(configDir ?? this.home)).map(({ body: _body, ...command }) => command);
+  }
+
+  async resolveCommand(text: string, _cwd: string, configDir?: string) {
+    const name = slashName(text);
+    const prompt = (await codexPrompts(configDir ?? this.home)).find(command => command.name === name);
+    if (!prompt) throw new AppError('bad_request', 'slash_unsupported');
+    return { text: expandCodexPrompt(prompt.body, text.trimStart().slice(name!.length + 1).trim()), native: false };
   }
 
   send(opts: SendOptions, onEvent: (ev: CliEvent) => void): CliRun {

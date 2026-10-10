@@ -95,7 +95,7 @@ export function windowsCommandLine(command: string, args: string[]): string {
   return `"${[escapedCommand, ...escapedArgs].join(' ')}"`;
 }
 
-function spawnCli(command: string, args: string[], options: Parameters<typeof spawn>[2]): ChildProcess {
+export function spawnCli(command: string, args: string[], options: Parameters<typeof spawn>[2]): ChildProcess {
   if (process.platform === 'win32' && /\.(?:cmd|bat)$/i.test(command)) {
     return spawn(process.env['ComSpec'] || 'cmd.exe', ['/d', '/s', '/c', windowsCommandLine(command, args)], { ...options, windowsVerbatimArguments: true });
   }
@@ -200,7 +200,7 @@ function runResolvedLineProcess(opts: { command: string; args: string[]; cwd: st
 }
 
 /** 日誌只記旗標形狀：session id、路徑等帶值的旗標以 <…> 取代（安全節 8）。 */
-const VALUE_FLAGS: Record<string, true> = { '--resume': true, '--add-dir': true, '--model': true, '-m': true, '-c': true, '--effort': true, resume: true, '-i': true };
+const VALUE_FLAGS: Record<string, true> = { '--resume': true, '--add-dir': true, '--model': true, '-m': true, '-c': true, '--effort': true, resume: true, '-i': true, '--append-system-prompt': true };
 export function redactArgs(args: string[]): string[] {
   const out: string[] = [];
   let hide = false;

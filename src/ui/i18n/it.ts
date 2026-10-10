@@ -1,6 +1,8 @@
 import type { MessageKey } from './zh-TW.ts';
 
 export const it: Record<MessageKey, string> = {
+  'slash.title': 'Comandi CLI nativi / personalizzati', 'slash.loading': 'Caricamento dei comandi CLI…', 'slash.error': 'Impossibile caricare i comandi CLI; nessun suggerimento disponibile.',
+  'slash.empty': 'Nessun comando CLI disponibile in questa modalità per questa IA, questo account e questo progetto.', 'slash.noMatch': 'Nessun comando CLI corrispondente.', 'slash.keys': '↑ ↓ scegli · Invio / Tab inserisci · Esc chiudi; invia separatamente per eseguire.',
   'usage.details': 'Account e dettagli della quota', 'usage.openDetails': 'Apri account e dettagli della quota di {ai}',
   'usage.defaultAccount': 'Account predefinito', 'usage.active': 'Attivo', 'usage.activate': 'Usa account',
   'usage.addAccount': 'Aggiungi account', 'usage.remove': 'Rimuovi account', 'usage.removeConfirm': 'Rimuovere la registrazione di «{name}»? Le impostazioni CLI non saranno eliminate e non verrà eseguita la disconnessione.',
@@ -237,6 +239,7 @@ export const it: Record<MessageKey, string> = {
   'detail.invalid_effort': 'Intensità di ragionamento non valida',
   'detail.no_cli_for_task': 'Nessuna IA eseguibile assegnata a questa attività',
   'detail.cli_unsupported': 'IA non supportata: {field}',
+  'detail.slash_unsupported': 'Comando non disponibile o non supportato nella modalità CLI attuale',
   'detail.cli_unavailable': '{field} non è installato o non è disponibile',
   'detail.field_required': '{field} è obbligatorio',
   'detail.field_too_long': '{field} è troppo lungo',

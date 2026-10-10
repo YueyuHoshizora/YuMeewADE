@@ -22,6 +22,8 @@ import { buildHandoff, buildPreamble, buildPrompt } from './prompt.ts';
 import { ChatStore, type ChatMeta } from './store.ts';
 import { attachImages } from './attachments.ts';
 import { parseAsk } from './ask.ts';
+import { slashName } from '../cli/commands.ts';
+import { pathExists } from '../shared/fsx.ts';
 
 export interface RunnerDeps {
   ws: Workspace;
@@ -185,6 +187,20 @@ export class ChatRunner extends EventEmitter {
     return { rows: rows.slice(start, end), start };
   }
 
+  async commands(p: string, t: string, ai: string) {
+    if (ai !== 'claude' && ai !== 'codex') throw new AppError('bad_request', 'cli_unsupported');
+    const task = await this.deps.tasks.get(p, t);
+    const provider = this.deps.providers[ai];
+    const settings = await this.deps.settings.get();
+    const id = settings.activeAccounts[ai] ?? 'default';
+    const account = settings.accounts[ai]?.find(profile => profile.id === id);
+    if (id !== 'default' && !account) throw new AppError('not_found');
+    if (!provider?.commands || !await provider.available()) return [];
+    const cwd = task.workspace !== 'direct' && task.workdir && await pathExists(task.workdir)
+      ? task.workdir : await this.deps.worktree.bodyPath(p);
+    return provider.commands(cwd, account?.configDir);
+  }
+
   send(input: SendInput): Promise<SendResult> {
     return this.lock(input.project, input.task, () => this.sendLocked(input));
   }
@@ -228,6 +244,19 @@ export class ChatRunner extends EventEmitter {
     if (accountId !== 'default' && !account) throw new AppError('not_found');
     if (!await provider.available()) throw new AppError('bad_request', 'cli_unavailable');
     if (this.shuttingDown) throw new AppError('unavailable');
+    // Validate before queuing or interrupting a running turn; never bury control commands in prose.
+    const name = slashName(chosen.text);
+    const commandCwd = name
+      ? task.workspace !== 'direct' && task.workdir && await pathExists(task.workdir)
+        ? task.workdir : await this.deps.worktree.bodyPath(p)
+      : '';
+    let command: { text: string; native: boolean } | undefined;
+    if (name) {
+      if (!provider.resolveCommand || chosen.answer || (s.busy && chosen.mode !== 'queue')) {
+        throw new AppError('bad_request', 'slash_unsupported');
+      }
+      command = await provider.resolveCommand(chosen.text, commandCwd, account?.configDir);
+    }
     const item: QueueItem = {
       id: randomUUID(), text: chosen.text, ai: pick.cli,
       model: pick.model, effort: pick.effort, at: new Date().toISOString(),
@@ -260,6 +289,7 @@ export class ChatRunner extends EventEmitter {
     };
     try {
       const cwd = await this.deps.worktree.prepare(p, t);
+      if (command && cwd !== commandCwd) command = await provider.resolveCommand!(chosen.text, cwd, account?.configDir);
       const checkpoint = await this.deps.worktree.checkpoint(p, t);
       const images = await attachImages(this.deps.ws, p, t, chosen.images ?? [], this.deps.limits.imagesPerSend);
       if (this.shuttingDown) throw new AppError('unavailable');
@@ -310,7 +340,8 @@ export class ChatRunner extends EventEmitter {
       this.deps.onChanged(p, t);
       await this.deps.store.writeMeta(p, t, meta);
       s.finished = this.execute(p, t, item, provider, meta, {
-        prompt: buildPrompt({ preamble, handoff, text: item.text, images }), cwd,
+        prompt: buildPrompt({ preamble, handoff, text: command ? (command.native ? '' : command.text) : item.text, images }), cwd,
+        ...(command?.native ? { slashCommand: command.text } : {}),
         ...(resumeId ? { resumeId } : {}), model: pick.model, effort: pick.effort,
         fullAccess: settings.fullAccess[item.ai] ?? provider.dangerous,
         accountId, ...(account ? { configDir: account.configDir } : {}),

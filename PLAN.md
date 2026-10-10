@@ -473,3 +473,12 @@ electron 44.7.0、vite 8.3.4、electron-builder 26.15.3、typescript 7.0.2、@ty
 - 介面：差異依檔案分段、可收合、逐檔 +/−；訊息複製；失敗或停止的回覆可「重試」（沿用原 AI／模型／思考強度與圖片）；佇列第一項失敗時標示「暫停」，其後項目等人處理（刻意不自動跳過）。
 - 工具呼叫群組：新訊息與歷史紀錄的群組一律預設收合，不再讀舊 `yumeewade.tools` 全域展開偏好，也移除設定頁開關；使用者可點標題手動展開，已展開的群組追加工具列時不自動收合。
 - 輸入區：閒置時不顯示「送出」按鈕，保留 ⌘/Ctrl+Enter（或設定的 Enter）送出；執行中指示操作、AI 問題回答按鈕不移除。
+
+### B.8 CLI 原生命令／自訂指令（2026-10-11）
+- `GET /api/chat/commands?project=&task=&ai=claude|codex` 回 `{commands: SlashCommand[]}`，共享型別 `{name:string, description:string, argumentHint?:string}`；名稱不含 `/`。清單由 CLI 層依目前帳號及作業工作目錄探索，不是 App 快捷操作。
+- Claude 以 SDK 初始化協定探索實際 CLI 內建命令、skills、使用者／專案自訂命令、plugin／MCP 命令與別名，不發送使用者提示進行探索；保留 `/compact`、`/clear`（及 reset／new 別名）、`/context`、`/usage`（及 cost／stats 別名）、`/rename` 及可執行提示命令。排除只能改變單一 CLI 程序狀態的 model／effort／fast／focus／color／advisor／autocompact／output-style／config／settings／mcp／reload-plugins／reload-skills／goal／loop／proactive 控制，未知或被排除命令回 `cli_unsupported`。斜線命令原文交給 CLI，App 背景以 `--append-system-prompt` 附加，不破壞命令起首；`/clear` 後保留 CLI 最新回報的 session id。
+- Codex 現行 `exec` adapter 只支援帳號 `CODEX_HOME/prompts/*.md` 的 `/prompts:名稱` 自訂提示（只讀頂層普通 Markdown 檔，不讀 symlink／子資料夾），依 CLI 語意展開 `$1`–`$9`、`$ARGUMENTS`、`$NAME`、`$$` 與引號；缺必要參數、引號格式錯誤或展開後超出指示上限即拒絕。不自行建立專案 `.codex/prompts` 慣例；TUI 專用及未知命令回 `cli_unsupported`，不當普通文字交給模型、不宣稱執行成功。
+- UI 只在草稿最開頭的 `/名稱` token 顯示補全，以名稱前綴篩選；↑/↓ 選擇、Enter／Tab 或滑鼠填入 `/名稱 `，保留後面的參數、換行與 `@檔案`。CLI 說明及參數提示原文顯示，不經翻譯。
+- 選擇不直接執行，仍走原本的送出路徑。沒有實際候選時不攔截 Enter；⌘/Ctrl+Enter 仍送出，Shift+Enter 仍換行，IME 選字不選取或送出。Esc 關閉選單。載入、沒有可用命令、查詢失敗及無匹配各自有七語提示，不補造內建命令。
+- 切換 AI 或帳號設定時清除探索快取；分頁離開時解除事件監聽並使舊請求結果失效，不把舊帳號或已離開分頁的結果顯示出來。
+

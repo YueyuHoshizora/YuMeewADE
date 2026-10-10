@@ -31,6 +31,8 @@
   - 對話：每則訊息有複製鈕；失敗或被停止的回覆有「重試」；回覆顯示 CLI 回報的本輪 token 用量（輸入／輸出／快取）；標題列「匯出 Markdown」下載整段對話。
   - 工具呼叫群組預設收合（包含歷史紀錄），不沿用舊的全域自動展開偏好；點群組標題即可手動展開。
   - 輸入區不顯示閒置時的「送出」按鈕，使用 ⌘/Ctrl+Enter（或設定中的 Enter）送出；執行中仍有取消重做／補充／接續操作，AI 問題仍可按鈕回答。
+  - CLI 斜線指令：在草稿開頭輸入 `/`，依目前 AI／使用中帳號／作業顯示 CLI 原生命令與自訂指令（不是 App 快捷操作）；繼續輸入可篩選名稱。↑/↓ 選擇、Enter/Tab 或滑鼠填入 `/名稱 `，保留後面的參數與 `@檔案`；Esc 關閉。選擇不會執行，仍需用送出快捷鍵；無候選、載入中或查詢失敗時不攔截原本的 Enter，⌘/Ctrl+Enter 也不會被選單攔截。
+  - 指令支援範圍：Claude 透過 CLI 初始化協定探索內建命令、skills、自訂命令及 plugin／MCP 命令，再排除無法跨回合保留狀態的程序內控制（例如 `/model`、`/effort`、`/settings`）；可用範圍包含 `/compact`、`/clear`、`/context`、`/usage`、`/rename` 及可執行的提示命令，以實際 CLI 回報為準。Codex 的 `exec` 模式只支援該帳號 `CODEX_HOME/prompts/*.md` 的 `/prompts:名稱` 自訂提示（含 CLI 參數展開）；不把 TUI 專用命令當普通文字交給模型，也不自行發明專案 `.codex/prompts` 目錄慣例。不支援的斜線命令會回報錯誤，不冒充執行成功。
   - 下方可以改狀態與階段、勾選步驟（`## 步驟` 清單）、留下備註。步驟全勾或 AI 自己寫了「完成」時，會進入「確認完成」，由人決定。
 - **設定**：語言（7 種）、Enter／⌘+Enter 送出、通知開關、工作區根目錄（可直接切換，寫回設定檔；桌面版可用「選擇…」挑資料夾）、新作業預設 AI、AI 工具（版本、重新取得模型、更新 CLI、完整權限開關）、選單顯示的模型與順序、角色分工（寫回 `roles.yaml`）、最近操作紀錄。
 
@@ -118,6 +120,7 @@ HTTP JSON 加 SSE，桌面版與網頁版完全相同。型別定義在 [`src/sh
 | `POST /api/task/new`、`/api/task/update`、`/api/task/step`、`/api/task/memo`、`/api/task/completion`、`/api/task/archive`、`/api/task/read` | 作業 |
 | `POST /api/start` | 快速開始（建作業＋送出） |
 | `POST /api/chat/send` | 送出 `{project, task, text, ai?, model?, effort?, mode?, answer?, images?, fromQueue?}`；執行中必須帶 `mode`：`redo`／`amend`／`queue` |
+| `GET /api/chat/commands?project=&task=&ai=claude\|codex` | 目前帳號及作業可用的 CLI 指令 `{commands: [{name, description, argumentHint?}]}`，名稱不含開頭 `/` |
 | `POST /api/chat/stop`、`/api/chat/unqueue` | 停止（並清空排隊）、移除排隊 |
 | `POST /api/chat/rollback` | `{project, task, request}`：把工作副本還原到該則指示開始前（每輪開始前自動存檢查點）；執行中回 409，沒有檢查點回 404 |
 | `POST /api/chat/fork` | `{project, task, request}`：從該則指示開始之前分支出新作業（派生作業；副本長自當時的檢查點，帶走之前的對話但不帶附件），回新作業；執行中回 409，沒有檢查點回 404 |

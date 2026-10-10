@@ -1,6 +1,8 @@
 import type { MessageKey } from './zh-TW.ts';
 
 export const de: Record<MessageKey, string> = {
+  'slash.title': 'Native / eigene CLI-Befehle', 'slash.loading': 'CLI-Befehle werden geladen…', 'slash.error': 'CLI-Befehle konnten nicht geladen werden; keine Vorschläge verfügbar.',
+  'slash.empty': 'Für diese KI, dieses Konto und dieses Projekt sind in diesem Modus keine CLI-Befehle verfügbar.', 'slash.noMatch': 'Keine passenden CLI-Befehle.', 'slash.keys': '↑ ↓ auswählen · Enter / Tab einfügen · Esc schließen; zum Ausführen separat senden.',
   'usage.details': 'Konten und Kontingentdetails', 'usage.openDetails': 'Konten und Kontingentdetails für {ai} öffnen',
   'usage.defaultAccount': 'Standardkonto', 'usage.active': 'Aktiv', 'usage.activate': 'Konto verwenden',
   'usage.addAccount': 'Konto hinzufügen', 'usage.remove': 'Konto entfernen', 'usage.removeConfirm': 'Registrierung für „{name}“ entfernen? CLI-Einstellungen werden nicht gelöscht und das Konto wird nicht abgemeldet.',
@@ -237,6 +239,7 @@ export const de: Record<MessageKey, string> = {
   'detail.invalid_effort': 'Ungültiger Denkaufwand',
   'detail.no_cli_for_task': 'Dieser Aufgabe ist keine ausführbare KI zugewiesen',
   'detail.cli_unsupported': 'Nicht unterstützte KI: {field}',
+  'detail.slash_unsupported': 'Dieser Befehl ist nicht verfügbar oder wird im aktuellen CLI-Modus nicht unterstützt',
   'detail.cli_unavailable': '{field} ist nicht installiert oder nicht verfügbar',
   'detail.field_required': '{field} ist erforderlich',
   'detail.field_too_long': '{field} ist zu lang',

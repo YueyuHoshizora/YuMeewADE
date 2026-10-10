@@ -16,6 +16,12 @@ export type PhaseState = (typeof PHASE_STATES)[number];
 export const AI_NAMES = ['claude', 'codex', 'mock'] as const;
 export type AiName = (typeof AI_NAMES)[number];
 
+export interface SlashCommand {
+  name: string;
+  description: string;
+  argumentHint?: string;
+}
+
 /** roles.yaml 槽位裡代表「人」的值。 */
 export const HUMAN = '人';
 

@@ -1,6 +1,8 @@
 import type { MessageKey } from './zh-TW.ts';
 
 export const fr: Record<MessageKey, string> = {
+  'slash.title': 'Commandes CLI natives / personnalisées', 'slash.loading': 'Chargement des commandes CLI…', 'slash.error': 'Impossible de charger les commandes CLI ; aucune suggestion disponible.',
+  'slash.empty': 'Aucune commande CLI disponible dans ce mode pour cette IA, ce compte et ce projet.', 'slash.noMatch': 'Aucune commande CLI correspondante.', 'slash.keys': '↑ ↓ choisir · Entrée / Tab insérer · Échap fermer ; envoyer séparément pour exécuter.',
   'usage.details': 'Comptes et détails du quota', 'usage.openDetails': 'Ouvrir les comptes et détails du quota de {ai}',
   'usage.defaultAccount': 'Compte par défaut', 'usage.active': 'Actif', 'usage.activate': 'Utiliser ce compte',
   'usage.addAccount': 'Ajouter un compte', 'usage.remove': 'Retirer le compte', 'usage.removeConfirm': 'Retirer l’enregistrement de « {name} » ? Les réglages CLI ne seront pas supprimés et le compte ne sera pas déconnecté.',
@@ -237,6 +239,7 @@ export const fr: Record<MessageKey, string> = {
   'detail.invalid_effort': 'Effort de raisonnement invalide',
   'detail.no_cli_for_task': 'Aucune IA exécutable n’est assignée à cette tâche',
   'detail.cli_unsupported': 'IA non prise en charge : {field}',
+  'detail.slash_unsupported': 'Cette commande est introuvable ou non prise en charge dans le mode CLI actuel',
   'detail.cli_unavailable': '{field} n’est pas installé ou est indisponible',
   'detail.field_required': '{field} est obligatoire',
   'detail.field_too_long': '{field} est trop long',

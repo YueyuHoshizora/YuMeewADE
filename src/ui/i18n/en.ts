@@ -1,6 +1,8 @@
 import type { MessageKey } from './zh-TW.ts';
 
 export const en: Record<MessageKey, string> = {
+  'slash.title': 'Native / custom CLI commands', 'slash.loading': 'Loading CLI commands…', 'slash.error': 'Could not load CLI commands; no suggestions available.',
+  'slash.empty': 'No CLI commands are available in this mode for this AI, account and project.', 'slash.noMatch': 'No matching CLI commands.', 'slash.keys': '↑ ↓ choose · Enter / Tab insert · Esc close; send separately to execute.',
   'usage.details': 'Accounts and quota details', 'usage.openDetails': 'Open {ai} accounts and quota details',
   'usage.defaultAccount': 'Default account', 'usage.active': 'Active', 'usage.activate': 'Use account',
   'usage.addAccount': 'Add account', 'usage.remove': 'Remove account', 'usage.removeConfirm': 'Remove the registration for “{name}”? This does not delete CLI settings or sign out.',
@@ -237,6 +239,7 @@ export const en: Record<MessageKey, string> = {
   'detail.invalid_effort': 'Invalid reasoning effort',
   'detail.no_cli_for_task': 'No runnable AI assigned to this task',
   'detail.cli_unsupported': 'Unsupported AI: {field}',
+  'detail.slash_unsupported': 'This command is unavailable or unsupported in the current CLI mode',
   'detail.cli_unavailable': '{field} is not installed or unavailable',
   'detail.field_required': '{field} is required',
   'detail.field_too_long': '{field} is too long',

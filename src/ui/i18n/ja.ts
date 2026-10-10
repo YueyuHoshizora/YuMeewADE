@@ -1,6 +1,8 @@
 import type { MessageKey } from './zh-TW.ts';
 
 export const ja: Record<MessageKey, string> = {
+  'slash.title': 'CLI 標準／カスタムコマンド', 'slash.loading': 'CLI コマンドを読み込み中…', 'slash.error': 'CLI コマンドを読み込めません。候補は表示できません。',
+  'slash.empty': 'この AI・アカウント・プロジェクトでは、現在のモードで使える CLI コマンドがありません。', 'slash.noMatch': '一致する CLI コマンドがありません。', 'slash.keys': '↑ ↓ 選択 · Enter / Tab 挿入 · Esc 閉じる；実行には送信が必要です。',
   'usage.details': 'アカウントと利用枠の詳細', 'usage.openDetails': '{ai} のアカウントと利用枠の詳細を開く',
   'usage.defaultAccount': '既定のアカウント', 'usage.active': '使用中', 'usage.activate': 'アカウントを切り替え',
   'usage.addAccount': 'アカウントを追加', 'usage.remove': 'アカウントを削除', 'usage.removeConfirm': '「{name}」の登録を削除しますか？CLI 設定の削除やログアウトは行いません。',
@@ -237,6 +239,7 @@ export const ja: Record<MessageKey, string> = {
   'detail.invalid_effort': '無効な推論の強度',
   'detail.no_cli_for_task': 'このタスクに実行可能な AI が指定されていません',
   'detail.cli_unsupported': '未対応の AI：{field}',
+  'detail.slash_unsupported': 'このコマンドは見つからないか、現在の CLI モードでは未対応です',
   'detail.cli_unavailable': '{field} が未インストールか利用できません',
   'detail.field_required': '{field} は必須です',
   'detail.field_too_long': '{field} が長すぎます',

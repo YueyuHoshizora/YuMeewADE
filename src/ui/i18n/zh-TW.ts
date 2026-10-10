@@ -1,5 +1,7 @@
 // 繁體中文定義訊息契約；專案內容與 AI 輸出不翻譯。
 export const zhTW = {
+  'slash.title': 'CLI 原生命令／自訂指令', 'slash.loading': '正在讀取 CLI 指令…', 'slash.error': '無法讀取 CLI 指令；未提供建議。',
+  'slash.empty': '此 AI／帳號／專案沒有可用於目前模式的 CLI 指令。', 'slash.noMatch': '沒有符合的 CLI 指令。', 'slash.keys': '↑ ↓ 選擇 · Enter / Tab 填入 · Esc 關閉；填入後仍需送出。',
   'usage.details': '帳號與額度詳情', 'usage.openDetails': '開啟 {ai} 帳號與額度詳情',
   'usage.defaultAccount': '預設帳號', 'usage.active': '使用中', 'usage.activate': '切換帳號',
   'usage.addAccount': '新增帳號', 'usage.remove': '移除帳號', 'usage.removeConfirm': '移除「{name}」的登錄？不會刪除 CLI 設定或登出帳號。',
@@ -81,6 +83,7 @@ export const zhTW = {
   'detail.invalid_effort': '思考強度不合法',
   'detail.no_cli_for_task': '此作業未指定可執行的 AI',
   'detail.cli_unsupported': '不支援的 AI：{field}',
+  'detail.slash_unsupported': '目前的 CLI 模式不支援此指令，或找不到該指令',
   'detail.cli_unavailable': '{field} 未安裝或不可用',
   'detail.field_required': '{field} 必填',
   'detail.field_too_long': '{field} 過長',

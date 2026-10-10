@@ -1,6 +1,8 @@
 import type { MessageKey } from './zh-TW.ts';
 
 export const zhCN: Record<MessageKey, string> = {
+  'slash.title': 'CLI 原生命令／自定义指令', 'slash.loading': '正在读取 CLI 指令…', 'slash.error': '无法读取 CLI 指令；未提供建议。',
+  'slash.empty': '此 AI／账号／项目没有可用于当前模式的 CLI 指令。', 'slash.noMatch': '没有匹配的 CLI 指令。', 'slash.keys': '↑ ↓ 选择 · Enter / Tab 填入 · Esc 关闭；填入后仍需发送。',
   'usage.details': '账号与额度详情', 'usage.openDetails': '打开 {ai} 账号与额度详情',
   'usage.defaultAccount': '默认账号', 'usage.active': '使用中', 'usage.activate': '切换账号',
   'usage.addAccount': '添加账号', 'usage.remove': '移除账号', 'usage.removeConfirm': '移除「{name}」的登记？不会删除 CLI 设置或退出账号。',
@@ -237,6 +239,7 @@ export const zhCN: Record<MessageKey, string> = {
   'detail.invalid_effort': '思考强度不合法',
   'detail.no_cli_for_task': '此任务未指定可执行的 AI',
   'detail.cli_unsupported': '不支持的 AI：{field}',
+  'detail.slash_unsupported': '当前 CLI 模式不支持此指令，或找不到该指令',
   'detail.cli_unavailable': '{field} 未安装或不可用',
   'detail.field_required': '{field} 必填',
   'detail.field_too_long': '{field} 过长',

@@ -5,6 +5,8 @@ import type { Ask, QuotaWindow, TurnUsage } from '../shared/types.ts';
 import { findExecutable, minimalEnv, runLineProcess } from './process.ts';
 import { readClaudeToken } from './claude-credentials.ts';
 import type { CliEvent, CliProvider, CliRun, SendOptions } from './provider.ts';
+import { claudeCommands, slashName } from './commands.ts';
+import { AppError } from '../shared/errors.ts';
 
 export function claudeArgs(cfg: CliCommandConfig, opts: SendOptions): string[] {
   const args = [...((opts.fullAccess ?? cfg.fullAccess) ? cfg.fullAccessArgs : cfg.safeArgs), ...cfg.baseArgs];
@@ -12,6 +14,7 @@ export function claudeArgs(cfg: CliCommandConfig, opts: SendOptions): string[] {
   if (opts.effort) args.push('--effort', opts.effort);
   if (opts.resumeId) args.push('--resume', opts.resumeId);
   for (const d of opts.addDirs ?? []) args.push('--add-dir', d);
+  if (opts.slashCommand) args.push('--append-system-prompt', opts.prompt);
   return args;
 }
 
@@ -90,7 +93,7 @@ function parseUsage(value: unknown): TurnUsage | undefined {
 export function createClaudeParser(onEvent: (ev: CliEvent) => void, now: () => number = Date.now): (obj: Record<string, unknown>) => void {
   let streamed = '';
   let sawStream = false;
-  let sessionSent = false;
+  let sessionId = '';
   const runId = randomUUID();
   let generating: number | null = null;
   let messageUsage: Record<string, unknown> = {};
@@ -129,8 +132,8 @@ export function createClaudeParser(onEvent: (ev: CliEvent) => void, now: () => n
   };
   return (obj) => {
     const sid = obj['session_id'];
-    if (!sessionSent && typeof sid === 'string' && sid) {
-      sessionSent = true;
+    if (obj['parent_tool_use_id'] == null && typeof sid === 'string' && sid && sid !== sessionId) {
+      sessionId = sid;
       onEvent({ type: 'session', id: sid });
     }
     switch (obj['type']) {
@@ -224,6 +227,19 @@ export class ClaudeCliProvider implements CliProvider {
     return fetchClaudeQuota(configDir ? { ...this.env, CLAUDE_CONFIG_DIR: configDir } : this.env);
   }
 
+  commands(cwd: string, configDir?: string) {
+    return claudeCommands(this.cfg.command, [...this.cfg.baseArgs, '--input-format', 'stream-json'], cwd,
+      configDir ? { ...this.env, CLAUDE_CONFIG_DIR: configDir } : this.env);
+  }
+
+  async resolveCommand(text: string, cwd: string, configDir?: string) {
+    const name = slashName(text);
+    if (!name || !(await this.commands(cwd, configDir)).some(command => command.name === name)) {
+      throw new AppError('bad_request', 'slash_unsupported');
+    }
+    return { text: text.trimStart(), native: true };
+  }
+
   send(opts: SendOptions, onEvent: (ev: CliEvent) => void): CliRun {
     const imagePrompt = opts.images?.length ? `\n\n# 圖片附件\n請用 Read 工具查看以下圖片：\n${opts.images.join('\n')}` : '';
     let completed = false;
@@ -231,7 +247,7 @@ export class ClaudeCliProvider implements CliProvider {
     const run = runLineProcess(
       {
         command: this.cfg.command, args: claudeArgs(this.cfg, opts),
-        cwd: opts.cwd, env: opts.configDir ? { ...this.env, CLAUDE_CONFIG_DIR: opts.configDir } : this.env, prompt: opts.prompt + imagePrompt, label: 'claude',
+        cwd: opts.cwd, env: opts.configDir ? { ...this.env, CLAUDE_CONFIG_DIR: opts.configDir } : this.env, prompt: opts.slashCommand ?? opts.prompt + imagePrompt, label: 'claude',
       },
       createClaudeParser(ev => {
         if (ev.type === 'result') completed = true;

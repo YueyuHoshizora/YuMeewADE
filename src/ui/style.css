@@ -426,6 +426,15 @@ body { height: 100dvh; display: grid; grid-template-rows: 64px minmax(0, 1fr) au
 .mention-list { margin: 0 0 4px; padding: 4px; list-style: none; max-height: 168px; overflow: auto; border: 1px solid var(--border); border-radius: 8px; background: var(--panel); font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 12px; }
 .mention-list li { padding: 3px 8px; border-radius: 5px; cursor: pointer; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .mention-list li.active { background: color-mix(in srgb, var(--accent) 22%, transparent); }
+.slash-menu { margin: 0 0 4px; padding: 6px; border: 1px solid var(--border); border-radius: 8px; background: var(--panel); font-size: 12px; }
+.slash-label { padding: 0 6px 4px; color: var(--muted); }
+.slash-list { margin: 0; padding: 0; list-style: none; max-height: 168px; overflow: auto; }
+.slash-list li { padding: 4px 8px; border-radius: 5px; cursor: pointer; overflow-wrap: anywhere; }
+.slash-list li.active { background: color-mix(in srgb, var(--accent) 22%, transparent); }
+.slash-list strong, .slash-arguments { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; }
+.slash-arguments { margin-left: 8px; color: var(--muted); }
+.slash-description { color: var(--muted); }
+.slash-status { margin: 4px 6px 0; color: var(--muted); }
 .file-viewer { display: grid; grid-template-columns: minmax(180px, 1fr) minmax(0, 2fr); gap: 12px; min-height: 360px; }
 .file-list { min-width: 0; }
 .file-results { margin: 6px 0 0; padding: 0; list-style: none; max-height: 52vh; overflow: auto; }

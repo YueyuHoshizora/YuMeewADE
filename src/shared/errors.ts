@@ -51,6 +51,7 @@ export const DETAIL_MESSAGES = {
   invalid_effort: 'effort 不合法',
   no_cli_for_task: '此作業未指定可執行的 CLI（role 為人或未設定）',
   cli_unsupported: '不支援的 CLI：{field}',
+  slash_unsupported: '目前的 CLI 模式不支援此指令，或找不到該指令',
   cli_unavailable: '{field} 未安裝或不可用',
   field_required: '{field} 必填',
   field_too_long: '{field} 過長',
