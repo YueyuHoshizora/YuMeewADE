@@ -19,8 +19,10 @@ async function hasChat(file: string): Promise<boolean> {
     throw error;
   }
 }
+export type StateSnapshot = Omit<AppState, 'running' | 'unread'>;
 
-export async function buildState(app: App): Promise<AppState> {
+
+export async function buildState(app: App): Promise<StateSnapshot> {
   const [projects, savedOrder, settings, roles, ais] = await Promise.all([
     app.projects.list(), app.order.get(), app.settings.get(), app.roles(), app.ai.list(),
   ]);
@@ -49,5 +51,5 @@ export async function buildState(app: App): Promise<AppState> {
     order[project.parent] = [...listed, ...ids.filter((id) => !listed.includes(id))];
   }
   const { promptChars, queueLength, concurrentRuns, uploadBytes, imagesPerSend } = app.config.limits;
-  return { version: app.version, root: app.ws.root, projects: views, order, running: app.runner.running(), unread: app.runner.unread(), ais, settings, roles, limits: { promptChars, queueLength, concurrentRuns, uploadBytes, imagesPerSend } };
+  return { version: app.version, root: app.ws.root, projects: views, order, ais, settings, roles, limits: { promptChars, queueLength, concurrentRuns, uploadBytes, imagesPerSend } };
 }

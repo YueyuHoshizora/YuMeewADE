@@ -1,0 +1,92 @@
+import assert from 'node:assert/strict';
+import { promises as fs } from 'node:fs';
+import os from 'node:os';
+import path from 'node:path';
+import { test } from 'node:test';
+import { setTimeout as delay } from 'node:timers/promises';
+import { App } from '../server/app.ts';
+import { MockCliProvider } from '../cli/mock.ts';
+import { parseConfig } from '../shared/config.ts';
+
+async function fixture() {
+  const root = await fs.mkdtemp(path.join(os.tmpdir(), 'state-cache-'));
+  const app = new App(parseConfig(`workspace:\n  root: ${JSON.stringify(root)}\n`, path.join(root, 'config.yaml')), {
+    providers: { mock: new MockCliProvider(5) }, home: path.join(root, 'home'),
+  });
+  await app.init();
+  await app.projects.create({ name: 'Project' });
+  const task = await app.tasks.create('Project', { title: 'Before', workspace: 'direct' });
+  return { app, task, async close() { app.close(); await fs.rm(root, { recursive: true, force: true }); } };
+}
+
+test('cached ledger snapshot is reused; changed and TTL refresh it while running/unread stay fresh', async (t) => {
+  const f = await fixture();
+  try {
+    // Isolate explicit invalidation and TTL from platform watch delivery.
+    f.app.close();
+    const first = await f.app.state();
+    const second = await f.app.state();
+    assert.equal(first.projects, second.projects);
+    const run = { project: 'Project', task: f.task.id, ai: 'mock', request: 'request', startedAt: 'now' };
+    t.mock.method(f.app.runner, 'running', () => [run]);
+    t.mock.method(f.app.runner, 'unread', () => [{ project: 'Project', task: f.task.id }]);
+    const fresh = await f.app.state();
+    assert.equal(fresh.projects, first.projects);
+    assert.deepEqual(fresh.running, [run]);
+    assert.deepEqual(fresh.unread, [{ project: 'Project', task: f.task.id }]);
+    await f.app.tasks.update('Project', f.task.id, { title: 'After' });
+    assert.equal((await f.app.state()).projects[0]?.tasks[0]?.title, 'Before');
+    f.app.changed();
+    assert.equal((await f.app.state()).projects[0]?.tasks[0]?.title, 'After');
+    await f.app.tasks.update('Project', f.task.id, { title: 'Expired' });
+    const now = Date.now();
+    t.mock.method(Date, 'now', () => now + 6000);
+    assert.equal((await f.app.state()).projects[0]?.tasks[0]?.title, 'Expired');
+  } finally { await f.close(); }
+});
+
+test('external task edits invalidate the state cache', async () => {
+  const f = await fixture();
+  try {
+    await f.app.state();
+    await f.app.tasks.update('Project', f.task.id, { title: 'External' });
+    // fs.watch is a real platform event; bounded polling awaits the resulting state.
+    const deadline = Date.now() + 3000;
+    while ((await f.app.state()).projects[0]?.tasks[0]?.title !== 'External') {
+      assert.ok(Date.now() < deadline, 'external state invalidation timed out');
+      await delay(20);
+    }
+  } finally { await f.close(); }
+});
+
+test('concurrent rebuilds share a snapshot and invalidation during a build cannot cache stale data', async () => {
+  const f = await fixture();
+  try {
+    f.app.close();
+    const original = f.app.projects.list.bind(f.app.projects);
+    const entered = Promise.withResolvers<void>();
+    const release = Promise.withResolvers<void>();
+    let block = true;
+    f.app.projects.list = async () => {
+      const projects = await original();
+      if (block) {
+        entered.resolve();
+        await release.promise;
+      }
+      return projects;
+    };
+    const a = f.app.state();
+    const b = f.app.state();
+    await entered.promise;
+    await f.app.projects.update('Project', { status: '完成' });
+    f.app.changed();
+    block = false;
+    const current = await f.app.state();
+    assert.equal(current.projects[0]?.status, '完成');
+    release.resolve();
+    const [oldA, oldB] = await Promise.all([a, b]);
+    assert.equal(oldA.projects, oldB.projects);
+    assert.notEqual(oldA.projects[0]?.status, '完成');
+    assert.equal((await f.app.state()).projects, current.projects);
+  } finally { await f.close(); }
+});

@@ -21,7 +21,7 @@ import { loadRoles } from '../roles/roles.ts';
 import type { Config } from '../shared/config.ts';
 import { AppError } from '../shared/errors.ts';
 import type { AppState, Roles } from '../shared/types.ts';
-import { buildState } from '../state/state.ts';
+import { buildState, type StateSnapshot } from '../state/state.ts';
 
 const pkg = createRequire(import.meta.url)('../../package.json') as { version: string };
 
@@ -58,6 +58,9 @@ export class App {
   private pendingChange: { project?: string; task?: string } | null = null;
   private readonly ownsSse: boolean;
   private watcher: LedgerWatcher | null = null;
+  private stateGeneration = 0;
+  private stateCache: { value: StateSnapshot; expires: number } | null = null;
+  private stateFlight: { generation: number; promise: Promise<StateSnapshot> } | null = null;
 
   constructor(config: Config, options: AppOptions = {}) {
     this.config = config;
@@ -105,12 +108,32 @@ export class App {
     return loadRoles(this.ws.rolesFile);
   }
 
-  state(): Promise<AppState> {
-    return buildState(this);
+  async state(): Promise<AppState> {
+    let value = this.stateCache && this.stateCache.expires > Date.now() ? this.stateCache.value : null;
+    if (!value) {
+      const generation = this.stateGeneration;
+      let flight = this.stateFlight;
+      if (!flight || flight.generation !== generation) {
+        flight = { generation, promise: buildState(this) };
+        this.stateFlight = flight;
+      }
+      try {
+        value = await flight.promise;
+        // An external edit during the build must not bless an older snapshot.
+        if (generation === this.stateGeneration) {
+          this.stateCache = { value, expires: Date.now() + 5000 };
+        }
+      } finally {
+        if (this.stateFlight === flight) this.stateFlight = null;
+      }
+    }
+    return { ...value, running: this.runner.running(), unread: this.runner.unread() };
   }
 
   /** 通知所有客戶端重抓 /api/state；100ms 內的多次變更合併成一次。 */
   changed(project?: string, task?: string): void {
+    this.stateGeneration++;
+    this.stateCache = null;
     if (this.pendingChange === null) this.pendingChange = { ...(project ? { project } : {}), ...(task ? { task } : {}) };
     else if (this.pendingChange.project !== project || this.pendingChange.task !== task) this.pendingChange = {};
     if (this.changeTimer) return;
