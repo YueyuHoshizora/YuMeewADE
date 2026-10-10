@@ -9,7 +9,7 @@
 > **安全宣告（請先讀）**
 > - 核心只監聽 `http://127.0.0.1:4560`，**沒有登入、沒有認證**。這是刻意的：它是單人本機工具，不是網頁服務。本機上的其他程序可以呼叫它。請勿改綁 `0.0.0.0`，也不要把 port 轉發到外部。
 > - **AI 預設擁有完整權限**：claude 以 `--dangerously-skip-permissions`、codex 以 `--dangerously-bypass-approvals-and-sandbox` 啟動，會用你的帳號權限改檔與執行任何指令（與 project-hub 相同；使用者 2026-10-10 決定）。可以在「設定 → AI 工具 → 完整權限」逐一關閉。關閉後 claude 只自動接受改檔，codex 在工作目錄沙箱內執行。
-> - AI 的費用、方案與登入由各 CLI 自行管理。本工具不代管憑證，也不保證不產生費用。
+> - AI 的費用、方案與登入由各 CLI 自行管理。本工具不保存、不修改憑證，也不保證不產生費用。唯一例外：為了在底部列顯示 Claude 的 5 小時／7 天用量，核心會**讀取** Claude Code 的 OAuth 憑證（macOS 鑰匙圈 `Claude Code-credentials`，其他平台為 `.credentials.json`），只用來向 Anthropic 的用量端點（非公開 API）發一次查詢，不寫入日誌、不傳給其他地方。
 
 ## 畫面與流程
 

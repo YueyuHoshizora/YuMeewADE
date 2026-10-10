@@ -2,13 +2,14 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import { DEFAULT_CONFIG } from '../shared/config.ts';
-import { ClaudeCliProvider, claudeArgs, claudeQuota, createClaudeParser } from './claude.ts';
+import { ClaudeCliProvider, claudeArgs, claudeOauthQuota, claudeQuota, createClaudeParser, fetchClaudeQuota } from './claude.ts';
 import { CodexCliProvider, codexAppServerQuota, codexArgs, codexQuota, createCodexParser, fetchCodexQuota, readCodexQuota } from './codex.ts';
 import { captureCommand, redactArgs } from './process.ts';
 import { MockCliProvider } from './mock.ts';
 import { createProviders } from './providers.ts';
 import type { CliEvent } from './provider.ts';
 import { promises as fs } from 'node:fs';
+import http from 'node:http';
 import os from 'node:os';
 import path from 'node:path';
 
@@ -384,6 +385,62 @@ test('即時額度查詢：走 initialize → rateLimits/read 取得回應，錯
     await assert.rejects(fetchCodexQuota(process.execPath, [silent], process.env, 300), /timed out/);
     await assert.rejects(fetchCodexQuota('no-such-codex-binary', [], process.env), /not found/);
   } finally {
+    await fs.rm(dir, { recursive: true, force: true });
+  }
+});
+
+test('Claude OAuth 用量回應轉成窗口：只收已知窗口、百分比夾在 0–100、達 100% 視為上限', () => {
+  const body = {
+    five_hour: { utilization: 33.04, resets_at: '2026-10-10T22:59:59.624195+00:00' },
+    seven_day: { utilization: 8, resets_at: null },
+    seven_day_opus: null,
+    iguana_necktie: { utilization: 99, resets_at: '2026-11-05T07:59:00+00:00' },
+  };
+  assert.deepEqual(claudeOauthQuota(body), {
+    limited: false,
+    windows: [
+      { label: '5h', usedPercent: 33, resetsAt: '2026-10-10T22:59:59.624Z' },
+      { label: '7d', usedPercent: 8, resetsAt: null },
+    ],
+  });
+  assert.equal(claudeOauthQuota({ five_hour: { utilization: 120, resets_at: null } })?.limited, true);
+  assert.equal(claudeOauthQuota({ five_hour: null }), null);
+  assert.equal(claudeOauthQuota('x'), null);
+});
+
+test('Claude 即時用量查詢：帶 Bearer 憑證與 beta 標頭，HTTP 錯誤與缺憑證都 reject', async () => {
+  const dir = await fs.mkdtemp(path.join(os.tmpdir(), 'claude-quota-'));
+  const seen: Record<string, string | undefined>[] = [];
+  const server = http.createServer((req, res) => {
+    seen.push({ auth: req.headers.authorization, beta: req.headers['anthropic-beta'] as string | undefined });
+    if (req.headers.authorization !== 'Bearer tok-1') { res.writeHead(401).end('{}'); return; }
+    res.writeHead(200, { 'content-type': 'application/json' }).end(JSON.stringify({ five_hour: { utilization: 12, resets_at: null } }));
+  });
+  await new Promise<void>(resolve => server.listen(0, '127.0.0.1', resolve));
+  const url = `http://127.0.0.1:${(server.address() as { port: number }).port}/usage`;
+  try {
+    // 只在非 macOS 才一定走檔案；macOS 會先試鑰匙圈，這裡用 CLAUDE_CONFIG_DIR 只驗證檔案路徑的行為。
+    const creds = (token: string, expiresAt: number) => fs.writeFile(path.join(dir, '.credentials.json'), JSON.stringify({ claudeAiOauth: { accessToken: token, expiresAt } }));
+    const env = { ...process.env, CLAUDE_CONFIG_DIR: dir };
+    // HTTP 部分用注入的憑證讀取，在所有平台都跑。
+    const quota1 = await fetchClaudeQuota(env, 2000, url, async () => 'tok-1');
+    assert.deepEqual(quota1?.windows, [{ label: '5h', usedPercent: 12, resetsAt: null }]);
+    assert.deepEqual(seen[0], { auth: 'Bearer tok-1', beta: 'oauth-2025-04-20' });
+    await assert.rejects(fetchClaudeQuota(env, 2000, url, async () => 'bad'), /401/);
+    if (process.platform !== 'darwin') {
+      await creds('tok-1', Date.now() + 60_000);
+      const quota = await fetchClaudeQuota(env, 2000, url);
+      assert.deepEqual(quota?.windows, [{ label: '5h', usedPercent: 12, resetsAt: null }]);
+      assert.deepEqual(seen[0], { auth: 'Bearer tok-1', beta: 'oauth-2025-04-20' });
+      await creds('bad', Date.now() + 60_000);
+      await assert.rejects(fetchClaudeQuota(env, 2000, url), /401/);
+      await creds('tok-1', Date.now() - 1);
+      await assert.rejects(fetchClaudeQuota(env, 2000, url), /expired/);
+      await fs.rm(path.join(dir, '.credentials.json'));
+      await assert.rejects(fetchClaudeQuota(env, 2000, url), /not found/);
+    }
+  } finally {
+    server.close();
     await fs.rm(dir, { recursive: true, force: true });
   }
 });

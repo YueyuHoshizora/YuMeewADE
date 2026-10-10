@@ -9,7 +9,7 @@ The workflow draws on [kieiken/project-hub](https://github.com/kieiken/project-h
 > **Security notice (read first)**
 > - The core listens only on `http://127.0.0.1:4560`, with **no login or authentication**. This is intentional: it is a single-user local tool, not a web service. Other processes on your machine can call it. Do not bind it to `0.0.0.0` or forward the port externally.
 > - **AI has full access by default**: claude starts with `--dangerously-skip-permissions`, and codex with `--dangerously-bypass-approvals-and-sandbox`. They can modify files and execute any command with your account's permissions (the same as project-hub; a user decision on 2026-10-10). Disable this individually under “Settings → AI tools → Full access.” With full access disabled, claude automatically approves only file edits, while codex runs in a working-directory sandbox.
-> - Each CLI manages its own AI billing, plans, and login. This tool does not manage credentials or guarantee that no charges will occur.
+> - Each CLI manages its own AI billing, plans, and login. This tool does not store or modify credentials, and does not guarantee that no charges will occur. One exception: to show Claude's 5-hour / 7-day usage in the footer, the core **reads** Claude Code's OAuth credentials (macOS Keychain item `Claude Code-credentials`, or `.credentials.json` on other platforms) and uses them only to query Anthropic's usage endpoint (a non-public API). They are never logged or sent anywhere else.
 
 ## Interface and workflow
 
