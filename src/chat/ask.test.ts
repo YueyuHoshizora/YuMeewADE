@@ -9,10 +9,26 @@ test('closed question extracts options and preserves surrounding text', () => {
   });
 });
 
-test('unclosed or mismatched question blocks remain plain text', () => {
-  for (const text of ['[[question]]\nWhich?\n1. A\nrest', '[[question]]Q[[/問題]]']) {
-    assert.deepEqual(parseAsk(text), { text, asks: [] });
+test('unclosed question consumes only its options and keeps later prose visible', () => {
+  for (const separator of ['\n', '\n\n']) {
+    assert.deepEqual(parseAsk(`[[question]]\nWhich?\n1. A\n2. B${separator}rest\n- unrelated list`), {
+      text: 'rest\n- unrelated list',
+      asks: [{ question: 'Which?', options: ['A', 'B'], multi: false }],
+    });
   }
+  assert.deepEqual(parseAsk('[[question]]\nPick (multi)\n1) A\n2) B'), {
+    text: '',
+    asks: [{ question: 'Pick (multi)', options: ['A', 'B'], multi: true }],
+  });
+});
+
+test('unclosed question without options ends at its first paragraph', () => {
+  assert.deepEqual(parseAsk('before\n[[question]]\nQuestion line\nmore question\n\nVisible paragraph\n1. not an option'), {
+    text: 'before\n\n\nVisible paragraph\n1. not an option',
+    asks: [{ question: 'Question line\nmore question', options: [], multi: false }],
+  });
+  const mismatched = '[[question]]Q[[/問題]]';
+  assert.deepEqual(parseAsk(mismatched), { text: mismatched, asks: [] });
 });
 
 test('text after options remains visible and all options are retained', () => {
