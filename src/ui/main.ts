@@ -11,6 +11,7 @@ import { stream } from './components/stream.ts';
 import { attention } from './components/attention.ts';
 import { searchView } from './views/search.ts';
 import { usageBar } from './components/usage.ts';
+import { runningChip } from './components/running.ts';
 
 const header = document.getElementById('header')!; const sidebar = document.getElementById('sidebar')!; const main = document.getElementById('main')!; const footer = document.getElementById('footer')!;
 let state: AppState | null = null; let usage: UsageState = { ais: [], tokensPerSecond: 0 }; let view: View | null = null; let route = ''; let viewTarget = ''; let refreshJob: Promise<void> | null = null; let refreshAgain = false; let debounce: number | undefined;
@@ -37,7 +38,8 @@ function drawShell(): void {
 }
 function drawFooter(): void {
   if (!state) return;
-  footer.setAttribute('aria-label', t('usage.region')); footer.replaceChildren(...usageBar(state, usage));
+  const chip = runningChip(state);
+  footer.setAttribute('aria-label', t('usage.region')); footer.replaceChildren(...(chip ? [chip] : []), ...usageBar(state, usage));
 }
 function navigate(force = false): void {
   if (!state) return;

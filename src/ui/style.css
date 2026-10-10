@@ -277,6 +277,8 @@ body { height: 100dvh; display: grid; grid-template-rows: 64px minmax(0, 1fr) au
 .usage-window.stale { opacity: .6; }
 .usage-speed { margin-left: auto; padding-left: 12px; }
 .usage-speed.running { color: var(--accent); }
+.running-chip { padding: 1px 9px; font-size: 12px; border-radius: 999px; color: var(--red); border-color: var(--red); flex: 0 0 auto; }
+.running-title { flex: 1 1 auto; min-width: 0; overflow-wrap: anywhere; }
 .task-page { height: 100%; min-height: 0; overflow: hidden; }
 .transcript { flex: 1 1 0; min-height: 0; overflow: auto; }
 .question-area { padding: 0; }
