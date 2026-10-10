@@ -123,6 +123,7 @@ HTTP JSON 加 SSE，桌面版與網頁版完全相同。型別定義在 [`src/sh
 | `GET /api/task/files?project=&task=&q=`、`GET /api/task/file?project=&task=&path=` | 唯讀檔案瀏覽與 `@檔名` 提及：依檔名搜尋（最多 50 筆，不含 `.env*` 等本機機密檔）、讀取單一檔案（前 256 KB；路徑必須在清單內且解析後仍在副本內，二進位檔不回內容） |
 | `POST /api/task/revert-file` | `{project, task, path}`：把單一檔案還原成與主資料夾分岔時的樣子（原有檔案取回原內容、新增的檔案刪除）；路徑必須是目前有變更的檔案，否則 404；AI 執行中回 409 |
 | `POST /api/task/verify` | 在作業工作副本執行專案的驗證指令，回 `{ok, exitCode, timedOut, ms, output, truncated}`；AI 執行中、已有驗證在跑或超過 `concurrentRuns` 回 409 |
+| `GET /api/task/verify?project=&task=` | 最近一次驗證的摘要 `{ok, exitCode, timedOut, at}`；沒驗證過，或之後 AI 又開始工作／檔案被還原（單檔還原、回溯）就回 `null`。只存記憶體，Git 面板用它顯示「驗證通過／失敗／尚未驗證」 |
 | `GET /api/ai`、`POST /api/ai/refresh`、`POST /api/ai/update` | AI 工具與模型清單 |
 | `POST /api/settings`、`POST /api/roles`、`GET /api/log` | 設定、角色、操作紀錄 |
 | `POST /api/open` | 用系統開啟資料夾或檔案 |

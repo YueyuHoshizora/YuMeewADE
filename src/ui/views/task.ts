@@ -1,6 +1,6 @@
 import type {
   AppState, Busy, ChatEvent, ChatHistory, ChatRow, ProjectView,
-  QueueItem, SendMode, Task, TaskView, VerifyResult,
+  QueueItem, SendMode, Task, TaskView, VerifyResult, VerifyStatus,
 } from '../../shared/types.ts';
 import { TASK_STATES } from '../../shared/types.ts';
 import { api, query, request } from '../api.ts';
@@ -89,6 +89,7 @@ export function taskView(
         ...(result.truncated ? [el('p', 'warning', t('verify.truncated'))] : []),
         el('pre', 'verify-output', result.output),
         ...(result.ok ? [] : [sendFix(result)]));
+      void renderWork();
     } finally {
       verifying = false;
       updateHeaderActions();
@@ -710,6 +711,9 @@ export function taskView(
     const preview = await api.preview(project.id, task.id);
     if (!alive || serial !== previewSerial || !preview) return;
     if (mergeButton) mergeButton.disabled = preview.files === 0;
+    const verified = project.verify?.trim() && preview.files > 0
+      ? await request<VerifyStatus | null>(query('/api/task/verify', { project: project.id, task: task.id })) : undefined;
+    if (!alive || serial !== previewSerial) return;
     const reviewer = context.state.ais.find(a => a.name !== 'mock' && a.available && a.name !== task.cli);
     if (reviewer && preview.files > 0) {
       actions.append(button(t('git.review', { ai: aiLabel(reviewer.name) }), async () => {
@@ -725,6 +729,11 @@ export function taskView(
       el('p', 'copy-stats', preview.files === 0
         ? t('copy.noChanges')
         : t('copy.stats', { files: preview.files, added: preview.added, removed: preview.removed })));
+    if (verified !== undefined) {
+      info.append(verified
+        ? el('p', verified.ok ? 'verify-pass' : 'error-mark', t(verified.ok ? 'git.verifyPass' : 'git.verifyFail', { time: localTime(verified.at) }))
+        : el('p', 'muted', t('git.verifyNone')));
+    }
     if (preview.paths.length) {
       const list = el('ul', 'git-files');
       for (const file of preview.paths.slice(0, gitFileLimit)) {

@@ -7,7 +7,7 @@ import type { Workspace } from '../ledger/workspace.ts';
 import type { Config } from '../shared/config.ts';
 import { AppError } from '../shared/errors.ts';
 import { isInside } from '../shared/fsx.ts';
-import type { VerifyResult } from '../shared/types.ts';
+import type { VerifyResult, VerifyStatus } from '../shared/types.ts';
 
 interface VerifyOptions {
   ws: Workspace;
@@ -20,9 +20,19 @@ interface VerifyOptions {
 export class VerifyService {
   private readonly opts: VerifyOptions;
   private readonly runs = new Map<string, { stop?: (() => void) | undefined; done?: Promise<VerifyResult> }>();
+  private readonly last = new Map<string, VerifyStatus>();
   private closed = false;
 
   constructor(opts: VerifyOptions) { this.opts = opts; }
+
+  /** 最近一次驗證結果；該作業之後 AI 又開始工作或檔案被還原就失效（見 invalidate）。 */
+  status(project: string, task: string): VerifyStatus | null {
+    return this.last.get(JSON.stringify([project, task])) ?? null;
+  }
+
+  invalidate(project: string, task: string): void {
+    this.last.delete(JSON.stringify([project, task]));
+  }
 
   run(project: string, task: string): Promise<VerifyResult> {
     const key = JSON.stringify([project, task]);
@@ -30,7 +40,12 @@ export class VerifyService {
     const entry: { stop?: (() => void) | undefined; done?: Promise<VerifyResult> } = {};
     // Reserve before reading the ledger so concurrent requests cannot both start.
     this.runs.set(key, entry);
-    entry.done = this.execute(project, task, entry).finally(() => this.runs.delete(key));
+    entry.done = this.execute(project, task, entry)
+      .then(result => {
+        this.last.set(key, { ok: result.ok, exitCode: result.exitCode, timedOut: result.timedOut, at: new Date().toISOString() });
+        return result;
+      })
+      .finally(() => this.runs.delete(key));
     return entry.done;
   }
 

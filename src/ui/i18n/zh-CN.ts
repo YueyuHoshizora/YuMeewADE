@@ -24,6 +24,7 @@ export const zhCN: Record<MessageKey, string> = {
   'chat.changes': '本轮变更 {files} 个文件 +{added} −{removed}',
   'git.review': '请 {ai} 审查', 'git.reviewBusy': 'AI 运行中，请等这一轮结束再请另一个 AI 审查', 'git.reviewPrompt': '请以审查者的身份检查当前工作副本相对于 {target} 的所有变更（git diff {target}...HEAD，加上尚未提交的内容）。只报告问题、风险与建议，并附上文件名与行号；严禁修改任何文件。',
   'git.revertFile': '还原此文件', 'git.revertConfirm': '把“{file}”还原成与主文件夹分叉时的样子？AI 对它做的修改会被丢弃；新增的文件会被删除。', 'git.reverted': '已还原文件', 'log.task.revert-file': '还原单个文件',
+  'git.verifyPass': '验证通过（{time}）', 'git.verifyFail': '验证失败（{time}）', 'git.verifyNone': 'AI 上次动手后还没有验证',
   'chat.turnUsage': '输入 {input} · 输出 {output}', 'chat.cachedUsage': ' · 缓存 {cached}',
   'chat.usageHint': '这些 token 用量由 CLI 报告。',
   'chat.queuePaused': '队列已暂停：第一条指令失败，后续指令会等待，直到移除失败项或手动开始。',

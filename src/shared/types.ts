@@ -464,6 +464,14 @@ export interface VerifyResult {
   truncated: boolean;
 }
 
+/** 最近一次驗證的摘要（`GET /api/task/verify`）；沒有或已失效時 API 回 null。 */
+export interface VerifyStatus {
+  ok: boolean;
+  exitCode: number | null;
+  timedOut: boolean;
+  at: string;
+}
+
 /** 另一個作業的副本也改了同樣的檔案（合併時容易互相衝突）。 */
 export interface TaskOverlap {
   task: string;

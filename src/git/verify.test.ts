@@ -110,3 +110,19 @@ test('verify shutdown stops running children', () => withTmpWorkspace(async ws =
   assert.equal(result.ok, false); assert.equal(result.timedOut, false); assert.ok(result.ms < 3000);
   assert.throws(() => service.run('P', task.id), { status: 409 });
 }));
+
+test('verify status keeps the latest result per task until invalidated', () => withTmpWorkspace(async ws => {
+  const { service, projects, task } = await setup(ws, nodeCommand('process.exit(0)'));
+  try {
+    assert.equal(service.status('P', task.id), null);
+    await service.run('P', task.id);
+    assert.equal(service.status('P', task.id)?.ok, true);
+    await projects.update('P', { verify: nodeCommand('process.exit(3)') });
+    await service.run('P', task.id);
+    const failed = service.status('P', task.id);
+    assert.equal(failed?.ok, false); assert.equal(failed?.exitCode, 3);
+    assert.equal(service.status('P', 'other-task'), null);
+    service.invalidate('P', task.id);
+    assert.equal(service.status('P', task.id), null);
+  } finally { await service.stopAll(); }
+}));

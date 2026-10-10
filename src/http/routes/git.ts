@@ -37,6 +37,7 @@ export function registerGitRoutes(router: Router, app: App): void {
     if (app.runner.isRunning(project, task)) throw new AppError('conflict', 'rollback_while_running');
     await app.worktree.revertFile(project, task, reqString(body, 'path', 1000));
     await app.oplog.record({ action: 'task.revert-file', project, task });
+    app.verify.invalidate(project, task);
     app.changed(project, task);
     return { ok: true };
   });

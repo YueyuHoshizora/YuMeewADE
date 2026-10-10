@@ -24,6 +24,7 @@ export const de: Record<MessageKey, string> = {
   'chat.changes': 'Diese Runde: {files} Dateien +{added} −{removed}',
   'git.review': '{ai} um Review bitten', 'git.reviewBusy': 'Die KI läuft; warte, bis die Runde beendet ist, bevor du eine andere KI um ein Review bittest', 'git.reviewPrompt': 'Prüfe als Reviewer alle Änderungen der aktuellen Arbeitskopie gegenüber {target} (git diff {target}...HEAD plus Uncommittetes). Melde nur Probleme, Risiken und Vorschläge mit Dateinamen und Zeilennummern. Ändere KEINE Datei.',
   'git.revertFile': 'Datei zurücksetzen', 'git.revertConfirm': '„{file}“ auf den Stand zurücksetzen, als die Kopie vom Hauptordner abgezweigt wurde? Änderungen der KI daran gehen verloren; eine neu angelegte Datei wird gelöscht.', 'git.reverted': 'Datei zurückgesetzt', 'log.task.revert-file': 'Einzelne Datei zurückgesetzt',
+  'git.verifyPass': 'Prüfung bestanden ({time})', 'git.verifyFail': 'Prüfung fehlgeschlagen ({time})', 'git.verifyNone': 'Seit der letzten KI-Arbeit nicht geprüft',
   'chat.turnUsage': 'Eingabe {input} · Ausgabe {output}', 'chat.cachedUsage': ' · Cache {cached}',
   'chat.usageHint': 'Diese Tokenzahlen werden von der CLI gemeldet.',
   'chat.queuePaused': 'Warteschlange pausiert: Der erste Eintrag ist fehlgeschlagen. Weitere warten, bis er entfernt oder manuell gestartet wird.',

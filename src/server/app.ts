@@ -24,7 +24,7 @@ import { loadRoles } from '../roles/roles.ts';
 import type { Config } from '../shared/config.ts';
 import { AppError } from '../shared/errors.ts';
 import { log } from '../shared/log.ts';
-import type { AppState, Roles } from '../shared/types.ts';
+import type { AppState, ChatEvent, Roles } from '../shared/types.ts';
 import { buildState, type StateSnapshot } from '../state/state.ts';
 
 const pkg = createRequire(import.meta.url)('../../package.json') as { version: string };
@@ -108,6 +108,8 @@ export class App {
       onChanged: (project, task) => this.changed(project, task),
       onUsage: (ai, ev) => this.usage.record(ai, ev),
     });
+    // AI 一開始動手，之前的驗證結果就不再代表目前的檔案。
+    this.runner.on('event', (project: string, task: string, ev: ChatEvent) => { if (ev.event === 'busy') this.verify.invalidate(project, task); });
   }
 
   async init(): Promise<void> {

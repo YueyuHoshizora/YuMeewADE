@@ -24,6 +24,7 @@ export const ja: Record<MessageKey, string> = {
   'chat.changes': 'このターンの変更 {files} ファイル +{added} −{removed}',
   'git.review': '{ai} にレビューを依頼', 'git.reviewBusy': 'AI の実行中です。このターンが終わってから別の AI にレビューを依頼してください', 'git.reviewPrompt': 'レビュアーとして、現在の作業コピーの {target} に対するすべての変更（git diff {target}...HEAD と未コミットの内容）を確認してください。問題・リスク・提案だけをファイル名と行番号つきで報告し、ファイルは一切変更しないでください。',
   'git.revertFile': 'このファイルを元に戻す', 'git.revertConfirm': '「{file}」を、メインフォルダから分岐した時点の状態に戻しますか？ AI による変更は破棄され、新規追加のファイルは削除されます。', 'git.reverted': 'ファイルを元に戻しました', 'log.task.revert-file': '単一ファイルを元に戻す',
+  'git.verifyPass': '検証に成功（{time}）', 'git.verifyFail': '検証に失敗（{time}）', 'git.verifyNone': 'AI の直近の作業後はまだ検証していません',
   'chat.turnUsage': '入力 {input} · 出力 {output}', 'chat.cachedUsage': ' · キャッシュ {cached}',
   'chat.usageHint': 'これらのトークン数は CLI が報告した値です。',
   'chat.queuePaused': 'キューは一時停止中：先頭の指示が失敗しました。削除するか手動で開始するまで後続の指示は待機します。',

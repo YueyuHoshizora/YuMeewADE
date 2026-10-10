@@ -123,6 +123,7 @@ HTTP JSON plus SSE, identical in desktop and web versions. Types are defined in 
 | `GET /api/task/files?project=&task=&q=`, `GET /api/task/file?project=&task=&path=` | Read-only file browsing and `@file` mentions: search by file name (up to 50, never `.env*`-style local secrets) and read one file (first 256 KB; the path must be in the list and still resolve inside the copy; binary files return no content) |
 | `POST /api/task/revert-file` | `{project, task, path}`: revert one file to how it was when the copy branched from the main folder (existing files get their original content back, newly added ones are deleted); the path must be a currently changed file, otherwise 404; 409 while the AI is running |
 | `POST /api/task/verify` | Run the project’s verify command in the task’s working copy; returns `{ok, exitCode, timedOut, ms, output, truncated}`; 409 while the AI is running, a verification is already running, or `concurrentRuns` is exceeded |
+| `GET /api/task/verify?project=&task=` | Summary of the latest verification `{ok, exitCode, timedOut, at}`; `null` if never verified or if the AI started working again / files were reverted (single-file revert, rollback) since. Kept in memory only; the Git panel uses it to show “verification passed / failed / not verified” |
 | `GET /api/ai`、`POST /api/ai/refresh`、`POST /api/ai/update` | AI tools and model lists |
 | `POST /api/settings`、`POST /api/roles`、`GET /api/log` | Settings, roles, activity log |
 | `POST /api/open` | Open a folder or file using the system |

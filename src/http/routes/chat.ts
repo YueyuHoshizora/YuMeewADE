@@ -57,7 +57,9 @@ export function registerChatRoutes(router: Router, app: App): void {
   router.post('/api/chat/stop', async ({ body }) => ({ stopped: await app.runner.stop(reqString(body, 'project', 100), reqString(body, 'task', 100)) }));
   router.post('/api/chat/unqueue', async ({ body }) => app.runner.unqueue(reqString(body, 'project', 100), reqString(body, 'task', 100), reqString(body, 'id', 100)));
   router.post('/api/chat/rollback', async ({ body }) => {
-    await app.runner.rollback(reqString(body, 'project', 100), reqString(body, 'task', 100), reqString(body, 'request', 100));
+    const project = reqString(body, 'project', 100); const task = reqString(body, 'task', 100);
+    await app.runner.rollback(project, task, reqString(body, 'request', 100));
+    app.verify.invalidate(project, task);
     return { ok: true };
   });
   router.post('/api/chat/fork', async ({ body }) => app.runner.fork(reqString(body, 'project', 100), reqString(body, 'task', 100), reqString(body, 'request', 100)));
