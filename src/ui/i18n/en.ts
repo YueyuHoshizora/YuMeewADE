@@ -1,6 +1,7 @@
 import type { MessageKey } from './zh-TW.ts';
 
 export const en: Record<MessageKey, string> = {
+  'usage.averageSpeed': '{speed} avg tok/s', 'usage.measuredSpeed': 'Recent actual CLI output token totals divided by the union of measured time intervals; measurements retained for 4 seconds. — means no measurement, not live generation speed. Claude uses each message’s duration; Codex uses the whole turn, including waits and tools. Includes CLI-reported thinking usage, without estimates.',
   'project.verify': 'Verification command',
   'project.verifyHint': 'Runs in the task’s worktree (e.g. npm test); stored in PROJECT.md.',
   'project.autoFix': 'Auto-fix failed verification', 'project.autoFixHint': 'After the AI finishes an instruction, the verification command above runs automatically; if it fails, the output goes back to the same AI, up to the number of tries set here. Needs a verification command; a new instruction from you resets the count.', 'project.autoFixOff': 'Off', 'project.autoFixTimes': 'Up to {n} times',
@@ -34,7 +35,7 @@ export const en: Record<MessageKey, string> = {
   'settings.theme': 'Appearance', 'settings.theme.system': 'System', 'settings.theme.light': 'Light', 'settings.theme.dark': 'Dark',
   'settings.notifications': 'Notify when tasks finish or need an answer', 'settings.notificationPermission': 'Allow system notifications', 'notification.done': 'AI has finished replying', 'notification.answer': 'AI needs your answer',
   'connection.reconnecting': 'Disconnected from core. Reconnecting…',
-  'usage.region': 'Account quota and output speed', 'usage.none': 'No quota data yet; updates after your next instruction', 'usage.quotaAt': 'Quota data from {at}', 'usage.window': '{label} window: {percent} used, resets {reset}', 'usage.windowNoReset': '{label} window: {percent} used', 'usage.windowReset': '{label} window reset at {reset}; waiting for the next report', 'usage.limited': 'Limit reached', 'usage.speed': 'Tokens output per second over the last 4 seconds, summed across all running chats. Claude is estimated from the stream and corrected with actual usage when each message ends (hidden thinking uses the CLI’s own estimate); Codex does not stream output, so it cannot be counted live.',
+  'usage.region': 'Account quota and output speed', 'usage.none': 'No quota data yet; updates after your next instruction', 'usage.quotaAt': 'Quota data from {at}', 'usage.window': '{label} window: {percent} used, resets {reset}', 'usage.windowNoReset': '{label} window: {percent} used', 'usage.windowReset': '{label} window reset at {reset}; waiting for the next report', 'usage.limited': 'Limit reached',
   'tree.search': 'Search projects and tasks…',
   'settings.enterToSend': 'Enter to send, Shift+Enter for a new line', 'chat.placeholderEnter': 'Write instructions… (Enter to send, Shift+Enter for a new line)', 'chat.hintEnter': 'Enter to send, Shift+Enter for a new line', 'chat.hintModifier': '⌘ / Ctrl + Enter to send',
   'markdown.copy': 'Copy code', 'markdown.copied': 'Copied', 'markdown.copyFailed': 'Copy failed',

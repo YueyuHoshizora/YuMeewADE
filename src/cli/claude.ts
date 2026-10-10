@@ -1,5 +1,6 @@
 // Claude stream-json adapter；工具與問題獨立於回答文字。
 import type { CliCommandConfig } from '../shared/config.ts';
+import { randomUUID } from 'node:crypto';
 import { promises as fs } from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
@@ -14,15 +15,6 @@ export function claudeArgs(cfg: CliCommandConfig, opts: SendOptions): string[] {
   if (opts.resumeId) args.push('--resume', opts.resumeId);
   for (const d of opts.addDirs ?? []) args.push('--add-dir', d);
   return args;
-}
-
-/**
- * 串流中途 CLI 不給 token 數，只能從文字估：中日韓字約 1 token／字，其餘約 4 字元／token。
- * 每則訊息結束時 message_delta 給實際 output_tokens，差額再補回，所以長期總量是準的。
- */
-function estimateTokens(text: string): number {
-  const cjk = text.match(/[\p{Script=Han}\p{Script=Hiragana}\p{Script=Katakana}\p{Script=Hangul}]/gu)?.length ?? 0;
-  return cjk + (text.length - cjk) / 4;
 }
 
 /** `rate_limit_event.rate_limit_info` → 額度窗口；utilization 為 0–1、resetsAt 為秒。認不得的格式回 null。 */
@@ -124,10 +116,10 @@ export function createClaudeParser(onEvent: (ev: CliEvent) => void, now: () => n
   let streamed = '';
   let sawStream = false;
   let sessionSent = false;
-  /** 本則訊息開始的時間與已估算的 token 數；結束時以實際用量校正。 */
+  const runId = randomUUID();
   let generating: number | null = null;
-  let estimated = 0;
   let messageUsage: Record<string, unknown> = {};
+  let output = -1;
   const tools = new Set<string>();
   const handleTool = (block: Record<string, unknown>) => {
     const name = block['name'];
@@ -173,38 +165,31 @@ export function createClaudeParser(onEvent: (ev: CliEvent) => void, now: () => n
         const e = ev as Record<string, unknown>;
         if (e['type'] === 'message_start') {
           sawStream = false;
-          // 從訊息開始算：估算與實際的差額要攤回整則訊息的時間，才不會在結尾擠成尖峰。
           generating = now();
-          estimated = 0;
+          output = -1;
           const message = e['message'];
           const usage = message && typeof message === 'object' && 'usage' in message ? message.usage : undefined;
           messageUsage = usage && typeof usage === 'object' ? usage as Record<string, unknown> : {};
         }
         if (e['type'] === 'message_delta') {
           const value = e['usage'];
-          const usage = parseUsage(value && typeof value === 'object' ? { ...messageUsage, ...value } : value);
+          if (value && typeof value === 'object') messageUsage = { ...messageUsage, ...value };
+          const usage = parseUsage(messageUsage);
           if (usage) onEvent({ type: 'usage', usage });
+          const exact = value && typeof value === 'object' && 'output_tokens' in value ? value.output_tokens : undefined;
+          const at = now();
+          const spanMs = generating === null ? 0 : at - generating;
+          // output_tokens 是本訊息累計，已包含思考與工具輸入；不另外加 thinking_tokens。
+          if (typeof exact === 'number' && Number.isFinite(exact) && exact >= 0 && exact > output &&
+              Number.isFinite(spanMs) && spanMs > 0) {
+            output = exact;
+            onEvent({ type: 'tokens', runId, count: exact, spanMs, at });
+          }
         }
-        if (e['type'] === 'message_delta' && generating !== null) {
-          const usage = e['usage'];
-          const exact = usage && typeof usage === 'object' && 'output_tokens' in usage && typeof usage.output_tokens === 'number' ? usage.output_tokens : null;
-          if (exact !== null && exact !== estimated) onEvent({ type: 'tokens', count: exact - estimated, spanMs: now() - generating });
-          generating = null;
-          estimated = 0;
-        }
+        if (e['type'] === 'message_stop') generating = null;
         if (e['type'] === 'content_block_delta') {
           const delta = e['delta'];
           if (!delta || typeof delta !== 'object') return;
-          // 思考內容不公開時 thinking 是空字串，CLI 改附這段思考的估算 token 數（增量，非累計；加總與實際 thinking_tokens 相符）。
-          // 其餘從文字估：思考與工具參數也是輸出 token；signature_delta 不是。
-          const count = 'estimated_tokens' in delta && typeof delta.estimated_tokens === 'number' ? delta.estimated_tokens
-            : estimateTokens('text' in delta && typeof delta.text === 'string' ? delta.text
-              : 'thinking' in delta && typeof delta.thinking === 'string' ? delta.thinking
-              : 'partial_json' in delta && typeof delta.partial_json === 'string' ? delta.partial_json : '');
-          if (count > 0 && generating !== null) {
-            estimated += count;
-            onEvent({ type: 'tokens', count });
-          }
           if ('type' in delta && delta.type === 'text_delta' && 'text' in delta && typeof delta.text === 'string') {
             sawStream = true;
             streamed += delta.text;
@@ -232,6 +217,7 @@ export function createClaudeParser(onEvent: (ev: CliEvent) => void, now: () => n
         return;
       }
       case 'result': {
+        generating = null;
         const usage = parseUsage(obj['usage']);
         if (usage) onEvent({ type: 'usage', usage });
         const isError = obj['is_error'] === true || (typeof obj['subtype'] === 'string' && obj['subtype'] !== 'success');

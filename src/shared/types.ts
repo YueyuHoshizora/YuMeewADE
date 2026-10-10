@@ -215,8 +215,8 @@ export interface AiUsage {
 
 export interface UsageState {
   ais: AiUsage[];
-  /** 所有執行中對話合計、最近幾秒內每秒輸出的 token 數；閒置為 0。 */
-  tokensPerSecond: number;
+  /** 最近量測的輸出速率（訊息／回合平均）；尚無有效量測時為 null。 */
+  tokensPerSecond: number | null;
 }
 
 export interface Settings {

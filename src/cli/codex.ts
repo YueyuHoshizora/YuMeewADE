@@ -1,5 +1,6 @@
 // Codex --json adapter（含舊版 msg 事件）；工具不混入回答。
 import { spawn } from 'node:child_process';
+import { randomUUID } from 'node:crypto';
 import { promises as fs } from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
@@ -161,10 +162,12 @@ export async function readCodexQuota(home: string, thread?: string): Promise<Quo
   return null;
 }
 
-// Codex exec --json 不串流輸出、回合結束才給 usage，無法計入即時 tok/s。
-export function createCodexParser(onEvent: (ev: CliEvent) => void): (obj: Record<string, unknown>) => void {
+// exec 回合結束才給實際用量；測量整個回合的平均（包含等待／工具），不冒充即時解碼速度。
+export function createCodexParser(onEvent: (ev: CliEvent) => void, now: () => number = Date.now): (obj: Record<string, unknown>) => void {
   let streamed = '';
   let failed = false;
+  const runId = randomUUID();
+  let started: number | null = null;
   const commands = new Set<string>();
   const appendText = (text: string) => {
     const delta = (streamed && !streamed.endsWith('\n') ? '\n\n' : '') + text;
@@ -175,6 +178,10 @@ export function createCodexParser(onEvent: (ev: CliEvent) => void): (obj: Record
     switch (obj['type']) {
       case 'thread.started':
         if (typeof obj['thread_id'] === 'string') onEvent({ type: 'session', id: obj['thread_id'] });
+        return;
+      case 'turn.started':
+        started = now();
+        failed = false;
         return;
       case 'item.started':
       case 'item.completed': {
@@ -206,6 +213,13 @@ export function createCodexParser(onEvent: (ev: CliEvent) => void): (obj: Record
             const input = u['input_tokens'];
             const output = u['output_tokens'];
             const cached = u['cached_input_tokens'];
+            if (typeof output === 'number' && Number.isFinite(output) && output >= 0) {
+              const at = now();
+              const spanMs = started === null ? 0 : at - started;
+              if (!failed && Number.isFinite(spanMs) && spanMs > 0) {
+                onEvent({ type: 'tokens', runId, count: output, spanMs, at });
+              }
+            }
             if (typeof input === 'number' && Number.isFinite(input) && input >= 0 &&
                 typeof output === 'number' && Number.isFinite(output) && output >= 0) {
               onEvent({ type: 'usage', usage: {
@@ -215,11 +229,13 @@ export function createCodexParser(onEvent: (ev: CliEvent) => void): (obj: Record
             }
           }
         }
+        started = null;
         if (!failed) onEvent({ type: 'result', text: streamed.trim() });
         return;
       case 'turn.failed':
       case 'error': {
         failed = true;
+        started = null;
         const err = obj['error'];
         const msg = err && typeof err === 'object' && 'message' in err ? String(err.message) : String(obj['message'] ?? obj['type']);
         onEvent({ type: 'error', reason: msg.slice(0, 200) });

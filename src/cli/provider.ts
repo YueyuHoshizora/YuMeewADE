@@ -28,8 +28,8 @@ export type CliEvent =
   | { type: 'asks'; asks: Ask[] }
   /** 帳號額度（CLI 回報；at＝資料時間 ISO）。 */
   | { type: 'quota'; windows: QuotaWindow[]; limited: boolean; at: string }
-  /** 剛輸出的 token 數（串流中為估算）；spanMs＝這些 token 平均分布在過去多少毫秒（校正用），省略＝就在此刻。 */
-  | { type: 'tokens'; count: number; spanMs?: number }
+  /** CLI 實測輸出用量／耗時；同一 run 的最新訊息或回合取代舊樣本，絕非文字估算或校正增量。 */
+  | { type: 'tokens'; runId: string; count: number; spanMs: number; at: number }
   /** 內部原因，只進日誌，不對外。 */
   | { type: 'error'; reason: string };
 

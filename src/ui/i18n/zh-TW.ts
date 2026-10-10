@@ -1,5 +1,6 @@
 // 繁體中文定義訊息契約；專案內容與 AI 輸出不翻譯。
 export const zhTW = {
+  'usage.averageSpeed': '{speed} 平均 tok/s', 'usage.measuredSpeed': '最近 CLI 回報的實際輸出 token 總數除以量測時間區間的聯集，量測保留 4 秒；沒有量測時顯示 —，不是即時生成速度。Claude 採每則訊息耗時；Codex 採完整回合（含等待與工具）。包含 CLI 回報的思考用量，不做估算。',
   'project.verify': '驗證指令',
   'project.verifyHint': '在作業的工作副本執行（例如 npm test）；指令儲存在 PROJECT.md。',
   'project.autoFix': '驗證失敗自動修正', 'project.autoFixHint': 'AI 做完一則指示後自動跑上面的驗證指令；失敗就把輸出交回同一個 AI，最多重試設定的次數。需要先填驗證指令；你下新指示會重新計數。', 'project.autoFixOff': '關閉', 'project.autoFixTimes': '最多 {n} 次',
@@ -33,7 +34,7 @@ export const zhTW = {
   'settings.theme': '外觀', 'settings.theme.system': '跟隨系統', 'settings.theme.light': '淺色', 'settings.theme.dark': '深色',
   'settings.notifications': '作業完成或需要回答時通知', 'settings.notificationPermission': '允許系統通知', 'notification.done': 'AI 已完成回覆', 'notification.answer': 'AI 需要你的回答',
   'connection.reconnecting': '核心連線中斷，重新連線中…',
-  'usage.region': '帳號額度與輸出速度', 'usage.none': '尚無額度資料；送出一次指示後更新', 'usage.quotaAt': '額度資料時間 {at}', 'usage.window': '{label} 時間窗已用 {percent}，{reset} 重置', 'usage.windowNoReset': '{label} 時間窗已用 {percent}', 'usage.windowReset': '{label} 時間窗已於 {reset} 重置，等待下一次回報', 'usage.limited': '已達上限', 'usage.speed': '所有執行中對話合計、最近 4 秒內每秒輸出的 token 數。Claude 依串流內容估算，每則訊息結束時以實際用量校正（不公開的思考採用 CLI 自己的估算）；Codex 不串流輸出，無法即時計入。',
+  'usage.region': '帳號額度與輸出速度', 'usage.none': '尚無額度資料；送出一次指示後更新', 'usage.quotaAt': '額度資料時間 {at}', 'usage.window': '{label} 時間窗已用 {percent}，{reset} 重置', 'usage.windowNoReset': '{label} 時間窗已用 {percent}', 'usage.windowReset': '{label} 時間窗已於 {reset} 重置，等待下一次回報', 'usage.limited': '已達上限',
   'tree.search': '搜尋專案與作業…',
   'settings.enterToSend': 'Enter 送出，Shift+Enter 換行', 'chat.placeholderEnter': '寫下指示…（Enter 送出，Shift+Enter 換行）', 'chat.hintEnter': 'Enter 送出，Shift+Enter 換行', 'chat.hintModifier': '⌘ / Ctrl + Enter 送出',
   'markdown.copy': '複製程式碼', 'markdown.copied': '已複製', 'markdown.copyFailed': '複製失敗',

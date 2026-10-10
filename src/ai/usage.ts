@@ -5,7 +5,7 @@ import type { AiUsage, UsageState } from '../shared/types.ts';
 
 export type UsageEvent = Extract<CliEvent, { type: 'quota' | 'tokens' }>;
 
-/** tok/s 以最近這段時間的輸出量計算；Claude 的思考估算約 1.2 秒才更新一次，窗口太短數字會跟著跳。 */
+/** 完成的實測保留四秒；沒有用量的串流不猜 token，也不冒充即時解碼速度。 */
 const RATE_WINDOW_MS = 4000;
 /** 有輸出時多久重算並推送一次。 */
 const TICK_MS = 1000;
@@ -20,10 +20,11 @@ export class UsageBoard {
   private readonly items = new Map<string, AiUsage>();
   private readonly onChange: (usage: UsageState) => void;
   private readonly now: () => number;
-  private samples: Sample[] = [];
-  private rate = 0;
+  private readonly samples = new Map<string, Sample>();
+  private rate: number | null = null;
   private timer: NodeJS.Timeout | null = null;
   private pollTimer: NodeJS.Timeout | null = null;
+  private closed = false;
 
   constructor(onChange: (usage: UsageState) => void, now: () => number = Date.now) {
     this.onChange = onChange;
@@ -35,11 +36,17 @@ export class UsageBoard {
   }
 
   record(ai: string, ev: UsageEvent): void {
+    if (this.closed) return;
     if (ev.type === 'tokens') {
-      const end = this.now();
-      this.samples.push({ start: end - (ev.spanMs ?? 0), end, count: ev.count });
-      this.timer ??= setInterval(() => this.tick(), TICK_MS);
-      this.timer.unref();
+      if (!ev.runId || !Number.isFinite(ev.count) || ev.count < 0 ||
+          !Number.isFinite(ev.spanMs) || ev.spanMs <= 0 || !Number.isFinite(ev.at) ||
+          !Number.isFinite(ev.at - ev.spanMs) || ev.at > this.now()) return;
+      this.samples.set(ev.runId, { start: ev.at - ev.spanMs, end: ev.at, count: ev.count });
+      this.tick();
+      if (this.samples.size) {
+        this.timer ??= setInterval(() => this.tick(), TICK_MS);
+        this.timer.unref();
+      }
       return;
     }
     const current = this.items.get(ai);
@@ -49,21 +56,29 @@ export class UsageBoard {
     this.onChange(this.snapshot());
   }
 
-  /** 最近 RATE_WINDOW_MS 內的輸出量換算成每秒；有時間跨度的樣本（校正量）只算落在窗口內的比例。 */
-  rateAt(now: number): number {
-    const from = now - RATE_WINDOW_MS;
-    this.samples = this.samples.filter(s => s.end > from);
+  /** 實際 token 合計／實測區間的聯集：並行輸出可相加，先後完成不能相加各自的速度。 */
+  rateAt(now: number): number | null {
+    for (const [id, sample] of this.samples) if (sample.end <= now - RATE_WINDOW_MS) this.samples.delete(id);
+    const samples = [...this.samples.values()].filter(sample => sample.end <= now).sort((a, b) => a.start - b.start);
+    if (!samples.length) return null;
     let tokens = 0;
-    for (const s of this.samples) {
-      tokens += s.end === s.start ? s.count : s.count * (Math.min(s.end, now) - Math.max(s.start, from)) / (s.end - s.start);
+    let elapsed = 0;
+    let end = -Infinity;
+    for (const sample of samples) {
+      tokens += sample.count;
+      elapsed += Math.max(0, sample.end - Math.max(sample.start, end));
+      end = Math.max(end, sample.end);
     }
-    // 估算偏高時的負校正不能讓速度變成負數。
-    return Math.max(0, Math.round(tokens / (RATE_WINDOW_MS / 1000)));
+    const rate = tokens / (elapsed / 1000);
+    return Number.isFinite(rate) ? Math.round(rate * 10) / 10 : null;
   }
 
   /** 停止所有計時器（核心關閉或換工作區）。 */
   close(): void {
+    this.closed = true;
     this.stopRate();
+    this.samples.clear();
+    this.rate = null;
     clearInterval(this.pollTimer ?? undefined);
     this.pollTimer = null;
   }
@@ -99,7 +114,7 @@ export class UsageBoard {
       this.rate = rate;
       this.onChange(this.snapshot());
     }
-    // 窗口內已沒有樣本且已推送過 0：停表，閒置時不空轉。
-    if (!this.samples.length && rate === 0) this.stopRate();
+    // 已無近期實測，停止閒置計時器。
+    if (!this.samples.size && rate === null) this.stopRate();
   }
 }

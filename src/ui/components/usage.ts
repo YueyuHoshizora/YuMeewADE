@@ -46,7 +46,8 @@ function usageItem(ai: string, usage: AiUsage | undefined, now: number): HTMLEle
 export function usageBar(state: AppState, usage: UsageState, now = Date.now()): HTMLElement[] {
   const names = state.ais.filter(info => info.name !== 'mock' && info.available).map(info => info.name as string);
   for (const entry of usage.ais) if (!names.includes(entry.ai)) names.push(entry.ai);
-  const speed = el('span', usage.tokensPerSecond > 0 ? 'usage-speed running' : 'usage-speed', `${usage.tokensPerSecond} tok/s`);
-  speed.title = t('usage.speed');
+  const measured = usage.tokensPerSecond;
+  const speed = el('span', measured !== null && measured > 0 ? 'usage-speed running' : 'usage-speed', t('usage.averageSpeed', { speed: measured ?? '—' }));
+  speed.title = t('usage.measuredSpeed');
   return [...names.map(ai => usageItem(ai, usage.ais.find(entry => entry.ai === ai), now)), speed];
 }

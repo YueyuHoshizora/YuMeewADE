@@ -14,7 +14,7 @@ import { usageBar } from './components/usage.ts';
 import { runningChip } from './components/running.ts';
 
 const header = document.getElementById('header')!; const sidebar = document.getElementById('sidebar')!; const main = document.getElementById('main')!; const footer = document.getElementById('footer')!;
-let state: AppState | null = null; let usage: UsageState = { ais: [], tokensPerSecond: 0 }; let view: View | null = null; let route = ''; let viewTarget = ''; let refreshJob: Promise<void> | null = null; let refreshAgain = false; let debounce: number | undefined;
+let state: AppState | null = null; let usage: UsageState = { ais: [], tokensPerSecond: null }; let view: View | null = null; let route = ''; let viewTarget = ''; let refreshJob: Promise<void> | null = null; let refreshAgain = false; let debounce: number | undefined;
 function notify(previous: AppState | null, next: AppState): void {
   const items = attention(next); window.yumeewade?.setBadge?.(items.length);
   if (!previous || !readLocal('yumeewade.notifications', true) || !('Notification' in window) || Notification.permission !== 'granted' || (!document.hidden && document.hasFocus())) return;

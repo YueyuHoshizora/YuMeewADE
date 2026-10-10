@@ -1,6 +1,7 @@
 import type { MessageKey } from './zh-TW.ts';
 
 export const ja: Record<MessageKey, string> = {
+  'usage.averageSpeed': '{speed} 平均 tok/s', 'usage.measuredSpeed': '直近の CLI が報告した実際の出力 token 合計を計測区間の和集合の長さで割り、計測を 4 秒間保持します。未計測は — で表示し、リアルタイムの生成速度ではありません。Claude は各メッセージの時間、Codex は待機・ツールを含むターン全体の時間です。CLI が報告する思考用量を含み、推定はしません。',
   'project.verify': '検証コマンド',
   'project.verifyHint': '作業の worktree で実行（例：npm test）。PROJECT.md に保存されます。',
   'project.autoFix': '検証失敗時の自動修正', 'project.autoFixHint': 'AI が指示を終えると上の検証コマンドを自動実行し、失敗したら出力を同じ AI に返します。ここで設定した回数まで繰り返します。検証コマンドの設定が必要で、新しい指示を出すとカウントはリセットされます。', 'project.autoFixOff': 'オフ', 'project.autoFixTimes': '最大 {n} 回',
@@ -34,7 +35,7 @@ export const ja: Record<MessageKey, string> = {
   'settings.theme': '外観', 'settings.theme.system': 'システム', 'settings.theme.light': 'ライト', 'settings.theme.dark': 'ダーク',
   'settings.notifications': '作業の完了や回答が必要なときに通知', 'settings.notificationPermission': 'システム通知を許可', 'notification.done': 'AI の返信が完了しました', 'notification.answer': 'AI があなたの回答を待っています',
   'connection.reconnecting': 'コアとの接続が切れました。再接続中…',
-  'usage.region': 'アカウントの利用枠と出力速度', 'usage.none': '利用枠データはまだありません。次の指示を送ると更新されます', 'usage.quotaAt': '利用枠データの時刻 {at}', 'usage.window': '{label} 枠：{percent} 使用、{reset} にリセット', 'usage.windowNoReset': '{label} 枠：{percent} 使用', 'usage.windowReset': '{label} 枠は {reset} にリセット済み。次の報告を待っています', 'usage.limited': '上限到達', 'usage.speed': '実行中のすべての会話の合計で、直近 4 秒間に毎秒出力された token 数。Claude はストリームから推定し、各メッセージの終了時に実際の使用量で補正します（非公開の思考は CLI 自身の推定値を使用）。Codex は出力をストリームしないため、リアルタイムには計上できません。',
+  'usage.region': 'アカウントの利用枠と出力速度', 'usage.none': '利用枠データはまだありません。次の指示を送ると更新されます', 'usage.quotaAt': '利用枠データの時刻 {at}', 'usage.window': '{label} 枠：{percent} 使用、{reset} にリセット', 'usage.windowNoReset': '{label} 枠：{percent} 使用', 'usage.windowReset': '{label} 枠は {reset} にリセット済み。次の報告を待っています', 'usage.limited': '上限到達',
   'tree.search': 'プロジェクトと作業を検索…',
   'settings.enterToSend': 'Enter で送信、Shift+Enter で改行', 'chat.placeholderEnter': '指示を入力…（Enter で送信、Shift+Enter で改行）', 'chat.hintEnter': 'Enter で送信、Shift+Enter で改行', 'chat.hintModifier': '⌘ / Ctrl + Enter で送信',
   'markdown.copy': 'コードをコピー', 'markdown.copied': 'コピーしました', 'markdown.copyFailed': 'コピーできませんでした',

@@ -1,6 +1,7 @@
 import type { MessageKey } from './zh-TW.ts';
 
 export const zhCN: Record<MessageKey, string> = {
+  'usage.averageSpeed': '{speed} 平均 tok/s', 'usage.measuredSpeed': '最近 CLI 回报的实际输出 token 总数除以测量时间区间的并集，测量保留 4 秒；没有测量时显示 —，不是实时生成速度。Claude 按每条消息耗时；Codex 按完整回合（含等待与工具）。包含 CLI 回报的思考用量，不做估算。',
   'project.verify': '验证指令',
   'project.verifyHint': '在作业的工作副本执行（例如 npm test）；指令保存在 PROJECT.md。',
   'project.autoFix': '验证失败自动修复', 'project.autoFixHint': 'AI 做完一条指示后自动运行上面的验证命令；失败就把输出交回同一个 AI，最多重试设定的次数。需要先填验证命令；你下新指示会重新计数。', 'project.autoFixOff': '关闭', 'project.autoFixTimes': '最多 {n} 次',
@@ -34,7 +35,7 @@ export const zhCN: Record<MessageKey, string> = {
   'settings.theme': '外观', 'settings.theme.system': '跟随系统', 'settings.theme.light': '浅色', 'settings.theme.dark': '深色',
   'settings.notifications': '作业完成或需要回答时通知', 'settings.notificationPermission': '允许系统通知', 'notification.done': 'AI 已完成回复', 'notification.answer': 'AI 需要你的回答',
   'connection.reconnecting': '核心连接中断，正在重新连接…',
-  'usage.region': '账号额度与输出速度', 'usage.none': '暂无额度数据；发送一次指示后更新', 'usage.quotaAt': '额度数据时间 {at}', 'usage.window': '{label} 时间窗已用 {percent}，{reset} 重置', 'usage.windowNoReset': '{label} 时间窗已用 {percent}', 'usage.windowReset': '{label} 时间窗已于 {reset} 重置，等待下一次回报', 'usage.limited': '已达上限', 'usage.speed': '所有运行中对话合计、最近 4 秒内每秒输出的 token 数。Claude 依流式内容估算，每条消息结束时以实际用量校正（不公开的思考采用 CLI 自己的估算）；Codex 不流式输出，无法实时计入。',
+  'usage.region': '账号额度与输出速度', 'usage.none': '暂无额度数据；发送一次指示后更新', 'usage.quotaAt': '额度数据时间 {at}', 'usage.window': '{label} 时间窗已用 {percent}，{reset} 重置', 'usage.windowNoReset': '{label} 时间窗已用 {percent}', 'usage.windowReset': '{label} 时间窗已于 {reset} 重置，等待下一次回报', 'usage.limited': '已达上限',
   'tree.search': '搜索项目与作业…',
   'settings.enterToSend': 'Enter 发送，Shift+Enter 换行', 'chat.placeholderEnter': '写下指示…（Enter 发送，Shift+Enter 换行）', 'chat.hintEnter': 'Enter 发送，Shift+Enter 换行', 'chat.hintModifier': '⌘ / Ctrl + Enter 发送',
   'markdown.copy': '复制代码', 'markdown.copied': '已复制', 'markdown.copyFailed': '复制失败',
