@@ -2,6 +2,7 @@
 export const zhTW = {
   'chat.earlier': '載入較早的訊息',
   'search.title': '搜尋所有對話', 'search.placeholder': '搜尋作業與對話內容…', 'search.truncated': '結果過多，請縮小搜尋範圍。',
+  'settings.theme': '外觀', 'settings.theme.system': '跟隨系統', 'settings.theme.light': '淺色', 'settings.theme.dark': '深色',
   'settings.notifications': '作業完成或需要回答時通知', 'settings.notificationPermission': '允許系統通知', 'notification.done': 'AI 已完成回覆', 'notification.answer': 'AI 需要你的回答',
   'connection.reconnecting': '核心連線中斷，重新連線中…',
   'tree.search': '搜尋專案與作業…',

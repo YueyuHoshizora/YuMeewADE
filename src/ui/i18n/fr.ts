@@ -3,6 +3,7 @@ import type { MessageKey } from './zh-TW.ts';
 export const fr: Record<MessageKey, string> = {
   'chat.earlier': 'Charger les messages précédents',
   'search.title': 'Rechercher dans les conversations', 'search.placeholder': 'Rechercher des tâches et des conversations…', 'search.truncated': 'Trop de résultats. Affinez la recherche.',
+  'settings.theme': 'Apparence', 'settings.theme.system': 'Système', 'settings.theme.light': 'Clair', 'settings.theme.dark': 'Sombre',
   'settings.notifications': 'Notifier à la fin des tâches ou si une réponse est nécessaire', 'settings.notificationPermission': 'Autoriser les notifications système', 'notification.done': 'La réponse de l’IA est terminée', 'notification.answer': 'L’IA attend votre réponse',
   'connection.reconnecting': 'Connexion au cœur perdue. Reconnexion…',
   'tree.search': 'Rechercher des projets et tâches…',
