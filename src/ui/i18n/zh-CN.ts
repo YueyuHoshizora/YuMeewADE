@@ -3,6 +3,7 @@ import type { MessageKey } from './zh-TW.ts';
 export const zhCN: Record<MessageKey, string> = {
   'project.verify': '验证指令',
   'project.verifyHint': '在作业的工作副本执行（例如 npm test）；指令保存在 PROJECT.md。',
+  'project.rules': 'AI 规则', 'project.rulesHint': '每次运行时 AI 都会先读这份规则（.ai/rules.md）。修改后下一条指示就会生效。', 'project.rulesPlaceholder': '写下这个项目的约定、禁止事项、测试方式…', 'log.project.rules': '更新 AI 规则',
   'verify.run': '执行验证', 'verify.running': '验证中…', 'verify.pass': '通过', 'verify.fail': '失败',
   'verify.result': '退出码 {code} · {seconds} 秒', 'verify.timedOut': '验证超时，已停止。',
   'verify.truncated': '输出过长，只显示最后一段。',

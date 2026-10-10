@@ -3,6 +3,7 @@ import type { MessageKey } from './zh-TW.ts';
 export const it: Record<MessageKey, string> = {
   'project.verify': 'Comando di verifica',
   'project.verifyHint': 'Eseguito nel worktree dell’attività (es. npm test); salvato in PROJECT.md.',
+  'project.rules': 'Regole per l’IA', 'project.rulesHint': 'L’IA legge queste regole (.ai/rules.md) all’inizio di ogni esecuzione. Le modifiche valgono dalla prossima istruzione.', 'project.rulesPlaceholder': 'Convenzioni, divieti, come testare…', 'log.project.rules': 'Regole dell’IA aggiornate',
   'verify.run': 'Esegui verifica', 'verify.running': 'Verifica in corso…', 'verify.pass': 'Superata', 'verify.fail': 'Fallita',
   'verify.result': 'Codice di uscita {code} · {seconds} s', 'verify.timedOut': 'Tempo scaduto; verifica interrotta.',
   'verify.truncated': 'Output troppo lungo; viene mostrata solo la parte finale.',

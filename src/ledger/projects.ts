@@ -11,6 +11,8 @@ import { type YamlValue } from '../shared/yaml.ts';
 import { ensureRepo } from '../git/git.ts';
 import { TEMPLATES_DIR, type Workspace } from './workspace.ts';
 
+export const RULES_MAX = 20_000;
+
 export const PROJECT_GITIGNORE = ['# 台帳與對話不進版本控制', '.ai/', '', '# 本機機密', '.env', '.env.*', '.npmrc', '.dev.vars*', '.DS_Store', ''].join('\n');
 export function todayDate(now = new Date()): string {
   return `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`;
@@ -122,6 +124,19 @@ export class ProjectLedger {
       project.phases[index]!.state = '完成';
       if (project.phases[index + 1]) project.phases[index + 1]!.state = '進行中';
       return this.updateLocked(id, { phases: project.phases, ...(index + 1 === project.phases.length ? { status: '完成' as const } : {}) });
+    });
+  }
+
+  async readRules(id: string): Promise<string> {
+    await this.get(id);
+    return fs.readFile(this.ws.rulesFile(id), 'utf8').catch((err: NodeJS.ErrnoException) => { if (err.code === 'ENOENT') return ''; throw err; });
+  }
+
+  async writeRules(id: string, text: string): Promise<void> {
+    if (text.length > RULES_MAX) throw new AppError('bad_request', 'field_too_long', { field: 'text' });
+    await withFileLocks([this.ws.rulesFile(id)], async () => {
+      await this.get(id);
+      await atomicWrite(this.ws.rulesFile(id), text);
     });
   }
 

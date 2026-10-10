@@ -3,6 +3,7 @@ import type { MessageKey } from './zh-TW.ts';
 export const de: Record<MessageKey, string> = {
   'project.verify': 'Prüfbefehl',
   'project.verifyHint': 'Wird im Worktree der Aufgabe ausgeführt (z. B. npm test); in PROJECT.md gespeichert.',
+  'project.rules': 'KI-Regeln', 'project.rulesHint': 'Die KI liest diese Regeln (.ai/rules.md) zu Beginn jedes Laufs. Änderungen gelten ab der nächsten Anweisung.', 'project.rulesPlaceholder': 'Konventionen, Verbote, Testvorgehen…', 'log.project.rules': 'KI-Regeln aktualisiert',
   'verify.run': 'Prüfung starten', 'verify.running': 'Prüfung läuft…', 'verify.pass': 'Bestanden', 'verify.fail': 'Fehlgeschlagen',
   'verify.result': 'Exit-Code {code} · {seconds} s', 'verify.timedOut': 'Zeitlimit überschritten; Prüfung gestoppt.',
   'verify.truncated': 'Ausgabe zu lang; nur das Ende wird angezeigt.',

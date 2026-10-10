@@ -3,6 +3,7 @@ import type { MessageKey } from './zh-TW.ts';
 export const ja: Record<MessageKey, string> = {
   'project.verify': '検証コマンド',
   'project.verifyHint': '作業の worktree で実行（例：npm test）。PROJECT.md に保存されます。',
+  'project.rules': 'AI ルール', 'project.rulesHint': 'AI は毎回の実行の最初にこのルール（.ai/rules.md）を読みます。変更は次の指示から反映されます。', 'project.rulesPlaceholder': 'このプロジェクトの規約、禁止事項、テスト方法…', 'log.project.rules': 'AI ルールを更新',
   'verify.run': '検証を実行', 'verify.running': '検証中…', 'verify.pass': '成功', 'verify.fail': '失敗',
   'verify.result': '終了コード {code} · {seconds} 秒', 'verify.timedOut': '検証がタイムアウトし、停止しました。',
   'verify.truncated': '出力が長いため末尾のみ表示します。',

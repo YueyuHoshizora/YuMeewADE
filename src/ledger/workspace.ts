@@ -72,6 +72,11 @@ export class Workspace {
     return path.join(this.projectDir(name), '.ai', 'start-pick.json');
   }
 
+  /** 專案層的 AI 規則；每次執行都會併入啟動訊息。 */
+  rulesFile(name: string): string {
+    return path.join(this.projectDir(name), '.ai', 'rules.md');
+  }
+
   worktreeDir(name: string, id: string): string {
     if (!isValidTaskId(id)) throw new AppError('bad_request', 'invalid_task_id');
     this.projectDir(name); // 驗證專案名

@@ -1,9 +1,10 @@
 import assert from 'node:assert/strict';
 import { promises as fs } from 'node:fs';
+import path from 'node:path';
 import { test } from 'node:test';
 import type { ProjectPatch } from '../shared/types.ts';
 import { withTmpWorkspace } from '../testing/tmp.ts';
-import { ProjectLedger } from './projects.ts';
+import { ProjectLedger, RULES_MAX } from './projects.ts';
 
 test('verify command is trimmed, persisted, preserved and cleared', () => withTmpWorkspace(async ws => {
   const projects = new ProjectLedger(ws);
@@ -23,4 +24,19 @@ test('verify command rejects invalid types, multiline, NUL and excess length', (
     await assert.rejects(projects.create({ name: 'Invalid', verify } as unknown as Parameters<ProjectLedger['create']>[0]), { status: 400 });
   }
   assert.equal((await projects.update('P', { verify: 'x'.repeat(500) })).verify.length, 500);
+}));
+
+test('project rules round-trip, can be cleared, and are bounded', () => withTmpWorkspace(async ws => {
+  const projects = new ProjectLedger(ws);
+  await projects.create({ name: 'P' });
+  assert.match(await projects.readRules('P'), /^# 共用規則/, 'new projects start with the template rules');
+  await projects.writeRules('P', '# 規則\n- 先寫測試\n');
+  assert.equal(await projects.readRules('P'), '# 規則\n- 先寫測試\n');
+  assert.equal(await fs.readFile(ws.rulesFile('P'), 'utf8'), '# 規則\n- 先寫測試\n');
+  await projects.writeRules('P', '');
+  assert.equal(await projects.readRules('P'), '');
+  await assert.rejects(projects.writeRules('P', 'x'.repeat(RULES_MAX + 1)), /過長/);
+  await assert.rejects(projects.readRules('Missing'), /不存在/);
+  await assert.rejects(projects.writeRules('Missing', 'x'), /不存在/);
+  await assert.rejects(fs.access(path.join(ws.projectsDir, 'Missing')));
 }));

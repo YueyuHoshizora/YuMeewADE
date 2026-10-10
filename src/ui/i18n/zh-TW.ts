@@ -2,6 +2,7 @@
 export const zhTW = {
   'project.verify': '驗證指令',
   'project.verifyHint': '在作業的工作副本執行（例如 npm test）；指令儲存在 PROJECT.md。',
+  'project.rules': 'AI 規則', 'project.rulesHint': '每次執行時 AI 都會先讀這份規則（.ai/rules.md）。修改後下一則指示就會生效。', 'project.rulesPlaceholder': '寫下這個專案的慣例、禁止事項、測試方式…', 'log.project.rules': '更新 AI 規則',
   'verify.run': '執行驗證', 'verify.running': '驗證中…', 'verify.pass': '通過', 'verify.fail': '失敗',
   'verify.result': '結束碼 {code} · {seconds} 秒', 'verify.timedOut': '驗證逾時，已停止。',
   'verify.truncated': '輸出過長，只顯示最後一段。',

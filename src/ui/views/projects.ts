@@ -1,5 +1,5 @@
 import type { NewTaskInput, ProjectView } from '../../shared/types.ts';
-import { api, request } from '../api.ts';
+import { api, query, request } from '../api.ts';
 import { t } from '../i18n/index.ts';
 import { attachments } from '../components/attachments.ts';
 import { aiPicker } from '../components/picker.ts';
@@ -95,6 +95,26 @@ export function projectView(context: ViewContext, project: ProjectView, params: 
         await context.refresh();
         toast(t('common.saved'));
       })));
+    const rules = area('', t('project.rulesPlaceholder'));
+    rules.rows = 12;
+    rules.maxLength = 20000;
+    rules.disabled = true;
+    const rulesBox = disclosure(t('project.rules'), el('p', 'muted', t('project.rulesHint')), rules, button(t('common.save'), async () => {
+      await request('/api/project/rules', { project: project.id, text: rules.value });
+      toast(t('common.saved'));
+    }));
+    let rulesLoading = false;
+    rulesBox.addEventListener('toggle', () => {
+      if (!rulesBox.open || rulesLoading || !rules.disabled) return;
+      rulesLoading = true;
+      void run(async () => {
+        try {
+          rules.value = (await request<{ text: string }>(query('/api/project/rules', { project: project.id }))).text;
+          rules.disabled = false;
+        } finally { rulesLoading = false; }
+      });
+    });
+    overview.append(rulesBox);
     if (project.phases.length) {
       const road = el('div', 'phase-road');
       for (const [i, phase] of project.phases.entries()) road.append(el('div', `phase ${phase.name === project.currentPhase ? 'current' : ''} ${phase.state === '完成' ? 'complete' : ''}`, `${i + 1} · ${phase.name}`));
