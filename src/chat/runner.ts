@@ -14,9 +14,10 @@ import { resolveLaunch } from '../roles/roles.ts';
 import { AppError } from '../shared/errors.ts';
 import { log } from '../shared/log.ts';
 import type {
-  Ask, Busy, ChatEvent, ChatRow, QueueItem, Roles, RunningInfo,
-  SendInput, SendResult, Task,
+  Ask, Busy, ChatEvent, ChatHistory, ChatRow, QueueItem, Roles, RunningInfo,
+  SendInput, SendResult,
 } from '../shared/types.ts';
+import { HISTORY_PAGE } from '../shared/types.ts';
 import { buildHandoff, buildPreamble, buildPrompt } from './prompt.ts';
 import { ChatStore, type ChatMeta } from './store.ts';
 import { attachImages } from './attachments.ts';
@@ -138,16 +139,30 @@ export class ChatRunner extends EventEmitter {
   }
 
   async snapshot(p: string, t: string): Promise<{
-    rows: ChatRow[]; busy: Busy | null; partial: string; queue: QueueItem[];
+    rows: ChatRow[]; start: number; busy: Busy | null; partial: string; queue: QueueItem[];
   }> {
     await this.deps.tasks.get(p, t);
     const s = this.slot(p, t);
+    const rows = await this.deps.store.readLog(p, t);
+    const start = Math.max(0, rows.length - HISTORY_PAGE);
     return {
-      rows: await this.deps.store.readLog(p, t),
+      rows: rows.slice(start),
+      start,
       busy: s.busy,
       partial: s.partial,
       queue: await this.deps.store.readQueue(p, t),
     };
+  }
+
+  async history(p: string, t: string, before: number): Promise<ChatHistory> {
+    if (!Number.isSafeInteger(before) || before < 0) {
+      throw new AppError('bad_request', 'field_type', { field: 'before' });
+    }
+    await this.deps.tasks.get(p, t);
+    const rows = await this.deps.store.readLog(p, t);
+    const end = Math.min(before, rows.length);
+    const start = Math.max(0, end - HISTORY_PAGE);
+    return { rows: rows.slice(start, end), start };
   }
 
   send(input: SendInput): Promise<SendResult> {

@@ -13,6 +13,11 @@ import { withTmpWorkspace } from '../testing/tmp.ts';
 import type { Workspace } from '../ledger/workspace.ts';
 import type { WorktreeService } from '../git/worktree.ts';
 import type { ChatEvent } from '../shared/types.ts';
+import { HISTORY_PAGE } from '../shared/types.ts';
+import { promises as fs } from 'node:fs';
+import { registerChatRoutes } from '../http/routes/chat.ts';
+import type { Ctx, Handler, Router } from '../http/router.ts';
+import type { App } from '../server/app.ts';
 import { ChatRunner } from './runner.ts';
 import { ChatStore } from './store.ts';
 async function setup(ws: Workspace, options: MockOptions = {}) {
@@ -172,4 +177,49 @@ test('啟動前追加失敗不留下 running marker 或中斷回覆', () => with
   await s.send('retry normally');
   await s.runner.whenIdle();
   assert.equal((await s.store.readLog('P', s.task.id)).at(-1)?.text, 'ok');
+}));
+
+test('歷史分頁與 snapshot 邊界依解析後行索引計算', () => withTmpWorkspace(async ws => {
+  const s = await setup(ws);
+  const rows = Array.from({ length: HISTORY_PAGE * 2 + 1 }, (_, index) => ({
+    role: 'assistant', ai: 'codex', at: 'now', request: String(index), text: String(index), ms: 1,
+  }));
+  await fs.writeFile(ws.chatFile('P', s.task.id, 'jsonl'), rows.map(row => JSON.stringify(row)).join('\n') + '\nbad line\n');
+  const snapshot = await s.runner.snapshot('P', s.task.id);
+  assert.equal(snapshot.start, HISTORY_PAGE + 1);
+  assert.deepEqual(snapshot.rows.map(row => row.text), rows.slice(HISTORY_PAGE + 1).map(row => row.text));
+  assert.deepEqual(await s.runner.history('P', s.task.id, 0), { rows: [], start: 0 });
+  for (const before of [1, HISTORY_PAGE, HISTORY_PAGE + 1, HISTORY_PAGE * 2, rows.length + 100]) {
+    const page = await s.runner.history('P', s.task.id, before);
+    const end = Math.min(before, rows.length);
+    assert.equal(page.start, Math.max(0, end - HISTORY_PAGE));
+    assert.deepEqual(page.rows, rows.slice(page.start, end));
+  }
+  for (const before of [-1, 1.5, NaN, Infinity]) {
+    await assert.rejects(s.runner.history('P', s.task.id, before), { code: 'bad_request', detail: 'field_type', field: 'before' });
+  }
+  await assert.rejects(s.runner.history('P', '20260101-999', 0), { code: 'not_found' });
+}));
+
+test('history 路由驗證 before 字串及作業存在', () => withTmpWorkspace(async ws => {
+  const s = await setup(ws);
+  const handlers = new Map<string, Handler>();
+  const router = {
+    get: (route: string, handler: Handler) => { handlers.set(route, handler); },
+    post: () => {}, postRaw: () => {},
+  } as unknown as Router;
+  registerChatRoutes(router, {
+    runner: s.runner, config: DEFAULT_CONFIG,
+  } as unknown as App);
+  const handler = handlers.get('/api/chat/history')!;
+  const request = (before?: string, task = s.task.id) => {
+    const query = new URLSearchParams({ project: 'P', task });
+    if (before !== undefined) query.set('before', before);
+    return handler({ query } as Ctx);
+  };
+  assert.deepEqual(await request('0'), { rows: [], start: 0 });
+  for (const before of [undefined, '', '-1', '1.5', '1e2', '+1', ' 1', '9007199254740992']) {
+    await assert.rejects(request(before), { code: 'bad_request', detail: 'field_type', field: 'before' });
+  }
+  await assert.rejects(request('0', '20260101-999'), { code: 'not_found' });
 }));

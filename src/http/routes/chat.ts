@@ -14,6 +14,15 @@ function images(body: Record<string, unknown>, max: number): string[] | undefine
   return body['images'] as string[];
 }
 export function registerChatRoutes(router: Router, app: App): void {
+  router.get('/api/chat/history', async ({ query }) => {
+    const p = reqString(query, 'project', 100);
+    const t = reqString(query, 'task', 100);
+    const before = query.get('before');
+    if (typeof before !== 'string' || !/^\d+$/u.test(before) || !Number.isSafeInteger(Number(before))) {
+      throw new AppError('bad_request', 'field_type', { field: 'before' });
+    }
+    return app.runner.history(p, t, Number(before));
+  });
   router.get('/api/chat/stream', async ({ query, req, res }) => {
     const p = reqString(query, 'project', 100); const t = reqString(query, 'task', 100);
     const snapshot = await app.runner.snapshot(p, t); app.runner.markRead(p, t);
