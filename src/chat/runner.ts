@@ -359,7 +359,17 @@ export class ChatRunner extends EventEmitter {
     if (!project.verify.trim() || project.autoFix < 1 || task.state === '等待回覆') { this.autoFixes.delete(key); return; }
     const result = await verify(p, t).catch(err => { log.warn('自動驗證失敗', { project: p, task: t, err: String(err) }); return null; });
     const used = this.autoFixes.get(key) ?? 0;
-    if (!result || result.ok || used >= project.autoFix) { this.autoFixes.delete(key); return; }
+    if (!result || result.ok) { this.autoFixes.delete(key); return; }
+    if (used >= project.autoFix) {
+      // 用完次數仍失敗：交還給人，讓作業顯示成「等你回覆」並觸發通知。
+      this.autoFixes.delete(key);
+      await this.lock(p, t, async () => {
+        if (this.slot(p, t).busy || this.shuttingDown) return;
+        await this.deps.tasks.update(p, t, { state: '等待回覆', question: `驗證在 ${used} 次自動修正後仍失敗，請接手` });
+        this.deps.onChanged(p, t);
+      });
+      return;
+    }
     const output = result.output.length > 8000 ? result.output.slice(-8000) : result.output;
     const text = `（自動驗證：驗證指令 ${project.verify.trim()} ${result.timedOut ? '逾時' : `失敗，結束碼 ${result.exitCode ?? '無'}`}，這是第 ${used + 1}/${project.autoFix} 次自動修正）\n輸出尾段如下。請找出原因並修正，修正後自行再跑一次驗證確認。\n\n\`\`\`\n${output}\n\`\`\``;
     await this.lock(p, t, async () => {

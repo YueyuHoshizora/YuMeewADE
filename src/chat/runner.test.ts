@@ -404,6 +404,8 @@ test('驗證持續失敗時自動修正到上限就停，每次都附上輸出�
   assert.match(users[1]!, /第 1\/2 次自動修正[\s\S]*run 1 output/u);
   assert.match(users[2]!, /第 2\/2 次自動修正[\s\S]*run 2 output/u);
   assert.equal(s.verified.length, 3);
+  const task = await s.tasks.get('P', s.task.id);
+  assert.equal(task.state, '等待回覆'); assert.match(task.question, /2 次自動修正後仍失敗/u);
 }));
 
 test('驗證通過就不再修正；人下新指示後次數重新計算', () => withTmpWorkspace(async ws => {
