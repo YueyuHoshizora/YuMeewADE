@@ -11,6 +11,7 @@ import { area, button, confirmModal, disclosure, el, field, input, link, modal, 
 import { aiLabel, effortLabel, localTime, modelLabel } from '../components/display.ts';
 import { shouldSend } from '../components/composer.ts';
 import { stream } from '../components/stream.ts';
+import { iconButton, statusRegion } from '../components/dom.ts';
 export function taskView(context: ViewContext, initialProject: ProjectView, initialTask: TaskView, params = new URLSearchParams()): View {
   let project = initialProject;
   let task = initialTask;
@@ -65,8 +66,11 @@ export function taskView(context: ViewContext, initialProject: ProjectView, init
     ),
     work);
   const transcript = el('div', 'transcript');
-  transcript.setAttribute('role', 'log');
-  transcript.setAttribute('aria-live', 'polite');
+  transcript.setAttribute('role', 'region');
+  transcript.setAttribute('aria-label', task.title);
+  transcript.setAttribute('aria-live', 'off');
+  const announcer = statusRegion();
+  node.append(announcer);
   const transcriptRows = el('div', 'transcript-rows');
   const earlier = button(t('chat.earlier'), () => loadEarlier(), 'load-earlier');
   earlier.hidden = true;
@@ -203,13 +207,10 @@ export function taskView(context: ViewContext, initialProject: ProjectView, init
         ));
       if (item.error)
       q.append(el('span', 'error-mark', t('chat.error')));
-      q.append(button(
-        '×',
-        async () => {
-          queue = await request<QueueItem[]>('/api/chat/unqueue', { project: project.id, task: task.id, id: item.id });
-          renderQueue();
-        }
-      ));
+      q.append(iconButton('×', `${t('common.remove')}: ${t('chat.next', { n: index + 1 })}`, async () => {
+        queue = await request<QueueItem[]>('/api/chat/unqueue', { project: project.id, task: task.id, id: item.id });
+        renderQueue();
+      }));
       if (!busy && index === 0)
       q.append(button(
         t('chat.startQueued'),
@@ -379,6 +380,7 @@ export function taskView(context: ViewContext, initialProject: ProjectView, init
     if (!task.question)
     return;
     const panel = el('div', 'question-card');
+    announcer.textContent = t('chat.question');
     panel.append(el('h3', '', t('chat.question')));
     const answerParts: string[][] = asks.map(() => []);
     if (asks.length)
@@ -537,13 +539,10 @@ export function taskView(context: ViewContext, initialProject: ProjectView, init
       };
       steps.append(row(
         field(step.text, check),
-        button(
-          '×',
-          async () => {
-            await request('/api/task/step', { project: project.id, task: task.id, remove: index });
-            await context.refresh();
-          }
-        )
+        iconButton('×', `${t('common.remove')}: ${step.text}`, async () => {
+          await request('/api/task/step', { project: project.id, task: task.id, remove: index });
+          await context.refresh();
+        }),
       ));
     });
     const add = input('', t('task.addStep'));
@@ -602,6 +601,7 @@ export function taskView(context: ViewContext, initialProject: ProjectView, init
     break;
     case 'busy':
     busy = event.data;
+    announcer.textContent = '';
     partial = '';
     addLive();
     controls();
@@ -637,6 +637,7 @@ export function taskView(context: ViewContext, initialProject: ProjectView, init
       busy = null;
       partial = '';
       removeLive();
+      announcer.textContent = task.question ? t('chat.question') : t('notification.done');
     }
     controls();
     follow();

@@ -9,6 +9,19 @@ export function button(label: string, action: () => unknown, className = ''): HT
   const node = el('button', className, label); node.type = 'button';
   node.onclick = () => { void run(async () => { node.disabled = true; try { await action(); } finally { node.disabled = false; } }); }; return node;
 }
+export function iconButton(icon: string, label: string, action: () => unknown, className = ''): HTMLButtonElement {
+  const node = button(icon, action, className);
+  node.setAttribute('aria-label', label);
+  return node;
+}
+
+export function statusRegion(): HTMLElement {
+  const node = el('div', 'visually-hidden');
+  node.setAttribute('role', 'status');
+  node.setAttribute('aria-live', 'polite');
+  node.setAttribute('aria-atomic', 'true');
+  return node;
+}
 export function input(value = '', placeholder = ''): HTMLInputElement {
   const node = el('input'); node.value = value; node.placeholder = placeholder; return node;
 }

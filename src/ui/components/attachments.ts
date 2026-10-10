@@ -1,7 +1,7 @@
 import type { Limits, UploadResult } from '../../shared/types.ts';
 import { api } from '../api.ts';
 import { t } from '../i18n/index.ts';
-import { el, button, showError, toast } from './dom.ts';
+import { el, button, iconButton, showError, toast } from './dom.ts';
 
 export function attachments(project: string, limits: Limits, target: HTMLElement): { node: HTMLElement; strip: HTMLElement; ids: () => string[]; clear: () => void; ready: () => Promise<void>; dispose: () => void } {
   const node = el('div', 'attachments'); const strip = el('div', 'image-strip'); const picker = el('input'); picker.type = 'file'; picker.accept = 'image/png,image/jpeg,image/webp,image/gif'; picker.multiple = true; picker.hidden = true;
@@ -10,7 +10,11 @@ export function attachments(project: string, limits: Limits, target: HTMLElement
   function render(): void {
     strip.replaceChildren(...images.map(image => {
       const tile = el('div', 'image-tile'); const img = el('img'); img.src = image.url; img.alt = image.name;
-      tile.append(img, button('×', () => { images = images.filter(i => i.id !== image.id); render(); }, 'image-remove')); return tile;
+      tile.append(img, iconButton('×', `${t('common.remove')}: ${image.name}`, () => {
+        images = images.filter(i => i.id !== image.id);
+        render();
+      }, 'image-remove'));
+      return tile;
     }));
     status.textContent = pending ? t('chat.uploading') : '';
   }
