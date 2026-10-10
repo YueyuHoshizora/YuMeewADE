@@ -111,6 +111,7 @@ HTTP JSON plus SSE, identical in desktop and web versions. Types are defined in 
 | `POST /api/start` | Quick start (create a task and send) |
 | `POST /api/chat/send` | Send `{project, task, text, ai?, model?, effort?, mode?, answer?, images?, fromQueue?}`; while running, `mode` is required: `redo`／`amend`／`queue` |
 | `POST /api/chat/stop`、`/api/chat/unqueue` | Stop (and clear the queue), remove queued instructions |
+| `POST /api/chat/rollback` | `{project, task, request}`: restore the working copy to just before that instruction (a checkpoint is saved before every turn); 409 while running, 404 without a checkpoint |
 | `POST /api/upload`、`GET /api/upload`、`GET /api/attachment` | Image upload, preview, conversation attachments |
 | `GET /api/task/preview`、`GET /api/task/diff`、`POST /api/task/merge`、`/api/task/merge-exclusion`、`/api/task/copyclear` | Working copies |
 | `POST /api/task/verify` | Run the project’s verify command in the task’s working copy; returns `{ok, exitCode, timedOut, ms, output, truncated}`; 409 while the AI is running, a verification is already running, or `concurrentRuns` is exceeded |

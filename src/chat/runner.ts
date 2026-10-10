@@ -251,6 +251,7 @@ export class ChatRunner extends EventEmitter {
     };
     try {
       const cwd = await this.deps.worktree.prepare(p, t);
+      const checkpoint = await this.deps.worktree.checkpoint(p, t);
       const images = await attachImages(this.deps.ws, p, t, chosen.images ?? [], this.deps.limits.imagesPerSend);
       if (this.shuttingDown) throw new AppError('unavailable');
       if (task.state === '完成') await this.deps.completion.revoke(p, t);
@@ -281,6 +282,7 @@ export class ChatRunner extends EventEmitter {
         model: pick.model, effort: pick.effort, request: item.id,
         ...(s.busy.mode ? { mode: s.busy.mode } : {}),
         ...(images.length ? { images } : {}),
+        ...(checkpoint ? { checkpoint } : {}),
       };
       meta.running = {
         request: item.id, ai: item.ai, model: pick.model,
@@ -465,6 +467,33 @@ export class ChatRunner extends EventEmitter {
       await this.deps.oplog.record({ action: 'chatstop', project: p, task: t });
       this.deps.onChanged(p, t);
       return stopped;
+    });
+  }
+
+  /** 把工作副本還原到某則指示開始前，並讓 AI 重新開始（舊 session 的記憶已不符實際檔案）。 */
+  rollback(p: string, t: string, request: string): Promise<void> {
+    return this.lock(p, t, async () => {
+      await this.deps.tasks.get(p, t);
+      const s = this.slot(p, t);
+      if (s.busy) throw new AppError('conflict', 'rollback_while_running');
+      const rows = await this.deps.store.readLog(p, t);
+      const row = rows.find((r): r is Extract<ChatRow, { role: 'user' }> => r.role === 'user' && r.request === request);
+      if (!row?.checkpoint) throw new AppError('not_found', 'checkpoint_missing');
+      const sha = row.checkpoint;
+      await this.deps.worktree.restore(p, t, sha);
+      const meta = await this.deps.store.readMeta(p, t);
+      meta.sessions = {};
+      meta.models = {};
+      meta.seen = {};
+      await this.deps.store.writeMeta(p, t, meta);
+      const note: ChatRow = {
+        at: new Date().toISOString(), role: 'event', rollback: true, request,
+        text: `人把工作副本還原到指示「${row.text.slice(0, 120)}」開始之前；該指示及之後的檔案變更都已丟棄，重新確認檔案現況再繼續。`,
+      };
+      await this.deps.store.append(p, t, note);
+      this.publish(p, t, { event: 'row', data: note });
+      await this.deps.oplog.record({ action: 'chatrollback', project: p, task: t });
+      this.deps.onChanged(p, t);
     });
   }
 

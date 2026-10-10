@@ -111,6 +111,7 @@ HTTP JSON と SSE を使い、デスクトップ版と Web 版で完全に共通
 | `POST /api/start` | クイックスタート（タスク作成＋送信） |
 | `POST /api/chat/send` | `{project, task, text, ai?, model?, effort?, mode?, answer?, images?, fromQueue?}` を送信。実行中は `mode` が必須：`redo`／`amend`／`queue` |
 | `POST /api/chat/stop`、`/api/chat/unqueue` | 停止（キューも消去）、キューから削除 |
+| `POST /api/chat/rollback` | `{project, task, request}`：作業コピーをその指示の開始前に戻す（各ターン前にチェックポイントを自動保存）。実行中は 409、チェックポイントなしは 404 |
 | `POST /api/upload`、`GET /api/upload`、`GET /api/attachment` | 画像アップロード、プレビュー、会話の添付ファイル |
 | `GET /api/task/preview`、`GET /api/task/diff`、`POST /api/task/merge`、`/api/task/merge-exclusion`、`/api/task/copyclear` | 作業コピー |
 | `POST /api/task/verify` | タスクの作業コピーでプロジェクトの検証コマンドを実行し、`{ok, exitCode, timedOut, ms, output, truncated}` を返す。AI 実行中、検証が実行中、または `concurrentRuns` 超過のとき 409 |

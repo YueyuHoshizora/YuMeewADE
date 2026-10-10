@@ -78,6 +78,8 @@ export const DETAIL_MESSAGES = {
   worktree_exists: '副本仍存在，不能清除紀錄',
   // ---- BackendChat ----
   mode_required: '執行中送出請選擇取消重做、補充說明或做完接續',
+  rollback_while_running: '作業執行中，請先停止再還原',
+  checkpoint_missing: '找不到這則指示的檢查點，無法還原',
 } as const;
 
 export type DetailCode = keyof typeof DETAIL_MESSAGES;

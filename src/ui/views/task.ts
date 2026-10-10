@@ -385,6 +385,15 @@ export function taskView(
           `→ ${aiLabel(entry.to)} · ${modelLabel(context.state, entry.to, entry.model)} · ${effortLabel(entry.effort)}`
         ));
       if (entry.mode) metadata.append(el('span', 'mode-tag', t(`chat.mode.${entry.mode}`)));
+      if (entry.checkpoint) {
+        const undo = button(t('chat.rollback'), () => run(async () => {
+          if (busy || !await confirmModal(t('chat.rollback'), t('chat.rollbackConfirm'), t('chat.rollback'))) return;
+          await request('/api/chat/rollback', { project: project.id, task: task.id, request: entry.request });
+          toast(t('chat.rollbackDone'));
+        }), 'retry-message');
+        undo.hidden = !!busy;
+        metadata.append(undo);
+      }
       item.append(metadata, el('p', 'user-text', entry.text));
       if (entry.images?.length) {
         const images = el('div', 'image-strip');

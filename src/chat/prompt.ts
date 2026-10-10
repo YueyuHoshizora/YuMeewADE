@@ -37,8 +37,8 @@ export function buildPreamble(p: Preamble): string {
  */
 export function buildHandoff(rows: ChatRow[], limit: number): string {
   const entries = rows
-    .filter((r) => (r.role === 'user' || r.role === 'assistant') && r.text.trim() !== '')
-    .map((r) => `[${r.role === 'user' ? '人' : r.role === 'assistant' ? `AI ${r.ai}` : ''}${r.role === 'assistant' && r.stopped ? '，已被停止' : ''}]\n${r.text.trim()}`);
+    .filter((r) => (r.role === 'user' || r.role === 'assistant' || (r.role === 'event' && r.rollback)) && r.text.trim() !== '')
+    .map((r) => `[${r.role === 'user' ? '人' : r.role === 'assistant' ? `AI ${r.ai}` : '系統'}${r.role === 'assistant' && r.stopped ? '，已被停止' : ''}]\n${r.text.trim()}`);
   if (entries.length === 0) return '';
   const header = `<previous_conversation>\n${HANDOFF_NOTICE}\n`;
   const footer = '\n</previous_conversation>';

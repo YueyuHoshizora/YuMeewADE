@@ -202,3 +202,30 @@ test('concurrent merges serialize across service instances and reject the cleane
   const operations = (await fs.readFile(path.join(ws.internalDir, 'log.jsonl'), 'utf8')).trim().split('\n').map(line => JSON.parse(line) as { action: string });
   assert.equal(operations.filter(entry => entry.action === 'merge').length, 1);
 }));
+
+test('restore returns the copy to a checkpoint and keeps local secrets', () => withTmpWorkspace(async ws => {
+  const projects = new ProjectLedger(ws);
+  const tasks = new TaskLedger(ws);
+  await projects.create({ name: 'P' });
+  const task = await tasks.create('P', { title: '還原' });
+  const wt = new WorktreeService({ ws, projects, tasks, diffBytes: 100_000 });
+  const dir = await wt.prepare('P', task.id);
+  await fs.writeFile(path.join(dir, 'a.txt'), 'one\n');
+  const first = await wt.checkpoint('P', task.id);
+  assert.match(first ?? '', /^[0-9a-f]{40}$/);
+  assert.equal(await wt.checkpoint('P', task.id), first, 'no changes → same commit');
+  await fs.writeFile(path.join(dir, '.env'), 'SECRET=1\n');
+  await fs.writeFile(path.join(dir, 'a.txt'), 'two\n');
+  await fs.writeFile(path.join(dir, 'b.txt'), 'new\n');
+  await gitOk(dir, ['add', '-A']);
+  await gitOk(dir, ['commit', '-q', '-m', 'ai commit']);
+  await fs.writeFile(path.join(dir, 'c.txt'), 'untracked\n');
+  await wt.restore('P', task.id, first!);
+  assert.equal(await fs.readFile(path.join(dir, 'a.txt'), 'utf8'), 'one\n');
+  await assert.rejects(fs.access(path.join(dir, 'b.txt')));
+  await assert.rejects(fs.access(path.join(dir, 'c.txt')));
+  assert.equal(await fs.readFile(path.join(dir, '.env'), 'utf8'), 'SECRET=1\n');
+  assert.equal((await gitOk(dir, ['rev-parse', 'HEAD'])).trim(), first);
+  await assert.rejects(wt.restore('P', task.id, 'f'.repeat(40)), (e: unknown) => e instanceof AppError && e.detail === 'checkpoint_missing');
+  await assert.rejects(wt.restore('P', task.id, 'not-a-sha'), (e: unknown) => e instanceof AppError && e.detail === 'checkpoint_missing');
+}));

@@ -275,6 +275,8 @@ export type ChatRow =
       mode?: SendMode | 'answer';
       /** 附件圖片的絕對路徑。 */
       images?: string[];
+      /** 這輪開始前工作副本的 commit（還原用）；沒有工作副本時不帶。 */
+      checkpoint?: string;
     }
   | {
       at: string;
@@ -301,6 +303,8 @@ export type ChatRow =
       /** 工具呼叫摘要（指令、讀寫檔）；UI 預設收合。 */
       tool?: boolean;
       text: string;
+      /** 工作副本曾被還原；交接包會帶這一則，避免 AI 沿用過時記憶。 */
+      rollback?: boolean;
       request?: string;
     };
 

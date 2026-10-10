@@ -27,10 +27,26 @@ async function setup(ws: Workspace, options: MockOptions = {}) {
   const store = new ChatStore(ws); const calls: SendOptions[] = []; const events: ChatEvent[] = []; let watching = false;
   const mock = new MockCliProvider({ chunkMs: 1, ...options, text: opts => { calls.push(opts); return typeof options.text === 'function' ? options.text(opts) : options.text ?? 'ok'; } });
   const completion = new CompletionStore(ws);
-  const runner = new ChatRunner({ ws, store, projects, tasks, settings, completion, oplog: new OpLog(ws), roles: () => loadRoles(ws.rolesFile), providers: { mock, claude: mock, codex: mock }, limits: { concurrentRuns: 2, queueLength: 3, handoffChars: 60000, imagesPerSend: 10 }, worktree: { prepare: async () => ws.projectDir('P') } as unknown as WorktreeService, publish: (_p, _t, ev) => events.push(ev), watching: () => watching, onChanged: () => {}, onUsage: () => {} });
+  const restored: string[] = []; let checkpointCount = 0;
+  const runner = new ChatRunner({ ws, store, projects, tasks, settings, completion, oplog: new OpLog(ws), roles: () => loadRoles(ws.rolesFile), providers: { mock, claude: mock, codex: mock }, limits: { concurrentRuns: 2, queueLength: 3, handoffChars: 60000, imagesPerSend: 10 }, worktree: { prepare: async () => ws.projectDir('P'), checkpoint: async () => String(++checkpointCount).padStart(40, '0'), restore: async (_p: string, _t: string, sha: string) => { restored.push(sha); } } as unknown as WorktreeService, publish: (_p, _t, ev) => events.push(ev), watching: () => watching, onChanged: () => {}, onUsage: () => {} });
   const send = (text: string, extra: Partial<Parameters<ChatRunner['send']>[0]> = {}) => runner.send({ project: 'P', task: task.id, text, ...extra });
-  return { runner, store, tasks, task, send, calls, events, completion, watch: () => { watching = true; } };
+  return { runner, store, tasks, task, send, calls, events, completion, restored, watch: () => { watching = true; } };
 }
+test('rollback 還原到指定指示的檢查點、清除 session，並在交接包告知 AI', () => withTmpWorkspace(async ws => {
+  const s = await setup(ws, { chunkMs: 5 });
+  await s.send('first'); await s.runner.whenIdle(); await s.send('second'); await s.runner.whenIdle();
+  const users = (await s.store.readLog('P', s.task.id)).filter(r => r.role === 'user');
+  const first = users[0]; assert.ok(first?.role === 'user'); assert.match(first.checkpoint ?? '', /^0+1$/);
+  await s.runner.rollback('P', s.task.id, first.request);
+  assert.deepEqual(s.restored, [first.checkpoint]);
+  const meta = await s.store.readMeta('P', s.task.id); assert.deepEqual(meta.sessions, {}); assert.deepEqual(meta.seen, {});
+  const note = (await s.store.readLog('P', s.task.id)).at(-1); assert.ok(note?.role === 'event'); assert.equal(note.rollback, true); assert.match(note.text, /first/);
+  await s.send('third'); await s.runner.whenIdle();
+  assert.equal(s.calls.at(-1)?.resumeId, undefined); assert.match(s.calls.at(-1)?.prompt ?? '', /\[系統\]\n人把工作副本還原/);
+  await assert.rejects(s.runner.rollback('P', s.task.id, 'nope'), (e: unknown) => e instanceof Error && 'detail' in e && e.detail === 'checkpoint_missing');
+  await s.send('slow [slow]'); await assert.rejects(s.runner.rollback('P', s.task.id, first.request), (e: unknown) => e instanceof Error && 'detail' in e && e.detail === 'rollback_while_running');
+  await s.runner.stop('P', s.task.id); await s.runner.whenIdle();
+}));
 test('roleless defaults, tool rows, asks, answer clearing, unread', () => withTmpWorkspace(async ws => {
   const s = await setup(ws, { text: opts => opts.prompt.includes('answer now') ? 'thanks' : 'done\n[[question]]\nWhich?\n1. A\n2. B\n[[/question]]', events: [{ type: 'tool', text: 'Read file.ts' }] });
   await s.send('go'); await s.runner.whenIdle();

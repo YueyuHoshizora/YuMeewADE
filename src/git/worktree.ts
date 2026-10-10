@@ -127,6 +127,28 @@ export class WorktreeService {
     }
     return { diff, truncated };
   }
+  /** 每輪開始前把副本現況存成 commit 並回傳其 sha；直接在主資料夾工作（沒有副本）時回 undefined。 */
+  async checkpoint(project: string, task: string): Promise<string | undefined> {
+    return this.mutate(project, async () => {
+      const { record, dir } = await this.copy(project, task);
+      if (record.workspace === 'direct' || !dir || !(await pathExists(path.join(dir, '.git')))) return undefined;
+      await commitAll(dir, 'YuMeewADE：回合前檢查點');
+      return (await gitOk(dir, ['rev-parse', 'HEAD'])).trim();
+    });
+  }
+  /** 副本回到檢查點：丟棄之後的 commit 與未提交變更（本機機密檔保留）。 */
+  async restore(project: string, task: string, sha: string): Promise<void> {
+    if (!/^[0-9a-f]{40}$/.test(sha)) throw new AppError('not_found', 'checkpoint_missing');
+    await this.mutate(project, async () => {
+      const { repo, dir } = await this.copy(project, task);
+      if (!dir || !(await pathExists(path.join(dir, '.git')))) throw new AppError('not_found', 'worktree_missing');
+      await this.verifyFamily(repo, dir);
+      const reachable = await git(dir, ['merge-base', '--is-ancestor', sha, 'HEAD']);
+      if (reachable.code !== 0) throw new AppError('not_found', 'checkpoint_missing');
+      await gitOk(dir, ['reset', '-q', '--hard', sha]);
+      await gitOk(dir, ['clean', '-fdq', '-e', '.env*', '-e', '.npmrc', '-e', '.dev.vars*']);
+    });
+  }
   async merge(project: string, task: string): Promise<MergeResult> {
     return this.mutate(project, () => this.mergeLocked(project, task));
   }
