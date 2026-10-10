@@ -15,7 +15,7 @@ import { AppError } from '../shared/errors.ts';
 import { log } from '../shared/log.ts';
 import type {
   Ask, Busy, ChatEvent, ChatHistory, ChatRow, QueueItem, Roles, RunningInfo,
-  SendInput, SendResult,
+  SendInput, SendResult, TurnUsage,
 } from '../shared/types.ts';
 import { HISTORY_PAGE } from '../shared/types.ts';
 import { buildHandoff, buildPreamble, buildPrompt } from './prompt.ts';
@@ -80,8 +80,21 @@ export class ChatRunner extends EventEmitter {
   private lock<T>(p: string, t: string, fn: () => Promise<T>): Promise<T> {
     const key = `${p}\0${t}`;
     const next = (this.locks.get(key) ?? Promise.resolve()).catch(() => {}).then(fn);
-    this.locks.set(key, next);
-    return next;
+    const settled = next.finally(async () => {
+      if (this.locks.get(key) !== settled) return;
+      try {
+        const queue = await this.deps.store.readQueue(p, t);
+        if (this.locks.get(key) !== settled) return;
+        this.locks.delete(key);
+        const slot = this.slots.get(key);
+        if (slot && !slot.busy && !queue.length) this.slots.delete(key);
+      } catch (err) {
+        if (this.locks.get(key) === settled) this.locks.delete(key);
+        log.error('對話收尾失敗', err, { project: p, task: t });
+      }
+    });
+    this.locks.set(key, settled);
+    return settled;
   }
 
   private publish(p: string, t: string, event: ChatEvent): void {
@@ -101,7 +114,7 @@ export class ChatRunner extends EventEmitter {
   }
 
   isRunning(p: string, t: string): boolean {
-    return this.slot(p, t).busy !== null;
+    return this.slots.get(`${p}\0${t}`)?.busy != null;
   }
 
   unread(): { project: string; task: string }[] {
@@ -144,14 +157,14 @@ export class ChatRunner extends EventEmitter {
     rows: ChatRow[]; start: number; busy: Busy | null; partial: string; queue: QueueItem[];
   }> {
     await this.deps.tasks.get(p, t);
-    const s = this.slot(p, t);
+    const s = this.slots.get(`${p}\0${t}`);
     const rows = await this.deps.store.readLog(p, t);
     const start = Math.max(0, rows.length - HISTORY_PAGE);
     return {
       rows: rows.slice(start),
       start,
-      busy: s.busy,
-      partial: s.partial,
+      busy: s?.busy ?? null,
+      partial: s?.partial ?? '',
       queue: await this.deps.store.readQueue(p, t),
     };
   }
@@ -334,8 +347,11 @@ export class ChatRunner extends EventEmitter {
     let result: string | undefined;
     let sid = opts.resumeId;
     let error = '';
+    let usage: TurnUsage | undefined;
+    let persisted = false;
     const asks: Ask[] = [];
     let writes = Promise.resolve();
+    let writeFailure: { error: unknown } | undefined;
     const previousSeen = meta.seen[item.ai];
     const previousSession = meta.sessions[item.ai];
     const previousModel = meta.models[item.ai];
@@ -347,6 +363,7 @@ export class ChatRunner extends EventEmitter {
           s.partial += ev.text;
           this.publish(p, t, { event: 'delta', data: { request: item.id, text: ev.text } });
         } else if (ev.type === 'result') result = ev.text;
+        else if (ev.type === 'usage') usage = ev.usage;
         else if (ev.type === 'error') {
           error = 'cli_failed';
           log.warn('CLI 回覆失敗', { project: p, task: t });
@@ -358,14 +375,16 @@ export class ChatRunner extends EventEmitter {
             tool: true, text: ev.text, request: item.id,
           };
           writes = writes.then(async () => {
+            if (writeFailure) return;
             await this.deps.store.append(p, t, row);
             this.publish(p, t, { event: 'row', data: row });
-          });
+          }).catch(err => { writeFailure ??= { error: err }; });
         }
       });
       s.run = run;
       const outcome = await run.done;
       await writes;
+      if (writeFailure) throw writeFailure.error;
       const parsed = parseAsk(result ?? s.partial);
       asks.push(...parsed.asks);
       if (!outcome.ok && !outcome.stopped) error = 'cli_failed';
@@ -375,8 +394,10 @@ export class ChatRunner extends EventEmitter {
         ms: Date.now() - started, request: item.id,
         ...(error ? { error } : {}), ...(outcome.stopped ? { stopped: true } : {}),
         ...(asks.length ? { asks } : {}),
+        ...(usage ? { usage } : {}),
       };
       await this.deps.store.append(p, t, row);
+      persisted = true;
       this.publish(p, t, { event: 'row', data: row });
       delete meta.running;
       if (error && !outcome.stopped) {
@@ -404,6 +425,8 @@ export class ChatRunner extends EventEmitter {
       const row: ChatRow = {
         at: new Date().toISOString(), role: 'assistant', ai: item.ai,
         text: s.partial, error: 'internal', ms: Date.now() - started, request: item.id,
+        model: item.model ?? '', effort: item.effort ?? '',
+        ...(usage ? { usage } : {}),
       };
       delete meta.running;
       if (previousSeen === undefined) delete meta.seen[item.ai];
@@ -412,9 +435,13 @@ export class ChatRunner extends EventEmitter {
       else meta.sessions[item.ai] = previousSession;
       if (opts.resumeId || previousModel === undefined) delete meta.models[item.ai];
       else meta.models[item.ai] = previousModel;
-      await this.deps.store.writeMeta(p, t, meta);
-      await this.deps.store.append(p, t, row);
-      this.publish(p, t, { event: 'row', data: row });
+      try { await this.deps.store.writeMeta(p, t, meta); }
+      catch (cleanupError) { log.error('對話收尾失敗', cleanupError, { project: p, task: t }); }
+      if (!persisted) {
+        try { await this.deps.store.append(p, t, row); }
+        catch (appendError) { log.error('對話收尾失敗', appendError, { project: p, task: t }); }
+        this.publish(p, t, { event: 'row', data: row });
+      }
     } finally {
       s.busy = null;
       s.run = null;

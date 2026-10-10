@@ -4,6 +4,9 @@ import path from 'node:path';
 import type { Workspace } from '../ledger/workspace.ts';
 import { AppError } from '../shared/errors.ts';
 import type { UploadResult } from '../shared/types.ts';
+import { isValidProjectName, isValidTaskId } from '../shared/names.ts';
+import type { ChatStore } from './store.ts';
+export const UPLOAD_TTL_MS = 24 * 60 * 60 * 1000;
 const ID = /^[0-9a-f-]{36}\.(png|jpe?g|webp|gif)$/u;
 export const IMAGE_TYPES: Record<string, string> = { png: 'image/png', jpg: 'image/jpeg', jpeg: 'image/jpeg', webp: 'image/webp', gif: 'image/gif' };
 const PNG = Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]);
@@ -44,4 +47,39 @@ export async function attachImages(ws: Workspace, project: string, task: string,
     catch (err) { if ((err as NodeJS.ErrnoException).code !== 'ENOENT') throw err; }
   }
   return targets;
+}
+
+export async function cleanupUploads(ws: Workspace, store: ChatStore, now = Date.now()): Promise<void> {
+  for (const project of await fs.readdir(ws.projectsDir, { withFileTypes: true })) {
+    if (!project.isDirectory() || !isValidProjectName(project.name)) continue;
+    const dir = ws.uploadsDir(project.name);
+    if (!(await fs.lstat(dir).catch((err: NodeJS.ErrnoException) => {
+      if (err.code === 'ENOENT') return null;
+      throw err;
+    }))?.isDirectory()) continue;
+    const referenced = new Set<string>();
+    const chatDir = path.join(ws.projectDir(project.name), '.ai', 'chat');
+    const queues = await fs.readdir(chatDir).catch((err: NodeJS.ErrnoException) => {
+      if (err.code === 'ENOENT') return [];
+      throw err;
+    });
+    for (const name of queues) {
+      if (!name.endsWith('.queue.json')) continue;
+      const task = name.slice(0, -'.queue.json'.length);
+      if (!isValidTaskId(task)) continue;
+      for (const item of await store.readQueue(project.name, task)) {
+        for (const image of item.images ?? []) referenced.add(image);
+      }
+    }
+    for (const file of await fs.readdir(dir, { withFileTypes: true })) {
+      if (!file.isFile() || !ID.test(file.name) || referenced.has(file.name)) continue;
+      const target = path.join(dir, file.name);
+      try {
+        const stat = await fs.lstat(target);
+        if (stat.isFile() && stat.mtimeMs < now - UPLOAD_TTL_MS) await fs.unlink(target);
+      } catch (err) {
+        if ((err as NodeJS.ErrnoException).code !== 'ENOENT') throw err;
+      }
+    }
+  }
 }

@@ -6,6 +6,7 @@ import { writeJson } from '../../shared/fsx.ts';
 import { SEND_MODES, type SendInput, type StartResult } from '../../shared/types.ts';
 import { isRepo } from '../../git/git.ts';
 import { IMAGE_TYPES, saveUpload, uploadPath } from '../../chat/attachments.ts';
+import { formatTranscript } from '../../chat/export.ts';
 import { taskKey } from '../sse.ts';
 import { optString, reqString, type Router } from '../router.ts';
 function images(body: Record<string, unknown>, max: number): string[] | undefined {
@@ -14,6 +15,21 @@ function images(body: Record<string, unknown>, max: number): string[] | undefine
   return body['images'] as string[];
 }
 export function registerChatRoutes(router: Router, app: App): void {
+  router.get('/api/chat/export', async ({ query, res }) => {
+    const p = reqString(query, 'project', 100);
+    const t = reqString(query, 'task', 100);
+    const task = await app.tasks.get(p, t);
+    const rows = await app.store.readLog(p, t);
+    const text = formatTranscript(task.title, rows, app.ws.root, query.get('tools') === '1');
+    const filename = encodeURIComponent(`${task.title}.md`).replace(/['()*]/gu, c => `%${c.charCodeAt(0).toString(16).toUpperCase()}`);
+    res.writeHead(200, {
+      'Content-Type': 'text/markdown; charset=utf-8',
+      'Content-Disposition': `attachment; filename*=UTF-8''${filename}`,
+      'X-Content-Type-Options': 'nosniff',
+      'Cache-Control': 'no-store',
+    });
+    res.end(text);
+  });
   router.get('/api/chat/history', async ({ query }) => {
     const p = reqString(query, 'project', 100);
     const t = reqString(query, 'task', 100);

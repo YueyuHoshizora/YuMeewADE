@@ -4,6 +4,7 @@ export class RateLimiter {
   private readonly hits = new Map<string, number[]>();
   private readonly limit: number;
   private readonly windowMs: number;
+  private nextPrune = 0;
 
   constructor(limit: number, windowMs = 60_000) {
     this.limit = limit;
@@ -12,10 +13,20 @@ export class RateLimiter {
 
   /** 回 true 代表允許並計入；false 代表超限。 */
   take(key: string, now = Date.now()): boolean {
+    if (now >= this.nextPrune) {
+      const cutoff = now - this.windowMs;
+      for (const [id, hits] of this.hits) {
+        const live = hits.filter(t => t > cutoff);
+        if (live.length) this.hits.set(id, live);
+        else this.hits.delete(id);
+      }
+      this.nextPrune = now + this.windowMs;
+    }
     const cutoff = now - this.windowMs;
     const list = (this.hits.get(key) ?? []).filter((t) => t > cutoff);
     if (list.length >= this.limit) {
-      this.hits.set(key, list);
+      if (list.length) this.hits.set(key, list);
+      else this.hits.delete(key);
       return false;
     }
     list.push(now);

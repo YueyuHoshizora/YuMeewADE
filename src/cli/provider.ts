@@ -1,6 +1,6 @@
 // CLI 對話契約；核心只認這個介面，工具摘要不混入回答文字。
 
-import type { Ask, QuotaWindow } from '../shared/types.ts';
+import type { Ask, QuotaWindow, TurnUsage } from '../shared/types.ts';
 
 export interface SendOptions {
   /** 完整提示（含前言、交接包、使用者指示）。 */
@@ -23,6 +23,7 @@ export type CliEvent =
   | { type: 'delta'; text: string }
   /** 最終完整回覆（有些 CLI 不逐字串流，只給整段）。 */
   | { type: 'result'; text: string }
+  | { type: 'usage'; usage: TurnUsage }
   | { type: 'tool'; text: string }
   | { type: 'asks'; asks: Ask[] }
   /** 帳號額度（CLI 回報；at＝資料時間 ISO）。 */

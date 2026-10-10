@@ -35,3 +35,29 @@ test('quickstart creates current-phase task, saves selection; settings and roles
     const ai = await s.api('GET', '/api/ai'); assert.equal(ai.status, 200); assert.ok(Array.isArray(ai.json)); assert.ok((ai.json as { models: unknown[] }[]).every(info => info.models.length));
   } finally { await s.close(); }
 });
+
+test('chat export returns Markdown attachment and rejects unsafe names', async () => {
+  const s = await startTestServer();
+  try {
+    await s.api('POST', '/api/project/new', { name: 'P' });
+    const created = await s.api('POST', '/api/task/new', { project: 'P', title: "測試 (一)'", workspace: 'direct' });
+    const task = created.json as Task;
+    await s.app.store.append('P', task.id, { role: 'event', at: 'now', tool: true, text: `Read ${s.app.ws.root}/secret` });
+    await s.app.store.append('P', task.id, { role: 'assistant', at: 'now', ai: 'mock', request: 'r', ms: 1, text: 'reply', usage: { input: 1, output: 2 } });
+    const response = await fetch(`${s.base}/api/chat/export?project=P&task=${task.id}`);
+    assert.equal(response.status, 200);
+    assert.equal(response.headers.get('content-type'), 'text/markdown; charset=utf-8');
+    assert.equal(response.headers.get('x-content-type-options'), 'nosniff');
+    assert.equal(response.headers.get('content-disposition'), `attachment; filename*=UTF-8''${encodeURIComponent(task.title + '.md').replace(/['()*]/gu, c => '%' + c.charCodeAt(0).toString(16).toUpperCase())}`);
+    const text = await response.text();
+    assert.match(text, /reply/u); assert.match(text, /輸入 1／輸出 2/u);
+    assert.ok(!text.includes('Read'));
+    const tools = await fetch(`${s.base}/api/chat/export?project=P&task=${task.id}&tools=1`);
+    const toolText = await tools.text();
+    assert.ok(toolText.includes('Read'));
+    assert.ok(!toolText.includes(s.app.ws.root));
+    assert.equal((await fetch(`${s.base}/api/chat/export?project=..&task=${task.id}`)).status, 400);
+    assert.equal((await fetch(`${s.base}/api/chat/export?project=P&task=..`)).status, 400);
+    assert.equal((await fetch(`${s.base}/api/chat/export?project=P&task=20260101-999`)).status, 404);
+  } finally { await s.close(); }
+});

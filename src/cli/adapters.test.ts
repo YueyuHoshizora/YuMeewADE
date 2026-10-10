@@ -316,3 +316,30 @@ test('codex：從 rollout 讀額度，指定會話時往舊日期找，最新額
     await fs.rm(home, { recursive: true, force: true });
   }
 });
+
+test('turn usage is exact, optional, and independent of live tokens', async () => {
+  const events = collect(createClaudeParser, [
+    { type: 'stream_event', event: { type: 'message_start', message: { usage: { input_tokens: 3, cache_creation_input_tokens: 4, cache_read_input_tokens: 5, output_tokens: 0 } } } },
+    { type: 'stream_event', event: { type: 'message_delta', usage: { output_tokens: 6 } } },
+    { type: 'result', is_error: true, usage: { input_tokens: 30, cache_creation_input_tokens: 40, cache_read_input_tokens: 50, output_tokens: 60 } },
+  ]);
+  assert.deepEqual(events.filter(e => e.type === 'usage'), [
+    { type: 'usage', usage: { input: 7, output: 6, cached: 5 } },
+    { type: 'usage', usage: { input: 70, output: 60, cached: 50 } },
+  ]);
+  assert.ok(events.some(e => e.type === 'tokens'));
+  const codex = collect(createCodexParser, [
+    ...CODEX_LINES,
+    { type: 'turn.completed', usage: { input_tokens: 9, cached_input_tokens: 2, output_tokens: 8 } },
+    { type: 'turn.completed', usage: { input_tokens: 'bad', output_tokens: 2 } },
+    { type: 'turn.completed', usage: { input_tokens: 1, output_tokens: NaN } },
+  ]);
+  assert.deepEqual(codex.filter(e => e.type === 'usage'), [
+    { type: 'usage', usage: { input: 1, output: 1 } },
+    { type: 'usage', usage: { input: 9, output: 8, cached: 2 } },
+  ]);
+  const mockEvents: CliEvent[] = [];
+  await new MockCliProvider({ chunkMs: 0, events: [{ type: 'usage', usage: { input: 7, output: 6 } }] })
+    .send({ prompt: '', cwd: '/w' }, e => mockEvents.push(e)).done;
+  assert.deepEqual(mockEvents.find(e => e.type === 'usage'), { type: 'usage', usage: { input: 7, output: 6 } });
+});

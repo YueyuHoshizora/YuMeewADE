@@ -142,6 +142,22 @@ export function createCodexParser(onEvent: (ev: CliEvent) => void): (obj: Record
         return;
       }
       case 'turn.completed':
+        {
+          const value = obj['usage'];
+          if (value && typeof value === 'object') {
+            const u = value as Record<string, unknown>;
+            const input = u['input_tokens'];
+            const output = u['output_tokens'];
+            const cached = u['cached_input_tokens'];
+            if (typeof input === 'number' && Number.isFinite(input) && input >= 0 &&
+                typeof output === 'number' && Number.isFinite(output) && output >= 0) {
+              onEvent({ type: 'usage', usage: {
+                input, output,
+                ...(typeof cached === 'number' && Number.isFinite(cached) && cached >= 0 ? { cached } : {}),
+              } });
+            }
+          }
+        }
         if (!failed) onEvent({ type: 'result', text: streamed.trim() });
         return;
       case 'turn.failed':

@@ -223,3 +223,100 @@ test('history 路由驗證 before 字串及作業存在', () => withTmpWorkspace
   }
   await assert.rejects(request('0', '20260101-999'), { code: 'not_found' });
 }));
+
+test('usage survives successful, failed, and stopped turns', () => withTmpWorkspace(async ws => {
+  const usage = { input: 11, output: 12, cached: 3 };
+  const s = await setup(ws, { events: [{ type: 'usage', usage }] });
+  await s.send('normal'); await s.runner.whenIdle();
+  await s.send('broken [fail]'); await s.runner.whenIdle();
+  const started = Promise.withResolvers<void>();
+  s.runner.on('event', (_p, _t, event: ChatEvent) => {
+    if (event.event === 'delta') started.resolve();
+  });
+  await s.send('stop [slow]');
+  await started.promise;
+  await s.runner.stop('P', s.task.id); await s.runner.whenIdle();
+  const rows = (await s.store.readLog('P', s.task.id)).filter(r => r.role === 'assistant');
+  assert.equal(rows.length, 3);
+  for (const row of rows) assert.deepEqual(row.usage, usage);
+  assert.equal(rows[1]?.error, 'cli_failed');
+  assert.equal(rows[2]?.stopped, true);
+}));
+
+test('terminal persistence and marker cleanup fail independently without losing idle', () => withTmpWorkspace(async ws => {
+  for (const failure of ['meta', 'append'] as const) {
+    const s = await setup(ws, { events: [{ type: 'tool', text: 'Read' }] });
+    const append = s.store.append.bind(s.store);
+    const writeMeta = s.store.writeMeta.bind(s.store);
+    s.store.append = async (p, t, row) => {
+      if (row.role === 'event' || (failure === 'append' && row.role === 'assistant')) throw new Error('disk failure');
+      await append(p, t, row);
+    };
+    s.store.writeMeta = async (p, t, meta) => {
+      if (failure === 'meta' && !meta.running) throw new Error('disk failure');
+      await writeMeta(p, t, meta);
+    };
+    await s.send('go'); await s.runner.whenIdle();
+    assert.equal(s.runner.isRunning('P', s.task.id), false);
+    assert.ok(s.events.some(e => e.event === 'idle'));
+    assert.ok(s.events.some(e => e.event === 'row' && e.data.role === 'assistant' && e.data.error === 'internal'));
+    if (failure === 'meta') assert.equal((await s.store.readLog('P', s.task.id)).at(-1)?.role, 'assistant');
+    else assert.equal((await s.store.readMeta('P', s.task.id)).running, undefined);
+    await fs.rm(ws.projectDir('P'), { recursive: true });
+  }
+}));
+
+test('transient terminal append or metadata failure clears marker without duplicate replies', () => withTmpWorkspace(async ws => {
+  const s = await setup(ws, { events: [{ type: 'usage', usage: { input: 3, output: 4 } }] });
+  const append = s.store.append.bind(s.store);
+  let appendFailed = false;
+  s.store.append = async (p, t, row) => {
+    if (row.role === 'assistant' && !appendFailed) {
+      appendFailed = true;
+      throw new Error('transient disk failure');
+    }
+    await append(p, t, row);
+  };
+  await s.send('append failure'); await s.runner.whenIdle();
+  assert.equal((await s.store.readMeta('P', s.task.id)).running, undefined);
+  const failed = (await s.store.readLog('P', s.task.id)).filter(r => r.role === 'assistant');
+  assert.equal(failed.length, 1); assert.equal(failed[0]?.error, 'internal');
+  assert.deepEqual(failed[0]?.usage, { input: 3, output: 4 });
+  const writeMeta = s.store.writeMeta.bind(s.store);
+  let metaFailed = false;
+  s.store.writeMeta = async (p, t, meta) => {
+    if (!meta.running && !metaFailed) {
+      metaFailed = true;
+      throw new Error('transient disk failure');
+    }
+    await writeMeta(p, t, meta);
+  };
+  await s.send('metadata failure'); await s.runner.whenIdle();
+  assert.equal((await s.store.readMeta('P', s.task.id)).running, undefined);
+  assert.equal((await s.store.readLog('P', s.task.id)).filter(r => r.role === 'assistant').length, 2);
+}));
+
+test('idle slots and locks are reclaimed without racing a new send', () => withTmpWorkspace(async ws => {
+  const s = await setup(ws);
+  const maps = s.runner as unknown as { slots: Map<string, unknown>; locks: Map<string, unknown> };
+  await s.send('first'); await s.runner.whenIdle();
+  assert.equal(maps.slots.size, 0); assert.equal(maps.locks.size, 0);
+  await s.runner.snapshot('P', s.task.id);
+  s.runner.isRunning('P', s.task.id);
+  assert.equal(maps.slots.size, 0);
+  const readQueue = s.store.readQueue.bind(s.store);
+  let arrived = false;
+  let send: Promise<unknown> | undefined;
+  s.store.readQueue = async (p, t) => {
+    if (!arrived) {
+      arrived = true;
+      send = s.send('arrived during cleanup', { mode: 'queue' });
+    }
+    return readQueue(p, t);
+  };
+  await s.send('second');
+  await send; await s.runner.whenIdle();
+  const users = (await s.store.readLog('P', s.task.id)).filter(r => r.role === 'user');
+  assert.equal(users.length, 3);
+  assert.equal(maps.slots.size, 0); assert.equal(maps.locks.size, 0);
+}));

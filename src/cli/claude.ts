@@ -1,6 +1,6 @@
 // Claude stream-json adapter；工具與問題獨立於回答文字。
 import type { CliCommandConfig } from '../shared/config.ts';
-import type { Ask, QuotaWindow } from '../shared/types.ts';
+import type { Ask, QuotaWindow, TurnUsage } from '../shared/types.ts';
 import { findExecutable, minimalEnv, runLineProcess } from './process.ts';
 import type { CliEvent, CliProvider, CliRun, SendOptions } from './provider.ts';
 
@@ -45,6 +45,22 @@ export function claudeQuota(info: unknown): { windows: QuotaWindow[]; limited: b
   return windows.length || limited ? { windows, limited } : null;
 }
 
+function parseUsage(value: unknown): TurnUsage | undefined {
+  if (!value || typeof value !== 'object') return;
+  const u = value as Record<string, unknown>;
+  const input = u['input_tokens'];
+  const output = u['output_tokens'];
+  if (typeof input !== 'number' || !Number.isFinite(input) || input < 0 ||
+      typeof output !== 'number' || !Number.isFinite(output) || output < 0) return;
+  const creation = u['cache_creation_input_tokens'];
+  const cached = u['cache_read_input_tokens'];
+  return {
+    input: input + (typeof creation === 'number' && Number.isFinite(creation) && creation >= 0 ? creation : 0),
+    output,
+    ...(typeof cached === 'number' && Number.isFinite(cached) && cached >= 0 ? { cached } : {}),
+  };
+}
+
 export function createClaudeParser(onEvent: (ev: CliEvent) => void, now: () => number = Date.now): (obj: Record<string, unknown>) => void {
   let streamed = '';
   let sawStream = false;
@@ -52,6 +68,7 @@ export function createClaudeParser(onEvent: (ev: CliEvent) => void, now: () => n
   /** 本則訊息開始的時間與已估算的 token 數；結束時以實際用量校正。 */
   let generating: number | null = null;
   let estimated = 0;
+  let messageUsage: Record<string, unknown> = {};
   const tools = new Set<string>();
   const handleTool = (block: Record<string, unknown>) => {
     const name = block['name'];
@@ -100,6 +117,14 @@ export function createClaudeParser(onEvent: (ev: CliEvent) => void, now: () => n
           // 從訊息開始算：估算與實際的差額要攤回整則訊息的時間，才不會在結尾擠成尖峰。
           generating = now();
           estimated = 0;
+          const message = e['message'];
+          const usage = message && typeof message === 'object' && 'usage' in message ? message.usage : undefined;
+          messageUsage = usage && typeof usage === 'object' ? usage as Record<string, unknown> : {};
+        }
+        if (e['type'] === 'message_delta') {
+          const value = e['usage'];
+          const usage = parseUsage(value && typeof value === 'object' ? { ...messageUsage, ...value } : value);
+          if (usage) onEvent({ type: 'usage', usage });
         }
         if (e['type'] === 'message_delta' && generating !== null) {
           const usage = e['usage'];
@@ -148,6 +173,8 @@ export function createClaudeParser(onEvent: (ev: CliEvent) => void, now: () => n
         return;
       }
       case 'result': {
+        const usage = parseUsage(obj['usage']);
+        if (usage) onEvent({ type: 'usage', usage });
         const isError = obj['is_error'] === true || (typeof obj['subtype'] === 'string' && obj['subtype'] !== 'success');
         const text = typeof obj['result'] === 'string' ? obj['result'] : '';
         if (isError) onEvent({ type: 'error', reason: `result ${String(obj['subtype'])}: ${text.slice(0, 200)}` });
