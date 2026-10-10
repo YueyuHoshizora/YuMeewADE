@@ -51,3 +51,4 @@ limits:
   imagesPerSend: 10        # 每次送出最多幾張圖片
   verifySeconds: 600       # 驗證指令逾時秒數
   verifyOutputBytes: 65536 # 驗證 stdout/stderr 合計保留尾端位元組
+  runSeconds: 7200         # 單輪 AI 執行時間上限（秒），超過就停止，避免卡住的行程佔著名額

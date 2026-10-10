@@ -13,6 +13,7 @@ export const it: Record<MessageKey, string> = {
   'files.open': 'File', 'files.title': 'Sfoglia i file', 'files.search': 'Cerca nel nome dei file…', 'files.more': '{total} file; sono mostrati i primi {n}. Restringi la ricerca', 'files.empty': 'Nessun file corrispondente', 'files.binary': 'File binario; contenuto non mostrato', 'files.truncated': 'File grande; sono mostrati solo i primi 256 KB', 'detail.file_missing': 'File non trovato',
   'chat.rollback': 'Ripristina a prima di questo', 'chat.rollbackConfirm': 'La copia di lavoro torna allo stato precedente a questa istruzione; le modifiche ai file da qui in poi vengono scartate (la conversazione resta). Ripristinare?', 'chat.rollbackDone': 'Copia di lavoro ripristinata',
   'chat.fork': 'Crea ramo da qui', 'chat.forked': 'Attività di ramo creata', 'detail.fork_while_running': 'Interrompi l’attività in corso prima di creare un ramo', 'log.task.fork': 'Attività ramificata da un’istruzione',
+  'chat.timedOut': 'Interrotta: superato il tempo massimo di esecuzione',
   'chat.changes': 'Questo turno: {files} file +{added} −{removed}',
   'chat.turnUsage': 'input {input} · output {output}', 'chat.cachedUsage': ' · cache {cached}',
   'chat.usageHint': 'Questi conteggi di token sono riportati dalla CLI.',

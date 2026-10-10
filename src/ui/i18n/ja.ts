@@ -13,6 +13,7 @@ export const ja: Record<MessageKey, string> = {
   'files.open': 'ファイル', 'files.title': 'ファイルを見る', 'files.search': 'ファイル名を検索…', 'files.more': '{total} 件中、先頭の {n} 件を表示しています。キーワードを足して絞り込んでください', 'files.empty': '一致するファイルはありません', 'files.binary': 'バイナリファイルのため内容は表示しません', 'files.truncated': 'ファイルが大きいため先頭の 256 KB のみ表示します', 'detail.file_missing': 'ファイルが見つかりません',
   'chat.rollback': 'この指示の前に戻す', 'chat.rollbackConfirm': '作業コピーをこの指示の開始前に戻します。この指示以降のファイル変更は破棄されます（会話は残ります）。戻しますか？', 'chat.rollbackDone': '作業コピーを戻しました',
   'chat.fork': 'ここから分岐', 'chat.forked': '分岐タスクを作成しました', 'detail.fork_while_running': '実行中のタスクを停止してから分岐してください', 'log.task.fork': '指示から作業を分岐',
+  'chat.timedOut': '実行時間の上限を超えたため停止しました',
   'chat.changes': 'このターンの変更 {files} ファイル +{added} −{removed}',
   'chat.turnUsage': '入力 {input} · 出力 {output}', 'chat.cachedUsage': ' · キャッシュ {cached}',
   'chat.usageHint': 'これらのトークン数は CLI が報告した値です。',

@@ -84,3 +84,9 @@ test('withWorkspaceRoot 缺 workspace 區塊或缺 root 時補上，保留 CRLF'
   assert.equal(c.workspace.root, '/c');
   assert.equal(c.limits.queueLength, 5);
 });
+
+test('limits.runSeconds 預設 2 小時，可覆寫，且必須是正整數', () => {
+  assert.equal(parseConfig('', null).limits.runSeconds, 7200);
+  assert.equal(parseConfig('limits:\n  runSeconds: 90\n', null).limits.runSeconds, 90);
+  for (const bad of ['0', '-5', '1.5', 'never']) assert.throws(() => parseConfig(`limits:\n  runSeconds: ${bad}\n`, null), ConfigError);
+});

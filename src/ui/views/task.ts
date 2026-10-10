@@ -479,7 +479,7 @@ export function taskView(
       }
       if (entry.stopped) metadata.append(el('span', 'stopped-mark', t('chat.stopped')));
       if (entry.error) {
-        metadata.append(el('span', 'error-mark', t(entry.error === 'interrupted' ? 'chat.interrupted' : 'chat.error')));
+        metadata.append(el('span', 'error-mark', t(entry.error === 'interrupted' ? 'chat.interrupted' : entry.error === 'timeout' ? 'chat.timedOut' : 'chat.error')));
       }
       item.append(metadata, markdown(entry.text));
     }

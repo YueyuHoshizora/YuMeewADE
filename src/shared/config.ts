@@ -36,6 +36,7 @@ export interface Config {
     imagesPerSend: number;
     verifySeconds: number;
     verifyOutputBytes: number;
+    runSeconds: number;
   };
   /** 實際採用的設定檔路徑；null＝全部用預設值。 */
   source: string | null;
@@ -77,6 +78,7 @@ export const DEFAULT_CONFIG: Config = {
     imagesPerSend: 10,
     verifySeconds: 600,
     verifyOutputBytes: 65_536,
+    runSeconds: 7_200,
   },
   source: null,
 };
@@ -195,6 +197,7 @@ export function parseConfig(text: string, source: string | null): Config {
       imagesPerSend: int(limits, 'imagesPerSend', L.imagesPerSend, 'limits'),
       verifySeconds: int(limits, 'verifySeconds', L.verifySeconds, 'limits'),
       verifyOutputBytes: int(limits, 'verifyOutputBytes', L.verifyOutputBytes, 'limits'),
+      runSeconds: int(limits, 'runSeconds', L.runSeconds, 'limits'),
     },
     source,
   };

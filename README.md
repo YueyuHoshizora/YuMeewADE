@@ -90,7 +90,7 @@ npm run desktop      # 桌面版（開發機）
 | `workspace` | `root` | 工作區根目錄，預設 `~/Documents/YuMeewWorkspace`；設定頁切換時會改寫這一行 |
 | `cli.claude` / `cli.codex` | `command`、`baseArgs`、`fullAccess`、`fullAccessArgs`、`safeArgs` | 指令與無頭模式旗標；`fullAccess` 是預設權限，設定頁的開關優先 |
 | `cli` | `envPassthrough` | 額外放行給 CLI 子行程的環境變數（預設只給 PATH／HOME／LANG 等） |
-| `limits` | `bodyBytes`、`promptChars`、`sendPerMinute`、`concurrentRuns`、`sseConnections`、`queueLength`、`handoffChars`、`heartbeatSeconds`、`diffBytes`、`uploadBytes`、`imagesPerSend`、`verifySeconds`（驗證逾時，預設 600）、`verifyOutputBytes`（驗證輸出保留尾端位元組，預設 65536） | 各種上限 |
+| `limits` | `bodyBytes`、`promptChars`、`sendPerMinute`、`concurrentRuns`、`sseConnections`、`queueLength`、`handoffChars`、`heartbeatSeconds`、`diffBytes`、`uploadBytes`、`imagesPerSend`、`verifySeconds`（驗證逾時，預設 600）、`verifyOutputBytes`（驗證輸出保留尾端位元組，預設 65536）、`runSeconds`（單輪 AI 執行時間上限，超過就停止並標記逾時，預設 7200） | 各種上限 |
 
 ## 協定摘要（UI ⇄ 核心）
 

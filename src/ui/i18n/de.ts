@@ -13,6 +13,7 @@ export const de: Record<MessageKey, string> = {
   'files.open': 'Dateien', 'files.title': 'Dateien durchsuchen', 'files.search': 'Dateinamen suchen…', 'files.more': '{total} Dateien; die ersten {n} werden angezeigt. Weiter eingrenzen', 'files.empty': 'Keine passenden Dateien', 'files.binary': 'Binärdatei; Inhalt wird nicht angezeigt', 'files.truncated': 'Datei ist groß; nur die ersten 256 KB werden angezeigt', 'detail.file_missing': 'Datei nicht gefunden',
   'chat.rollback': 'Auf Stand davor zurücksetzen', 'chat.rollbackConfirm': 'Die Arbeitskopie kehrt in den Zustand vor dieser Anweisung zurück; Dateiänderungen ab hier werden verworfen (der Chat bleibt erhalten). Zurücksetzen?', 'chat.rollbackDone': 'Arbeitskopie zurückgesetzt',
   'chat.fork': 'Ab hier verzweigen', 'chat.forked': 'Zweig-Aufgabe erstellt', 'detail.fork_while_running': 'Laufende Aufgabe vor dem Verzweigen stoppen', 'log.task.fork': 'Aufgabe ab Anweisung verzweigt',
+  'chat.timedOut': 'Gestoppt: Laufzeitlimit überschritten',
   'chat.changes': 'Diese Runde: {files} Dateien +{added} −{removed}',
   'chat.turnUsage': 'Eingabe {input} · Ausgabe {output}', 'chat.cachedUsage': ' · Cache {cached}',
   'chat.usageHint': 'Diese Tokenzahlen werden von der CLI gemeldet.',

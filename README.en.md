@@ -90,7 +90,7 @@ Configuration lookup order: the `YUMEEWADE_CONFIG` environment variable → `con
 | `workspace` | `root` | Workspace root; default `~/Documents/YuMeewWorkspace`. Switching it in Settings rewrites this line |
 | `cli.claude` / `cli.codex` | `command`、`baseArgs`、`fullAccess`、`fullAccessArgs`、`safeArgs` | Commands and headless-mode flags; `fullAccess` sets the default permissions, overridden by the toggle in Settings |
 | `cli` | `envPassthrough` | Additional environment variables allowed through to CLI child processes (by default, only PATH / HOME / LANG and similar variables) |
-| `limits` | `bodyBytes`、`promptChars`、`sendPerMinute`、`concurrentRuns`、`sseConnections`、`queueLength`、`handoffChars`、`heartbeatSeconds`、`diffBytes`、`uploadBytes`、`imagesPerSend`、`verifySeconds` (verification timeout, default 600)、`verifyOutputBytes` (tail bytes of verification output kept, default 65536) | Resource and request limits |
+| `limits` | `bodyBytes`、`promptChars`、`sendPerMinute`、`concurrentRuns`、`sseConnections`、`queueLength`、`handoffChars`、`heartbeatSeconds`、`diffBytes`、`uploadBytes`、`imagesPerSend`、`verifySeconds` (verification timeout, default 600)、`verifyOutputBytes` (tail bytes of verification output kept, default 65536)、`runSeconds` (maximum run time of one AI turn; it is stopped and marked as timed out beyond this, default 7200) | Resource and request limits |
 
 ## Protocol summary (UI ⇄ core)
 

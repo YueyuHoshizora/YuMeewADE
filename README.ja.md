@@ -90,7 +90,7 @@ npm run desktop      # 桌面版（開發機）
 | `workspace` | `root` | ワークスペースのルート。既定は `~/Documents/YuMeewWorkspace`。設定画面で切り替えるとこの行が書き換わります |
 | `cli.claude` / `cli.codex` | `command`、`baseArgs`、`fullAccess`、`fullAccessArgs`、`safeArgs` | コマンドとヘッドレスモードのフラグ。`fullAccess` は既定の権限で、設定画面の切り替えが優先 |
 | `cli` | `envPassthrough` | CLI 子プロセスに追加で渡す環境変数（既定では PATH／HOME／LANG などのみ） |
-| `limits` | `bodyBytes`、`promptChars`、`sendPerMinute`、`concurrentRuns`、`sseConnections`、`queueLength`、`handoffChars`、`heartbeatSeconds`、`diffBytes`、`uploadBytes`、`imagesPerSend`、`verifySeconds`（検証のタイムアウト、既定 600）、`verifyOutputBytes`（検証出力の末尾保持バイト数、既定 65536） | 各種上限 |
+| `limits` | `bodyBytes`、`promptChars`、`sendPerMinute`、`concurrentRuns`、`sseConnections`、`queueLength`、`handoffChars`、`heartbeatSeconds`、`diffBytes`、`uploadBytes`、`imagesPerSend`、`verifySeconds`（検証のタイムアウト、既定 600）、`verifyOutputBytes`（検証出力の末尾保持バイト数、既定 65536）、`runSeconds`（AI 1 ターンの最長実行時間。超えると停止してタイムアウト扱い、既定 7200） | 各種上限 |
 
 ## プロトコル概要（UI ⇄ コア）
 

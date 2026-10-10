@@ -13,6 +13,7 @@ export const zhCN: Record<MessageKey, string> = {
   'files.open': '文件', 'files.title': '浏览文件', 'files.search': '搜索文件名…', 'files.more': '共 {total} 个文件，只列出前 {n} 个，请再输入关键字', 'files.empty': '没有匹配的文件', 'files.binary': '二进制文件，不显示内容', 'files.truncated': '文件过大，只显示前 256 KB', 'detail.file_missing': '找不到这个文件',
   'chat.rollback': '还原到此之前', 'chat.rollbackConfirm': '工作副本会回到这条指示开始之前，这条指示及之后的文件变更都会丢弃（对话记录保留）。确定还原？', 'chat.rollbackDone': '已还原工作副本',
   'chat.fork': '从这里分支', 'chat.forked': '已创建分支任务', 'detail.fork_while_running': '任务运行中，请先停止再分支', 'log.task.fork': '从指示分支任务',
+  'chat.timedOut': '超过运行时间上限，已停止',
   'chat.changes': '本轮变更 {files} 个文件 +{added} −{removed}',
   'chat.turnUsage': '输入 {input} · 输出 {output}', 'chat.cachedUsage': ' · 缓存 {cached}',
   'chat.usageHint': '这些 token 用量由 CLI 报告。',

@@ -13,6 +13,7 @@ export const en: Record<MessageKey, string> = {
   'files.open': 'Files', 'files.title': 'Browse files', 'files.search': 'Search file names…', 'files.more': '{total} files; showing the first {n}. Type more to narrow down', 'files.empty': 'No matching files', 'files.binary': 'Binary file; content not shown', 'files.truncated': 'File is large; showing the first 256 KB only', 'detail.file_missing': 'File not found',
   'chat.rollback': 'Restore to before this', 'chat.rollbackConfirm': 'The working copy goes back to how it was before this instruction; file changes from it and everything after are discarded (the conversation is kept). Restore?', 'chat.rollbackDone': 'Working copy restored',
   'chat.fork': 'Branch from here', 'chat.forked': 'Branch task created', 'detail.fork_while_running': 'Stop the running task before branching', 'log.task.fork': 'Task branched from an instruction',
+  'chat.timedOut': 'Stopped: run time limit exceeded',
   'chat.changes': 'This turn: {files} files +{added} −{removed}',
   'chat.turnUsage': 'in {input} · out {output}', 'chat.cachedUsage': ' · cached {cached}',
   'chat.usageHint': 'These token counts are reported by the CLI.',

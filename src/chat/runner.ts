@@ -39,6 +39,7 @@ export interface RunnerDeps {
     queueLength: number;
     handoffChars: number;
     imagesPerSend: number;
+    runSeconds: number;
   };
   publish(project: string, task: string, event: ChatEvent): void;
   watching(project: string, task: string): boolean;
@@ -384,12 +385,19 @@ export class ChatRunner extends EventEmitter {
         }
       });
       s.run = run;
-      const outcome = await run.done;
+      let timedOut = false;
+      const limit = setTimeout(() => {
+        timedOut = true;
+        log.warn('執行超過時間上限，已停止', { project: p, task: t });
+        run.stop();
+      }, this.deps.limits.runSeconds * 1000);
+      const outcome = await run.done.finally(() => clearTimeout(limit));
       await writes;
       if (writeFailure) throw writeFailure.error;
       const parsed = parseAsk(result ?? s.partial);
       asks.push(...parsed.asks);
       if (!outcome.ok && !outcome.stopped) error = 'cli_failed';
+      if (timedOut) error = 'timeout';
       const turn = startCheckpoint
         ? await this.deps.worktree.finishTurn(p, t, startCheckpoint).catch(err => { log.warn('回合結束檢查點失敗', { project: p, task: t, err: String(err) }); return undefined; })
         : undefined;

@@ -20,7 +20,7 @@ import type { Ctx, Handler, Router } from '../http/router.ts';
 import type { App } from '../server/app.ts';
 import { ChatRunner } from './runner.ts';
 import { ChatStore } from './store.ts';
-async function setup(ws: Workspace, options: MockOptions = {}) {
+async function setup(ws: Workspace, options: MockOptions = {}, runSeconds = 600) {
   const projects = new ProjectLedger(ws); await projects.create({ name: 'P' });
   const tasks = new TaskLedger(ws); const task = await tasks.create('P', { title: 'T', workspace: 'direct' });
   const settings = new SettingsStore(ws, DEFAULT_CONFIG); await settings.update({ initial: { ai: 'codex', model: 'm', effort: 'high' } });
@@ -30,10 +30,21 @@ async function setup(ws: Workspace, options: MockOptions = {}) {
   const restored: string[] = []; let checkpointCount = 0;
   const ranges: string[][] = [];
   const forks: string[] = [];
-  const runner = new ChatRunner({ ws, store, projects, tasks, settings, completion, oplog: new OpLog(ws), roles: () => loadRoles(ws.rolesFile), providers: { mock, claude: mock, codex: mock }, limits: { concurrentRuns: 2, queueLength: 3, handoffChars: 60000, imagesPerSend: 10 }, worktree: { prepare: async () => ws.projectDir('P'), checkpoint: async () => String(++checkpointCount).padStart(40, '0'), restore: async (_p: string, _t: string, sha: string) => { restored.push(sha); }, finishTurn: async (_p: string, _t: string, start: string) => start.endsWith('1') ? { after: 'f'.repeat(40), changes: { files: 2, added: 3, removed: 1 } } : { after: 'e'.repeat(40) }, rangeDiff: async (_p: string, _t: string, from: string, to: string) => { ranges.push([from, to]); return { diff: 'd', truncated: false }; }, prepareFrom: async (_p: string, _t: string, sha: string) => { forks.push(sha); return ws.projectDir('P'); } } as unknown as WorktreeService, publish: (_p, _t, ev) => events.push(ev), watching: () => watching, onChanged: () => {}, onUsage: () => {} });
+  const runner = new ChatRunner({ ws, store, projects, tasks, settings, completion, oplog: new OpLog(ws), roles: () => loadRoles(ws.rolesFile), providers: { mock, claude: mock, codex: mock }, limits: { concurrentRuns: 2, queueLength: 3, handoffChars: 60000, imagesPerSend: 10, runSeconds }, worktree: { prepare: async () => ws.projectDir('P'), checkpoint: async () => String(++checkpointCount).padStart(40, '0'), restore: async (_p: string, _t: string, sha: string) => { restored.push(sha); }, finishTurn: async (_p: string, _t: string, start: string) => start.endsWith('1') ? { after: 'f'.repeat(40), changes: { files: 2, added: 3, removed: 1 } } : { after: 'e'.repeat(40) }, rangeDiff: async (_p: string, _t: string, from: string, to: string) => { ranges.push([from, to]); return { diff: 'd', truncated: false }; }, prepareFrom: async (_p: string, _t: string, sha: string) => { forks.push(sha); return ws.projectDir('P'); } } as unknown as WorktreeService, publish: (_p, _t, ev) => events.push(ev), watching: () => watching, onChanged: () => {}, onUsage: () => {} });
   const send = (text: string, extra: Partial<Parameters<ChatRunner['send']>[0]> = {}) => runner.send({ project: 'P', task: task.id, text, ...extra });
   return { runner, store, tasks, task, send, calls, events, completion, restored, ranges, forks, watch: () => { watching = true; } };
 }
+test('超過單輪時間上限就停止並標記 timeout，不自動接續隊列', () => withTmpWorkspace(async ws => {
+  const s = await setup(ws, { chunkMs: 5 }, 0.05);
+  await s.send('stuck [slow]');
+  await s.send('after', { mode: 'queue' });
+  await s.runner.whenIdle();
+  const reply = (await s.store.readLog('P', s.task.id)).find(r => r.role === 'assistant');
+  assert.ok(reply?.role === 'assistant'); assert.equal(reply.error, 'timeout'); assert.equal(reply.stopped, true);
+  assert.equal(s.runner.isRunning('P', s.task.id), false);
+  assert.equal((await s.store.readQueue('P', s.task.id)).length, 1, 'the queue waits for a human after a timeout');
+  assert.equal((await s.store.readLog('P', s.task.id)).some(r => r.role === 'user' && r.text === 'after'), false);
+}));
 test('fork 從指定指示的檢查點長出分支作業，帶走之前的對話但不帶附件，並拒絕執行中', () => withTmpWorkspace(async ws => {
   const s = await setup(ws, { chunkMs: 5 });
   await s.send('first'); await s.runner.whenIdle(); await s.send('second'); await s.runner.whenIdle();
