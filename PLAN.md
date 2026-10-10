@@ -360,7 +360,7 @@ roles:
   審查: { main: [claude, opus, xhigh],  backup: [codex, gpt-6-sol, high], job: 獨立審查 }
   文件: { main: [claude, sonnet, medium], backup: [codex, gpt-6-sol, medium], job: 說明文件 }
 ```
-- 槽位格式 `[cli, model, effort]`；`cli` ∈ `claude|codex|mock|人`。`人` 代表不由 AI 執行。
+- 槽位格式 `[cli, model, effort]`；`cli` ∈ `claude|codex|grok|mock|人`。`人` 代表不由 AI 執行。
 - 啟動參數優先序：單次送出覆寫 > 作業檔 `cli/model/effort` > role 的 `main`。權限旗標只看 `config.yaml` 與設定頁的「完整權限」，roles.yaml 不含權限設定。
 
 ### A.5 CLI adapter 契約（實測 2026-10-10：claude 2.1.294、codex 0.160.1）
@@ -456,10 +456,10 @@ electron 44.7.0、vite 8.3.4、electron-builder 26.15.3、typescript 7.0.2、@ty
 
 ### B.6 額度與輸出速度（底部列）
 - 資料來源：Claude 為 stream-json 的 `rate_limit_event`，另在核心啟動時與每 `limits.usagePollSeconds`（預設 300 秒＝5 分鐘）查 `GET https://api.anthropic.com/api/oauth/usage`（非公開 API）。OAuth 憑證只在核心讀取並供用量查詢：各帳號使用對應 CLI 設定目錄的 macOS 專屬鑰匙圈項目或 `.credentials.json`，額外帳號不借用預設帳號憑證。Codex 執行 `codex app-server`（`cli.codex.quotaArgs`），JSON-RPC `initialize` → `account/rateLimits/read`。各帳號隔離，查詢失敗標為 `unavailable`，保留最後一次資料與 `quotaAt`，不把舊本機紀錄當成即時查詢成功；憑證不回 API、不進 DOM 或日誌。
-- 帳號介面：`Settings.accounts` 登錄 Claude／Codex 額外帳號的 `{id,name,configDir}`，`activeAccounts` 指定使用中 id（缺省 `default`）；按工作區保存。新增只登錄既有已登入的獨立設定資料夾：Claude `CLAUDE_CONFIG_DIR`，Codex `CODEX_HOME`，不做登入、不複製憑證。`POST /api/accounts/add` 收 `{ai,name,configDir}`，`remove` 收 `{ai,id}`（不可移除預設帳號），`refresh` 主動重查額度；切換以 `POST /api/settings` 的 `activeAccounts`。底部各 AI 只顯示使用中帳號（自訂名稱）；點開原生 dialog 看所有帳號、各窗口使用率、剩餘比例、重置時間、查詢狀態及資料時間。開啟的 dialog 只讀 UI 狀態並跟隨 SSE 更新，不額外輪詢網路；關閉即清除狀態讀取計時器。切換只影響下一次送出，正在執行的回合不變，另一帳號的 session 不可接續。
+- 帳號介面：`Settings.accounts` 登錄 Claude／Codex／Grok 額外帳號的 `{id,name,configDir}`，`activeAccounts` 指定使用中 id（缺省 `default`）；按工作區保存。新增只登錄既有已登入的獨立設定資料夾：Claude `CLAUDE_CONFIG_DIR`，Codex `CODEX_HOME`，Grok `GROK_HOME`，不做登入、不複製憑證。`POST /api/accounts/add` 收 `{ai,name,configDir}`，`remove` 收 `{ai,id}`（不可移除預設帳號），`refresh` 主動重查額度；切換以 `POST /api/settings` 的 `activeAccounts`。底部各 AI 只顯示使用中帳號（自訂名稱）；點開原生 dialog 看所有帳號、各窗口使用率、剩餘比例、重置時間、查詢狀態及資料時間。開啟的 dialog 只讀 UI 狀態並跟隨 SSE 更新，不額外輪詢網路；關閉即清除狀態讀取計時器。切換只影響下一次送出，正在執行的回合不變，另一帳號的 session 不可接續。
 - 額度提醒：`src/ui/components/quota-alert.ts` 以 AI＋帳號隔離比較成功回報的滿額狀態（`limited` 或任一未過期窗口 ≥100%）。初次成功回報不通知；用滿／恢復轉換跳 toast，背景時另發系統通知（與完成通知共用開關），同時多帳號提示合併顯示。只有新的成功回報才可判定恢復；查詢失敗或重置時間經過本身都不代表恢復。
-- 平均 tok/s（右下角單一數字）：最近實測 CLI 輸出 token 總數除以量測時間區間的聯集，平行區間不重複計時、序列區間不直接相加各自速度；每個執行的最新量測保留 4 秒。Claude 用訊息耗時，Codex 用完整回合耗時（包括等待與工具）；包含 CLI 回報的思考用量，不使用字元或 `estimated_tokens` 估算，不宣稱即時生成速度。缺少有效量測為 `null`（UI「—」），實際零輸出為 0。
-- `src/ai/usage.ts` 的 `UsageBoard` 只存記憶體；額度依帳號及資料時間隔離。`GET /api/state` 帶 `usage`（`{ais, tokensPerSecond}`）；`AiUsage` 帶 `account`、`status`（`ready`／`unavailable`），額度或速度改變時全域 SSE 推 `usage`。重置時間已過的窗口在底部顯示「—」等待新資料，詳情保留上次使用率與資料時間。
+- 平均 tok/s（右下角單一數字）：最近實測 CLI 輸出 token 總數除以量測時間區間的聯集，平行區間不重複計時、序列區間不直接相加各自速度；每個執行的最新量測保留 4 秒。Claude 用訊息耗時，Codex／Grok 用完整回合耗時（包括等待與工具）；包含 CLI 回報的思考用量，不使用字元或 `estimated_tokens` 估算，不宣稱即時生成速度。缺少有效量測為 `null`（UI「—」），實際零輸出為 0。
+- `src/ai/usage.ts` 的 `UsageBoard` 只存記憶體；額度依帳號及資料時間隔離。`GET /api/state` 帶 `usage`（`{ais, tokensPerSecond}`）；`AiUsage` 帶 `account`、`status`（`ready`／`unavailable`）及可選 `prepaidCents`（API 明確回報的預付美元分餘額），額度或速度改變時全域 SSE 推 `usage`。重置時間已過的窗口在底部顯示「—」等待新資料，詳情保留上次使用率與資料時間。
 
 ### B.7 驗證、合併安全與對話工具（使用者裁示「自行補足 ADE 欠缺功能」，2026-10-11）
 - 驗證指令：`PROJECT.md` frontmatter `verify`（單行、≤500 字、無換行／NUL，空字串＝未設定）。`POST /api/task/verify` 在作業工作副本（沒有副本的直接作業用主資料夾）以平台 shell 執行，環境與 CLI 子行程相同的白名單，輸出只留尾段（`limits.verifyOutputBytes`），逾時（`limits.verifySeconds`）終止整個行程樹。指令**只來自台帳**，請求不能帶指令；操作紀錄只記 ok／exit code／耗時，輸出不進日誌；AI 執行中、同作業已有驗證、或同時數超過 `limits.concurrentRuns` 回 409；關閉核心時一併終止。驗證結果不擋合併，由人判斷。
@@ -475,10 +475,17 @@ electron 44.7.0、vite 8.3.4、electron-builder 26.15.3、typescript 7.0.2、@ty
 - 輸入區：閒置時不顯示「送出」按鈕，保留 ⌘/Ctrl+Enter（或設定的 Enter）送出；執行中指示操作、AI 問題回答按鈕不移除。
 
 ### B.8 CLI 原生命令／自訂指令（2026-10-11）
-- `GET /api/chat/commands?project=&task=&ai=claude|codex` 回 `{commands: SlashCommand[]}`，共享型別 `{name:string, description:string, argumentHint?:string}`；名稱不含 `/`。清單由 CLI 層依目前帳號及作業工作目錄探索，不是 App 快捷操作。
+- `GET /api/chat/commands?project=&task=&ai=claude|codex|grok` 回 `{commands: SlashCommand[]}`，共享型別 `{name:string, description:string, argumentHint?:string}`；名稱不含 `/`。清單由 CLI 層依目前帳號及作業工作目錄探索，不是 App 快捷操作。Grok headless 沒有可執行的原生命令協定，回空清單並拒絕未知命令。
 - Claude 以 SDK 初始化協定探索實際 CLI 內建命令、skills、使用者／專案自訂命令、plugin／MCP 命令與別名，不發送使用者提示進行探索；保留 `/compact`、`/clear`（及 reset／new 別名）、`/context`、`/usage`（及 cost／stats 別名）、`/rename` 及可執行提示命令。排除只能改變單一 CLI 程序狀態的 model／effort／fast／focus／color／advisor／autocompact／output-style／config／settings／mcp／reload-plugins／reload-skills／goal／loop／proactive 控制，未知或被排除命令回 `cli_unsupported`。斜線命令原文交給 CLI，App 背景以 `--append-system-prompt` 附加，不破壞命令起首；`/clear` 後保留 CLI 最新回報的 session id。
 - Codex 現行 `exec` adapter 只支援帳號 `CODEX_HOME/prompts/*.md` 的 `/prompts:名稱` 自訂提示（只讀頂層普通 Markdown 檔，不讀 symlink／子資料夾），依 CLI 語意展開 `$1`–`$9`、`$ARGUMENTS`、`$NAME`、`$$` 與引號；缺必要參數、引號格式錯誤或展開後超出指示上限即拒絕。不自行建立專案 `.codex/prompts` 慣例；TUI 專用及未知命令回 `cli_unsupported`，不當普通文字交給模型、不宣稱執行成功。
 - UI 只在草稿最開頭的 `/名稱` token 顯示補全，以名稱前綴篩選；↑/↓ 選擇、Enter／Tab 或滑鼠填入 `/名稱 `，保留後面的參數、換行與 `@檔案`。CLI 說明及參數提示原文顯示，不經翻譯。
 - 選擇不直接執行，仍走原本的送出路徑。沒有實際候選時不攔截 Enter；⌘/Ctrl+Enter 仍送出，Shift+Enter 仍換行，IME 選字不選取或送出。Esc 關閉選單。載入、沒有可用命令、查詢失敗及無匹配各自有七語提示，不補造內建命令。
 - 切換 AI 或帳號設定時清除探索快取；分頁離開時解除事件監聽並使舊請求結果失效，不把舊帳號或已離開分頁的結果顯示出來。
+
+### B.9 Grok CLI 與真實額度 API（2026-10-11）
+- 第三節的 provider 契約擴充至 `grok`；`config.cli.grok`／設定、角色、模型選擇與帳號介面一併支援。已核對 Grok CLI 1.0.46 的旗標及官方原始碼；對話用原生 `--output-format streaming-json`，不用會把缺失用量補零的相容格式。新回合 `--session-id`，續聊 `--resume`。文字走 stdin 的 `--prompt-file /dev/stdin`；圖片／Windows 走權限受限的暫存 ACP JSON，結束後刪除。沒有 `--add-dir`，附加目錄以提示提供並受 CLI 權限策略限制。
+- 預設完整權限旗標 `--always-approve`，關閉時 `--permission-mode dontAsk`；皆由設定檔提供。只把文字事件視為回答，工具獨立；只有 `end_turn` 與 exit 0 同時成立才成功。截斷、拒絕、非零退出及串流不完整 fail-closed，不自動重試。不完整／缺失的 usage 不產生虛構 token 或速度。
+- 模型以目前帳號執行 `grok models`，僅用同帳號 `models_cache.json` 補入匹配模型的能力；沒有虛構 fallback，跨帳號不共用舊目錄資料。切換 AI 不繼承另一 provider 的模型／思考強度，`model: ""`／`effort: ""` 是明確清空覆寫，不等於省略。
+- 額度不由 CLI 文字或固定值估算：`GET https://cli-chat-proxy.grok.com/v1/billing?format=credits`，使用官方 `X-XAI-Token-Auth: xai-grok-cli`、`x-userid` 與第一方 Bearer token。憑證從目前帳號 `auth.json` 的官方 issuer/client scope 唯讀載入；檢查到期與模式，不寫入、刷新或記錄憑證。額外帳號固定其 `GROK_HOME`、`GROK_AUTH_PATH`、leader socket，禁止回退預設憑證。API-key-only 不支援此帳號 billing 查詢。
+- 使用 API 明確的 `creditUsagePercent` 與 `currentPeriod`，相容舊版明確的 `used/monthlyLimit`；展示剩餘百分比、重置時間、預付餘額及有上限的 on-demand 使用率。缺失／無效資料、HTTP 失敗、重新導向皆不當作成功或零用量。請求與讀取回應有逾時及大小限制。沿用 B.6 的五分鐘查詢、狀態及通知規則；方案額度滿仍會提醒，不表示預付／額外付費餘額必然耗盡。
 

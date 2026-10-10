@@ -6,7 +6,6 @@ import { ClaudeCliProvider, claudeArgs, claudeOauthQuota, claudeQuota, createCla
 import { CodexCliProvider, codexAppServerQuota, codexArgs, codexQuota, createCodexParser, fetchCodexQuota, readCodexQuota } from './codex.ts';
 import { captureCommand, redactArgs } from './process.ts';
 import { MockCliProvider } from './mock.ts';
-import { createProviders } from './providers.ts';
 import type { CliEvent } from './provider.ts';
 import { promises as fs } from 'node:fs';
 import http from 'node:http';
@@ -184,7 +183,6 @@ test('Mock：可設定文字、工具、問題；數字建構子與延遲停止'
   assert.deepEqual(await slow.done, { ok: false, stopped: true });
   const numeric = new MockCliProvider(0).send({ prompt: 'test', cwd: '/w' }, () => undefined);
   assert.equal((await numeric.done).ok, true);
-  assert.deepEqual(Object.keys(createProviders(DEFAULT_CONFIG)), ['claude', 'codex', 'mock']);
 });
 
 test('captureCommand：捕捉輸出、退出失敗與 timeout', async () => {

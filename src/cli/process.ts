@@ -8,7 +8,7 @@ import type { RunOutcome } from './provider.ts';
 
 const BASE_ENV = ['PATH', 'HOME', 'USER', 'LOGNAME', 'LANG', 'TERM', 'TMPDIR', 'TMP', 'TEMP', 'SHELL', 'APPDATA', 'LOCALAPPDATA', 'USERPROFILE', 'SystemRoot', 'ComSpec', 'PATHEXT', 'HOMEDRIVE', 'HOMEPATH'];
 /** CLI 自己的設定目錄指標（不是憑證，但沒有它 CLI 會找不到登入狀態）。 */
-const CLI_HOME_ENV = ['CODEX_HOME', 'CLAUDE_CONFIG_DIR'];
+const CLI_HOME_ENV = ['CODEX_HOME', 'CLAUDE_CONFIG_DIR', 'GROK_HOME'];
 
 /** 只放行基本變數＋LC_*／XDG_*＋設定檔指定的名稱（安全節 8）。 */
 export function minimalEnv(passthrough: string[], source: NodeJS.ProcessEnv = process.env): NodeJS.ProcessEnv {
@@ -200,7 +200,7 @@ function runResolvedLineProcess(opts: { command: string; args: string[]; cwd: st
 }
 
 /** 日誌只記旗標形狀：session id、路徑等帶值的旗標以 <…> 取代（安全節 8）。 */
-const VALUE_FLAGS: Record<string, true> = { '--resume': true, '--add-dir': true, '--model': true, '-m': true, '-c': true, '--effort': true, resume: true, '-i': true, '--append-system-prompt': true };
+const VALUE_FLAGS: Record<string, true> = { '--resume': true, '--add-dir': true, '--model': true, '-m': true, '-c': true, '--effort': true, resume: true, '-i': true, '--append-system-prompt': true, '--prompt-file': true, '--prompt-json': true, '--single': true, '--reasoning-effort': true, '--session-id': true, '--rules': true, '--system-prompt-override': true, '--leader-socket': true };
 export function redactArgs(args: string[]): string[] {
   const out: string[] = [];
   let hide = false;

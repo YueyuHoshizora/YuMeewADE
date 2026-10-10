@@ -13,7 +13,7 @@ export const PHASE_STATES = ['未開始', '進行中', '完成'] as const;
 export type PhaseState = (typeof PHASE_STATES)[number];
 
 /** 能實際對話的 AI（mock 僅測試用，UI 不列出）。 */
-export const AI_NAMES = ['claude', 'codex', 'mock'] as const;
+export const AI_NAMES = ['claude', 'codex', 'grok', 'mock'] as const;
 export type AiName = (typeof AI_NAMES)[number];
 
 export interface SlashCommand {
@@ -192,7 +192,7 @@ export interface AiInfo {
   /** `--version` 的版本號；取不到為空字串。 */
   version: string;
   models: ModelInfo[];
-  /** 模型清單來源：cli-cache／cli／builtin。 */
+  /** 模型清單來源：cli-cache／cli／builtin／unavailable（查詢失敗且沒有清單）。 */
   source: string;
   refreshedAt: string;
   /** 目前是否以「跳過權限確認」啟動。 */
@@ -221,6 +221,8 @@ export interface AiUsage {
   limited: boolean;
   /** 額度資料取得時間（ISO）；尚無資料為 null。 */
   quotaAt: string | null;
+  /** API 明確回報的預付餘額（USD cents）；不由百分比推估。 */
+  prepaidCents?: number;
 }
 
 export interface UsageState {
@@ -255,7 +257,7 @@ export type SettingsPatch = Partial<Settings>;
 // ---- 角色 ----
 
 export interface RoleSlot {
-  /** claude／codex／人 */
+  /** claude／codex／grok／人 */
   cli: string;
   model: string;
   effort: string;

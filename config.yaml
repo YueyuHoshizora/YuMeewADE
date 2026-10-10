@@ -36,6 +36,14 @@ cli:
     safeArgs: [-s, workspace-write, -c, 'approval_policy="never"']   # 工作目錄沙箱內可改檔與執行指令
     # 查帳號即時額度用的子命令（app-server：與 CLI 同一份後端資料）；留空則只讀本機紀錄的最後一筆。
     quotaArgs: [app-server]
+  grok:
+    command: grok
+    # Grok Build 原生 ACP JSONL 更新，保留完整／不完整 token 用量的區別。
+    baseArgs: [--output-format, streaming-json]
+    fullAccess: true
+    fullAccessArgs: [--always-approve]
+    safeArgs: [--permission-mode, dontAsk]  # 需核准的操作直接拒絕，不等待互動
+    quotaArgs: []                         # 額度直接向 Grok API 查詢，不啟動子命令
   # 子行程環境變數採白名單；除了內建的 PATH／HOME／LANG 等基本變數外，額外要放行的名稱寫在這裡
   envPassthrough: []
 

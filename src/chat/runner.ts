@@ -188,7 +188,7 @@ export class ChatRunner extends EventEmitter {
   }
 
   async commands(p: string, t: string, ai: string) {
-    if (ai !== 'claude' && ai !== 'codex') throw new AppError('bad_request', 'cli_unsupported');
+    if (ai !== 'claude' && ai !== 'codex' && ai !== 'grok') throw new AppError('bad_request', 'cli_unsupported');
     const task = await this.deps.tasks.get(p, t);
     const provider = this.deps.providers[ai];
     const settings = await this.deps.settings.get();
@@ -234,8 +234,8 @@ export class ChatRunner extends EventEmitter {
     const settings = await this.deps.settings.get();
     const pick = resolveLaunch(await this.deps.roles(), task, {
       ...(chosen.ai ? { cli: chosen.ai } : {}),
-      ...(chosen.model ? { model: chosen.model } : {}),
-      ...(chosen.effort ? { effort: chosen.effort } : {}),
+      ...(chosen.model !== undefined ? { model: chosen.model } : {}),
+      ...(chosen.effort !== undefined ? { effort: chosen.effort } : {}),
     }, settings.initial);
     const provider = this.deps.providers[pick.cli];
     if (!provider) throw new AppError('bad_request', 'cli_unsupported');

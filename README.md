@@ -2,23 +2,24 @@
 
 繁體中文 | [English](README.en.md) | [日本語](README.ja.md)
 
-跨平台 AI 專案協作 App：專案、作業、AI 對話放在同一個畫面。在畫面裡以無頭模式驅動本機的 `claude`／`codex` CLI。每次送出都能選 AI、模型與思考強度；AI 執行中可以取消重做、補充說明或排隊下一則。作業預設在 git worktree 副本進行，看過差異後一鍵合併回主資料夾。
+跨平台 AI 專案協作 App：專案、作業、AI 對話放在同一個畫面。在畫面裡以無頭模式驅動本機的 `claude`／`codex`／`grok` CLI。每次送出都能選 AI、模型與思考強度；AI 執行中可以取消重做、補充說明或排隊下一則。作業預設在 git worktree 副本進行，看過差異後一鍵合併回主資料夾。
 
 工作流程參考 [kieiken/project-hub](https://github.com/kieiken/project-hub)（MIT）：台帳即檔案、作業副本、三種執行中指示、AI 問題選項、完成確認、階段。本專案沒有包含它的程式碼，畫面也是另外設計的。
 
 > **安全宣告（請先讀）**
 > - 核心只監聽 `http://127.0.0.1:4560`，**沒有登入、沒有認證**。這是刻意的：它是單人本機工具，不是網頁服務。本機上的其他程序可以呼叫它。請勿改綁 `0.0.0.0`，也不要把 port 轉發到外部。
-> - **AI 預設擁有完整權限**：claude 以 `--dangerously-skip-permissions`、codex 以 `--dangerously-bypass-approvals-and-sandbox` 啟動，會用你的帳號權限改檔與執行任何指令（與 project-hub 相同；使用者 2026-10-10 決定）。可以在「設定 → AI 工具 → 完整權限」逐一關閉。關閉後 claude 只自動接受改檔，codex 在工作目錄沙箱內執行。
-> - AI 的費用、方案與登入由各 CLI 自行管理。本工具不保存、不修改憑證，也不保證不產生費用。查額度時核心會**唯讀**存取 Claude 的 OAuth 憑證（帳號專屬 macOS 鑰匙圈或設定目錄的 `.credentials.json`），只送往固定的 Anthropic 用量端點。憑證不進 App API／畫面／日誌、不送往其他來源；額外帳號不借用預設帳號憑證，過期時需透過原 CLI 重新登入。
+> - **AI 預設擁有完整權限**：claude 以 `--dangerously-skip-permissions`、codex 以 `--dangerously-bypass-approvals-and-sandbox`、grok 以 `--always-approve` 啟動，會用你的帳號權限改檔與執行任何指令（與 project-hub 相同；使用者 2026-10-10 決定）。可以在「設定 → AI 工具 → 完整權限」逐一關閉。關閉後 claude 只自動接受改檔，codex 在工作目錄沙箱內執行，grok 以 `dontAsk` 拒絕需要核准的操作。
+> - AI 的費用、方案與登入由各 CLI 自行管理。本工具不保存、不修改憑證，也不保證不產生費用。查額度時核心會**唯讀**存取 Claude 的 OAuth 憑證（帳號專屬 macOS 鑰匙圈或設定目錄的 `.credentials.json`），以及 Grok 設定目錄 `auth.json` 的有效第一方登入資料，分別只送往固定的 Anthropic 用量端點與 Grok billing API。憑證不進 App API／畫面／日誌、不送往其他來源；額外帳號不借用預設帳號憑證，過期時需透過原 CLI 重新登入。
 
 ## 畫面與流程
 
 - **左側樹狀清單**：專案底下列出作業，子作業以 `↳` 縮排，分支作業標 `⑂`。圓點顏色：紅＝AI 執行中、黃＝等你回覆、藍＝等你確認完成、紫＝完成、淺綠＝處理過、灰＝未開始。未讀結果標「未讀」。右鍵選單（⋯）可以改名、新增子作業／分支、封存，專案還能釘選、調整順序（或直接拖曳）、新增子專案。上方搜尋框（`/` 或 Ctrl/⌘+K）可以篩選專案與作業。
 - **交給你嚕**：標題列按鈕列出「等待回覆」與「確認完成」的作業數。點開後可以直接標為完成，或選擇繼續進行。
 - **執行中面板**：畫面最下方的狀態列在有 AI 執行時顯示紅色「執行中 N」；點開列出每個執行中的作業（AI、模型、已執行多久），可以直接跳到該作業、逐一停止或「全部停止」（與作業內的停止相同，會清空該作業的排隊）。
-- **帳號與額度**：點底部的 Claude／Codex 額度開啟詳情，查看預設及額外帳號的各時間窗使用率、剩餘比例、重置時間、取得時間與查詢狀態。底部每個 AI 只顯示使用中帳號，可在詳情切換、新增／移除登錄或手動查詢。新增時輸入名稱及既有已登入的獨立 CLI 設定資料夾（絕對路徑，可用 `~`）；事先以 `CLAUDE_CONFIG_DIR`（Claude）／`CODEX_HOME`（Codex）指定另一資料夾並在 CLI 登入。App 不提供登入或憑證輸入，移除只刪登錄、不刪資料夾或登出；帳號設定按工作區保存。切換只影響下一次送出，不改變執行中的作業，也不接續另一帳號的 session。
+- **帳號與額度**：點底部的 Claude／Codex／Grok 額度開啟詳情，查看預設及額外帳號的各時間窗使用率、剩餘比例、重置時間、取得時間與查詢狀態。底部每個 AI 只顯示使用中帳號，可在詳情切換、新增／移除登錄或手動查詢。新增時輸入名稱及既有已登入的獨立 CLI 設定資料夾（絕對路徑，可用 `~`）；事先以 `CLAUDE_CONFIG_DIR`（Claude）／`CODEX_HOME`（Codex）／`GROK_HOME`（Grok）指定另一資料夾並在 CLI 登入。App 不提供登入或憑證輸入，移除只刪登錄、不刪資料夾或登出；帳號設定按工作區保存。切換只影響下一次送出，不改變執行中的作業，也不接續另一帳號的 session。
   - 額度啟動時與預設每 **5 分鐘**查詢一次（`limits.usagePollSeconds: 300`）。失敗標示「目前無法查詢」，保留上次數值與時間，不是即時額度。各已登錄帳號用盡及取得新成功資料確認恢復時提示，初次成功回報不提示；經過重置時間或查詢失敗本身不算恢復。背景時另發系統通知（與完成通知共用開關）。
-  - 右下角是近期實測**平均 tok/s**：CLI 回報的實際輸出 token 總數除以量測時間區間的聯集，量測保留 4 秒，沒有量測顯示「—」。Claude 採訊息耗時，Codex 採含等待與工具的完整回合；包含 CLI 回報的思考用量，不估算，不是即時生成速度。
+  - Grok 直接以 `GET https://cli-chat-proxy.grok.com/v1/billing?format=credits` 查詢方案額度；依 API 的當期使用百分比顯示已用／剩餘比例與重置時間，另顯示明確回報的預付美元餘額及有上限的隨用隨付額度。缺少或無效資料不當成 0；僅有 API key 的登入不支援此帳號額度查詢。方案額度用滿仍會提醒，即使尚有可付費的額度。
+  - 右下角是近期實測**平均 tok/s**：CLI 回報的實際輸出 token 總數除以量測時間區間的聯集，量測保留 4 秒，沒有量測顯示「—」。Claude 採訊息耗時，Codex／Grok 採含等待與工具的完整回合；包含 CLI 回報的思考用量，不估算，不是即時生成速度。
 - **新專案**：填名稱、說明、階段（預設 計畫／實作／檢查／收尾）。可以把「主資料夾」指向既有的程式碼資料夾（桌面版有「選擇…」按鈕）；不填則用台帳資料夾本身。填了「第一個作業」會直接開始。
 - **專案概要**：階段路線、目前階段的作業。目前階段的作業都完成後，會提示「前往下一階段」。**快速開始**：寫下想做的事，選 AI／模型／思考強度（會記住上次選擇），可附圖片，按「開始」就建立作業並交給 AI。另有「詳細設定並新增作業」。
 - **作業畫面**：
@@ -33,10 +34,11 @@
   - 輸入區不顯示閒置時的「送出」按鈕，使用 ⌘/Ctrl+Enter（或設定中的 Enter）送出；執行中仍有取消重做／補充／接續操作，AI 問題仍可按鈕回答。
   - CLI 斜線指令：在草稿開頭輸入 `/`，依目前 AI／使用中帳號／作業顯示 CLI 原生命令與自訂指令（不是 App 快捷操作）；繼續輸入可篩選名稱。↑/↓ 選擇、Enter/Tab 或滑鼠填入 `/名稱 `，保留後面的參數與 `@檔案`；Esc 關閉。選擇不會執行，仍需用送出快捷鍵；無候選、載入中或查詢失敗時不攔截原本的 Enter，⌘/Ctrl+Enter 也不會被選單攔截。
   - 指令支援範圍：Claude 透過 CLI 初始化協定探索內建命令、skills、自訂命令及 plugin／MCP 命令，再排除無法跨回合保留狀態的程序內控制（例如 `/model`、`/effort`、`/settings`）；可用範圍包含 `/compact`、`/clear`、`/context`、`/usage`、`/rename` 及可執行的提示命令，以實際 CLI 回報為準。Codex 的 `exec` 模式只支援該帳號 `CODEX_HOME/prompts/*.md` 的 `/prompts:名稱` 自訂提示（含 CLI 參數展開）；不把 TUI 專用命令當普通文字交給模型，也不自行發明專案 `.codex/prompts` 目錄慣例。不支援的斜線命令會回報錯誤，不冒充執行成功。
+  - Grok 的 headless 模式目前沒有可執行的原生 slash 協定，因此命令清單為空；不把 TUI 命令偽裝成一般提示送出。
   - 下方可以改狀態與階段、勾選步驟（`## 步驟` 清單）、留下備註。步驟全勾或 AI 自己寫了「完成」時，會進入「確認完成」，由人決定。
 - **設定**：語言（7 種）、Enter／⌘+Enter 送出、通知開關、工作區根目錄（可直接切換，寫回設定檔；桌面版可用「選擇…」挑資料夾）、新作業預設 AI、AI 工具（版本、重新取得模型、更新 CLI、完整權限開關）、選單顯示的模型與順序、角色分工（寫回 `roles.yaml`）、最近操作紀錄。
 
-模型清單直接讀 CLI 自己的快取（`~/.codex/models_cache.json`、`~/.claude/cache/model-catalog/`）。每個模型可選的思考強度也從快取取得，讀不到才用內建清單。
+Claude／Codex 模型清單直接讀 CLI 自己的快取（`~/.codex/models_cache.json`、`~/.claude/cache/model-catalog/`），讀不到才用內建清單。Grok 清單來自目前帳號的 `grok models`，思考強度只補入同一帳號 `models_cache.json` 的已知能力；不猜模型或強度。初次查詢失敗不提供虛構清單，重新取得失敗保留該帳號先前的結果。
 
 ## 架構
 
@@ -47,7 +49,7 @@
         ├─ src/ledger/   台帳：專案、作業、完成確認、設定、排序、操作紀錄
         ├─ src/state/    /api/state 整體狀態（樹、圓點、交給你嚕、未讀）
         ├─ src/chat/     對話：JSONL、session、交接包、三種執行中指示、問題解析、附件
-        ├─ src/cli/      CliProvider adapter：claude／codex 無頭模式＋mock
+        ├─ src/cli/      CliProvider adapter：claude／codex／grok 無頭模式＋mock
         ├─ src/ai/       模型清單、CLI 版本與更新
         ├─ src/git/      worktree 副本、合併預覽、合併
         ├─ src/roles/    roles.yaml 讀寫
@@ -67,7 +69,7 @@
 ## 需求
 
 - Node.js **24** 以上、Git 2.38 以上（`git worktree`、`git merge-tree --write-tree`）。
-- 要用真實 AI：本機自行安裝並登入 [Claude Code](https://docs.anthropic.com/claude-code)（`claude`）與／或 [Codex CLI](https://github.com/openai/codex)（`codex`）。
+- 要用真實 AI：本機自行安裝並登入 [Claude Code](https://docs.anthropic.com/claude-code)（`claude`）、[Codex CLI](https://github.com/openai/codex)（`codex`）或 [Grok CLI](https://github.com/xai-org/grok-build)（`grok`）。
 - 桌面版打包：各平台各自建置（macOS 產物要在 macOS 上建）。
 
 ## 安裝與啟動
@@ -97,7 +99,7 @@ npm run desktop      # 桌面版（開發機）
 |---|---|---|
 | `server` | `host`、`port` | 只允許 loopback；預設 `127.0.0.1:4560` |
 | `workspace` | `root` | 工作區根目錄，預設 `~/Documents/YuMeewWorkspace`；設定頁切換時會改寫這一行 |
-| `cli.claude` / `cli.codex` | `command`、`baseArgs`、`fullAccess`、`fullAccessArgs`、`safeArgs` | 指令與無頭模式旗標；`fullAccess` 是預設權限，設定頁的開關優先 |
+| `cli.claude` / `cli.codex` / `cli.grok` | `command`、`baseArgs`、`fullAccess`、`fullAccessArgs`、`safeArgs` | 指令與無頭模式旗標；`fullAccess` 是預設權限，設定頁的開關優先 |
 | `cli` | `envPassthrough` | 額外放行給 CLI 子行程的環境變數（預設只給 PATH／HOME／LANG 等） |
 | `limits` | `bodyBytes`、`promptChars`、`sendPerMinute`、`concurrentRuns`、`sseConnections`、`queueLength`、`handoffChars`、`heartbeatSeconds`、`diffBytes`、`uploadBytes`、`imagesPerSend`、`verifySeconds`（驗證逾時，預設 600）、`verifyOutputBytes`（驗證輸出保留尾端位元組，預設 65536）、`runSeconds`（單輪 AI 執行時間上限，超過就停止並標記逾時，預設 7200） | 各種上限 |
 | `limits` | `usagePollSeconds` | 帳號額度查詢間隔（秒），預設 `300`＝5 分鐘 |
@@ -120,7 +122,7 @@ HTTP JSON 加 SSE，桌面版與網頁版完全相同。型別定義在 [`src/sh
 | `POST /api/task/new`、`/api/task/update`、`/api/task/step`、`/api/task/memo`、`/api/task/completion`、`/api/task/archive`、`/api/task/read` | 作業 |
 | `POST /api/start` | 快速開始（建作業＋送出） |
 | `POST /api/chat/send` | 送出 `{project, task, text, ai?, model?, effort?, mode?, answer?, images?, fromQueue?}`；執行中必須帶 `mode`：`redo`／`amend`／`queue` |
-| `GET /api/chat/commands?project=&task=&ai=claude\|codex` | 目前帳號及作業可用的 CLI 指令 `{commands: [{name, description, argumentHint?}]}`，名稱不含開頭 `/` |
+| `GET /api/chat/commands?project=&task=&ai=claude\|codex\|grok` | 目前帳號及作業可用的 CLI 指令 `{commands: [{name, description, argumentHint?}]}`，名稱不含開頭 `/`；Grok 回空清單，不自行補出內建指令 |
 | `POST /api/chat/stop`、`/api/chat/unqueue` | 停止（並清空排隊）、移除排隊 |
 | `POST /api/chat/rollback` | `{project, task, request}`：把工作副本還原到該則指示開始前（每輪開始前自動存檢查點）；執行中回 409，沒有檢查點回 404 |
 | `POST /api/chat/fork` | `{project, task, request}`：從該則指示開始之前分支出新作業（派生作業；副本長自當時的檢查點，帶走之前的對話但不帶附件），回新作業；執行中回 409，沒有檢查點回 404 |
@@ -135,7 +137,7 @@ HTTP JSON 加 SSE，桌面版與網頁版完全相同。型別定義在 [`src/sh
 | `GET /api/task/verify?project=&task=` | 最近一次驗證的摘要 `{ok, exitCode, timedOut, at}`；沒驗證過，或之後 AI 又開始工作／檔案被還原（單檔還原、回溯）就回 `null`。只存記憶體，Git 面板用它顯示「驗證通過／失敗／尚未驗證」 |
 | `GET /api/ai`、`POST /api/ai/refresh`、`POST /api/ai/update` | AI 工具與模型清單 |
 | `POST /api/settings`、`POST /api/roles`、`GET /api/log` | 設定、角色、操作紀錄 |
-| `POST /api/accounts/add` | 登錄既有已登入 CLI 目錄 `{ai: 'claude'|'codex', name, configDir}`；回 `Settings` |
+| `POST /api/accounts/add` | 登錄既有已登入 CLI 目錄 `{ai: 'claude'|'codex'|'grok', name, configDir}`；回 `Settings` |
 | `POST /api/accounts/remove` | 移除登錄 `{ai,id}`，預設帳號不可移除；不刪 CLI 資料；回 `Settings` |
 | `POST /api/accounts/refresh` | `{}`：立即重新查詢所有已登錄帳號；回 `UsageState` |
 | `POST /api/settings`（帳號切換） | `{activeAccounts:{[ai]:id}}`，缺省帳號 id 為 `default`；回 `Settings` |

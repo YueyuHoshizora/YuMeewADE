@@ -2,7 +2,7 @@ import type { AppState, UsageState } from '../shared/types.ts';
 import { api } from './api.ts';
 import { getLocale, t } from './i18n/index.ts';
 import { button, el, link, readLocal, run, showError, taskHash, toast, type View, type ViewContext } from './components/dom.ts';
-import { aiLabel, localTime } from './components/display.ts';
+import { aiLabel, localTime, quotaLabel } from './components/display.ts';
 import { quotaAlerts } from './components/quota-alert.ts';
 import { needsReply, tree } from './components/tree.ts';
 import { newProjectView, projectView } from './views/projects.ts';
@@ -36,7 +36,7 @@ function announceQuota(next: UsageState): void {
   for (const alert of alerts) {
     const account = state?.settings.accounts[alert.ai]?.find(entry => entry.id === alert.account);
     const ai = `${aiLabel(alert.ai)} · ${account?.name ?? t('usage.defaultAccount')}`;
-    const windows = alert.windows.join('/') || t('usage.limited');
+    const windows = alert.windows.map(quotaLabel).join('/') || t('usage.limited');
     const message = alert.kind === 'recovered' ? t('usage.alertRecovered', { ai })
       : alert.resetsAt ? t('usage.alertFull', { ai, windows, reset: localTime(alert.resetsAt) })
         : t('usage.alertFullNoReset', { ai, windows });

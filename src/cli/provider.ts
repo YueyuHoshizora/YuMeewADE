@@ -32,8 +32,8 @@ export type CliEvent =
   | { type: 'usage'; usage: TurnUsage }
   | { type: 'tool'; text: string }
   | { type: 'asks'; asks: Ask[] }
-  /** 帳號額度（CLI 回報；at＝資料時間 ISO）。 */
-  | { type: 'quota'; windows: QuotaWindow[]; limited: boolean; at: string }
+  /** 帳號額度（CLI 或 API 回報；at＝資料時間 ISO；prepaidCents＝明確回報的預付美元分餘額）。 */
+  | { type: 'quota'; windows: QuotaWindow[]; limited: boolean; at: string; prepaidCents?: number }
   /** CLI 實測輸出用量／耗時；同一 run 的最新訊息或回合取代舊樣本，絕非文字估算或校正增量。 */
   | { type: 'tokens'; runId: string; count: number; spanMs: number; at: number }
   /** 內部原因，只進日誌，不對外。 */

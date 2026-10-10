@@ -2,23 +2,24 @@
 
 [繁體中文](README.md) | English | [日本語](README.ja.md)
 
-A cross-platform AI project collaboration app: projects, tasks, and AI conversations in one interface. It drives your local `claude` / `codex` CLI in headless mode. Choose the AI, model, and reasoning effort for each message; while AI is running, cancel and redo, add context, or queue the next instruction. Tasks run in git worktree copies by default, with one-click merging into the main folder after reviewing the diff.
+A cross-platform AI project collaboration app: projects, tasks, and AI conversations in one interface. It drives your local `claude` / `codex` / `grok` CLI in headless mode. Choose the AI, model, and reasoning effort for each message; while AI is running, cancel and redo, add context, or queue the next instruction. Tasks run in git worktree copies by default, with one-click merging into the main folder after reviewing the diff.
 
 The workflow draws on [kieiken/project-hub](https://github.com/kieiken/project-hub) (MIT): file-based ledgers, task working copies, three instruction modes during execution, AI question options, completion confirmation, and phases. This project includes none of its code, and its interface was designed separately.
 
 > **Security notice (read first)**
 > - The core listens only on `http://127.0.0.1:4560`, with **no login or authentication**. This is intentional: it is a single-user local tool, not a web service. Other processes on your machine can call it. Do not bind it to `0.0.0.0` or forward the port externally.
-> - **AI has full access by default**: claude starts with `--dangerously-skip-permissions`, and codex with `--dangerously-bypass-approvals-and-sandbox`. They can modify files and execute any command with your account's permissions (the same as project-hub; a user decision on 2026-10-10). Disable this individually under “Settings → AI tools → Full access.” With full access disabled, claude automatically approves only file edits, while codex runs in a working-directory sandbox.
-> - Each CLI manages billing and login; this app never stores or changes credentials and cannot guarantee no charges. For quota queries only, the core **reads** Claude's account-specific OAuth credentials (macOS Keychain or `.credentials.json`), sending them only to Anthropic’s fixed usage endpoint. Credentials never enter the app API, UI or logs. Extra accounts never borrow default credentials; renew expired logins through the CLI.
+> - **AI has full access by default**: claude uses `--dangerously-skip-permissions`, codex `--dangerously-bypass-approvals-and-sandbox`, and grok `--always-approve`. They can modify files and execute commands with your account's permissions. Disable this individually under “Settings → AI tools → Full access.” With it disabled, claude automatically approves only file edits, codex uses a working-directory sandbox, and grok uses `dontAsk` to deny operations requiring approval.
+> - Each CLI manages billing and login; this app never stores or changes credentials and cannot guarantee no charges. For quota queries only, the core **reads** Claude's account-specific OAuth credentials (macOS Keychain or `.credentials.json`) and Grok's valid first-party login in the profile's `auth.json`, sending them only to their fixed official usage/billing endpoints. Credentials never enter the app API, UI or logs. Extra accounts never borrow default credentials; renew expired logins through the CLI.
 
 ## Interface and workflow
 
 - **Left-hand tree**: tasks appear under projects; subtasks are indented with `↳`, and branch tasks are marked `⑂`. Dot colors: red = AI running, yellow = awaiting your reply, blue = awaiting completion confirmation, purple = complete, light green = previously handled, gray = not started. Unread results are marked “Unread.” The context menu (⋯) supports renaming, adding subtasks or branches, and archiving; projects also support pinning, reordering (or drag-and-drop), and adding subprojects. The search box at the top (`/` or Ctrl/⌘+K) filters projects and tasks.
 - **Your turn**: the title-bar button shows task counts for “Awaiting reply” and “Confirm completion.” Open it to “Mark complete” or “Continue.”
 - **Running panel**: while any AI is running, the status bar at the bottom shows a red “Running N”. Open it to see each running task (AI, model, elapsed time), jump to it, stop one, or “Stop all” (same as Stop inside a task, which also clears that task’s queue).
-- **Accounts and quota**: click Claude or Codex quota in the footer to see default and extra accounts, used/remaining percentages, reset times, timestamps and query status. The footer shows only each AI's active account. Details let you switch, register/remove profiles, or refresh manually. Add a name and an existing, separately signed-in CLI directory (absolute path; `~` allowed). First sign in through the CLI using `CLAUDE_CONFIG_DIR` (Claude), `CODEX_HOME` (Codex). The app has no credentials form; removing a profile removes only its registration, not its files or login. Settings are per workspace. Switching affects future instructions only, never running tasks or another account's session.
+- **Accounts and quota**: click Claude, Codex or Grok quota in the footer to see default and extra accounts, used/remaining percentages, reset times, timestamps and query status. The footer shows only each AI's active account. Details let you switch, register/remove profiles, or refresh manually. Add a name and an existing, separately signed-in CLI directory (absolute path; `~` allowed). First sign in through the CLI using `CLAUDE_CONFIG_DIR` (Claude), `CODEX_HOME` (Codex), or `GROK_HOME` (Grok). The app has no credentials form; removing a profile removes only its registration, not its files or login. Settings are per workspace. Switching affects future instructions only, never running tasks or another account's session.
   - Quota is queried at startup and every **5 minutes** by default (`limits.usagePollSeconds: 300`). Failed queries are marked unavailable and retain previous values and timestamps; this is not live quota. Each registered account alerts when exhausted and when fresh successful data confirms recovery. The first successful report is silent; passing the reset time or a failed query alone never means recovery. Background alerts also use system notifications (sharing the completion-notification toggle).
-  - The bottom-right value is recent measured **average tok/s**: actual CLI output token totals divided by the union of measured time intervals. Measurements remain for 4 seconds; no measurement shows “—”. Claude uses message duration; Codex uses the whole turn, including waiting and tools. CLI-reported thinking usage is included, without estimates; this is not live generation speed.
+  - Grok queries `GET https://cli-chat-proxy.grok.com/v1/billing?format=credits` directly. It displays the API's current-period used/remaining percentages and reset time, explicitly reported prepaid USD balance, and capped on-demand usage. Missing or invalid data never becomes zero. API-key-only logins cannot query this account quota. Exhausting included credits still alerts even when paid credits remain.
+  - The bottom-right value is recent measured **average tok/s**: actual CLI output token totals divided by the union of measured time intervals. Measurements remain for 4 seconds; no measurement shows “—”. Claude uses message duration; Codex/Grok use the whole turn, including waiting and tools. CLI-reported thinking usage is included, without estimates; this is not live generation speed.
 - **New project**: enter a name, description, and phases (defaults: Plan / Implement / Review / Wrap up). Set “Main folder” to an existing code folder (the desktop app has a “Choose…” button); leave it blank to use the ledger folder itself. Providing a “First task (optional)” starts it immediately.
 - **Project overview**: the phase roadmap and tasks in the current phase. Once all tasks in the current phase are complete, “Next phase” is offered. **Quick start**: describe what you want to do, choose an AI, model, and reasoning effort (your last choices are remembered), optionally attach images, and click “Start” to create a task and hand it to AI. “＋ Add task with details” is also available.
 - **Task view**:
@@ -30,11 +31,11 @@ The workflow draws on [kieiken/project-hub](https://github.com/kieiken/project-h
   - Auto-fix failed verification: the project page has “Auto-fix failed verification” set to 0–5 tries (`autoFix` in `PROJECT.md`; default 0 = off). When the AI finishes an instruction and the queue is empty, verification runs automatically; if it fails, the output tail goes back to the same AI until it passes or the tries run out; if it still fails, the task moves to “Awaiting reply” for you to take over. Nothing runs if the AI failed, was stopped, or is waiting for your answer; a new instruction from you resets the count.
   - Chat: every message has a copy button; failed or stopped replies have “Retry”; replies show the per-turn token usage reported by the CLI (input/output/cached); “Export Markdown” in the header downloads the whole conversation.
   - Tool-call groups start collapsed, including historical messages, regardless of the old global expansion preference. Click a group heading to expand it manually.
-  - The idle Send button is removed; use ⌘/Ctrl+Enter (or configured Enter). Running-task actions and question-answer buttons remain. At the start of a draft, `/` completes supported CLI commands without executing them. Claude discovers executable commands; Codex supports account `/prompts:name` templates.
+  - The idle Send button is removed; use ⌘/Ctrl+Enter (or configured Enter). Running-task actions and question-answer buttons remain. At the start of a draft, `/` completes supported CLI commands without executing them. Claude discovers executable commands; Codex supports account `/prompts:name` templates. Grok headless has no supported native slash protocol, so its list is empty and unsupported commands are rejected rather than sent as ordinary prompts.
   - At the bottom, change the state and phase, check off steps (the `## 步驟` list), and leave notes. Checking all steps or AI writing “完成” puts the task into “Confirm completion,” leaving the decision to a human (“完成” is a literal Chinese ledger value).
 - **Settings**: language (7 languages), Enter vs ⌘/Ctrl+Enter to send, notifications, workspace root (switch it in place; saved back to the config file; the desktop app has a “Choose…” folder picker), default AI for new tasks, AI tools (versions, “Refresh models,” “Update CLI,” and the “Full access” toggle), models shown in menus and their order, roles (written back to `roles.yaml`), and recent activity.
 
-Model lists are read directly from the CLIs' own caches (`~/.codex/models_cache.json`, `~/.claude/cache/model-catalog/`). Available reasoning efforts for each model also come from the cache; built-in lists are used only when the cache cannot be read.
+Claude/Codex model lists and reasoning efforts come from their own caches, with built-in fallbacks. Grok uses the active account's `grok models`, enriched only with matching capabilities from that profile's `models_cache.json`; it invents neither models nor efforts. An initial failure provides no fabricated list; a failed refresh preserves previous results for that account.
 
 ## Architecture
 
@@ -45,7 +46,7 @@ Model lists are read directly from the CLIs' own caches (`~/.codex/models_cache.
         ├─ src/ledger/   Ledger: projects, tasks, completion confirmation, settings, ordering, activity log
         ├─ src/state/    /api/state Overall state (tree, dots, Your turn, unread)
         ├─ src/chat/     Conversations: JSONL, sessions, handoff packages, three running instruction modes, question parsing, attachments
-        ├─ src/cli/      CliProvider adapter: claude/codex headless mode + mock
+        ├─ src/cli/      CliProvider adapter: claude/codex/grok headless mode + mock
         ├─ src/ai/       Model lists, CLI versions and updates
         ├─ src/git/      Worktree copies, merge previews, merging
         ├─ src/roles/    Read/write roles.yaml
@@ -65,7 +66,7 @@ Model lists are read directly from the CLIs' own caches (`~/.codex/models_cache.
 ## Requirements
 
 - Node.js **24** or later, Git 2.38 or later (`git worktree`, `git merge-tree --write-tree`).
-- For real AI: install and sign in to [Claude Code](https://docs.anthropic.com/claude-code) (`claude`) and/or [Codex CLI](https://github.com/openai/codex) (`codex`) locally.
+- For real AI: install and sign in locally to [Claude Code](https://docs.anthropic.com/claude-code) (`claude`), [Codex CLI](https://github.com/openai/codex) (`codex`), or [Grok CLI](https://github.com/xai-org/grok-build) (`grok`).
 - Desktop packaging: build on each target platform (macOS artifacts must be built on macOS).
 
 ## Installation and startup
@@ -95,7 +96,7 @@ Configuration lookup order: the `YUMEEWADE_CONFIG` environment variable → `con
 |---|---|---|
 | `server` | `host`、`port` | Loopback only; default `127.0.0.1:4560` |
 | `workspace` | `root` | Workspace root; default `~/Documents/YuMeewWorkspace`. Switching it in Settings rewrites this line |
-| `cli.claude` / `cli.codex` | `command`、`baseArgs`、`fullAccess`、`fullAccessArgs`、`safeArgs` | Commands and headless-mode flags; `fullAccess` sets the default permissions, overridden by the toggle in Settings |
+| `cli.claude` / `cli.codex` / `cli.grok` | `command`、`baseArgs`、`fullAccess`、`fullAccessArgs`、`safeArgs` | Commands and headless-mode flags; `fullAccess` sets the default permissions, overridden by the toggle in Settings |
 | `cli` | `envPassthrough` | Additional environment variables allowed through to CLI child processes (by default, only PATH / HOME / LANG and similar variables) |
 | `limits` | `bodyBytes`、`promptChars`、`sendPerMinute`、`concurrentRuns`、`sseConnections`、`queueLength`、`handoffChars`、`heartbeatSeconds`、`diffBytes`、`uploadBytes`、`imagesPerSend`、`verifySeconds` (verification timeout, default 600)、`verifyOutputBytes` (tail bytes of verification output kept, default 65536)、`runSeconds` (maximum run time of one AI turn; it is stopped and marked as timed out beyond this, default 7200) | Resource and request limits |
 | `limits` | `usagePollSeconds` | Account quota query interval in seconds; default `300` = 5 minutes |
@@ -132,7 +133,7 @@ HTTP JSON plus SSE, identical in desktop and web versions. Types are defined in 
 | `GET /api/task/verify?project=&task=` | Summary of the latest verification `{ok, exitCode, timedOut, at}`; `null` if never verified or if the AI started working again / files were reverted (single-file revert, rollback) since. Kept in memory only; the Git panel uses it to show “verification passed / failed / not verified” |
 | `GET /api/ai`、`POST /api/ai/refresh`、`POST /api/ai/update` | AI tools and model lists |
 | `POST /api/settings`、`POST /api/roles`、`GET /api/log` | Settings, roles, activity log |
-| `POST /api/accounts/add` | Register an existing signed-in CLI directory `{ai: 'claude'|'codex', name, configDir}`; returns `Settings` |
+| `POST /api/accounts/add` | Register an existing signed-in CLI directory `{ai: 'claude'|'codex'|'grok', name, configDir}`; returns `Settings` |
 | `POST /api/accounts/remove` | Remove a registration `{ai,id}` (never the default account); leaves CLI data intact; returns `Settings` |
 | `POST /api/accounts/refresh` | `{}`: query all registered accounts now; returns `UsageState` |
 | `POST /api/settings` (account switch) | `{activeAccounts:{[ai]:id}}`; implicit account id is `default`; returns `Settings` |

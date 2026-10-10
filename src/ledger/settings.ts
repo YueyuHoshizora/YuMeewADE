@@ -13,7 +13,7 @@ export class SettingsStore {
   private readonly defaults: Settings;
   constructor(ws: Workspace, config: Config) {
     this.file = path.join(ws.internalDir, 'settings.json');
-    this.defaults = { initial: { ai: 'codex', model: 'gpt-6.1-sol', effort: 'high' }, hiddenModels: {}, modelOrder: {}, fullAccess: { claude: config.cli.claude.fullAccess, codex: config.cli.codex.fullAccess }, accounts: {}, activeAccounts: {} };
+    this.defaults = { initial: { ai: 'codex', model: 'gpt-6.1-sol', effort: 'high' }, hiddenModels: {}, modelOrder: {}, fullAccess: { claude: config.cli.claude.fullAccess, codex: config.cli.codex.fullAccess, grok: config.cli.grok.fullAccess }, accounts: {}, activeAccounts: {} };
   }
   async get(): Promise<Settings> {
     const saved = await readJson<SettingsPatch>(this.file, {});
@@ -25,12 +25,12 @@ export class SettingsStore {
   async update(patch: SettingsPatch): Promise<Settings> {
     if (!patch || typeof patch !== 'object' || Array.isArray(patch)) throw new AppError('bad_request', 'field_type');
     if ('accounts' in patch) throw new AppError('bad_request', 'field_type', { field: 'accounts' });
-    if (patch.initial !== undefined && (!patch.initial || typeof patch.initial !== 'object' || !['claude', 'codex'].includes(patch.initial.ai) || typeof patch.initial.model !== 'string' || typeof patch.initial.effort !== 'string')) throw new AppError('bad_request', 'field_type', { field: 'initial' });
+    if (patch.initial !== undefined && (!patch.initial || typeof patch.initial !== 'object' || !['claude', 'codex', 'grok'].includes(patch.initial.ai) || typeof patch.initial.model !== 'string' || typeof patch.initial.effort !== 'string')) throw new AppError('bad_request', 'field_type', { field: 'initial' });
     for (const key of ['hiddenModels', 'modelOrder', 'fullAccess'] as const) {
       const value = patch[key]; if (value === undefined) continue;
       if (!value || typeof value !== 'object' || Array.isArray(value)) throw new AppError('bad_request', 'field_type', { field: key });
       for (const [ai, item] of Object.entries(value)) {
-        if (!['claude', 'codex'].includes(ai) || (key === 'fullAccess' ? typeof item !== 'boolean' : !Array.isArray(item) || item.some(v => typeof v !== 'string'))) throw new AppError('bad_request', 'field_type', { field: key });
+        if (!['claude', 'codex', 'grok'].includes(ai) || (key === 'fullAccess' ? typeof item !== 'boolean' : !Array.isArray(item) || item.some(v => typeof v !== 'string'))) throw new AppError('bad_request', 'field_type', { field: key });
       }
     }
     if (patch.activeAccounts !== undefined) {
@@ -54,7 +54,7 @@ export class SettingsStore {
   }
 
   private validateAi(ai: string): void {
-    if (!['claude', 'codex'].includes(ai)) throw new AppError('bad_request', 'cli_unsupported');
+    if (!['claude', 'codex', 'grok'].includes(ai)) throw new AppError('bad_request', 'cli_unsupported');
   }
 
   async addAccount(ai: string, name: string, configDir: string): Promise<Settings> {

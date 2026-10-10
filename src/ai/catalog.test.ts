@@ -7,7 +7,7 @@ import { Workspace } from '../ledger/workspace.ts';
 import { DEFAULT_CONFIG } from '../shared/config.ts';
 import { AppError } from '../shared/errors.ts';
 import type { Settings } from '../shared/types.ts';
-import { AiCatalog } from './catalog.ts';
+import { AiCatalog, parseGrokModels } from './catalog.ts';
 
 const CLAUDE_CACHE = {
   catalog: { config: { models: [
@@ -34,6 +34,7 @@ async function fixture(t: { after(fn: () => Promise<void>): void }) {
   const config = structuredClone(DEFAULT_CONFIG);
   config.cli.claude.command = path.join(root, 'missing-claude');
   config.cli.codex.command = path.join(root, 'missing-codex');
+  config.cli.grok.command = path.join(root, 'missing-grok');
   const settings: Settings = { initial: { ai: 'codex', model: 'gpt-6.1-sol', effort: 'high' }, hiddenModels: {}, modelOrder: {}, fullAccess: {}, accounts: {}, activeAccounts: {} };
   const deps = { config, ws, home, settings: { async get() { return settings; } } };
   return { root, home, ws, config, settings, deps, catalog: new AiCatalog(deps) };
@@ -131,4 +132,67 @@ test('refresh/update failures do not replace the persisted codex models', async 
   await assert.rejects(f.catalog.refresh('codex'), (err: unknown) => err instanceof AppError && err.detail === 'cli_unavailable');
   await assert.rejects(f.catalog.update('codex'), (err: unknown) => err instanceof AppError && err.detail === 'cli_unavailable');
   assert.deepEqual((await f.catalog.get('codex')).models, initial.models);
+});
+
+test('Grok parses only the live selectable list and enriches real per-model capabilities', () => {
+  const metadata = { models: {
+    'grok-4.7': { info: { id: 'grok-4.7', name: 'Grok 4.7', supports_reasoning_effort: true, reasoning_effort: 'high', reasoning_efforts: [
+      { value: 'xhigh' }, { value: 'high', default: true }, { value: 'medium' }, { value: 'low' },
+    ] } },
+    'grok-4.5': { info: { id: 'grok-4.5', name: 'Grok 4.5', supports_reasoning_effort: true, reasoning_effort: 'high', reasoning_efforts: [
+      { value: 'high', default: true }, { value: 'medium' }, { value: 'low' },
+    ] } },
+    'cache-only': { info: { id: 'cache-only', name: 'Not selectable' } },
+    'no-reasoning': { info: { id: 'no-reasoning', supports_reasoning_effort: false, reasoning_efforts: [{ value: 'high', default: true }] } },
+    'mismatched': { info: { id: 'another-model', name: 'Wrong', supports_reasoning_effort: true, reasoning_efforts: [{ value: 'high' }] } },
+  } };
+  const stdout = 'You are logged in with grok.com.\n\nDefault model: grok-4.7\n\nAvailable models:\n  * grok-4.7 (default)\n  - grok-4.5\n  - unknown-model\n  - no-reasoning\n  - mismatched\n  - grok-4.7\n';
+  assert.deepEqual(parseGrokModels(stdout, metadata), [
+    { id: 'grok-4.7', label: 'Grok 4.7', efforts: ['xhigh', 'high', 'medium', 'low'], defaultEffort: 'high' },
+    { id: 'grok-4.5', label: 'Grok 4.5', efforts: ['high', 'medium', 'low'], defaultEffort: 'high' },
+    { id: 'unknown-model', label: 'unknown-model', efforts: [], defaultEffort: '' },
+    { id: 'no-reasoning', label: 'no-reasoning', efforts: [], defaultEffort: '' },
+    { id: 'mismatched', label: 'mismatched', efforts: [], defaultEffort: '' },
+  ]);
+});
+
+test('Grok never infers models or efforts from defaults, arbitrary output or incomplete metadata', () => {
+  assert.deepEqual(parseGrokModels('Default model: grok-4.7\n  - grok-4.7', {}), []);
+  assert.deepEqual(parseGrokModels('Available models:\nAuthentication failed\n', {}), []);
+  assert.deepEqual(parseGrokModels('Available models:\r\n  - custom\r\n', { models: { custom: { info: {
+    id: 'custom', supports_reasoning_effort: true, reasoning_effort: 'high', reasoning_efforts: [{ value: 'low' }, { value: 'low' }, {}],
+  } } } }), [{ id: 'custom', label: 'custom', efforts: ['low'], defaultEffort: '' }]);
+});
+
+test('unavailable Grok has no invented fallback models and refresh/update failures preserve state', async (t) => {
+  const f = await fixture(t);
+  const initial = await f.catalog.get('grok');
+  assert.equal(initial.available, false);
+  assert.equal(initial.version, '');
+  assert.equal(initial.source, 'unavailable');
+  assert.deepEqual(initial.models, []);
+  await assert.rejects(f.catalog.refresh('grok'), (err: unknown) => err instanceof AppError && err.detail === 'cli_unavailable');
+  await assert.rejects(f.catalog.update('grok'), (err: unknown) => err instanceof AppError && err.detail === 'cli_unavailable');
+  assert.deepEqual((await new AiCatalog(f.deps).get('grok')).models, []);
+  assert.equal((await f.catalog.get('grok')).refreshedAt, initial.refreshedAt);
+});
+
+test('Grok saved model capabilities survive restart but never leak to another account profile', async (t) => {
+  const f = await fixture(t);
+  const models = [{ id: 'verified-model', label: 'Verified', efforts: ['high', 'low'], defaultEffort: 'high' }];
+  const refreshedAt = '2026-10-10T00:00:00.000Z';
+  await put(path.join(f.ws.internalDir, 'models.json'), {
+    grok: { models, source: 'cli', refreshedAt, profile: JSON.stringify([path.join(f.home, '.grok'), '']) },
+  });
+  assert.deepEqual((await f.catalog.get('grok')).models, models);
+  assert.equal((await new AiCatalog(f.deps).get('grok')).refreshedAt, refreshedAt);
+  f.settings.accounts.grok = [{ id: 'extra', name: 'Extra', configDir: path.join(f.root, 'isolated-profile') }];
+  f.settings.activeAccounts.grok = 'extra';
+  const isolated = await f.catalog.get('grok');
+  assert.deepEqual(isolated.models, []);
+  assert.equal(isolated.source, 'unavailable');
+  const saved = JSON.parse(await fs.readFile(path.join(f.ws.internalDir, 'models.json'), 'utf8'));
+  assert.equal(saved.grok.profile, JSON.stringify([path.join(f.root, 'isolated-profile'), path.join(f.root, 'isolated-profile', 'auth.json')]));
+  assert.ok(saved.claude.models.length);
+  assert.ok(saved.codex.models.length);
 });

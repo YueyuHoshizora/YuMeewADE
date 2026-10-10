@@ -56,7 +56,7 @@ export class UsageBoard {
     const current = this.items.get(key);
     // 並行回合可能比帳號查詢的資料舊，不能倒退。
     if (current?.quotaAt && Date.parse(ev.at) < Date.parse(current.quotaAt)) return;
-    this.items.set(key, { ai, account, status: 'ready', windows: ev.windows, limited: ev.limited, quotaAt: ev.at });
+    this.items.set(key, { ai, account, status: 'ready', windows: ev.windows, limited: ev.limited, quotaAt: ev.at, ...(ev.prepaidCents !== undefined ? { prepaidCents: ev.prepaidCents } : {}) });
     this.onChange(this.snapshot());
   }
 

@@ -3,19 +3,21 @@ import { promises as fs } from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { captureCommand, findExecutable, minimalEnv } from '../cli/process.ts';
+import { grokEnv } from '../cli/grok.ts';
 import type { Workspace } from '../ledger/workspace.ts';
 import type { Config } from '../shared/config.ts';
 import { AppError } from '../shared/errors.ts';
 import { writeJson } from '../shared/fsx.ts';
 import type { AiInfo, ModelInfo, Settings } from '../shared/types.ts';
 
-type CatalogAi = 'claude' | 'codex';
-type ModelCache = Pick<AiInfo, 'models' | 'source' | 'refreshedAt'>;
-const NAMES: CatalogAi[] = ['claude', 'codex'];
+type CatalogAi = 'claude' | 'codex' | 'grok';
+type ModelCache = Pick<AiInfo, 'models' | 'source' | 'refreshedAt'> & { profile?: string };
+const NAMES: CatalogAi[] = ['claude', 'codex', 'grok'];
 const EFFORTS = ['low', 'medium', 'high', 'xhigh', 'max'];
 const BUILTIN: Record<CatalogAi, [string, string][]> = {
   claude: [['claude-opus-5-5', 'Opus 5.5'], ['claude-sonnet-5-5', 'Sonnet 5.5'], ['claude-fable-5-1', 'Fable 5.1'], ['claude-haiku-5-5', 'Haiku 5.5']],
   codex: [['gpt-6.1-sol', 'GPT-6.1-Sol'], ['gpt-6-astra', 'GPT-6-Astra']],
+  grok: [],
 };
 
 function object(value: unknown): Record<string, unknown> {
@@ -49,6 +51,28 @@ function parseModels(ai: CatalogAi, value: unknown): ModelInfo[] {
   }
   return models;
 }
+
+// `grok models` has no JSON option. Only its selectable list is authoritative;
+// cache metadata enriches matching entries, never introduces additional models.
+export function parseGrokModels(stdout: string, metadata: unknown): ModelInfo[] {
+  const section = stdout.replace(/\x1b\[[0-9;]*m/g, '').split(/^Available models:\s*$/m)[1];
+  if (!section) return [];
+  const cached = object(object(metadata)['models']);
+  const seen = new Set<string>();
+  const models: ModelInfo[] = [];
+  for (const line of section.split(/\r?\n/)) {
+    const match = /^\s+[*-]\s+(\S+?)(?:\s+\(default\))?\s*$/.exec(line);
+    const id = match?.[1];
+    if (!id || seen.has(id)) continue;
+    seen.add(id);
+    const info = object(object(cached[id])['info']);
+    const options = array(info['reasoning_efforts']);
+    const supported = info['id'] === id && info['supports_reasoning_effort'] === true ? efforts(options, 'value') : [];
+    const preferred = text(object(options.find((option) => object(option)['default'] === true))['value']) || text(info['reasoning_effort']);
+    models.push({ id, label: info['id'] === id ? text(info['name']) || id : id, efforts: supported, defaultEffort: supported.includes(preferred) ? preferred : '' });
+  }
+  return models;
+}
 async function json(file: string): Promise<unknown> {
   try { return JSON.parse(await fs.readFile(file, 'utf8')) as unknown; }
   catch (err) {
@@ -59,12 +83,12 @@ async function json(file: string): Promise<unknown> {
 function savedCache(value: unknown): ModelCache | undefined {
   const row = object(value);
   const models = array(row['models']);
-  if (!models.length || !['cli-cache', 'cli', 'builtin'].includes(text(row['source'])) || !text(row['refreshedAt'])) return undefined;
+  if ((!models.length && row['source'] !== 'unavailable') || !['cli-cache', 'cli', 'builtin', 'unavailable'].includes(text(row['source'])) || !text(row['refreshedAt'])) return undefined;
   if (!models.every((model) => {
     const m = object(model);
     return text(m['id']) && text(m['label']) && Array.isArray(m['efforts']) && m['efforts'].every((effort: unknown) => typeof effort === 'string') && typeof m['defaultEffort'] === 'string';
   })) return undefined;
-  return { models: models as ModelInfo[], source: text(row['source']), refreshedAt: text(row['refreshedAt']) };
+  return { models: models as ModelInfo[], source: text(row['source']), refreshedAt: text(row['refreshedAt']), ...(typeof row['profile'] === 'string' ? { profile: row['profile'] } : {}) };
 }
 
 export class AiCatalog {
@@ -74,7 +98,7 @@ export class AiCatalog {
   private readonly file: string;
   private readonly cache: Partial<Record<CatalogAi, ModelCache>> = {};
   private initialized: Promise<void> | undefined;
-  // 將兩個 AI 的更新與原子寫入序列化，避免同時 refresh 遺失另一側清單。
+  // 將 AI 的更新與原子寫入序列化，避免同時 refresh 遺失另一側清單。
   private writes: Promise<void> = Promise.resolve();
 
   constructor(deps: { config: Config; ws: Workspace; settings: { get(): Promise<Settings> }; home?: string }) {
@@ -90,8 +114,11 @@ export class AiCatalog {
     const name = this.name(ai);
     await this.init();
     const [status, settings] = await Promise.all([this.status(name), this.settings.get()]);
+    if (name === 'grok' && this.cache.grok?.profile !== this.grokProfile(settings)) {
+      await this.loadGrok(settings, false);
+    }
     const cached = this.cache[name]!;
-    return { name, ...status, ...structuredClone(cached), fullAccess: settings.fullAccess[name] ?? this.config.cli[name].fullAccess };
+    return { name, ...status, models: structuredClone(cached.models), source: cached.source, refreshedAt: cached.refreshedAt, fullAccess: settings.fullAccess[name] ?? this.config.cli[name].fullAccess };
   }
 
   async refresh(ai: string): Promise<AiInfo> {
@@ -99,6 +126,10 @@ export class AiCatalog {
     await this.init();
     let models: ModelInfo[];
     let source = 'cli-cache';
+    if (name === 'grok') {
+      await this.loadGrok(await this.settings.get(), true);
+      return this.get(name);
+    }
     if (name === 'codex') {
       const result = await captureCommand({ command: this.config.cli[name].command, args: ['debug', 'models'], env: this.env(), timeoutMs: 120_000 });
       if (!result.ok) throw new AppError('unavailable', 'cli_unavailable', { field: name, cause: result.reason });
@@ -126,10 +157,33 @@ export class AiCatalog {
   }
 
   private name(ai: string): CatalogAi {
-    if (ai !== 'claude' && ai !== 'codex') throw new AppError('bad_request', 'cli_unsupported', { field: ai });
+    if (ai !== 'claude' && ai !== 'codex' && ai !== 'grok') throw new AppError('bad_request', 'cli_unsupported', { field: ai });
     return ai;
   }
   private env(): NodeJS.ProcessEnv { return { ...minimalEnv(this.config.cli.envPassthrough), HOME: this.home }; }
+  private grokHome(settings: Settings): string {
+    const active = settings.activeAccounts.grok ?? 'default';
+    return settings.accounts.grok?.find((account) => account.id === active)?.configDir || this.env()['GROK_HOME'] || path.join(this.home, '.grok');
+  }
+  private grokEnv(settings: Settings): NodeJS.ProcessEnv {
+    const active = settings.activeAccounts.grok ?? 'default';
+    const account = settings.accounts.grok?.find((entry) => entry.id === active);
+    return grokEnv({ ...this.env(), GROK_HOME: this.grokHome(settings) }, account?.configDir);
+  }
+  private grokProfile(settings: Settings): string {
+    const env = this.grokEnv(settings);
+    return JSON.stringify([env['GROK_HOME'], env['GROK_AUTH_PATH'] || '']);
+  }
+  private async loadGrok(settings: Settings, strict: boolean): Promise<void> {
+    const env = this.grokEnv(settings);
+    const profile = this.grokProfile(settings);
+    const result = await captureCommand({ command: this.config.cli.grok.command, args: ['models'], env, timeoutMs: 120_000 });
+    let models: ModelInfo[] = [];
+    if (result.ok) models = parseGrokModels(result.stdout, await json(path.join(env['GROK_HOME']!, 'models_cache.json')));
+    if (strict && !result.ok) throw new AppError('unavailable', 'cli_unavailable', { field: 'grok', cause: result.reason });
+    if (strict && !models.length) throw new AppError('internal', 'bad_json');
+    await this.persist('grok', { models, source: models.length ? 'cli' : 'unavailable', refreshedAt: new Date().toISOString(), profile });
+  }
   private async status(ai: CatalogAi): Promise<{ available: boolean; version: string }> {
     const command = this.config.cli[ai].command;
     const env = this.env();
@@ -138,6 +192,7 @@ export class AiCatalog {
     return { available: true, version: result.ok ? /\b\d+\.\d+\.\d+\b/.exec(result.stdout + '\n' + result.stderr)?.[0] ?? '' : '' };
   }
   private async localModels(ai: CatalogAi): Promise<ModelInfo[]> {
+    if (ai === 'grok') return [];
     if (ai === 'codex') return parseModels(ai, await json(path.join(this.home, '.codex', 'models_cache.json')));
     const dir = path.join(this.home, '.claude', 'cache', 'model-catalog');
     let files: string[];
@@ -158,6 +213,12 @@ export class AiCatalog {
     this.initialized ??= (async () => {
       const saved = object(await json(this.file));
       for (const name of NAMES) {
+        if (name === 'grok') {
+          this.cache.grok = { models: [], source: 'unavailable', refreshedAt: new Date().toISOString() };
+          const existing = savedCache(saved.grok);
+          if (existing?.profile) this.cache.grok = existing;
+          continue;
+        }
         const existing = savedCache(saved[name]);
         if (existing) { this.cache[name] = existing; continue; }
         const models = await this.localModels(name);

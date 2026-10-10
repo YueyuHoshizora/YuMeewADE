@@ -1,6 +1,6 @@
 import type { AiUsage, AppState, QuotaWindow, UsageState } from '../../shared/types.ts';
 import { t } from '../i18n/index.ts';
-import { aiLabel, localTime } from './display.ts';
+import { aiLabel, localTime, prepaidLabel, quotaLabel } from './display.ts';
 import { button, el } from './dom.ts';
 
 /** 已用比例到這裡開始提醒／警告。 */
@@ -10,21 +10,22 @@ const DANGER_PERCENT = 90;
 function quotaWindow(window: QuotaWindow, now: number): HTMLElement {
   const node = el('span', 'usage-window');
   const percent = `${Math.round(window.usedPercent)}%`;
+  const label = quotaLabel(window.label);
   // 重置時間已過：CLI 還沒回報新窗口的用量，舊比例不能再當真。
   if (window.resetsAt && Date.parse(window.resetsAt) <= now) {
     node.classList.add('stale');
-    node.append(el('span', 'usage-window-label', window.label), el('span', 'usage-percent', '—'));
-    node.title = t('usage.windowReset', { label: window.label, reset: localTime(window.resetsAt) });
+    node.append(el('span', 'usage-window-label', label), el('span', 'usage-percent', '—'));
+    node.title = t('usage.windowReset', { label, reset: localTime(window.resetsAt) });
     return node;
   }
   if (window.usedPercent >= DANGER_PERCENT) node.classList.add('danger');
   else if (window.usedPercent >= WARN_PERCENT) node.classList.add('warn');
   const meter = el('span', 'usage-meter'); const fill = el('span', 'usage-meter-fill');
   fill.style.width = `${Math.min(100, window.usedPercent)}%`; meter.append(fill);
-  node.append(el('span', 'usage-window-label', window.label), meter, el('span', 'usage-percent', percent));
+  node.append(el('span', 'usage-window-label', label), meter, el('span', 'usage-percent', percent));
   node.title = window.resetsAt
-    ? t('usage.window', { label: window.label, percent, reset: localTime(window.resetsAt) })
-    : t('usage.windowNoReset', { label: window.label, percent });
+    ? t('usage.window', { label, percent, reset: localTime(window.resetsAt) })
+    : t('usage.windowNoReset', { label, percent });
   return node;
 }
 
@@ -39,6 +40,7 @@ function usageItem(ai: string, name: string | undefined, usage: AiUsage | undefi
   } else {
     const quota = el('span', 'usage-quota'); quota.title = t('usage.quotaAt', { at: localTime(usage.quotaAt) });
     quota.append(...usage.windows.map(window => quotaWindow(window, now)));
+    if (usage.prepaidCents !== undefined) quota.append(el('span', 'usage-prepaid', prepaidLabel(usage.prepaidCents)));
     if (usage.limited) quota.append(el('span', 'usage-limited', t('usage.limited')));
     item.append(quota);
   }

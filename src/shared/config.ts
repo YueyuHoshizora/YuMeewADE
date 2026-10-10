@@ -16,14 +16,14 @@ export interface CliCommandConfig {
   fullAccessArgs: string[];
   /** fullAccess 關閉時改用的權限旗標。 */
   safeArgs: string[];
-  /** 查詢帳號即時額度的子命令（Codex：app-server）；空陣列＝該 CLI 沒有，只靠回合中的回報。 */
+  /** 查詢帳號額度的子命令（Codex：app-server）；直接使用 API 的 adapter 不需要子命令。 */
   quotaArgs: string[];
 }
 
 export interface Config {
   server: { host: string; port: number };
   workspace: { root: string };
-  cli: { claude: CliCommandConfig; codex: CliCommandConfig; envPassthrough: string[] };
+  cli: { claude: CliCommandConfig; codex: CliCommandConfig; grok: CliCommandConfig; envPassthrough: string[] };
   limits: {
     bodyBytes: number;
     promptChars: number;
@@ -66,6 +66,15 @@ export const DEFAULT_CONFIG: Config = {
       // 工作目錄沙箱內可改檔與執行指令，不詢問
       safeArgs: ['-s', 'workspace-write', '-c', 'approval_policy="never"'],
       quotaArgs: ['app-server'],
+    },
+    grok: {
+      command: 'grok',
+      baseArgs: ['--output-format', 'streaming-json'],
+      fullAccess: true,
+      fullAccessArgs: ['--always-approve'],
+      // 需要互動核准的操作直接拒絕，不讓無頭回合等待輸入。
+      safeArgs: ['--permission-mode', 'dontAsk'],
+      quotaArgs: [],
     },
     envPassthrough: [],
   },
@@ -152,12 +161,12 @@ const LEGACY_BASE_ARGS: Record<'claude' | 'codex', string> = {
   codex: JSON.stringify(['exec', '--json', '--skip-git-repo-check', '-s', 'workspace-write', '-c', 'approval_policy="never"']),
 };
 
-function cliSection(map: YamlMap, name: 'claude' | 'codex'): CliCommandConfig {
+function cliSection(map: YamlMap, name: 'claude' | 'codex' | 'grok'): CliCommandConfig {
   const s = section(map, name);
   const d = DEFAULT_CONFIG.cli[name];
   const where = `cli.${name}`;
   let baseArgs = strList(s, 'baseArgs', d.baseArgs, where);
-  if (JSON.stringify(baseArgs) === LEGACY_BASE_ARGS[name]) baseArgs = d.baseArgs;
+  if (name !== 'grok' && JSON.stringify(baseArgs) === LEGACY_BASE_ARGS[name]) baseArgs = d.baseArgs;
   // 0.1 版的 dangerous／dangerousArgs 是自動複製的範本值，不代表使用者選擇，略過
   return {
     command: str(s, 'command', d.command, where),
@@ -188,6 +197,7 @@ export function parseConfig(text: string, source: string | null): Config {
     cli: {
       claude: cliSection(cli, 'claude'),
       codex: cliSection(cli, 'codex'),
+      grok: cliSection(cli, 'grok'),
       envPassthrough: strList(cli, 'envPassthrough', d.cli.envPassthrough, 'cli'),
     },
     limits: {
