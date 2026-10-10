@@ -28,6 +28,8 @@ test('isolated prepare, preview, diff, merge and automatic cleanup', () => withT
   assert.ok(preview);
   assert.equal(preview.files, 2);
   assert.equal(preview.conflict, false);
+  assert.equal(preview.branch, wt.branch(task.id));
+  assert.equal(preview.target, 'main');
   assert.ok(preview.paths.includes('hello.txt'));
   const diff = await wt.diff('P', task.id);
   assert.match(diff.diff, /\+hi/);

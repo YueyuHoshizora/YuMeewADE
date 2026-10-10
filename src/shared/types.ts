@@ -449,6 +449,9 @@ export interface MergePreview {
   files: number;
   added: number;
   removed: number;
+  /** 副本目前的分支名；合併目標（主資料夾目前分支）。detached 時為 HEAD。 */
+  branch: string;
+  target: string;
   /** 合併可能衝突。 */
   conflict: boolean;
   conflictPaths: string[];

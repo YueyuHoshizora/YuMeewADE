@@ -93,7 +93,11 @@ export class WorktreeService {
     const paths = splitNull(await gitOk(dir, ['diff', '--name-only', '-z', base]));
     const tree = await git(repo, ['merge-tree', '--write-tree', '--name-only', '--no-messages', '-z', mainHead, workHead]);
     if ((tree.code !== 0 && tree.code !== 1) || tree.truncated) throw new AppError('internal', 'git_failed');
+    const branch = (await gitOk(dir, ['rev-parse', '--abbrev-ref', 'HEAD'])).trim();
+    const target = (await gitOk(repo, ['rev-parse', '--abbrev-ref', 'HEAD'])).trim();
     return {
+      branch,
+      target,
       files: Number(stat.match(/(\d+) files? changed/)?.[1] ?? 0) + untracked.length,
       added: Number(stat.match(/(\d+) insertions?/)?.[1] ?? 0),
       removed: Number(stat.match(/(\d+) deletions?/)?.[1] ?? 0),
