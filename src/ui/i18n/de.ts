@@ -7,6 +7,7 @@ export const de: Record<MessageKey, string> = {
   'verify.result': 'Exit-Code {code} · {seconds} s', 'verify.timedOut': 'Zeitlimit überschritten; Prüfung gestoppt.',
   'verify.truncated': 'Ausgabe zu lang; nur das Ende wird angezeigt.',
   'verify.sendFix': 'KI zur Korrektur auffordern', 'verify.fixPrompt': 'Der Prüfbefehl ist fehlgeschlagen (Exit-Code {code}). Das Ende der Ausgabe steht unten. Finde die Ursache, behebe sie und führe die Prüfung danach selbst erneut aus.\n\n```\n{output}\n```',
+  'review.add': 'Klicken, um diese Zeile zu kommentieren', 'review.placeholder': 'Kommentar zu dieser Zeile…', 'review.send': '{n} Kommentare an die KI senden', 'review.prompt': 'Bitte ändere den Code gemäß den folgenden Review-Kommentaren (Zeilennummern beziehen sich auf die geänderte Datei) und prüfe danach selbst:', 'review.removedAt': '{path} (entfernte Zeile, war Zeile {line})',
   'chat.copy': 'Nachricht kopieren', 'chat.retry': 'Erneut versuchen', 'chat.export': 'Markdown exportieren',
   'chat.rollback': 'Auf Stand davor zurücksetzen', 'chat.rollbackConfirm': 'Die Arbeitskopie kehrt in den Zustand vor dieser Anweisung zurück; Dateiänderungen ab hier werden verworfen (der Chat bleibt erhalten). Zurücksetzen?', 'chat.rollbackDone': 'Arbeitskopie zurückgesetzt',
   'chat.changes': 'Diese Runde: {files} Dateien +{added} −{removed}',

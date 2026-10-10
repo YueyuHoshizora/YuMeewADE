@@ -18,7 +18,8 @@ import {
 import { aiLabel, effortLabel, localTime, modelLabel } from '../components/display.ts';
 import { shouldSend } from '../components/composer.ts';
 import { stream } from '../components/stream.ts';
-import { parseDiff } from '../components/diff.ts';
+import { parseDiff, type DiffLine } from '../components/diff.ts';
+import { buildReviewPrompt, type ReviewItem } from '../components/review.ts';
 
 export function taskView(
   context: ViewContext,
@@ -559,6 +560,40 @@ export function taskView(
     if (diff.truncated) viewer.append(el('p', 'warning diff-warning', t('copy.truncated')));
     const files = parseDiff(diff.diff);
     if (!files.length) viewer.append(el('p', 'muted', t('copy.noChanges')));
+    const comments = new Map<DiffLine, ReviewItem>();
+    const reviewSend = button('', () => run(async () => {
+      reviewSend.closest('dialog')?.close();
+      await send(busy ? 'queue' : undefined, buildReviewPrompt(t('review.prompt'), [...comments.values()]));
+    }), 'primary');
+    const reviewBar = el('div', 'review-bar');
+    reviewBar.hidden = true;
+    reviewBar.append(reviewSend);
+    function attachReview(row: HTMLElement, path: string, line: DiffLine): void {
+      const where = line.newLine === undefined ? t('review.removedAt', { path, line: line.oldLine ?? 0 }) : `${path}:${line.newLine}`;
+      let box: HTMLTextAreaElement | undefined;
+      const open = () => {
+        if (!box) {
+          const input = el('textarea', 'review-input');
+          input.placeholder = t('review.placeholder');
+          input.rows = 2;
+          input.addEventListener('input', () => {
+            if (input.value.trim()) comments.set(line, { where, code: line.text.slice(1).trim(), comment: input.value });
+            else comments.delete(line);
+            row.classList.toggle('reviewed', comments.has(line));
+            reviewBar.hidden = comments.size === 0;
+            reviewSend.textContent = t('review.send', { n: comments.size });
+          });
+          row.after(input);
+          box = input;
+        }
+        box.focus();
+      };
+      row.classList.add('reviewable');
+      row.tabIndex = 0;
+      row.title = t('review.add');
+      row.addEventListener('click', open);
+      row.addEventListener('keydown', event => { if (event.key === 'Enter') open(); });
+    }
     let focused: HTMLElement | null = null;
     for (const [index, file] of files.entries()) {
       const section = disclosure('');
@@ -567,11 +602,16 @@ export function taskView(
       section.querySelector('summary')!.append(el('span', 'diff-path', file.path || t('copy.diff')),
         el('span', 'diff-added', `+${file.added}`), el('span', 'diff-removed', `−${file.removed}`));
       const content = el('pre', 'diff-lines');
-      for (const line of file.lines) content.append(el('span', `diff-line diff-${line.kind}`, line.text));
+      for (const line of file.lines) {
+        const row = el('span', `diff-line diff-${line.kind}`, line.text);
+        if (line.oldLine !== undefined || line.newLine !== undefined) attachReview(row, file.path, line);
+        content.append(row);
+      }
       section.append(content);
       viewer.append(section);
       if (focusPath && file.path === focusPath) focused = section;
     }
+    viewer.append(reviewBar);
     modal(t('copy.diff'), viewer);
     focused?.scrollIntoView({ block: 'start' });
   }

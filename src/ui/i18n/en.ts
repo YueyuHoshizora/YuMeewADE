@@ -7,6 +7,7 @@ export const en: Record<MessageKey, string> = {
   'verify.result': 'Exit code {code} · {seconds} s', 'verify.timedOut': 'Verification timed out and was stopped.',
   'verify.truncated': 'Output is too long; only the tail is shown.',
   'verify.sendFix': 'Ask AI to fix', 'verify.fixPrompt': 'The verify command failed (exit code {code}). The tail of its output is below. Find the cause and fix it, then run the verification again yourself to confirm.\n\n```\n{output}\n```',
+  'review.add': 'Click to comment on this line', 'review.placeholder': 'Write your comment on this line…', 'review.send': 'Send {n} comments to AI', 'review.prompt': 'Please make changes according to the code review comments below (line numbers refer to the changed file), and verify afterwards:', 'review.removedAt': '{path} (removed line, was line {line})',
   'chat.copy': 'Copy message', 'chat.retry': 'Retry', 'chat.export': 'Export Markdown',
   'chat.rollback': 'Restore to before this', 'chat.rollbackConfirm': 'The working copy goes back to how it was before this instruction; file changes from it and everything after are discarded (the conversation is kept). Restore?', 'chat.rollbackDone': 'Working copy restored',
   'chat.changes': 'This turn: {files} files +{added} −{removed}',

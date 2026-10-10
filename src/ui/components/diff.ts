@@ -1,6 +1,9 @@
 export interface DiffLine {
   text: string;
   kind: 'context' | 'added' | 'removed' | 'meta' | 'hunk';
+  /** 變更前／後檔案中的行號；只有內容行（context、added、removed）有。 */
+  oldLine?: number;
+  newLine?: number;
 }
 export interface DiffFile {
   path: string;
@@ -34,6 +37,8 @@ export function parseDiff(value: string): DiffFile[] {
   const files: DiffFile[] = [];
   let file: DiffFile | undefined;
   let inHunk = false;
+  let oldNo = 0;
+  let newNo = 0;
   const lines = value.split('\n');
   if (lines.at(-1) === '') lines.pop();
   for (const raw of lines) {
@@ -46,14 +51,20 @@ export function parseDiff(value: string): DiffFile[] {
     }
     if (!file) { file = { path: '', added: 0, removed: 0, lines: [] }; files.push(file); }
     let kind: DiffLine['kind'] = 'meta';
-    if (text.startsWith('@@')) { kind = 'hunk'; inHunk = true; }
-    else if (inHunk && text.startsWith('+')) { kind = 'added'; file.added++; }
-    else if (inHunk && text.startsWith('-')) { kind = 'removed'; file.removed++; }
-    else if (inHunk && text.startsWith(' ')) kind = 'context';
+    let oldLine: number | undefined;
+    let newLine: number | undefined;
+    if (text.startsWith('@@')) {
+      kind = 'hunk'; inHunk = true;
+      const start = /^@@ -(\d+)(?:,\d+)? \+(\d+)/.exec(text);
+      oldNo = Number(start?.[1] ?? 0); newNo = Number(start?.[2] ?? 0);
+    }
+    else if (inHunk && text.startsWith('+')) { kind = 'added'; file.added++; newLine = newNo++; }
+    else if (inHunk && text.startsWith('-')) { kind = 'removed'; file.removed++; oldLine = oldNo++; }
+    else if (inHunk && text.startsWith(' ')) { kind = 'context'; oldLine = oldNo++; newLine = newNo++; }
     if (!inHunk && text.startsWith('rename to ')) file.path = gitPath(text.slice(10));
     if (!inHunk && text.startsWith('+++ ') && text.slice(4) !== '/dev/null') file.path = gitPath(text.slice(4).split('\t')[0]!).replace(/^b\//, '');
     if (!inHunk && !file.path && text.startsWith('--- ')) file.path = gitPath(text.slice(4).split('\t')[0]!).replace(/^a\//, '');
-    file.lines.push({ text, kind });
+    file.lines.push({ text, kind, ...(oldLine === undefined ? {} : { oldLine }), ...(newLine === undefined ? {} : { newLine }) });
   }
   return files;
 }
