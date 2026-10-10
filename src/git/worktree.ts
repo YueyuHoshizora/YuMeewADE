@@ -9,8 +9,10 @@ import { OpLog } from '../ledger/oplog.ts';
 import { AppError } from '../shared/errors.ts';
 import { pathExists, withFileLocks } from '../shared/fsx.ts';
 import { log } from '../shared/log.ts';
-import type { MergePreview, MergeResult, Task } from '../shared/types.ts';
+import type { MergePreview, MergeResult, Task, TurnChanges } from '../shared/types.ts';
 import { branchExists, commitAll, ensureRepo, git, gitOk, isLocalSecret, isRepo } from './git.ts';
+
+const SHA = /^[0-9a-f]{40}$/;
 
 export class MergeConflictError extends AppError {
   readonly conflicts: string[];
@@ -138,7 +140,7 @@ export class WorktreeService {
   }
   /** 副本回到檢查點：丟棄之後的 commit 與未提交變更（本機機密檔保留）。 */
   async restore(project: string, task: string, sha: string): Promise<void> {
-    if (!/^[0-9a-f]{40}$/.test(sha)) throw new AppError('not_found', 'checkpoint_missing');
+    if (!SHA.test(sha)) throw new AppError('not_found', 'checkpoint_missing');
     await this.mutate(project, async () => {
       const { repo, dir } = await this.copy(project, task);
       if (!dir || !(await pathExists(path.join(dir, '.git')))) throw new AppError('not_found', 'worktree_missing');
@@ -148,6 +150,27 @@ export class WorktreeService {
       await gitOk(dir, ['reset', '-q', '--hard', sha]);
       await gitOk(dir, ['clean', '-fdq', '-e', '.env*', '-e', '.npmrc', '-e', '.dev.vars*']);
     });
+  }
+  /** 一輪結束：把副本現況存成檢查點，並統計這輪（輪前 start → 現在）改了多少；沒有副本回 undefined。 */
+  async finishTurn(project: string, task: string, start: string): Promise<{ after: string; changes?: TurnChanges } | undefined> {
+    if (!SHA.test(start)) throw new AppError('not_found', 'checkpoint_missing');
+    const after = await this.checkpoint(project, task);
+    if (!after) return undefined;
+    const { dir } = await this.copy(project, task);
+    const stat = await gitOk(dir, ['diff', '--shortstat', start, after]);
+    const files = Number(stat.match(/(\d+) files? changed/)?.[1] ?? 0);
+    if (!files) return { after };
+    return { after, changes: { files, added: Number(stat.match(/(\d+) insertions?/)?.[1] ?? 0), removed: Number(stat.match(/(\d+) deletions?/)?.[1] ?? 0) } };
+  }
+  /** 兩個檢查點之間的差異（單輪的變更檢視）。 */
+  async rangeDiff(project: string, task: string, from: string, to: string): Promise<{ diff: string; truncated: boolean }> {
+    if (!SHA.test(from) || !SHA.test(to)) throw new AppError('not_found', 'checkpoint_missing');
+    const { repo, dir } = await this.copy(project, task);
+    if (!dir || !(await pathExists(path.join(dir, '.git')))) throw new AppError('not_found', 'worktree_missing');
+    await this.verifyFamily(repo, dir);
+    const result = await git(dir, ['diff', '--no-ext-diff', from, to], { maxBytes: this.diffBytes });
+    if (result.code !== 0) throw new AppError('not_found', 'checkpoint_missing');
+    return { diff: result.stdout, truncated: result.truncated ?? false };
   }
   async merge(project: string, task: string): Promise<MergeResult> {
     return this.mutate(project, () => this.mergeLocked(project, task));

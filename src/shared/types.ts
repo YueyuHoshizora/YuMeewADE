@@ -261,6 +261,13 @@ export interface Ask {
   multi: boolean;
 }
 
+/** 一輪結束後工作副本相對於輪前的變更量。 */
+export interface TurnChanges {
+  files: number;
+  added: number;
+  removed: number;
+}
+
 export type ChatRow =
   | {
       at: string;
@@ -293,6 +300,9 @@ export type ChatRow =
       ms: number;
       /** CLI 回報的本輪 token 用量；CLI 沒回報就不帶。 */
       usage?: TurnUsage;
+      /** 本輪結束時工作副本的 commit；與同一輪使用者訊息的 checkpoint 之間就是本輪的變更。 */
+      after?: string;
+      changes?: TurnChanges;
       request: string;
       asks?: Ask[];
     }

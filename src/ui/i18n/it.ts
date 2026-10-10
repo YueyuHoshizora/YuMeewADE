@@ -8,6 +8,7 @@ export const it: Record<MessageKey, string> = {
   'verify.truncated': 'Output troppo lungo; viene mostrata solo la parte finale.',
   'chat.copy': 'Copia messaggio', 'chat.retry': 'Riprova', 'chat.export': 'Esporta Markdown',
   'chat.rollback': 'Ripristina a prima di questo', 'chat.rollbackConfirm': 'La copia di lavoro torna allo stato precedente a questa istruzione; le modifiche ai file da qui in poi vengono scartate (la conversazione resta). Ripristinare?', 'chat.rollbackDone': 'Copia di lavoro ripristinata',
+  'chat.changes': 'Questo turno: {files} file +{added} −{removed}',
   'chat.turnUsage': 'input {input} · output {output}', 'chat.cachedUsage': ' · cache {cached}',
   'chat.usageHint': 'Questi conteggi di token sono riportati dalla CLI.',
   'chat.queuePaused': 'Coda in pausa: il primo elemento è fallito. I successivi attendono la sua rimozione o l’avvio manuale.',

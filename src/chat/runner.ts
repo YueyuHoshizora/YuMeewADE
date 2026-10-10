@@ -304,7 +304,7 @@ export class ChatRunner extends EventEmitter {
         ...(resumeId ? { resumeId } : {}), model: pick.model, effort: pick.effort,
         fullAccess: settings.fullAccess[item.ai] ?? provider.dangerous,
         addDirs: [path.join(this.deps.ws.projectDir(p), '.ai')], images,
-      });
+      }, checkpoint);
       this.trackQueuedRun(p, t, s);
       return { request: item.id, queued: false };
     } catch (err) {
@@ -342,7 +342,7 @@ export class ChatRunner extends EventEmitter {
 
   private async execute(
     p: string, t: string, item: QueueItem, provider: CliProvider,
-    meta: ChatMeta, opts: Parameters<CliProvider['send']>[0],
+    meta: ChatMeta, opts: Parameters<CliProvider['send']>[0], startCheckpoint?: string,
   ): Promise<void> {
     const s = this.slot(p, t);
     const started = Date.now();
@@ -390,6 +390,9 @@ export class ChatRunner extends EventEmitter {
       const parsed = parseAsk(result ?? s.partial);
       asks.push(...parsed.asks);
       if (!outcome.ok && !outcome.stopped) error = 'cli_failed';
+      const turn = startCheckpoint
+        ? await this.deps.worktree.finishTurn(p, t, startCheckpoint).catch(err => { log.warn('回合結束檢查點失敗', { project: p, task: t, err: String(err) }); return undefined; })
+        : undefined;
       const row: ChatRow = {
         at: new Date().toISOString(), role: 'assistant', ai: item.ai,
         model: item.model ?? '', effort: item.effort ?? '', text: parsed.text,
@@ -397,6 +400,7 @@ export class ChatRunner extends EventEmitter {
         ...(error ? { error } : {}), ...(outcome.stopped ? { stopped: true } : {}),
         ...(asks.length ? { asks } : {}),
         ...(usage ? { usage } : {}),
+        ...(turn ? { after: turn.after, ...(turn.changes ? { changes: turn.changes } : {}) } : {}),
       };
       await this.deps.store.append(p, t, row);
       persisted = true;
@@ -468,6 +472,16 @@ export class ChatRunner extends EventEmitter {
       this.deps.onChanged(p, t);
       return stopped;
     });
+  }
+
+  /** 單輪的變更：該輪使用者訊息的輪前檢查點 → 該輪回覆結束時的檢查點。 */
+  async turnDiff(p: string, t: string, request: string): Promise<{ diff: string; truncated: boolean }> {
+    await this.deps.tasks.get(p, t);
+    const rows = await this.deps.store.readLog(p, t);
+    const start = rows.find(r => r.role === 'user' && r.request === request);
+    const end = rows.find(r => r.role === 'assistant' && r.request === request);
+    if (start?.role !== 'user' || end?.role !== 'assistant' || !start.checkpoint || !end.after) throw new AppError('not_found', 'checkpoint_missing');
+    return this.deps.worktree.rangeDiff(p, t, start.checkpoint, end.after);
   }
 
   /** 把工作副本還原到某則指示開始前，並讓 AI 重新開始（舊 session 的記憶已不符實際檔案）。 */

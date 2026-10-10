@@ -7,6 +7,7 @@ export const zhTW = {
   'verify.truncated': '輸出過長，只顯示最後一段。',
   'chat.copy': '複製訊息', 'chat.retry': '重試', 'chat.export': '匯出 Markdown',
   'chat.rollback': '還原到此之前', 'chat.rollbackConfirm': '工作副本會回到這則指示開始之前，這則指示及之後的檔案變更都會丟棄（對話紀錄保留）。確定還原？', 'chat.rollbackDone': '已還原工作副本',
+  'chat.changes': '本輪變更 {files} 檔 +{added} −{removed}',
   'chat.turnUsage': '輸入 {input} · 輸出 {output}', 'chat.cachedUsage': ' · 快取 {cached}',
   'chat.usageHint': '這些 token 用量由 CLI 回報。',
   'chat.queuePaused': '隊列已暫停：第一筆指示失敗，後續指示會等待，直到移除失敗項目或手動開始。',

@@ -60,6 +60,7 @@ export function registerChatRoutes(router: Router, app: App): void {
     await app.runner.rollback(reqString(body, 'project', 100), reqString(body, 'task', 100), reqString(body, 'request', 100));
     return { ok: true };
   });
+  router.get('/api/chat/turn-diff', async ({ query }) => app.runner.turnDiff(reqString(query, 'project', 100), reqString(query, 'task', 100), reqString(query, 'request', 100)));
   router.post('/api/start', async ({ body, ip }): Promise<StartResult> => {
     if (!app.sendLimiter.take(ip)) throw new AppError('too_many_requests');
     const p = reqString(body, 'project', 100); const project = await app.projects.get(p);

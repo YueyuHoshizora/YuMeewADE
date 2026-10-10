@@ -8,6 +8,7 @@ export const de: Record<MessageKey, string> = {
   'verify.truncated': 'Ausgabe zu lang; nur das Ende wird angezeigt.',
   'chat.copy': 'Nachricht kopieren', 'chat.retry': 'Erneut versuchen', 'chat.export': 'Markdown exportieren',
   'chat.rollback': 'Auf Stand davor zurücksetzen', 'chat.rollbackConfirm': 'Die Arbeitskopie kehrt in den Zustand vor dieser Anweisung zurück; Dateiänderungen ab hier werden verworfen (der Chat bleibt erhalten). Zurücksetzen?', 'chat.rollbackDone': 'Arbeitskopie zurückgesetzt',
+  'chat.changes': 'Diese Runde: {files} Dateien +{added} −{removed}',
   'chat.turnUsage': 'Eingabe {input} · Ausgabe {output}', 'chat.cachedUsage': ' · Cache {cached}',
   'chat.usageHint': 'Diese Tokenzahlen werden von der CLI gemeldet.',
   'chat.queuePaused': 'Warteschlange pausiert: Der erste Eintrag ist fehlgeschlagen. Weitere warten, bis er entfernt oder manuell gestartet wird.',

@@ -8,6 +8,7 @@ export const zhCN: Record<MessageKey, string> = {
   'verify.truncated': '输出过长，只显示最后一段。',
   'chat.copy': '复制消息', 'chat.retry': '重试', 'chat.export': '导出 Markdown',
   'chat.rollback': '还原到此之前', 'chat.rollbackConfirm': '工作副本会回到这条指示开始之前，这条指示及之后的文件变更都会丢弃（对话记录保留）。确定还原？', 'chat.rollbackDone': '已还原工作副本',
+  'chat.changes': '本轮变更 {files} 个文件 +{added} −{removed}',
   'chat.turnUsage': '输入 {input} · 输出 {output}', 'chat.cachedUsage': ' · 缓存 {cached}',
   'chat.usageHint': '这些 token 用量由 CLI 报告。',
   'chat.queuePaused': '队列已暂停：第一条指令失败，后续指令会等待，直到移除失败项或手动开始。',

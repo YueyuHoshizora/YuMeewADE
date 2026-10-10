@@ -229,3 +229,30 @@ test('restore returns the copy to a checkpoint and keeps local secrets', () => w
   await assert.rejects(wt.restore('P', task.id, 'f'.repeat(40)), (e: unknown) => e instanceof AppError && e.detail === 'checkpoint_missing');
   await assert.rejects(wt.restore('P', task.id, 'not-a-sha'), (e: unknown) => e instanceof AppError && e.detail === 'checkpoint_missing');
 }));
+
+test('finishTurn summarizes one turn and rangeDiff shows only that turn', () => withTmpWorkspace(async ws => {
+  const projects = new ProjectLedger(ws);
+  const tasks = new TaskLedger(ws);
+  await projects.create({ name: 'P' });
+  const task = await tasks.create('P', { title: '單輪' });
+  const wt = new WorktreeService({ ws, projects, tasks, diffBytes: 100_000 });
+  const dir = await wt.prepare('P', task.id);
+  const start1 = (await wt.checkpoint('P', task.id))!;
+  await fs.writeFile(path.join(dir, 'one.txt'), 'a\nb\n');
+  const turn1 = (await wt.finishTurn('P', task.id, start1))!;
+  assert.deepEqual(turn1.changes, { files: 1, added: 2, removed: 0 });
+  const start2 = (await wt.checkpoint('P', task.id))!;
+  assert.equal(start2, turn1.after, 'next turn starts exactly where the last ended');
+  const idle = (await wt.finishTurn('P', task.id, start2))!;
+  assert.equal(idle.changes, undefined);
+  await fs.writeFile(path.join(dir, 'one.txt'), 'a\n');
+  await fs.writeFile(path.join(dir, 'two.txt'), 'x\n');
+  const turn2 = (await wt.finishTurn('P', task.id, start2))!;
+  assert.deepEqual(turn2.changes, { files: 2, added: 1, removed: 1 });
+  const only2 = await wt.rangeDiff('P', task.id, start2, turn2.after);
+  assert.match(only2.diff, /two\.txt/);
+  assert.doesNotMatch(only2.diff, /\+b/);
+  assert.equal(only2.truncated, false);
+  await assert.rejects(wt.rangeDiff('P', task.id, start2, 'e'.repeat(40)), (e: unknown) => e instanceof AppError && e.detail === 'checkpoint_missing');
+  await assert.rejects(wt.finishTurn('P', task.id, '--bad'), (e: unknown) => e instanceof AppError && e.detail === 'checkpoint_missing');
+}));

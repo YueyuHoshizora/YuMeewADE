@@ -423,6 +423,10 @@ export function taskView(
         el('span', '', `${modelLabel(context.state, entry.ai, entry.model)} · ${effortLabel(entry.effort)}`),
         el('time', '', localTime(entry.at)),
         el('span', '', t('chat.duration', { seconds: Math.round(entry.ms / 1000) })));
+      if (entry.changes) {
+        const { files, added, removed } = entry.changes;
+        metadata.append(button(t('chat.changes', { files, added, removed }), () => run(() => openDiff('', () => request(query('/api/chat/turn-diff', { project: project.id, task: task.id, request: entry.request })))), 'turn-changes'));
+      }
       if (entry.usage) {
         const format = new Intl.NumberFormat(getLocale(), { notation: 'compact', maximumFractionDigits: 1 });
         const usage = el('span', 'turn-usage', t('chat.turnUsage', { input: format.format(entry.usage.input), output: format.format(entry.usage.output) })
@@ -539,8 +543,8 @@ export function taskView(
   }
   let previewSerial = 0;
   let mergeLeftover: string[] = [];
-  async function openDiff(focusPath = ''): Promise<void> {
-    const diff = await api.diff(project.id, task.id);
+  async function openDiff(focusPath = '', load: () => Promise<{ diff: string; truncated: boolean }> = () => api.diff(project.id, task.id)): Promise<void> {
+    const diff = await load();
     const viewer = el('div', 'diff-viewer');
     if (diff.truncated) viewer.append(el('p', 'warning diff-warning', t('copy.truncated')));
     const files = parseDiff(diff.diff);

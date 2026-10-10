@@ -8,6 +8,7 @@ export const ja: Record<MessageKey, string> = {
   'verify.truncated': '出力が長いため末尾のみ表示します。',
   'chat.copy': 'メッセージをコピー', 'chat.retry': '再試行', 'chat.export': 'Markdown をエクスポート',
   'chat.rollback': 'この指示の前に戻す', 'chat.rollbackConfirm': '作業コピーをこの指示の開始前に戻します。この指示以降のファイル変更は破棄されます（会話は残ります）。戻しますか？', 'chat.rollbackDone': '作業コピーを戻しました',
+  'chat.changes': 'このターンの変更 {files} ファイル +{added} −{removed}',
   'chat.turnUsage': '入力 {input} · 出力 {output}', 'chat.cachedUsage': ' · キャッシュ {cached}',
   'chat.usageHint': 'これらのトークン数は CLI が報告した値です。',
   'chat.queuePaused': 'キューは一時停止中：先頭の指示が失敗しました。削除するか手動で開始するまで後続の指示は待機します。',
