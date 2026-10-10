@@ -1,6 +1,6 @@
 // Claude stream-json adapter；工具與問題獨立於回答文字。
 import type { CliCommandConfig } from '../shared/config.ts';
-import type { Ask } from '../shared/types.ts';
+import type { Ask, QuotaWindow } from '../shared/types.ts';
 import { findExecutable, minimalEnv, runLineProcess } from './process.ts';
 import type { CliEvent, CliProvider, CliRun, SendOptions } from './provider.ts';
 
@@ -13,10 +13,39 @@ export function claudeArgs(cfg: CliCommandConfig, opts: SendOptions): string[] {
   return args;
 }
 
-export function createClaudeParser(onEvent: (ev: CliEvent) => void): (obj: Record<string, unknown>) => void {
+/** 速度樣本太短（少量 token 或極短時間）時數字只是雜訊，不回報。 */
+const MIN_SPEED_TOKENS = 10;
+const MIN_SPEED_MS = 250;
+
+/** `rate_limit_event.rate_limit_info` → 額度窗口；utilization 為 0–1、resetsAt 為秒。認不得的格式回 null。 */
+export function claudeQuota(info: unknown): { windows: QuotaWindow[]; limited: boolean } | null {
+  if (!info || typeof info !== 'object') return null;
+  const i = info as Record<string, unknown>;
+  const unified = i['unifiedWindows'];
+  // 新版 CLI 一次給所有窗口；舊版只給觸發中的那一個。
+  const entries: [string, unknown][] = unified && typeof unified === 'object'
+    ? Object.entries(unified)
+    : typeof i['rateLimitType'] === 'string' ? [[i['rateLimitType'], i]] : [];
+  const windows: QuotaWindow[] = [];
+  for (const [key, value] of entries) {
+    if (!value || typeof value !== 'object' || !('utilization' in value) || typeof value.utilization !== 'number') continue;
+    const resets = 'resetsAt' in value && typeof value.resetsAt === 'number' && value.resetsAt > 0 ? value.resetsAt : null;
+    windows.push({
+      label: key.replace(/^five_hour/u, '5h').replace(/^seven_day/u, '7d').replaceAll('_', ' '),
+      usedPercent: Math.round(Math.min(1, Math.max(0, value.utilization)) * 1000) / 10,
+      resetsAt: resets === null ? null : new Date(resets * 1000).toISOString(),
+    });
+  }
+  const limited = i['status'] === 'rejected';
+  return windows.length || limited ? { windows, limited } : null;
+}
+
+export function createClaudeParser(onEvent: (ev: CliEvent) => void, now: () => number = Date.now): (obj: Record<string, unknown>) => void {
   let streamed = '';
   let sawStream = false;
   let sessionSent = false;
+  /** 本則訊息第一個內容增量的時間；量的是生成速度，不含排隊與首字延遲。 */
+  let generating: number | null = null;
   const tools = new Set<string>();
   const handleTool = (block: Record<string, unknown>) => {
     const name = block['name'];
@@ -60,7 +89,18 @@ export function createClaudeParser(onEvent: (ev: CliEvent) => void): (obj: Recor
         const ev = obj['event'];
         if (!ev || typeof ev !== 'object') return;
         const e = ev as Record<string, unknown>;
-        if (e['type'] === 'message_start') sawStream = false;
+        if (e['type'] === 'message_start') {
+          sawStream = false;
+          generating = null;
+        }
+        if (e['type'] === 'content_block_delta') generating ??= now();
+        if (e['type'] === 'message_delta' && generating !== null) {
+          const usage = e['usage'];
+          const tokens = usage && typeof usage === 'object' && 'output_tokens' in usage && typeof usage.output_tokens === 'number' ? usage.output_tokens : 0;
+          const ms = now() - generating;
+          generating = null;
+          if (tokens >= MIN_SPEED_TOKENS && ms >= MIN_SPEED_MS) onEvent({ type: 'speed', tokensPerSecond: Math.round(tokens / (ms / 1000)) });
+        }
         if (e['type'] === 'content_block_delta') {
           const delta = e['delta'];
           if (delta && typeof delta === 'object' && 'type' in delta && delta.type === 'text_delta' && 'text' in delta && typeof delta.text === 'string') {
@@ -82,6 +122,11 @@ export function createClaudeParser(onEvent: (ev: CliEvent) => void): (obj: Recor
             onEvent({ type: 'delta', text: block.text });
           }
         }
+        return;
+      }
+      case 'rate_limit_event': {
+        const quota = claudeQuota(obj['rate_limit_info']);
+        if (quota) onEvent({ type: 'quota', ...quota, at: new Date(now()).toISOString() });
         return;
       }
       case 'result': {

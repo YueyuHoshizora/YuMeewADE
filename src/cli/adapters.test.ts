@@ -2,8 +2,8 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import { DEFAULT_CONFIG } from '../shared/config.ts';
-import { ClaudeCliProvider, claudeArgs, createClaudeParser } from './claude.ts';
-import { CodexCliProvider, codexArgs, createCodexParser } from './codex.ts';
+import { ClaudeCliProvider, claudeArgs, claudeQuota, createClaudeParser } from './claude.ts';
+import { CodexCliProvider, codexArgs, codexQuota, createCodexParser, readCodexQuota } from './codex.ts';
 import { captureCommand, redactArgs } from './process.ts';
 import { MockCliProvider } from './mock.ts';
 import { createProviders } from './providers.ts';
@@ -230,5 +230,87 @@ test('CLI 零退出但沒有最終結果時失敗，保留部分文字', async (
     }
   } finally {
     await fs.rm(dir, { recursive: true, force: true });
+  }
+});
+
+test('claude：rate_limit_event 轉成額度窗口，舊版單一窗口與被拒狀態也認得', () => {
+  // 2026-10-10 claude 2.1.296 實測格式。
+  const events = collect(on => createClaudeParser(on, () => Date.parse('2026-10-10T17:00:00Z')), [{
+    type: 'rate_limit_event', session_id: SID,
+    rate_limit_info: { status: 'allowed', resetsAt: 1791654000, rateLimitType: 'five_hour', unifiedWindows: { five_hour: { utilization: 0.21, resetsAt: 1791654000 }, seven_day: { utilization: 0.034, resetsAt: 1792216800 } } },
+  }]);
+  assert.deepEqual(events.filter(ev => ev.type === 'quota'), [{
+    type: 'quota', limited: false, at: '2026-10-10T17:00:00.000Z',
+    windows: [
+      { label: '5h', usedPercent: 21, resetsAt: new Date(1791654000 * 1000).toISOString() },
+      { label: '7d', usedPercent: 3.4, resetsAt: new Date(1792216800 * 1000).toISOString() },
+    ],
+  }]);
+  assert.deepEqual(claudeQuota({ status: 'rejected', rateLimitType: 'seven_day_opus', utilization: 1.2 }), {
+    limited: true, windows: [{ label: '7d opus', usedPercent: 100, resetsAt: null }],
+  });
+  assert.equal(claudeQuota({ status: 'allowed' }), null);
+});
+
+test('claude：速度從第一個內容增量量到 message_delta，太短的樣本不回報', () => {
+  let clock = 0;
+  const message = (tokens: number, start: number, firstDelta: number, end: number) => [
+    () => { clock = start; return { type: 'stream_event', event: { type: 'message_start', message: { usage: { output_tokens: 1 } } } }; },
+    () => { clock = firstDelta; return { type: 'stream_event', event: { type: 'content_block_delta', delta: { type: 'thinking_delta', thinking: '…' } } }; },
+    () => { clock = end; return { type: 'stream_event', event: { type: 'message_delta', usage: { output_tokens: tokens } } }; },
+  ];
+  const events: CliEvent[] = [];
+  const feed = createClaudeParser(ev => events.push(ev), () => clock);
+  // 首字前的 5 秒排隊不算進生成時間；4 個 token 的訊息不足以量速度。
+  for (const line of [...message(300, 0, 5000, 8000), ...message(4, 9000, 9100, 9400)]) feed(line());
+  assert.deepEqual(events.filter(ev => ev.type === 'speed'), [{ type: 'speed', tokensPerSecond: 100 }]);
+});
+
+test('codex：rate_limits 依窗口長度命名、回報已達上限；速度為整回合平均', () => {
+  const at = '2026-10-10T16:57:59.661Z';
+  assert.deepEqual(codexQuota({
+    primary: { used_percent: 1, window_minutes: 300, resets_at: 1791660799 },
+    secondary: { used_percent: 75, window_minutes: 10080, resets_at: 1791948855 },
+    rate_limit_reached_type: null,
+  }, at), {
+    type: 'quota', limited: false, at,
+    windows: [
+      { label: '5h', usedPercent: 1, resetsAt: new Date(1791660799 * 1000).toISOString() },
+      { label: '7d', usedPercent: 75, resetsAt: new Date(1791948855 * 1000).toISOString() },
+    ],
+  });
+  assert.equal(codexQuota({ primary: { used_percent: 100, window_minutes: 90 }, rate_limit_reached_type: 'primary' }, at)?.limited, true);
+  assert.equal(codexQuota({ primary: null, secondary: null, rate_limit_reached_type: null }, at), null);
+  let clock = 0;
+  const events: CliEvent[] = [];
+  const feed = createCodexParser(ev => events.push(ev), () => clock);
+  feed({ type: 'turn.started' });
+  clock = 4000;
+  feed({ type: 'turn.completed', usage: { output_tokens: 200 } });
+  assert.deepEqual(events, [{ type: 'speed', tokensPerSecond: 50 }, { type: 'result', text: '' }]);
+});
+
+test('codex：從 rollout 讀額度，指定會話時往舊日期找，最新額度跳過沒有 rate_limits 的事件', async () => {
+  const home = await fs.mkdtemp(path.join(os.tmpdir(), 'codex-home-'));
+  const tokenCount = (timestamp: string, used: number | null) => JSON.stringify({
+    timestamp, type: 'event_msg',
+    payload: { type: 'token_count', rate_limits: used === null ? null : { primary: { used_percent: used, window_minutes: 300 }, rate_limit_reached_type: null } },
+  });
+  const put = async (day: string, name: string, lines: string[]) => {
+    await fs.mkdir(path.join(home, 'sessions', day), { recursive: true });
+    await fs.writeFile(path.join(home, 'sessions', day, name), lines.join('\n') + '\n');
+  };
+  try {
+    assert.equal(await readCodexQuota(home), null);
+    await put('2026/09/30', `rollout-2026-09-30T08-00-00-${TID}.jsonl`, [tokenCount('2026-09-30T08:00:00Z', 10), tokenCount('2026-10-11T09:00:00Z', 40)]);
+    await put('2026/10/11', 'rollout-2026-10-11T01-00-00-other.jsonl', [tokenCount('2026-10-11T01:00:00Z', 20), tokenCount('2026-10-11T01:00:05Z', null), '{"broken']);
+    // 續聊的舊會話追加在 9/30 的檔；最新日期的檔找不到這個 thread 不能誤用。
+    assert.equal((await readCodexQuota(home, TID))?.windows[0]?.usedPercent, 40);
+    const latest = await readCodexQuota(home);
+    assert.equal(latest?.at, '2026-10-11T01:00:00Z');
+    assert.equal(latest?.windows[0]?.usedPercent, 20);
+    assert.equal(await readCodexQuota(home, 'missing-thread'), null);
+  } finally {
+    await fs.rm(home, { recursive: true, force: true });
   }
 });

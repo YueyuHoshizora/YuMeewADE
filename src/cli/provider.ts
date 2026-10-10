@@ -1,6 +1,6 @@
 // CLI 對話契約；核心只認這個介面，工具摘要不混入回答文字。
 
-import type { Ask } from '../shared/types.ts';
+import type { Ask, QuotaWindow } from '../shared/types.ts';
 
 export interface SendOptions {
   /** 完整提示（含前言、交接包、使用者指示）。 */
@@ -25,6 +25,10 @@ export type CliEvent =
   | { type: 'result'; text: string }
   | { type: 'tool'; text: string }
   | { type: 'asks'; asks: Ask[] }
+  /** 帳號額度（CLI 回報；at＝資料時間 ISO）。 */
+  | { type: 'quota'; windows: QuotaWindow[]; limited: boolean; at: string }
+  /** 量到的輸出速度（tokens／秒）。 */
+  | { type: 'speed'; tokensPerSecond: number }
   /** 內部原因，只進日誌，不對外。 */
   | { type: 'error'; reason: string };
 
@@ -47,4 +51,6 @@ export interface CliProvider {
   readonly dangerous: boolean;
   available(): Promise<boolean>;
   send(opts: SendOptions, onEvent: (ev: CliEvent) => void): CliRun;
+  /** 不送指示、從 CLI 本機紀錄讀最近一次額度；沒有可讀紀錄回 null。 */
+  quota?(): Promise<Extract<CliEvent, { type: 'quota' }> | null>;
 }

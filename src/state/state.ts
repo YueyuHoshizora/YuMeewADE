@@ -19,7 +19,7 @@ async function hasChat(file: string): Promise<boolean> {
     throw error;
   }
 }
-export type StateSnapshot = Omit<AppState, 'running' | 'unread'>;
+export type StateSnapshot = Omit<AppState, 'running' | 'unread' | 'usage'>;
 
 
 export async function buildState(app: App): Promise<StateSnapshot> {

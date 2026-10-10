@@ -185,6 +185,29 @@ export interface AiInfo {
   fullAccess: boolean;
 }
 
+/** 帳號額度的一個時間窗（例：5 小時、7 天）。 */
+export interface QuotaWindow {
+  /** 顯示用短標籤：`5h`、`7d`；CLI 給未知的窗口時為原始 key。 */
+  label: string;
+  /** 已用百分比 0–100。 */
+  usedPercent: number;
+  /** 重置時間（ISO）；CLI 沒提供為 null。 */
+  resetsAt: string | null;
+}
+
+/** 各 AI 帳號的額度與最近輸出速度；只在記憶體，核心重啟後等下一次回報。 */
+export interface AiUsage {
+  ai: string;
+  windows: QuotaWindow[];
+  /** CLI 回報目前已達上限。 */
+  limited: boolean;
+  /** 額度資料取得時間（ISO）；尚無資料為 null。 */
+  quotaAt: string | null;
+  /** 最近一次量到的輸出 tokens／秒；尚無資料為 null。 */
+  tokensPerSecond: number | null;
+  speedAt: string | null;
+}
+
 export interface Settings {
   /** 新作業／快速開始的預設選擇。 */
   initial: AiPick;
@@ -384,8 +407,11 @@ export type ChatEvent =
   | { event: 'queue'; data: QueueItem[] }
   | { event: 'idle'; data: { request: string } };
 
-/** 全域事件流（`GET /api/events`）：任何會影響 /api/state 的變更。客戶端收到 changed 就重抓 /api/state。 */
-export type GlobalEvent = { event: 'ready'; data: { version: string } } | { event: 'changed'; data: { project?: string; task?: string } };
+/** 全域事件流（`GET /api/events`）：changed＝影響 /api/state 的變更，客戶端重抓；usage＝額度／速度即時更新（完整清單）。 */
+export type GlobalEvent =
+  | { event: 'ready'; data: { version: string } }
+  | { event: 'changed'; data: { project?: string; task?: string } }
+  | { event: 'usage'; data: AiUsage[] };
 
 // ---- 工作副本／合併 ----
 
@@ -438,6 +464,7 @@ export interface AppState {
   running: RunningInfo[];
   unread: { project: string; task: string }[];
   ais: AiInfo[];
+  usage: AiUsage[];
   settings: Settings;
   roles: Roles;
   limits: Limits;

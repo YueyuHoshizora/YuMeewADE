@@ -2,6 +2,7 @@
 
 import { createRequire } from 'node:module';
 import { AiCatalog } from '../ai/catalog.ts';
+import { UsageBoard } from '../ai/usage.ts';
 import { ChatRunner } from '../chat/runner.ts';
 import { ChatStore } from '../chat/store.ts';
 import type { CliProvider } from '../cli/provider.ts';
@@ -50,6 +51,8 @@ export class App {
   readonly ai: AiCatalog;
   readonly store: ChatStore;
   readonly runner: ChatRunner;
+  readonly usage: UsageBoard;
+  private readonly providers: Record<string, CliProvider>;
   readonly sse: SseHub;
   readonly sendLimiter: RateLimiter;
   readonly relocate: (root: string) => Promise<string>;
@@ -78,6 +81,8 @@ export class App {
     this.ownsSse = !options.sse;
     this.sse = options.sse ?? new SseHub(config.limits.sseConnections, config.limits.heartbeatSeconds * 1000);
     this.sendLimiter = new RateLimiter(config.limits.sendPerMinute);
+    this.usage = new UsageBoard(usage => this.sse.publish(GLOBAL, { event: 'usage', data: usage }));
+    this.providers = options.providers ?? createProviders(config);
     this.runner = new ChatRunner({
       ws: this.ws,
       store: this.store,
@@ -88,11 +93,12 @@ export class App {
       settings: this.settings,
       oplog: this.oplog,
       roles: () => this.roles(),
-      providers: options.providers ?? createProviders(config),
+      providers: this.providers,
       limits: config.limits,
       publish: (project, task, ev) => this.sse.publish(taskKey(project, task), ev),
       watching: (project, task) => this.sse.watching(taskKey(project, task)),
       onChanged: (project, task) => this.changed(project, task),
+      onUsage: (ai, ev) => this.usage.record(ai, ev),
     });
   }
 
@@ -101,6 +107,8 @@ export class App {
     await this.store.recoverInterrupted();
     this.watcher = new LedgerWatcher(this.ws, (project, task) => this.changed(project, task));
     await this.watcher.start();
+    // 讀 CLI 本機紀錄不擋啟動；讀完會以 usage 事件推給客戶端。
+    void this.usage.load(this.providers);
   }
 
   /** 每次讀檔：roles.yaml 可手改，不快取。 */
@@ -127,7 +135,7 @@ export class App {
         if (this.stateFlight === flight) this.stateFlight = null;
       }
     }
-    return { ...value, running: this.runner.running(), unread: this.runner.unread() };
+    return { ...value, running: this.runner.running(), unread: this.runner.unread(), usage: this.usage.list() };
   }
 
   /** 通知所有客戶端重抓 /api/state；100ms 內的多次變更合併成一次。 */

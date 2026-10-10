@@ -27,7 +27,7 @@ async function setup(ws: Workspace, options: MockOptions = {}) {
   const store = new ChatStore(ws); const calls: SendOptions[] = []; const events: ChatEvent[] = []; let watching = false;
   const mock = new MockCliProvider({ chunkMs: 1, ...options, text: opts => { calls.push(opts); return typeof options.text === 'function' ? options.text(opts) : options.text ?? 'ok'; } });
   const completion = new CompletionStore(ws);
-  const runner = new ChatRunner({ ws, store, projects, tasks, settings, completion, oplog: new OpLog(ws), roles: () => loadRoles(ws.rolesFile), providers: { mock, claude: mock, codex: mock }, limits: { concurrentRuns: 2, queueLength: 3, handoffChars: 60000, imagesPerSend: 10 }, worktree: { prepare: async () => ws.projectDir('P') } as unknown as WorktreeService, publish: (_p, _t, ev) => events.push(ev), watching: () => watching, onChanged: () => {} });
+  const runner = new ChatRunner({ ws, store, projects, tasks, settings, completion, oplog: new OpLog(ws), roles: () => loadRoles(ws.rolesFile), providers: { mock, claude: mock, codex: mock }, limits: { concurrentRuns: 2, queueLength: 3, handoffChars: 60000, imagesPerSend: 10 }, worktree: { prepare: async () => ws.projectDir('P') } as unknown as WorktreeService, publish: (_p, _t, ev) => events.push(ev), watching: () => watching, onChanged: () => {}, onUsage: () => {} });
   const send = (text: string, extra: Partial<Parameters<ChatRunner['send']>[0]> = {}) => runner.send({ project: 'P', task: task.id, text, ...extra });
   return { runner, store, tasks, task, send, calls, events, completion, watch: () => { watching = true; } };
 }
