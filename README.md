@@ -96,8 +96,8 @@ HTTP JSON 加 SSE，桌面版與網頁版完全相同。型別定義在 [`src/sh
 
 | 方法與路徑 | 用途 |
 |---|---|
-| `GET /api/state` | 整體狀態：專案（含作業與計算欄位）、排序、執行中、未讀、AI 與模型、設定、角色、上限 |
-| `GET /api/events` | SSE（全域）：`changed` 時重抓 `/api/state` |
+| `GET /api/state` | 整體狀態：專案（含作業與計算欄位）、排序、執行中、未讀、AI 與模型、額度與輸出速度、設定、角色、上限 |
+| `GET /api/events` | SSE（全域）：`changed` 時重抓 `/api/state`；`usage` 帶最新額度與輸出速度 |
 | `GET /api/chat/stream?project=&task=` | SSE（單一作業）：`snapshot`（最後 200 列與 `start`）／`busy`／`delta`／`row`／`queue`／`idle` |
 | `GET /api/chat/history?project=&task=&before=` | 補讀 `before` 之前的 200 列對話 |
 | `GET /api/search?q=` | 跨專案搜尋作業標題與對話內容（最多 50 筆） |

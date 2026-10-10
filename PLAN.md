@@ -39,7 +39,7 @@
 - 帳號系統、多使用者、權限管理。
 - 套件發布（npm／JSR）：只開原始碼倉庫，不發套件。
 - 內嵌終端機（pty）畫面：第一版僅無頭串流對話。
-- AI 帳號切換、用量監控、額度（上限）管理。
+- AI 帳號切換、額度（上限）管理。~~用量監控~~ → **唯讀顯示改為範圍內**（使用者裁示 2026-10-11，見附錄 B.6）：底部列顯示 CLI 回報的額度與輸出速度，不做切換或管理。
 - 自動更新機制、程式碼簽名與公證、各平台商店上架（見假設 7）。
 - ~~多語系（第一版僅繁體中文）~~ → **改為範圍內**（使用者裁示 2026-10-10，見附錄 A.8）：UI 支援繁體中文／簡體中文／英文／日文／德文／法文／義大利文。
 - 即時通訊（Discord 等）整合、MCP 伺服器管理、圖片／影片生成流程。
@@ -445,7 +445,7 @@ electron 44.7.0、vite 8.3.4、electron-builder 26.15.3、typescript 7.0.2、@ty
 - 模型清單讀 CLI 自己的快取（codex `models_cache.json`、claude `cache/model-catalog/`），每個模型的思考強度選項也從快取取得。
 
 ### B.4 協定
-以 `src/shared/types.ts` 與 `README.md`「協定摘要」為準。全域 SSE 只發 `changed`，客戶端重抓 `GET /api/state`；作業 SSE 先送 `snapshot`（只含最後 `HISTORY_PAGE`＝200 列與 `start`），再送 `busy`／`delta`／`row`／`queue`／`idle`；較早的列以 `GET /api/chat/history?before=` 分頁補讀。跨專案搜尋 `GET /api/search?q=`（作業標題＋user／assistant 文字，上限 50 筆）。舊端點（`/api/bootstrap`、`/api/tasks`、`/api/worktree/*`、`/api/chat/queue/*`）已移除。
+以 `src/shared/types.ts` 與 `README.md`「協定摘要」為準。全域 SSE 發 `changed`（客戶端重抓 `GET /api/state`）與 `usage`（額度／速度完整清單，見 B.6）；作業 SSE 先送 `snapshot`（只含最後 `HISTORY_PAGE`＝200 列與 `start`），再送 `busy`／`delta`／`row`／`queue`／`idle`；較早的列以 `GET /api/chat/history?before=` 分頁補讀。跨專案搜尋 `GET /api/search?q=`（作業標題＋user／assistant 文字，上限 50 筆）。舊端點（`/api/bootstrap`、`/api/tasks`、`/api/worktree/*`、`/api/chat/queue/*`）已移除。
 
 ### B.5 第三輪修正（自我檢討後）
 - 正確性：A.9「續聊失敗處理」補上實作（先前每輪都保存 session 並推進 `seen`）；adapter 在 exit 0 但沒有收到 claude `result`／codex `turn.completed` 時判為失敗（3.3 fail-closed）；`meta.running` 只在啟動前寫檔都成功後才保留；未閉合的 `[[question]]` 只解析問題與連續選項，其後正文保留；上傳圖片比對檔頭。
@@ -453,3 +453,8 @@ electron 44.7.0、vite 8.3.4、electron-builder 26.15.3、typescript 7.0.2、@ty
 - 效能：`/api/state` 快取（`changed()`／監看事件失效，另 5 秒上限；`running`／`unread` 每次即時計算）；JSONL 依大小與 mtime 快取，只追加時只讀尾端；串流 Markdown 只重畫未完成的最後區塊；側欄篩選用節點索引。
 - UI：淺色外觀（預設跟隨系統，`localStorage` 的 `yumeewade.theme` 可覆寫）；對話區 `aria-live=off`，完成／提問改由獨立狀態區通知。
 - 維持原設計：合併前自動儲存本體（A.6，預覽已提示 `mainDirty` 且合併前需確認）；自動儲存只排除「新出現的」機密檔（AGENTS §四），已追蹤的機密檔若也排除，合併後移除副本時會遺失其修改。
+
+### B.6 額度與輸出速度（底部列）
+- 資料來源只取 CLI 自己回報的值，不讀憑證、不呼叫帳號 API：Claude 為 stream-json 的 `rate_limit_event`（`unifiedWindows` 的 5 小時／7 天使用率）；Codex `exec --json` 不輸出額度，回合結束後讀 `$CODEX_HOME/sessions/YYYY/MM/DD/rollout-*-{thread}.jsonl` 尾端最後一筆 `rate_limits`，核心啟動時也從最新的 rollout 補一次。
+- 速度：Claude 每則訊息從第一個內容增量到 `message_delta` 的 `output_tokens`／秒（不含排隊與首字延遲）；Codex 只在 `turn.completed` 給用量，為整回合平均，含工具執行時間。少於 10 tokens 或 250ms 的樣本不回報。
+- `src/ai/usage.ts` 的 `UsageBoard` 只存記憶體；額度依資料時間只前進不倒退。`GET /api/state` 帶 `usage`，變更時全域 SSE 推 `usage`。重置時間已過的窗口在 UI 顯示為「—」，等下一次回報。
