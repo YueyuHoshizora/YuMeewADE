@@ -74,7 +74,8 @@ export class LedgerWatcher {
       this.schedule();
       return;
     }
-    const suffix = target.kind === 'tasks' ? /\.md$/u : /\.(?:queue\.json|jsonl|json)$/u;
+    // .jsonl 每個工具事件都會追加；/api/state 只用它判斷「有沒有對話」，那由 runner 自己通知，不必每次追加都廣播。
+    const suffix = target.kind === 'tasks' ? /\.md$/u : /\.(?:queue\.json|json)$/u;
     if (!suffix.test(filename)) return;
     const task = filename.replace(suffix, '');
     if (isValidTaskId(task)) this.changed(target.project, task);
