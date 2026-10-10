@@ -10,7 +10,8 @@ async function main(): Promise<void> {
   const host = new CoreHost(config, { logs: true });
   await host.init();
   const { server } = host;
-  await listen(server, config.server.host, config.server.port);
+  try { await listen(server, config.server.host, config.server.port); }
+  catch (err) { await host.shutdown(); throw err; }
   const url = `http://${hostAuthority(config.server.host, config.server.port)}`;
   log.info('YuMeewADE 已啟動', { url, root: host.app.ws.root, config: config.source ?? '(預設)', version: host.app.version });
   process.stdout.write(`YuMeewADE ${host.app.version} ${url}\n`);
@@ -19,14 +20,18 @@ async function main(): Promise<void> {
     if (closing) return;
     closing = true;
     log.info('收到結束訊號，停止 AI 並保存紀錄');
-    const deadline = setTimeout(() => process.exit(0), 6000);
+    const deadline = setTimeout(() => {
+      log.warn('核心未在關閉期限內完成保存，強制結束');
+      process.exit(1);
+    }, 6000);
     void (async () => {
+      let exitCode = 0;
       try {
         await host.shutdown();
         await new Promise<void>(resolve => { server.close(() => resolve()); server.closeAllConnections(); });
         await log.flush();
-      } catch (err) { log.error('核心關閉失敗', err); }
-      finally { clearTimeout(deadline); process.exit(0); }
+      } catch (err) { exitCode = 1; log.error('核心關閉失敗', err); }
+      finally { clearTimeout(deadline); process.exit(exitCode); }
     })();
   };
   process.on('SIGINT', shutdown);

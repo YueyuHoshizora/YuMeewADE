@@ -7,6 +7,7 @@ import { createHttpServer, type HttpCore } from '../http/server.ts';
 import { SseHub } from '../http/sse.ts';
 import { configWriteTarget, expandHome, saveWorkspaceRoot, type Config } from '../shared/config.ts';
 import { AppError } from '../shared/errors.ts';
+import { acquireWorkspaceLock } from '../shared/fsx.ts';
 import { log } from '../shared/log.ts';
 import { App, type AppOptions } from './app.ts';
 
@@ -23,6 +24,7 @@ export class CoreHost {
   private readonly options: HostOptions;
   private readonly sse: SseHub;
   private relocating = false;
+  private releaseLock: (() => Promise<void>) | undefined;
 
   constructor(config: Config, options: HostOptions = {}) {
     this.options = options;
@@ -37,8 +39,15 @@ export class CoreHost {
   }
 
   async init(): Promise<void> {
-    this.useLog(this.current);
-    await this.current.init();
+    this.releaseLock = await acquireWorkspaceLock(this.current.ws.root, this.current.config.server.port);
+    try {
+      this.useLog(this.current);
+      await this.current.init();
+    } catch (err) {
+      await this.releaseLock();
+      this.releaseLock = undefined;
+      throw err;
+    }
   }
 
   /**
@@ -57,18 +66,23 @@ export class CoreHost {
       const stat = await fs.stat(root).catch((err: NodeJS.ErrnoException) => { if (err.code === 'ENOENT') return null; throw err; });
       if (stat && !stat.isDirectory()) throw new AppError('bad_request', 'root_not_directory');
       const next = this.build({ ...old.config, workspace: { root } });
+      const releaseNext = await acquireWorkspaceLock(root, old.config.server.port);
       try {
         await next.init();
       } catch (cause) {
         next.close();
+        await releaseNext();
         throw new AppError('bad_request', 'root_unwritable', { cause });
       }
       try {
         await saveWorkspaceRoot(configWriteTarget(old.config), root);
       } catch (err) {
         next.close();
+        await releaseNext();
         throw err;
       }
+      const releaseOld = this.releaseLock;
+      this.releaseLock = releaseNext;
       this.current = next;
       this.http.mount(next);
       this.useLog(next);
@@ -76,7 +90,8 @@ export class CoreHost {
       await next.oplog.record({ action: 'workspace', from: old.ws.root });
       // 連線沿用，所有開著的視窗收到 changed 就會重抓新工作區的狀態
       next.changed();
-      await old.shutdown();
+      try { await old.shutdown(); }
+      finally { await releaseOld?.(); }
       return root;
     } finally {
       this.relocating = false;
@@ -85,13 +100,20 @@ export class CoreHost {
 
   async shutdown(): Promise<void> {
     try { await this.current.shutdown(); }
-    finally { this.sse.closeAll(); }
+    finally {
+      this.sse.closeAll();
+      await this.releaseLock?.();
+      this.releaseLock = undefined;
+    }
   }
 
   /** 不等 AI 停止，直接釋放計時器與連線（測試收尾用）。 */
   close(): void {
     this.current.close();
     this.sse.closeAll();
+    const release = this.releaseLock;
+    this.releaseLock = undefined;
+    void release?.().catch(err => log.error('工作區核心鎖釋放失敗', err));
   }
 
   private build(config: Config): App {

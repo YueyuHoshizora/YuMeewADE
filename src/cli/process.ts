@@ -56,7 +56,7 @@ export interface LineProcess {
 }
 
 /** POSIX 使用獨立行程群組；Windows 交給系統工具終止整棵樹。 */
-function signalTree(child: ChildProcess, signal: NodeJS.Signals): void {
+export function signalTree(child: ChildProcess, signal: NodeJS.Signals): void {
   if (!child.pid) return;
   if (process.platform === 'win32') {
     const killer = spawn('taskkill', ['/pid', String(child.pid), '/T', '/F'], { windowsHide: true, stdio: 'ignore' });
@@ -69,7 +69,7 @@ function signalTree(child: ChildProcess, signal: NodeJS.Signals): void {
   }
 }
 
-function terminateTree(child: ChildProcess, finish: () => void): () => void {
+export function terminateTree(child: ChildProcess, finish: () => void): () => void {
   signalTree(child, 'SIGTERM');
   const kill = setTimeout(() => signalTree(child, 'SIGKILL'), 3000);
   const bound = setTimeout(() => {

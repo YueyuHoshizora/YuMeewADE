@@ -7,7 +7,7 @@ import type { TaskLedger } from '../ledger/tasks.ts';
 import { CompletionStore } from '../ledger/completion.ts';
 import { OpLog } from '../ledger/oplog.ts';
 import { AppError } from '../shared/errors.ts';
-import { pathExists } from '../shared/fsx.ts';
+import { pathExists, withFileLocks } from '../shared/fsx.ts';
 import { log } from '../shared/log.ts';
 import type { MergePreview, MergeResult, Task } from '../shared/types.ts';
 import { branchExists, commitAll, ensureRepo, git, gitOk, isLocalSecret, isRepo } from './git.ts';
@@ -41,7 +41,14 @@ export class WorktreeService {
     if (record.workdir && await pathExists(record.workdir)) return true;
     return pathExists(this.ws.worktreeDir(project, task));
   }
+  private async mutate<T>(project: string, change: () => Promise<T>): Promise<T> {
+    const repo = await fs.realpath(await this.bodyPath(project));
+    return withFileLocks([repo], change);
+  }
   async prepare(project: string, task: string): Promise<string> {
+    return this.mutate(project, () => this.prepareLocked(project, task));
+  }
+  private async prepareLocked(project: string, task: string): Promise<string> {
     const record = await this.tasks.get(project, task);
     const repo = await this.bodyPath(project);
     if (record.workspace === 'direct') {
@@ -85,7 +92,7 @@ export class WorktreeService {
     const untracked = splitNull(await gitOk(dir, ['ls-files', '--others', '--exclude-standard', '-z'])).filter(f => !isLocalSecret(f));
     const paths = splitNull(await gitOk(dir, ['diff', '--name-only', '-z', base]));
     const tree = await git(repo, ['merge-tree', '--write-tree', '--name-only', '--no-messages', '-z', mainHead, workHead]);
-    if (tree.code !== 0 && tree.code !== 1) throw new AppError('internal', 'git_failed');
+    if ((tree.code !== 0 && tree.code !== 1) || tree.truncated) throw new AppError('internal', 'git_failed');
     return {
       files: Number(stat.match(/(\d+) files? changed/)?.[1] ?? 0) + untracked.length,
       added: Number(stat.match(/(\d+) insertions?/)?.[1] ?? 0),
@@ -117,6 +124,9 @@ export class WorktreeService {
     return { diff, truncated };
   }
   async merge(project: string, task: string): Promise<MergeResult> {
+    return this.mutate(project, () => this.mergeLocked(project, task));
+  }
+  private async mergeLocked(project: string, task: string): Promise<MergeResult> {
     const { record, repo, dir } = await this.copy(project, task);
     if (record.mergeExcluded) throw new AppError('conflict', 'merge_excluded');
     if (!dir || !(await pathExists(path.join(dir, '.git')))) {
@@ -130,7 +140,7 @@ export class WorktreeService {
     const source = (await gitOk(dir, ['rev-parse', 'HEAD'])).trim();
     const before = (await gitOk(repo, ['rev-parse', 'HEAD'])).trim();
     const ancestor = await git(repo, ['merge-base', '--is-ancestor', source, 'HEAD']);
-    if (ancestor.code > 1) throw new AppError('internal', 'git_failed');
+    if (ancestor.code !== 0 && ancestor.code !== 1) throw new AppError('internal', 'git_failed');
     const already = ancestor.code === 0;
     if (!already) {
       const merged = await git(repo, ['merge', '--no-ff', '--no-edit', '-m', `合併：${record.title}`, source]);
@@ -146,20 +156,32 @@ export class WorktreeService {
       }
     }
     const commit = (await gitOk(repo, ['rev-parse', '--short', 'HEAD'])).trim();
-    await gitOk(repo, ['worktree', 'remove', '--force', dir]);
-    const branch = this.branch(task);
-    // -d keeps branches containing unexpected work instead of discarding them.
-    if ((await git(repo, ['branch', '-d', branch])).code !== 0) log.warn('分支未刪除，保留', { project, task, branch });
-    await this.tasks.update(project, task, { workdir: '', state: '完成', question: '' });
+    const status = splitNull(await gitOk(dir, ['status', '--porcelain=v1', '-z', '--untracked-files=all']));
+    const leftover: string[] = [];
+    for (let i = 0; i < status.length; i++) {
+      const entry = status[i]!;
+      leftover.push(entry.slice(3));
+      if (entry[0] === 'R' || entry[0] === 'C' || entry[1] === 'R' || entry[1] === 'C') i++;
+    }
+    if (leftover.length === 0) {
+      // A concurrent external edit makes the non-force removal fail instead of discarding work.
+      await gitOk(repo, ['worktree', 'remove', dir]);
+      const branch = this.branch(task);
+      if ((await git(repo, ['branch', '-d', branch])).code !== 0) log.warn('分支未刪除，保留', { project, task, branch });
+    }
+    await this.tasks.update(project, task, { workdir: leftover.length ? dir : '', state: '完成', question: '' });
     await new CompletionStore(this.ws).approve(project, task);
     await this.tasks.appendMemo(project, task, `已合併到主資料夾 ${commit}`);
     await new OpLog(this.ws).record({ action: 'merge', project, task, commit, already });
-    return { merged: true, commit, ...(already ? { already: true } : {}) };
+    return { merged: true, commit, ...(already ? { already: true } : {}), ...(leftover.length ? { leftover } : {}) };
   }
   async exclusion(project: string, task: string, excluded: boolean): Promise<Task> {
-    return this.tasks.update(project, task, { mergeExcluded: excluded });
+    return this.mutate(project, () => this.tasks.update(project, task, { mergeExcluded: excluded }));
   }
   async copyclear(project: string, task: string): Promise<Task> {
+    return this.mutate(project, () => this.copyclearLocked(project, task));
+  }
+  private async copyclearLocked(project: string, task: string): Promise<Task> {
     const record = await this.tasks.get(project, task);
     if (record.workdir && await pathExists(record.workdir)) throw new AppError('conflict', 'worktree_exists');
     return this.tasks.update(project, task, { workdir: '' });
@@ -168,6 +190,7 @@ export class WorktreeService {
 function splitNull(value: string): string[] { return value.split('\0').filter(Boolean); }
 async function mergeHead(dir: string): Promise<string | null> {
   const result = await git(dir, ['rev-parse', '--verify', '-q', 'MERGE_HEAD']);
+  if (result.code < 0 || result.truncated) throw new AppError('internal', 'git_failed');
   return result.code === 0 ? result.stdout.trim() : null;
 }
 

@@ -159,3 +159,44 @@ test('exclusion, stale copyclear, missing merge and bounded diff', () => withTmp
   assert.equal((await tasks.get('P', task.id)).workdir, '');
   assert.equal((await wt.copyclear('P', task.id)).workdir, '');
 }));
+
+test('merge preserves excluded secrets and reports relative leftover paths', () => withTmpWorkspace(async ws => {
+  const projects = new ProjectLedger(ws);
+  const tasks = new TaskLedger(ws);
+  await projects.create({ name: 'P' });
+  const task = await tasks.create('P', { title: '保留設定' });
+  const wt = new WorktreeService({ ws, projects, tasks, diffBytes: 100 });
+  const dir = await wt.prepare('P', task.id);
+  await fs.appendFile(path.join(dir, '.gitignore'), '\n!.env.local\n');
+  await fs.writeFile(path.join(dir, 'new.txt'), 'merged\n');
+  await fs.writeFile(path.join(dir, '.env.local'), 'SECRET=keep\n');
+  const result = await wt.merge('P', task.id);
+  assert.equal(result.merged, true);
+  assert.deepEqual(result.leftover, ['.env.local']);
+  assert.equal(await fs.readFile(path.join(dir, '.env.local'), 'utf8'), 'SECRET=keep\n');
+  assert.equal(await fs.readFile(path.join(ws.projectDir('P'), 'new.txt'), 'utf8'), 'merged\n');
+  assert.equal((await tasks.get('P', task.id)).workdir, dir);
+  assert.equal((await tasks.get('P', task.id)).state, '完成');
+  assert.equal(await new CompletionStore(ws).isApproved('P', task.id), true);
+  assert.equal((await git(ws.projectDir('P'), ['rev-parse', '--verify', `refs/heads/ym/${task.id}`])).code, 0);
+}));
+
+test('concurrent merges serialize across service instances and reject the cleaned copy', () => withTmpWorkspace(async ws => {
+  const projects = new ProjectLedger(ws);
+  const tasks = new TaskLedger(ws);
+  await projects.create({ name: 'P' });
+  const task = await tasks.create('P', { title: '同時合併' });
+  const wt = new WorktreeService({ ws, projects, tasks, diffBytes: 100 });
+  const other = new WorktreeService({ ws, projects, tasks, diffBytes: 100 });
+  const dir = await wt.prepare('P', task.id);
+  await fs.writeFile(path.join(dir, 'new.txt'), 'once\n');
+  const results = await Promise.allSettled([wt.merge('P', task.id), other.merge('P', task.id)]);
+  assert.equal(results.filter(r => r.status === 'fulfilled').length, 1);
+  const rejected = results.find(r => r.status === 'rejected');
+  assert.ok(rejected?.status === 'rejected');
+  assert.ok(rejected.reason instanceof AppError);
+  assert.equal(rejected.reason.detail, 'worktree_missing');
+  assert.equal(await fs.readFile(path.join(ws.projectDir('P'), 'new.txt'), 'utf8'), 'once\n');
+  const operations = (await fs.readFile(path.join(ws.internalDir, 'log.jsonl'), 'utf8')).trim().split('\n').map(line => JSON.parse(line) as { action: string });
+  assert.equal(operations.filter(entry => entry.action === 'merge').length, 1);
+}));

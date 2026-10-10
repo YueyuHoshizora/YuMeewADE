@@ -75,3 +75,57 @@ export function isInside(base: string, target: string): boolean {
   const rel = path.relative(path.resolve(base), path.resolve(target));
   return rel !== '' && !rel.startsWith('..') && !path.isAbsolute(rel);
 }
+
+/** Exclusive workspace writer ownership; a hard-link claim serializes stale-lock removal across processes. */
+export async function acquireWorkspaceLock(root: string, port: number): Promise<() => Promise<void>> {
+  const file = path.join(root, '.yumeewade', 'core.lock');
+  return withFileLocks([file], async () => {
+    await fs.mkdir(path.dirname(file), { recursive: true });
+    const token = randomUUID();
+    for (;;) {
+      try {
+        const handle = await fs.open(file, 'wx', 0o600);
+        try { await handle.writeFile(JSON.stringify({ pid: process.pid, port, token }) + '\n'); }
+        catch (err) { await fs.rm(file, { force: true }); throw err; }
+        finally { await handle.close(); }
+        return async () => {
+          await withFileLocks([file], async () => {
+            const owner = await readJson<{ token?: string } | null>(file, null);
+            if (owner?.token === token) await fs.rm(file, { force: true });
+          });
+        };
+      } catch (err) {
+        if ((err as NodeJS.ErrnoException).code !== 'EEXIST') throw err;
+      }
+      let owner: { pid?: number; port?: number };
+      try { owner = JSON.parse(await fs.readFile(file, 'utf8')) as typeof owner; }
+      catch (cause) {
+        if ((cause as NodeJS.ErrnoException).code === 'ENOENT') continue;
+        throw new Error('工作區核心鎖尚未寫完或已損壞，拒絕啟動', { cause });
+      }
+      if (!Number.isSafeInteger(owner.pid) || owner.pid! <= 0) throw new Error('工作區核心鎖無有效 PID，拒絕啟動');
+      try {
+        process.kill(owner.pid!, 0);
+        throw new Error(`工作區已有核心程序（PID ${owner.pid}，port ${owner.port ?? '?'}），拒絕啟動`);
+      } catch (err) {
+        if ((err as NodeJS.ErrnoException).code !== 'ESRCH') throw err;
+      }
+      const claim = `${file}.stale`;
+      try { await fs.link(file, claim); }
+      catch (err) {
+        if ((err as NodeJS.ErrnoException).code === 'ENOENT') continue;
+        throw new Error('另一程序正在接管工作區核心鎖，拒絕啟動', { cause: err });
+      }
+      try {
+        const claimed = JSON.parse(await fs.readFile(claim, 'utf8')) as { pid?: number };
+        if (claimed.pid !== owner.pid) continue;
+        const stale = await fs.stat(claim);
+        const current = await fs.stat(file).catch((err: NodeJS.ErrnoException) => {
+          if (err.code === 'ENOENT') return null;
+          throw err;
+        });
+        if (current?.ino === stale.ino && current.dev === stale.dev) await fs.unlink(file);
+      } finally { await fs.unlink(claim); }
+    }
+  });
+}

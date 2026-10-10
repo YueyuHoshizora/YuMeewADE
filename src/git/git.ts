@@ -2,7 +2,7 @@
 
 import { spawn } from 'node:child_process';
 import { StringDecoder } from 'node:string_decoder';
-import { minimalEnv } from '../cli/process.ts';
+import { minimalEnv, terminateTree } from '../cli/process.ts';
 import { AppError } from '../shared/errors.ts';
 import { log } from '../shared/log.ts';
 
@@ -16,15 +16,29 @@ export interface GitResult {
 const ENV = minimalEnv([]);
 const IDENTITY = ['-c', 'user.name=YuMeewADE', '-c', 'user.email=yumeewade@localhost'];
 
-export function git(cwd: string, args: string[], opts: { maxBytes?: number } = {}): Promise<GitResult> {
+
+/** Normal local operations must finish within two minutes; tests may use a shorter deadline. */
+export const GIT_TIMEOUT_MS = 120_000;
+export function git(cwd: string, args: string[], opts: { maxBytes?: number; timeoutMs?: number } = {}): Promise<GitResult> {
   const { promise, resolve, reject } = Promise.withResolvers<GitResult>();
-  const child = spawn('git', [...IDENTITY, ...args], { cwd, env: ENV, stdio: ['ignore', 'pipe', 'pipe'], windowsHide: true });
+  const child = spawn('git', [...IDENTITY, ...args], { cwd, env: ENV, stdio: ['ignore', 'pipe', 'pipe'], windowsHide: true, detached: process.platform !== 'win32' });
   const max = opts.maxBytes ?? 10_000_000;
   const decoder = new StringDecoder('utf8');
   let stdout = '';
   let bytes = 0;
   let truncated = false;
   let stderr = '';
+  let timedOut = false;
+  let stop: (() => void) | undefined;
+  const finish = (code: number) => {
+    clearTimeout(deadline);
+    stop?.();
+    resolve({ code: timedOut ? -1 : code, stdout: stdout + (truncated ? '' : decoder.end()), stderr: timedOut ? 'git operation timed out' : stderr, truncated });
+  };
+  const deadline = setTimeout(() => {
+    timedOut = true;
+    stop = terminateTree(child, () => finish(-1));
+  }, opts.timeoutMs ?? GIT_TIMEOUT_MS);
   child.stdout.on('data', (chunk: Buffer) => {
     const remaining = Math.max(0, max - bytes);
     if (chunk.length > remaining) truncated = true;
@@ -35,15 +49,19 @@ export function git(cwd: string, args: string[], opts: { maxBytes?: number } = {
   child.stderr.on('data', (c: string) => {
     if (stderr.length < 4000) stderr += c;
   });
-  child.on('error', reject);
-  child.on('close', (code) => resolve({ code: code ?? -1, stdout: stdout + (truncated ? '' : decoder.end()), stderr, truncated }));
+  child.on('error', (cause) => {
+    clearTimeout(deadline);
+    stop?.();
+    reject(new AppError('internal', 'git_failed', { cause }));
+  });
+  child.on('close', (code) => finish(code ?? -1));
   return promise;
 }
 
 /** 失敗就丟 500（原因進日誌）；成功回 stdout。 */
-export async function gitOk(cwd: string, args: string[]): Promise<string> {
-  const r = await git(cwd, args);
-  if (r.code !== 0) {
+export async function gitOk(cwd: string, args: string[], opts: { maxBytes?: number; timeoutMs?: number } = {}): Promise<string> {
+  const r = await git(cwd, args, opts);
+  if (r.code !== 0 || r.truncated) {
     log.error('git 失敗', undefined, { cwd, args, code: r.code, stderr: r.stderr.slice(0, 500) });
     throw new AppError('internal', 'git_failed', { cause: new Error(r.stderr.slice(0, 500)) });
   }
@@ -52,11 +70,14 @@ export async function gitOk(cwd: string, args: string[]): Promise<string> {
 
 export async function isRepo(dir: string): Promise<boolean> {
   const r = await git(dir, ['rev-parse', '--is-inside-work-tree']);
+  if (r.code < 0 || r.truncated) throw new AppError('internal', 'git_failed');
   return r.code === 0 && r.stdout.trim() === 'true';
 }
 
 export async function hasCommits(dir: string): Promise<boolean> {
-  return (await git(dir, ['rev-parse', '--verify', '-q', 'HEAD'])).code === 0;
+  const result = await git(dir, ['rev-parse', '--verify', '-q', 'HEAD']);
+  if (result.code < 0 || result.truncated) throw new AppError('internal', 'git_failed');
+  return result.code === 0;
 }
 
 /** 把工作樹全部提交；沒有變更回 false。 */
@@ -70,7 +91,7 @@ export async function commitAll(dir: string, message: string): Promise<boolean> 
     else await gitOk(dir, ['rm', '-q', '--cached', '--', ...secrets]);
   }
   const staged = await git(dir, ['diff', '--cached', '--quiet']);
-  if (staged.code > 1) throw new AppError('internal', 'git_failed');
+  if (staged.code !== 0 && staged.code !== 1) throw new AppError('internal', 'git_failed');
   if (staged.code === 0 && (await hasCommits(dir))) return false;
   await gitOk(dir, ['commit', '-q', '--no-verify', '--allow-empty', '-m', message]);
   return true;
@@ -87,7 +108,9 @@ export async function currentBranch(dir: string): Promise<string> {
 }
 
 export async function branchExists(dir: string, branch: string): Promise<boolean> {
-  return (await git(dir, ['rev-parse', '--verify', '-q', `refs/heads/${branch}`])).code === 0;
+  const result = await git(dir, ['rev-parse', '--verify', '-q', `refs/heads/${branch}`]);
+  if (result.code < 0 || result.truncated) throw new AppError('internal', 'git_failed');
+  return result.code === 0;
 }
 
 export function isLocalSecret(file: string): boolean {

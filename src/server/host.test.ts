@@ -6,6 +6,8 @@ import { MockCliProvider } from '../cli/mock.ts';
 import { parseConfig } from '../shared/config.ts';
 import type { AppState, Project, Task } from '../shared/types.ts';
 import { startTestServer } from '../testing/server.ts';
+import { withTmpWorkspace } from '../testing/tmp.ts';
+import { CoreHost } from './host.ts';
 
 test('切換工作區：新根目錄立即生效並寫回設定檔，舊資料留在原處', async () => {
   const s = await startTestServer();
@@ -64,3 +66,21 @@ test('切換工作區：拒絕相對路徑、檔案路徑與 AI 執行中，失�
     await assert.rejects(fs.access(path.join(s.dir, 'elsewhere')));
   } finally { await s.close(); }
 });
+
+test('core startup refuses a second owner and shutdown releases workspace ownership', () => withTmpWorkspace(async ws => {
+  const config = parseConfig(`workspace:\n  root: ${JSON.stringify(ws.root)}\n`, null);
+  const first = new CoreHost(config);
+  const second = new CoreHost(config);
+  try {
+    await first.init();
+    await assert.rejects(second.init(), /已有核心程序/);
+    await first.shutdown();
+    await second.init();
+    assert.equal(JSON.parse(await fs.readFile(path.join(ws.root, '.yumeewade', 'core.lock'), 'utf8')).pid, process.pid);
+    await second.shutdown();
+    await assert.rejects(fs.access(path.join(ws.root, '.yumeewade', 'core.lock')));
+  } finally {
+    first.close();
+    second.close();
+  }
+}));
