@@ -2,6 +2,7 @@ import type { AppState, ProjectView, TaskView } from '../../shared/types.ts';
 import { request } from '../api.ts';
 import { t } from '../i18n/index.ts';
 import { button, confirmModal, disclosure, el, input, link, projectHash, renameModal, run, taskHash, type ViewContext } from './dom.ts';
+import { filterTree } from './tree-filter.ts';
 
 const collapsed = new Set<string>(); const seenAttention = new Set<string>();
 let searchText = '';
@@ -17,18 +18,18 @@ export function taskTone(state: AppState, project: string, task: TaskView): stri
 export function tree(context: ViewContext): HTMLElement {
   const { state, refresh } = context; const root = el('div', 'tree'); const content = el('div', 'tree-content');
   const search = input(searchText, t('tree.search')); search.type = 'search'; search.className = 'tree-search'; search.setAttribute('aria-label', t('tree.search'));
+  const nodeIndex: { node: HTMLElement; parent: HTMLElement | null; text: string; completed: boolean }[] = [];
+  const nests = new Map<string, HTMLElement>();
   function filter(): void {
     const term = searchText.trim().toLocaleLowerCase();
-    for (const node of Array.from(content.querySelectorAll<HTMLElement>('.tree-node')).reverse()) {
-      const own = node.dataset['search']?.includes(term) ?? false;
-      const descendant = Array.from(node.querySelectorAll<HTMLElement>('.tree-node')).some(child => !child.hidden);
-      node.hidden = !!term && !own && !descendant;
-    }
+    filterTree(nodeIndex, term);
+    for (const [key, nest] of nests) nest.hidden = !term && collapsed.has(key);
   }
-  search.oninput = () => { searchText = search.value; const next = tree(context); content.replaceChildren(...Array.from(next.querySelector('.tree-content')!.childNodes)); filter(); };
+  search.oninput = () => { searchText = search.value; filter(); };
   search.onkeydown = event => { if (event.key === 'Escape') { event.preventDefault(); search.value = ''; search.dispatchEvent(new InputEvent('input')); } };
   root.append(search, content);
-  const unread = (p: string, task: string) => state.unread.some(u => u.project === p && u.task === task);
+  const unreadKeys = new Set(state.unread.map(item => `${item.project}/${item.task}`));
+  const unread = (p: string, task: string) => unreadKeys.has(`${p}/${task}`);
   const attentionKeys = new Set<string>();
   for (const p of state.projects) {
     for (const task of p.tasks) {
@@ -59,12 +60,21 @@ export function tree(context: ViewContext): HTMLElement {
   function toggle(key: string, hasChildren: boolean, attention: boolean): HTMLButtonElement {
     if (attention && !seenAttention.has(key)) { collapsed.delete(key); seenAttention.add(key); }
     if (!attention) seenAttention.delete(key);
-    const control = button(hasChildren ? collapsed.has(key) ? '▸' : '▾' : '·', () => { if (collapsed.has(key)) collapsed.delete(key); else collapsed.add(key); control.closest('.tree')?.replaceWith(tree(context)); }, 'disclosure-button');
+    const control = button(hasChildren ? collapsed.has(key) ? '▸' : '▾' : '·', () => {
+      if (collapsed.has(key)) collapsed.delete(key);
+      else collapsed.add(key);
+      control.textContent = collapsed.has(key) ? '▸' : '▾';
+      control.setAttribute('aria-label', t(collapsed.has(key) ? 'tree.expand' : 'tree.collapse'));
+      control.setAttribute('aria-expanded', String(!collapsed.has(key)));
+      filter();
+    }, 'disclosure-button');
     control.disabled = !hasChildren; control.setAttribute('aria-label', t(collapsed.has(key) ? 'tree.expand' : 'tree.collapse')); return control;
   }
   function taskNode(p: ProjectView, task: TaskView, ancestry: Set<string>): HTMLElement {
     const wrap = el('div', 'tree-node task-node'); wrap.dataset['search'] = `${task.title} ${task.id}`.toLocaleLowerCase(); if (ancestry.has(task.id)) return wrap;
-    const next = new Set(ancestry).add(task.id); const children = p.tasks.filter(t => t.parent === task.id && (!!searchText.trim() || t.state !== '完成' || unread(p.id, t.id)));
+    const next = new Set(ancestry).add(task.id);
+    const children = p.tasks.filter(t => t.parent === task.id);
+    wrap.dataset['completed'] = String(task.state === '完成' && !unread(p.id, task.id));
     const key = `${p.id}/${task.id}`; const attention = attentionKeys.has(key);
     const line = el('div', 'tree-row');
     const title = link(`${task.parent ? '↳ ' : ''}${task.title}`, taskHash(p.id, task.id), 'tree-title');
@@ -78,7 +88,11 @@ export function tree(context: ViewContext): HTMLElement {
     wrap.append(line);
     if (task.kind === 'derived') wrap.append(el('div', 'branch-label', t('tree.branch', { source: p.tasks.find(t => t.id === task.derivedFrom)?.title ?? task.derivedFrom })));
     const notices = badges(p, [task]); if (notices.childNodes.length) wrap.append(notices);
-    if (searchText.trim() || !collapsed.has(key)) { const nest = el('div', 'tree-children'); for (const c of children) nest.append(taskNode(p, c, next)); wrap.append(nest); } return wrap;
+    const nest = el('div', 'tree-children');
+    nests.set(key, nest);
+    for (const c of children) nest.append(taskNode(p, c, next));
+    wrap.append(nest);
+    return wrap;
   }
   function ordered(parent: string): ProjectView[] {
     const ids = state.order[parent] ?? [];
@@ -118,14 +132,25 @@ export function tree(context: ViewContext): HTMLElement {
       { label: t('common.archive'), action: async () => { if (await confirmModal(t('common.archive'), t('common.confirmArchive', { name: p.name }), t('common.archive'))) { await request('/api/project/archive', { project: p.id }); await refresh(); } } },
     ]));
     wrap.append(line); const notices = badges(p, p.tasks); if (notices.childNodes.length) wrap.append(notices);
-    if (searchText.trim() || !collapsed.has(key)) {
-      const visible = p.tasks.filter(t => !!searchText.trim() || t.state !== '完成' || unread(p.id, t.id));
-      const nest = el('div', 'tree-children'); const tasks = visible.filter(t => !t.parent || !visible.some(other => other.id === t.parent));
-      for (const task of tasks) nest.append(taskNode(p, task, new Set()));
-      for (const child of ordered(p.id)) nest.append(projectNode(child, next)); wrap.append(nest);
-    } return wrap;
+    const nest = el('div', 'tree-children');
+    nests.set(key, nest);
+    const tasks = p.tasks.filter(t => !t.parent || !p.tasks.some(other => other.id === t.parent));
+    for (const task of tasks) nest.append(taskNode(p, task, new Set()));
+    for (const child of ordered(p.id)) nest.append(projectNode(child, next));
+    wrap.append(nest);
+    return wrap;
   }
   const roots = ordered(''); for (const p of state.projects) if (p.parent && !state.projects.some(other => other.id === p.parent)) roots.push(p);
   for (const p of roots) content.append(projectNode(p, new Set()));
-  if (!roots.length) content.append(el('p', 'empty', t('common.empty'))); filter(); return root;
+  for (const node of content.querySelectorAll<HTMLElement>('.tree-node')) {
+    nodeIndex.push({
+      node,
+      parent: node.parentElement?.closest<HTMLElement>('.tree-node') ?? null,
+      text: node.dataset['search'] ?? '',
+      completed: node.dataset['completed'] === 'true',
+    });
+  }
+  if (!roots.length) content.append(el('p', 'empty', t('common.empty')));
+  filter();
+  return root;
 }
