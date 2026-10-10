@@ -175,6 +175,30 @@ export class WorktreeService {
     }
     return found;
   }
+  /** 把單一檔案還原成分岔點（合併基準）的樣子：本來就有的檔案取回原內容，新增的檔案刪掉。路徑必須是目前確實有變更的檔案。 */
+  async revertFile(project: string, task: string, relative: string): Promise<void> {
+    await this.mutate(project, async () => {
+      const { repo, dir } = await this.copy(project, task);
+      if (!dir || !(await pathExists(path.join(dir, '.git')))) throw new AppError('not_found', 'worktree_missing');
+      await this.verifyFamily(repo, dir);
+      const head = (await gitOk(dir, ['rev-parse', 'HEAD'])).trim();
+      const base = (await gitOk(repo, ['merge-base', 'HEAD', head])).trim();
+      const changed = new Set([
+        ...splitNull(await gitOk(dir, ['diff', '--name-only', '-z', base])),
+        ...splitNull(await gitOk(dir, ['ls-files', '--others', '--exclude-standard', '-z'])).filter(file => !isLocalSecret(file)),
+      ]);
+      if (!changed.has(relative)) throw new AppError('not_found', 'file_missing');
+      const existed = (await git(dir, ['cat-file', '-e', `${base}:${relative}`])).code === 0;
+      if (existed) {
+        await gitOk(dir, ['checkout', base, '--', relative]);
+        await gitOk(dir, ['reset', '-q', '--', relative]);
+      } else if ((await git(dir, ['ls-files', '--error-unmatch', '--', relative])).code === 0) {
+        await gitOk(dir, ['rm', '-f', '-q', '--', relative]);
+      } else {
+        await fs.rm(path.join(dir, relative), { force: true });
+      }
+    });
+  }
   async diff(project: string, task: string): Promise<{ diff: string; truncated: boolean }> {
     const { repo, dir } = await this.copy(project, task);
     if (!dir || !(await pathExists(path.join(dir, '.git')))) throw new AppError('not_found', 'worktree_missing');

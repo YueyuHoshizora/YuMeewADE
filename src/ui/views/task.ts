@@ -732,6 +732,14 @@ export function taskView(
         const open = button(file, () => openDiff(file), 'subtle git-file');
         open.title = file;
         item.append(open);
+        const revert = iconButton('↩', `${t('git.revertFile')}: ${file}`, async () => {
+          if (busy || !await confirmModal(t('git.revertFile'), t('git.revertConfirm', { file }), t('git.revertFile'))) return;
+          await request('/api/task/revert-file', { project: project.id, task: task.id, path: file });
+          await context.refresh();
+          await renderWork();
+          toast(t('git.reverted'));
+        }, 'subtle git-revert');
+        item.append(revert);
         list.append(item);
       }
       info.append(el('h3', '', t('git.files', { n: preview.paths.length })), list);

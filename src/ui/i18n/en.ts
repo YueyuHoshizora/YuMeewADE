@@ -21,6 +21,7 @@ export const en: Record<MessageKey, string> = {
   'snip.docs.name': 'Update docs', 'snip.docs.text': 'Update the documentation and CHANGELOG related to this change, describing clearly what users will see differently.',
   'chat.changes': 'This turn: {files} files +{added} −{removed}',
   'git.review': 'Ask {ai} to review', 'git.reviewBusy': 'The AI is running; wait for this turn to finish before asking another AI to review', 'git.reviewPrompt': 'Act as a reviewer and examine all changes in the current working copy relative to {target} (git diff {target}...HEAD plus anything uncommitted). Only report problems, risks and suggestions, with file names and line numbers. Do NOT modify any file.',
+  'git.revertFile': 'Revert this file', 'git.revertConfirm': 'Revert “{file}” to how it was when the copy branched from the main folder? The AI’s changes to it are discarded; a newly added file is deleted.', 'git.reverted': 'File reverted', 'log.task.revert-file': 'Single file reverted',
   'chat.turnUsage': 'in {input} · out {output}', 'chat.cachedUsage': ' · cached {cached}',
   'chat.usageHint': 'These token counts are reported by the CLI.',
   'chat.queuePaused': 'Queue paused: the first item failed. Later items wait until it is removed or started manually.',

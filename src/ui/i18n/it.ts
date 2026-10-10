@@ -21,6 +21,7 @@ export const it: Record<MessageKey, string> = {
   'snip.docs.name': 'Aggiorna la documentazione', 'snip.docs.text': 'Aggiorna la documentazione e il CHANGELOG relativi a questa modifica, descrivendo chiaramente cosa vedranno di diverso gli utenti.',
   'chat.changes': 'Questo turno: {files} file +{added} −{removed}',
   'git.review': 'Chiedi a {ai} una revisione', 'git.reviewBusy': 'L’IA è in esecuzione; attendi la fine del turno prima di chiedere una revisione a un’altra IA', 'git.reviewPrompt': 'Come revisore, esamina tutte le modifiche della copia di lavoro attuale rispetto a {target} (git diff {target}...HEAD più il contenuto non salvato). Segnala solo problemi, rischi e suggerimenti, con nomi di file e numeri di riga. NON modificare nessun file.',
+  'git.revertFile': 'Ripristina questo file', 'git.revertConfirm': 'Ripristinare «{file}» a com’era quando la copia si è separata dalla cartella principale? Le modifiche dell’IA vengono scartate; un file aggiunto viene eliminato.', 'git.reverted': 'File ripristinato', 'log.task.revert-file': 'File singolo ripristinato',
   'chat.turnUsage': 'input {input} · output {output}', 'chat.cachedUsage': ' · cache {cached}',
   'chat.usageHint': 'Questi conteggi di token sono riportati dalla CLI.',
   'chat.queuePaused': 'Coda in pausa: il primo elemento è fallito. I successivi attendono la sua rimozione o l’avvio manuale.',

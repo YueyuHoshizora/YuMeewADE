@@ -419,3 +419,7 @@ body { height: 100dvh; display: grid; grid-template-rows: 64px minmax(0, 1fr) au
 @media (max-width: 700px) { .file-viewer { grid-template-columns: 1fr; } }
 .snippet-list h3 { margin: 12px 0 6px; font-size: 13px; color: var(--muted); }
 .snippet-list .snippet-use { flex: 1; text-align: left; }
+.git-files li { display: flex; align-items: center; gap: 4px; }
+.git-files .git-file { flex: 1; min-width: 0; width: auto; }
+.git-revert { flex: none; padding: 1px 7px; opacity: .6; }
+.git-revert:hover { opacity: 1; }

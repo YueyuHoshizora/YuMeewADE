@@ -21,6 +21,7 @@ export const fr: Record<MessageKey, string> = {
   'snip.docs.name': 'Mettre à jour la doc', 'snip.docs.text': 'Mets à jour la documentation et le CHANGELOG liés à ce changement, en décrivant clairement ce que les utilisateurs verront de différent.',
   'chat.changes': 'Ce tour : {files} fichiers +{added} −{removed}',
   'git.review': 'Demander une revue à {ai}', 'git.reviewBusy': 'L’IA est en cours d’exécution ; attends la fin du tour avant de demander une revue à une autre IA', 'git.reviewPrompt': 'En tant que relecteur, examine toutes les modifications de la copie de travail actuelle par rapport à {target} (git diff {target}...HEAD et le contenu non commité). Signale uniquement les problèmes, risques et suggestions, avec noms de fichiers et numéros de ligne. Ne modifie AUCUN fichier.',
+  'git.revertFile': 'Rétablir ce fichier', 'git.revertConfirm': 'Rétablir « {file} » tel qu’il était quand la copie s’est séparée du dossier principal ? Les modifications de l’IA sont abandonnées ; un fichier ajouté est supprimé.', 'git.reverted': 'Fichier rétabli', 'log.task.revert-file': 'Fichier rétabli',
   'chat.turnUsage': 'entrée {input} · sortie {output}', 'chat.cachedUsage': ' · cache {cached}',
   'chat.usageHint': 'Ces nombres de tokens sont rapportés par la CLI.',
   'chat.queuePaused': 'File en pause : le premier élément a échoué. Les suivants attendent son retrait ou son lancement manuel.',

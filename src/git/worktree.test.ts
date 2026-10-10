@@ -363,3 +363,35 @@ test('file viewing lists tracked and new files, hides secrets, and refuses anyth
     await assert.rejects(wt.readFile('P', task.id, bad), (e: unknown) => e instanceof AppError && e.detail === 'file_missing', bad);
   }
 }));
+
+test('revertFile restores one file to the fork point and only touches files that really changed', () => withTmpWorkspace(async ws => {
+  const projects = new ProjectLedger(ws);
+  const tasks = new TaskLedger(ws);
+  await projects.create({ name: 'P' });
+  const task = await tasks.create('P', { title: '還原單檔' });
+  const wt = new WorktreeService({ ws, projects, tasks, diffBytes: 100_000 });
+  const dir = await wt.prepare('P', task.id);
+  const original = await fs.readFile(path.join(dir, 'AGENTS.md'), 'utf8');
+  await fs.appendFile(path.join(dir, 'AGENTS.md'), '\nAI 亂改的\n');
+  await fs.writeFile(path.join(dir, 'keep.txt'), 'keep\n');
+  await fs.writeFile(path.join(dir, 'committed-new.txt'), 'ai\n');
+  await wt.checkpoint('P', task.id); // AI work is committed on the branch, like after a turn
+  await fs.writeFile(path.join(dir, 'untracked-new.txt'), 'ai\n');
+  await fs.rm(path.join(dir, 'CLAUDE.md'));
+
+  await wt.revertFile('P', task.id, 'AGENTS.md');
+  assert.equal(await fs.readFile(path.join(dir, 'AGENTS.md'), 'utf8'), original);
+  await wt.revertFile('P', task.id, 'committed-new.txt');
+  await assert.rejects(fs.access(path.join(dir, 'committed-new.txt')));
+  await wt.revertFile('P', task.id, 'untracked-new.txt');
+  await assert.rejects(fs.access(path.join(dir, 'untracked-new.txt')));
+  await wt.revertFile('P', task.id, 'CLAUDE.md');
+  await fs.access(path.join(dir, 'CLAUDE.md'));
+
+  const preview = await wt.preview('P', task.id);
+  assert.deepEqual(preview?.paths, ['keep.txt'], 'only the untouched-by-revert file is still a change');
+  assert.equal(await fs.readFile(path.join(dir, 'keep.txt'), 'utf8'), 'keep\n');
+  for (const bad of ['PROJECT.md', 'nope.txt', '../outside', '/etc/hosts', '']) {
+    await assert.rejects(wt.revertFile('P', task.id, bad), (e: unknown) => e instanceof AppError && e.detail === 'file_missing', bad);
+  }
+}));
