@@ -206,6 +206,10 @@ export interface QuotaWindow {
 /** 各 AI 帳號的額度；只在記憶體，核心重啟後等下一次回報。 */
 export interface AiUsage {
   ai: string;
+  /** default 代表 CLI 目前的預設設定目錄。 */
+  account: string;
+  /** 查詢失敗仍保留上次數值，但不能當成目前可用額度。 */
+  status: 'ready' | 'unavailable';
   windows: QuotaWindow[];
   /** CLI 回報目前已達上限。 */
   limited: boolean;
@@ -219,6 +223,13 @@ export interface UsageState {
   tokensPerSecond: number | null;
 }
 
+/** 額外帳戶以已登入的獨立 CLI 設定目錄隔離，不複製或保存憑證。 */
+export interface CliAccount {
+  id: string;
+  name: string;
+  configDir: string;
+}
+
 export interface Settings {
   /** 新作業／快速開始的預設選擇。 */
   initial: AiPick;
@@ -228,6 +239,9 @@ export interface Settings {
   modelOrder: Partial<Record<string, string[]>>;
   /** 各 AI 是否跳過權限確認（預設依 config.yaml 的 cli.*.dangerous）。 */
   fullAccess: Partial<Record<string, boolean>>;
+  accounts: Partial<Record<string, CliAccount[]>>;
+  /** 每種 AI 各一個作用中帳戶，未設定時為 default。 */
+  activeAccounts: Partial<Record<string, string>>;
 }
 
 export type SettingsPatch = Partial<Settings>;

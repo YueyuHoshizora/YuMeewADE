@@ -1,7 +1,7 @@
-// 各 AI 帳號額度與即時輸出速度：只在記憶體，來源是 CLI 的回報（Codex 另可從本機紀錄補啟動時的額度）。
+// 帳戶額度與即時輸出速度只存記憶體；不同 CLI 設定目錄的查詢與回合事件各自隔離。
 import type { CliEvent, CliProvider } from '../cli/provider.ts';
 import { log } from '../shared/log.ts';
-import type { AiUsage, UsageState } from '../shared/types.ts';
+import type { AiUsage, Settings, UsageState } from '../shared/types.ts';
 
 export type UsageEvent = Extract<CliEvent, { type: 'quota' | 'tokens' }>;
 
@@ -24,6 +24,8 @@ export class UsageBoard {
   private rate: number | null = null;
   private timer: NodeJS.Timeout | null = null;
   private pollTimer: NodeJS.Timeout | null = null;
+  private readonly queries = new Map<string, Promise<void>>();
+  private targets: Set<string> | null = null;
   private closed = false;
 
   constructor(onChange: (usage: UsageState) => void, now: () => number = Date.now) {
@@ -35,7 +37,7 @@ export class UsageBoard {
     return { ais: [...this.items.values()].sort((a, b) => a.ai.localeCompare(b.ai)), tokensPerSecond: this.rate };
   }
 
-  record(ai: string, ev: UsageEvent): void {
+  record(ai: string, ev: UsageEvent, account = 'default'): void {
     if (this.closed) return;
     if (ev.type === 'tokens') {
       if (!ev.runId || !Number.isFinite(ev.count) || ev.count < 0 ||
@@ -49,10 +51,12 @@ export class UsageBoard {
       }
       return;
     }
-    const current = this.items.get(ai);
-    // 並行回合或啟動時讀的本機紀錄可能比已知的舊，不能倒退。
+    const key = JSON.stringify([ai, account]);
+    if (this.targets && !this.targets.has(key)) return;
+    const current = this.items.get(key);
+    // 並行回合可能比帳號查詢的資料舊，不能倒退。
     if (current?.quotaAt && Date.parse(ev.at) < Date.parse(current.quotaAt)) return;
-    this.items.set(ai, { ai, windows: ev.windows, limited: ev.limited, quotaAt: ev.at });
+    this.items.set(key, { ai, account, status: 'ready', windows: ev.windows, limited: ev.limited, quotaAt: ev.at });
     this.onChange(this.snapshot());
   }
 
@@ -79,7 +83,7 @@ export class UsageBoard {
     this.stopRate();
     this.samples.clear();
     this.rate = null;
-    clearInterval(this.pollTimer ?? undefined);
+    clearTimeout(this.pollTimer ?? undefined);
     this.pollTimer = null;
   }
 
@@ -88,23 +92,48 @@ export class UsageBoard {
     this.timer = null;
   }
 
-  /** 啟動時讀一次，之後固定間隔向各 CLI 重新查詢；額度在終端機或其他裝置上也會變，不能只靠本程式送出的回合。 */
-  async poll(providers: Record<string, CliProvider>, intervalMs: number): Promise<void> {
-    this.pollTimer ??= setInterval(() => { void this.load(providers); }, intervalMs);
+  /** 首次立即查詢；後續查詢完成後再計時，慢查詢不會堆疊。 */
+  async poll(providers: Record<string, CliProvider>, intervalMs: number, accounts: () => Promise<Settings['accounts']> = async () => ({})): Promise<void> {
+    if (this.closed) return;
+    clearTimeout(this.pollTimer ?? undefined);
+    try { await this.load(providers, await accounts()); }
+    catch { log.warn('讀取帳戶設定失敗'); }
+    if (this.closed) return;
+    this.pollTimer = setTimeout(() => { void this.poll(providers, intervalMs, accounts); }, intervalMs);
     this.pollTimer.unref();
-    await this.load(providers);
   }
 
-  /** 啟動時從各 CLI 的本機紀錄補最近一次額度；讀不到只記日誌。 */
-  async load(providers: Record<string, CliProvider>): Promise<void> {
-    await Promise.all(Object.entries(providers).map(async ([ai, provider]) => {
-      if (!provider.quota) return;
-      try {
-        const quota = await provider.quota();
-        if (quota) this.record(ai, quota);
-      } catch (err) {
-        log.warn('讀取 CLI 額度紀錄失敗', { ai, reason: err instanceof Error ? err.message.slice(0, 200) : 'unknown' });
-      }
+  /** 同一帳戶的手動／定時查詢共用工作；刪除帳戶或關閉後的晚到回應不得復活舊資料。 */
+  async load(providers: Record<string, CliProvider>, accounts: Settings['accounts'] = {}): Promise<void> {
+    if (this.closed) return;
+    const targets = Object.entries(providers).flatMap(([ai, provider]) => provider.quota
+      ? [{ ai, provider, id: 'default', configDir: undefined as string | undefined },
+        ...(accounts[ai] ?? []).map(account => ({ ai, provider, id: account.id, configDir: account.configDir }))]
+      : []);
+    this.targets = new Set(targets.map(target => JSON.stringify([target.ai, target.id])));
+    let removed = false;
+    for (const key of this.items.keys()) if (!this.targets.has(key)) { this.items.delete(key); removed = true; }
+    if (removed) this.onChange(this.snapshot());
+    await Promise.all(targets.map(({ ai, provider, id, configDir }) => {
+      const key = JSON.stringify([ai, id]);
+      const existing = this.queries.get(key);
+      if (existing) return existing;
+      const query = (async () => {
+        try {
+          const quota = await provider.quota!(configDir);
+          if (quota) { this.record(ai, quota, id); return; }
+        } catch {
+          // 憑證錯誤與遠端回應可能含敏感資料，不記錄例外內容。
+          log.warn('查詢帳戶額度失敗', { ai, account: id });
+        }
+        if (this.closed || !this.targets?.has(key)) return;
+        const previous = this.items.get(key);
+        this.items.set(key, previous ? { ...previous, status: 'unavailable' }
+          : { ai, account: id, status: 'unavailable', windows: [], limited: false, quotaAt: null });
+        this.onChange(this.snapshot());
+      })().finally(() => { this.queries.delete(key); });
+      this.queries.set(key, query);
+      return query;
     }));
   }
 

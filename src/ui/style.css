@@ -277,6 +277,19 @@ body { height: 100dvh; display: grid; grid-template-rows: 64px minmax(0, 1fr) au
 .usage-window.stale { opacity: .6; }
 .usage-speed { margin-left: auto; padding-left: 12px; }
 .usage-speed.running { color: var(--accent); }
+.usage-action { padding: 2px 5px; font: inherit; color: inherit; background: transparent; border-color: transparent; flex: 0 0 auto; }
+.usage-action:hover { border-color: var(--border); }
+.usage-account { max-width: 140px; overflow: hidden; text-overflow: ellipsis; }
+.usage-unavailable { color: var(--yellow); }
+.usage-details { width: min(760px, calc(100vw - 32px)); }
+.usage-details > .row { justify-content: space-between; }
+.usage-accounts { display: grid; gap: 16px; margin: 16px 0; }
+.usage-provider h3 { margin: 0 0 8px; }
+.account-card { padding: 12px; border: 1px solid var(--border); border-radius: 8px; margin-top: 8px; }
+.account-card .row { flex-wrap: wrap; }
+.account-card h4 { margin: 0; flex: 1; overflow-wrap: anywhere; }
+.account-active { color: var(--green); font-size: 12px; }
+.account-quota p { margin: 6px 0 0; overflow-wrap: anywhere; }
 .running-chip { padding: 1px 9px; font-size: 12px; border-radius: 999px; color: var(--red); border-color: var(--red); flex: 0 0 auto; }
 .running-title { flex: 1 1 auto; min-width: 0; overflow-wrap: anywhere; }
 .task-page { height: 100%; min-height: 0; overflow: hidden; }

@@ -9,13 +9,15 @@
 > **安全宣告（請先讀）**
 > - 核心只監聽 `http://127.0.0.1:4560`，**沒有登入、沒有認證**。這是刻意的：它是單人本機工具，不是網頁服務。本機上的其他程序可以呼叫它。請勿改綁 `0.0.0.0`，也不要把 port 轉發到外部。
 > - **AI 預設擁有完整權限**：claude 以 `--dangerously-skip-permissions`、codex 以 `--dangerously-bypass-approvals-and-sandbox` 啟動，會用你的帳號權限改檔與執行任何指令（與 project-hub 相同；使用者 2026-10-10 決定）。可以在「設定 → AI 工具 → 完整權限」逐一關閉。關閉後 claude 只自動接受改檔，codex 在工作目錄沙箱內執行。
-> - AI 的費用、方案與登入由各 CLI 自行管理。本工具不保存、不修改憑證，也不保證不產生費用。唯一例外：為了在底部列顯示 Claude 的 5 小時／7 天用量，核心會**讀取** Claude Code 的 OAuth 憑證（macOS 鑰匙圈 `Claude Code-credentials`，其他平台為 `.credentials.json`），只用來向 Anthropic 的用量端點（非公開 API）發一次查詢，不寫入日誌、不傳給其他地方。
+> - AI 的費用、方案與登入由各 CLI 自行管理。本工具不保存、不修改憑證，也不保證不產生費用。查額度時核心會**唯讀**存取 Claude 的 OAuth 憑證（帳號專屬 macOS 鑰匙圈或設定目錄的 `.credentials.json`），只送往固定的 Anthropic 用量端點。憑證不進 App API／畫面／日誌、不送往其他來源；額外帳號不借用預設帳號憑證，過期時需透過原 CLI 重新登入。
 
 ## 畫面與流程
 
 - **左側樹狀清單**：專案底下列出作業，子作業以 `↳` 縮排，分支作業標 `⑂`。圓點顏色：紅＝AI 執行中、黃＝等你回覆、藍＝等你確認完成、紫＝完成、淺綠＝處理過、灰＝未開始。未讀結果標「未讀」。右鍵選單（⋯）可以改名、新增子作業／分支、封存，專案還能釘選、調整順序（或直接拖曳）、新增子專案。上方搜尋框（`/` 或 Ctrl/⌘+K）可以篩選專案與作業。
 - **交給你嚕**：標題列按鈕列出「等待回覆」與「確認完成」的作業數。點開後可以直接標為完成，或選擇繼續進行。
 - **執行中面板**：畫面最下方的狀態列在有 AI 執行時顯示紅色「執行中 N」；點開列出每個執行中的作業（AI、模型、已執行多久），可以直接跳到該作業、逐一停止或「全部停止」（與作業內的停止相同，會清空該作業的排隊）。
+- **帳號與額度**：點底部的 Claude／Codex 額度開啟詳情，查看預設及額外帳號的各時間窗使用率、剩餘比例、重置時間、取得時間與查詢狀態。底部每個 AI 只顯示使用中帳號，可在詳情切換、新增／移除登錄或手動查詢。新增時輸入名稱及既有已登入的獨立 CLI 設定資料夾（絕對路徑，可用 `~`）；事先以 `CLAUDE_CONFIG_DIR`（Claude）／`CODEX_HOME`（Codex）指定另一資料夾並在 CLI 登入。App 不提供登入或憑證輸入，移除只刪登錄、不刪資料夾或登出；帳號設定按工作區保存。切換只影響下一次送出，不改變執行中的作業，也不接續另一帳號的 session。
+  - 額度啟動時與預設每 **5 分鐘**查詢一次（`limits.usagePollSeconds: 300`）。失敗標示「目前無法查詢」，保留上次數值與時間，不是即時額度。各已登錄帳號用盡及取得新成功資料確認恢復時提示，初次成功回報不提示；經過重置時間或查詢失敗本身不算恢復。背景時另發系統通知（與完成通知共用開關）。
   - 右下角是近期實測**平均 tok/s**：CLI 回報的實際輸出 token 總數除以量測時間區間的聯集，量測保留 4 秒，沒有量測顯示「—」。Claude 採訊息耗時，Codex 採含等待與工具的完整回合；包含 CLI 回報的思考用量，不估算，不是即時生成速度。
 - **新專案**：填名稱、說明、階段（預設 計畫／實作／檢查／收尾）。可以把「主資料夾」指向既有的程式碼資料夾（桌面版有「選擇…」按鈕）；不填則用台帳資料夾本身。填了「第一個作業」會直接開始。
 - **專案概要**：階段路線、目前階段的作業。目前階段的作業都完成後，會提示「前往下一階段」。**快速開始**：寫下想做的事，選 AI／模型／思考強度（會記住上次選擇），可附圖片，按「開始」就建立作業並交給 AI。另有「詳細設定並新增作業」。
@@ -96,6 +98,7 @@ npm run desktop      # 桌面版（開發機）
 | `cli.claude` / `cli.codex` | `command`、`baseArgs`、`fullAccess`、`fullAccessArgs`、`safeArgs` | 指令與無頭模式旗標；`fullAccess` 是預設權限，設定頁的開關優先 |
 | `cli` | `envPassthrough` | 額外放行給 CLI 子行程的環境變數（預設只給 PATH／HOME／LANG 等） |
 | `limits` | `bodyBytes`、`promptChars`、`sendPerMinute`、`concurrentRuns`、`sseConnections`、`queueLength`、`handoffChars`、`heartbeatSeconds`、`diffBytes`、`uploadBytes`、`imagesPerSend`、`verifySeconds`（驗證逾時，預設 600）、`verifyOutputBytes`（驗證輸出保留尾端位元組，預設 65536）、`runSeconds`（單輪 AI 執行時間上限，超過就停止並標記逾時，預設 7200） | 各種上限 |
+| `limits` | `usagePollSeconds` | 帳號額度查詢間隔（秒），預設 `300`＝5 分鐘 |
 
 ## 協定摘要（UI ⇄ 核心）
 
@@ -129,6 +132,10 @@ HTTP JSON 加 SSE，桌面版與網頁版完全相同。型別定義在 [`src/sh
 | `GET /api/task/verify?project=&task=` | 最近一次驗證的摘要 `{ok, exitCode, timedOut, at}`；沒驗證過，或之後 AI 又開始工作／檔案被還原（單檔還原、回溯）就回 `null`。只存記憶體，Git 面板用它顯示「驗證通過／失敗／尚未驗證」 |
 | `GET /api/ai`、`POST /api/ai/refresh`、`POST /api/ai/update` | AI 工具與模型清單 |
 | `POST /api/settings`、`POST /api/roles`、`GET /api/log` | 設定、角色、操作紀錄 |
+| `POST /api/accounts/add` | 登錄既有已登入 CLI 目錄 `{ai: 'claude'|'codex', name, configDir}`；回 `Settings` |
+| `POST /api/accounts/remove` | 移除登錄 `{ai,id}`，預設帳號不可移除；不刪 CLI 資料；回 `Settings` |
+| `POST /api/accounts/refresh` | `{}`：立即重新查詢所有已登錄帳號；回 `UsageState` |
+| `POST /api/settings`（帳號切換） | `{activeAccounts:{[ai]:id}}`，缺省帳號 id 為 `default`；回 `Settings` |
 | `POST /api/open` | 用系統開啟資料夾或檔案 |
 | `POST /api/workspace` | 切換工作區根目錄（AI 執行中拒絕；寫回目前採用的設定檔） |
 | `GET /api/ping` | 桌面版啟動探測 |

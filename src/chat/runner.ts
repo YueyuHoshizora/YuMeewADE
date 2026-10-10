@@ -47,7 +47,7 @@ export interface RunnerDeps {
   verify?: (project: string, task: string) => Promise<VerifyResult>;
   onChanged(project?: string, task?: string): void;
   /** CLI 回報的帳號額度／輸出 token（帳號層級，不寫進對話）。 */
-  onUsage(ai: string, ev: Extract<CliEvent, { type: 'quota' | 'tokens' }>): void;
+  onUsage(ai: string, ev: Extract<CliEvent, { type: 'quota' | 'tokens' }>, accountId: string): void;
 }
 interface Slot {
   busy: Busy | null;
@@ -223,6 +223,9 @@ export class ChatRunner extends EventEmitter {
     }, settings.initial);
     const provider = this.deps.providers[pick.cli];
     if (!provider) throw new AppError('bad_request', 'cli_unsupported');
+    const accountId = settings.activeAccounts[pick.cli] ?? 'default';
+    const account = settings.accounts[pick.cli]?.find(profile => profile.id === accountId);
+    if (accountId !== 'default' && !account) throw new AppError('not_found');
     if (!await provider.available()) throw new AppError('bad_request', 'cli_unavailable');
     if (this.shuttingDown) throw new AppError('unavailable');
     const item: QueueItem = {
@@ -271,7 +274,8 @@ export class ChatRunner extends EventEmitter {
       }
       const prior = await this.deps.store.readLog(p, t);
       const meta = await this.deps.store.readMeta(p, t);
-      const resumeId = item.ai !== 'codex' || meta.models[item.ai] === item.model
+      const sameAccount = (meta.accounts?.[item.ai] ?? 'default') === accountId;
+      const resumeId = sameAccount && (item.ai !== 'codex' || meta.models[item.ai] === item.model)
         ? meta.sessions[item.ai] : undefined;
       const roles = await this.deps.roles();
       const project = await this.deps.projects.get(p);
@@ -309,6 +313,7 @@ export class ChatRunner extends EventEmitter {
         prompt: buildPrompt({ preamble, handoff, text: item.text, images }), cwd,
         ...(resumeId ? { resumeId } : {}), model: pick.model, effort: pick.effort,
         fullAccess: settings.fullAccess[item.ai] ?? provider.dangerous,
+        accountId, ...(account ? { configDir: account.configDir } : {}),
         addDirs: [path.join(this.deps.ws.projectDir(p), '.ai')], images,
       }, checkpoint);
       this.trackQueuedRun(p, t, s);
@@ -397,6 +402,7 @@ export class ChatRunner extends EventEmitter {
     const previousSeen = meta.seen[item.ai];
     const previousSession = meta.sessions[item.ai];
     const previousModel = meta.models[item.ai];
+    const previousAccount = meta.accounts?.[item.ai];
     try {
       if (this.shuttingDown) throw new AppError('unavailable');
       const run = provider.send(opts, ev => {
@@ -410,7 +416,7 @@ export class ChatRunner extends EventEmitter {
           error = 'cli_failed';
           log.warn('CLI 回覆失敗', { project: p, task: t });
         } else if (ev.type === 'asks') asks.push(...ev.asks);
-        else if (ev.type === 'quota' || ev.type === 'tokens') this.deps.onUsage(item.ai, ev);
+        else if (ev.type === 'quota' || ev.type === 'tokens') this.deps.onUsage(item.ai, ev, opts.accountId ?? 'default');
         else if (ev.type === 'tool') {
           const row: ChatRow = {
             at: new Date().toISOString(), role: 'event', ai: item.ai,
@@ -459,6 +465,12 @@ export class ChatRunner extends EventEmitter {
           delete meta.models[item.ai];
         }
       } else {
+        if ((meta.accounts?.[item.ai] ?? 'default') !== (opts.accountId ?? 'default')) {
+          delete meta.sessions[item.ai];
+          delete meta.models[item.ai];
+          delete meta.seen[item.ai];
+        }
+        meta.accounts = { ...meta.accounts, [item.ai]: opts.accountId ?? 'default' };
         if (sid) {
           meta.sessions[item.ai] = sid;
           meta.models[item.ai] = item.model ?? '';
@@ -488,6 +500,8 @@ export class ChatRunner extends EventEmitter {
       else meta.sessions[item.ai] = previousSession;
       if (opts.resumeId || previousModel === undefined) delete meta.models[item.ai];
       else meta.models[item.ai] = previousModel;
+      if (previousAccount === undefined) { if (meta.accounts) delete meta.accounts[item.ai]; }
+      else meta.accounts = { ...meta.accounts, [item.ai]: previousAccount };
       try { await this.deps.store.writeMeta(p, t, meta); }
       catch (cleanupError) { log.error('對話收尾失敗', cleanupError, { project: p, task: t }); }
       if (!persisted) {

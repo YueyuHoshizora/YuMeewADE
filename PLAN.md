@@ -39,7 +39,7 @@
 - 帳號系統、多使用者、權限管理。
 - 套件發布（npm／JSR）：只開原始碼倉庫，不發套件。
 - 內嵌終端機（pty）畫面：第一版僅無頭串流對話。
-- AI 帳號切換、額度（上限）管理。~~用量監控~~ → **唯讀顯示改為範圍內**（使用者裁示 2026-10-11，見附錄 B.6）：底部列顯示 CLI 回報的額度與輸出速度，不做切換或管理。
+- ~~AI 帳號切換與用量監控~~ → **改為範圍內**（使用者裁示 2026-10-11，見附錄 B.6）：底部只顯示各 AI 使用中帳號，詳情可登錄既有已登入 CLI 設定資料夾並切換，查詢額度與轉換通知；不提供登入流程、不修改方案或額度上限。
 - 自動更新機制、程式碼簽名與公證、各平台商店上架（見假設 7）。
 - ~~多語系（第一版僅繁體中文）~~ → **改為範圍內**（使用者裁示 2026-10-10，見附錄 A.8）：UI 支援繁體中文／簡體中文／英文／日文／德文／法文／義大利文。
 - 即時通訊（Discord 等）整合、MCP 伺服器管理、圖片／影片生成流程。
@@ -165,7 +165,7 @@
 - 錯誤碼：400 輸入不合法／404 目標不存在／409 衝突（執行中或同名已存在）／413 內容過大／500 內部錯誤（一律 generic 訊息）。
 
 ### 4.4 流程範例
-**流程範例 1（基本對話）**：① `GET /api/bootstrap` 選專案 → ② `POST /api/tasks` 建立作業 → ③ `POST /api/chat/send`（`cli: mock`）→ ④ SSE 依序收 `log(user)`→`delta`…→`log(assistant)`→`done` → ⑤ `GET /api/chat/log` 回兩筆且 `.ai/chat/{作業ID}.jsonl` 恰兩行。
+**流程範例 1（基本對話）**：① `GET /api/state` 選專案 → ② `POST /api/task/new` 建立作業 → ③ 訂閱 `/api/chat/stream?project={專案}&task={作業ID}`，再 `POST /api/chat/send`（`ai: mock`）→ ④ SSE 依序收 `row(user)`→`busy`→`delta`…→`row(assistant)`→`idle` → ⑤ `GET /api/chat/history?project={專案}&task={作業ID}&before=2` 回兩筆且 `.ai/chat/{作業ID}.jsonl` 恰兩行。
 
 **流程範例 2（排隊與停止）**：① 執行中再 `POST /api/chat/send` → 寫入 `{作業ID}.queue.json` 並於 UI 顯示排隊 → ② `POST /api/chat/stop` → 子行程終止、記錄標記停止 → ③ 本輪 `done` 後排隊指示自動出隊執行 → ④ 驗證：JSONL 含停止標記且隊列檔清空。
 
@@ -455,9 +455,11 @@ electron 44.7.0、vite 8.3.4、electron-builder 26.15.3、typescript 7.0.2、@ty
 - 維持原設計：合併前自動儲存本體（A.6，預覽已提示 `mainDirty` 且合併前需確認）；自動儲存只排除「新出現的」機密檔（AGENTS §四），已追蹤的機密檔若也排除，合併後移除副本時會遺失其修改。
 
 ### B.6 額度與輸出速度（底部列）
-- 資料來源：Claude 為 stream-json 的 `rate_limit_event`（回合中，`unifiedWindows` 的 5 小時／7 天使用率），另在核心啟動時與每 2 分鐘讀取 Claude Code 的 OAuth 憑證（macOS 鑰匙圈 `Claude Code-credentials`，其他平台 `{CLAUDE_CONFIG_DIR 或 ~/.claude}/.credentials.json`；使用者 2026-10-11 明確同意，僅用於查額度），`GET https://api.anthropic.com/api/oauth/usage`（`Authorization: Bearer`、`anthropic-beta: oauth-2025-04-20`，非公開 API，逾時 15 秒）取得 `five_hour`／`seven_day`（`utilization` 已是百分比）。token 過期不重新整理（CLI 執行時會更新）、憑證不寫日誌；失敗只記警告，額度仍靠回合中事件。Codex 核心啟動時與之後每 2 分鐘執行 `codex app-server`（`cli.codex.quotaArgs`），以 JSON-RPC `initialize` → `account/rateLimits/read` 取得帳號即時額度（與 CLI 同一份後端資料），逾時 15 秒；失敗退回讀 `$CODEX_HOME/sessions/YYYY/MM/DD/rollout-*.jsonl` 尾端最後一筆 `rate_limits`（可能過時），回合結束後也讀該 thread 的 rollout。
+- 資料來源：Claude 為 stream-json 的 `rate_limit_event`，另在核心啟動時與每 `limits.usagePollSeconds`（預設 300 秒＝5 分鐘）查 `GET https://api.anthropic.com/api/oauth/usage`（非公開 API）。OAuth 憑證只在核心讀取並供用量查詢：各帳號使用對應 CLI 設定目錄的 macOS 專屬鑰匙圈項目或 `.credentials.json`，額外帳號不借用預設帳號憑證。Codex 執行 `codex app-server`（`cli.codex.quotaArgs`），JSON-RPC `initialize` → `account/rateLimits/read`。各帳號隔離，查詢失敗標為 `unavailable`，保留最後一次資料與 `quotaAt`，不把舊本機紀錄當成即時查詢成功；憑證不回 API、不進 DOM 或日誌。
+- 帳號介面：`Settings.accounts` 登錄 Claude／Codex 額外帳號的 `{id,name,configDir}`，`activeAccounts` 指定使用中 id（缺省 `default`）；按工作區保存。新增只登錄既有已登入的獨立設定資料夾：Claude `CLAUDE_CONFIG_DIR`，Codex `CODEX_HOME`，不做登入、不複製憑證。`POST /api/accounts/add` 收 `{ai,name,configDir}`，`remove` 收 `{ai,id}`（不可移除預設帳號），`refresh` 主動重查額度；切換以 `POST /api/settings` 的 `activeAccounts`。底部各 AI 只顯示使用中帳號（自訂名稱）；點開原生 dialog 看所有帳號、各窗口使用率、剩餘比例、重置時間、查詢狀態及資料時間。開啟的 dialog 只讀 UI 狀態並跟隨 SSE 更新，不額外輪詢網路；關閉即清除狀態讀取計時器。切換只影響下一次送出，正在執行的回合不變，另一帳號的 session 不可接續。
+- 額度提醒：`src/ui/components/quota-alert.ts` 以 AI＋帳號隔離比較成功回報的滿額狀態（`limited` 或任一未過期窗口 ≥100%）。初次成功回報不通知；用滿／恢復轉換跳 toast，背景時另發系統通知（與完成通知共用開關），同時多帳號提示合併顯示。只有新的成功回報才可判定恢復；查詢失敗或重置時間經過本身都不代表恢復。
 - 平均 tok/s（右下角單一數字）：最近實測 CLI 輸出 token 總數除以量測時間區間的聯集，平行區間不重複計時、序列區間不直接相加各自速度；每個執行的最新量測保留 4 秒。Claude 用訊息耗時，Codex 用完整回合耗時（包括等待與工具）；包含 CLI 回報的思考用量，不使用字元或 `estimated_tokens` 估算，不宣稱即時生成速度。缺少有效量測為 `null`（UI「—」），實際零輸出為 0。
-- `src/ai/usage.ts` 的 `UsageBoard` 只存記憶體；額度依資料時間只前進不倒退。`GET /api/state` 帶 `usage`（`{ais, tokensPerSecond}`），額度變更或 tok/s 改變時全域 SSE 推 `usage`。重置時間已過的窗口在 UI 顯示為「—」，等下一次回報。
+- `src/ai/usage.ts` 的 `UsageBoard` 只存記憶體；額度依帳號及資料時間隔離。`GET /api/state` 帶 `usage`（`{ais, tokensPerSecond}`）；`AiUsage` 帶 `account`、`status`（`ready`／`unavailable`），額度或速度改變時全域 SSE 推 `usage`。重置時間已過的窗口在底部顯示「—」等待新資料，詳情保留上次使用率與資料時間。
 
 ### B.7 驗證、合併安全與對話工具（使用者裁示「自行補足 ADE 欠缺功能」，2026-10-11）
 - 驗證指令：`PROJECT.md` frontmatter `verify`（單行、≤500 字、無換行／NUL，空字串＝未設定）。`POST /api/task/verify` 在作業工作副本（沒有副本的直接作業用主資料夾）以平台 shell 執行，環境與 CLI 子行程相同的白名單，輸出只留尾段（`limits.verifyOutputBytes`），逾時（`limits.verifySeconds`）終止整個行程樹。指令**只來自台帳**，請求不能帶指令；操作紀錄只記 ok／exit code／耗時，輸出不進日誌；AI 執行中、同作業已有驗證、或同時數超過 `limits.concurrentRuns` 回 409；關閉核心時一併終止。驗證結果不擋合併，由人判斷。

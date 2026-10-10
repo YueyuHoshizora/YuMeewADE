@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
-import type { CliProvider } from '../cli/provider.ts';
+import type { CliEvent, CliProvider } from '../cli/provider.ts';
 import type { UsageState } from '../shared/types.ts';
 import { UsageBoard } from './usage.ts';
 import { createClaudeParser } from '../cli/claude.ts';
@@ -19,8 +19,8 @@ test('額度只前進不倒退，每次變更都推送完整快照', () => {
   assert.deepEqual(board.snapshot(), {
     tokensPerSecond: null,
     ais: [
-      { ai: 'claude', windows: [{ label: '5h', usedPercent: 5, resetsAt: null }], limited: false, quotaAt: '2026-10-10T10:01:00Z' },
-      { ai: 'codex', windows: [{ label: '5h', usedPercent: 40, resetsAt: null }], limited: false, quotaAt: '2026-10-10T10:00:00Z' },
+      { ai: 'claude', account: 'default', status: 'ready', windows: [{ label: '5h', usedPercent: 5, resetsAt: null }], limited: false, quotaAt: '2026-10-10T10:01:00Z' },
+      { ai: 'codex', account: 'default', status: 'ready', windows: [{ label: '5h', usedPercent: 40, resetsAt: null }], limited: false, quotaAt: '2026-10-10T10:00:00Z' },
     ],
   });
 });
@@ -118,15 +118,17 @@ test('同一 AI 的並行 parser 有獨立 runId，不互相覆蓋或被文字�
   } finally { board.close(); }
 });
 
-test('啟動載入只問有本機紀錄的 CLI，單一 CLI 讀取失敗不影響其他', async () => {
+test('啟動載入只問有額度介面的 CLI，單一 CLI 查詢失敗不影響其他', async () => {
   const board = new UsageBoard(() => {});
   const base = { dangerous: false, available: async () => true, send: () => { throw new Error('unused'); } };
   await board.load({
-    claude: { ...base, name: 'claude' },
+    mock: { ...base, name: 'mock' },
     codex: { ...base, name: 'codex', quota: async () => quota('2026-10-10T10:00:00Z', 55) },
     broken: { ...base, name: 'broken', quota: async () => { throw new Error('EACCES'); } },
   } satisfies Record<string, CliProvider>);
-  assert.deepEqual(board.snapshot().ais.map(entry => [entry.ai, entry.windows[0]?.usedPercent]), [['codex', 55]]);
+  assert.deepEqual(board.snapshot().ais.map(entry => [entry.ai, entry.account, entry.status, entry.windows[0]?.usedPercent]),
+    [['broken', 'default', 'unavailable', undefined], ['codex', 'default', 'ready', 55]]);
+  board.close();
 });
 
 test('poll：啟動查一次並定期重查，額度隨 CLI 回報更新、關閉後不再查', async () => {
@@ -147,4 +149,51 @@ test('poll：啟動查一次並定期重查，額度隨 CLI 回報更新、關�
   assert.equal(board.snapshot().ais[0]?.windows[0]?.usedPercent, used);
   await new Promise(resolve => setTimeout(resolve, 80));
   assert.equal(calls, after);
+});
+
+test('額度帳戶隔離／singleflight／失敗狀態；刪除帳戶與 close 丟棄晚到回應', async () => {
+  const pending = new Map<string, {
+    promise: Promise<Extract<CliEvent, { type: 'quota' }> | null>;
+    resolve: (value: Extract<CliEvent, { type: 'quota' }> | null) => void;
+    reject: (reason: unknown) => void;
+  }>();
+  const calls: string[] = [];
+  const provider: CliProvider = {
+    name: 'claude', dangerous: false, available: async () => true, send: () => { throw new Error('unused'); },
+    quota: async configDir => {
+      const key = configDir ?? 'default';
+      calls.push(key);
+      const deferred = Promise.withResolvers<Extract<CliEvent, { type: 'quota' }> | null>();
+      pending.set(key, deferred);
+      return deferred.promise;
+    },
+  };
+  const board = new UsageBoard(() => {});
+  const providers = { claude: provider };
+  const accounts = { claude: [{ id: 'extra', name: 'Extra', configDir: '/extra' }] };
+  const first = board.load(providers, accounts);
+  const second = board.load(providers, accounts);
+  assert.deepEqual(calls, ['default', '/extra']);
+  pending.get('default')!.resolve(quota('2026-10-10T10:00:00Z', 10));
+  pending.get('/extra')!.resolve(quota('2026-10-10T10:00:00Z', 80));
+  await Promise.all([first, second]);
+  assert.deepEqual(board.snapshot().ais.map(item => [item.account, item.windows[0]?.usedPercent]), [['default', 10], ['extra', 80]]);
+  const failure = board.load(providers, accounts);
+  pending.get('default')!.resolve(null);
+  pending.get('/extra')!.reject(new Error('private credentials'));
+  await failure;
+  assert.deepEqual(board.snapshot().ais.map(item => [item.account, item.status, item.windows[0]?.usedPercent]), [['default', 'unavailable', 10], ['extra', 'unavailable', 80]]);
+  const reload = board.load(providers, accounts);
+  const prune = board.load(providers, {});
+  pending.get('default')!.resolve(quota('2026-10-10T11:00:00Z', 20));
+  pending.get('/extra')!.resolve(quota('2026-10-10T11:00:00Z', 90));
+  await Promise.all([reload, prune]);
+  assert.deepEqual(board.snapshot().ais.map(item => item.account), ['default']);
+  const late = board.load(providers, accounts);
+  board.close();
+  pending.get('default')!.resolve(quota('2026-10-10T12:00:00Z', 30));
+  pending.get('/extra')!.resolve(quota('2026-10-10T12:00:00Z', 100));
+  await late;
+  assert.equal(board.snapshot().ais[0]?.windows[0]?.usedPercent, 20);
+  assert.equal(board.snapshot().ais.length, 1);
 });

@@ -1,6 +1,14 @@
 import type { MessageKey } from './zh-TW.ts';
 
 export const de: Record<MessageKey, string> = {
+  'usage.details': 'Konten und Kontingentdetails', 'usage.openDetails': 'Konten und Kontingentdetails für {ai} öffnen',
+  'usage.defaultAccount': 'Standardkonto', 'usage.active': 'Aktiv', 'usage.activate': 'Konto verwenden',
+  'usage.addAccount': 'Konto hinzufügen', 'usage.remove': 'Konto entfernen', 'usage.removeConfirm': 'Registrierung für „{name}“ entfernen? CLI-Einstellungen werden nicht gelöscht und das Konto wird nicht abgemeldet.',
+  'usage.provider': 'KI', 'usage.configDir': 'Angemeldetes CLI-Einstellungsverzeichnis (absoluter Pfad; ~ erlaubt)',
+  'usage.accountHelp': 'Melde dich zuvor mit einem separaten CLI-Einstellungsverzeichnis an und gib dieses Verzeichnis hier an. Claude verwendet CLAUDE_CONFIG_DIR, Codex CODEX_HOME. Hier werden keine Zugangsdaten eingegeben oder kopiert.',
+  'usage.accountNotice': 'Die Fußzeile zeigt nur das aktive Konto jeder KI. Ein Wechsel gilt erst für künftige Anweisungen, nicht für laufende Aufgaben. Unterstützte Kontingente werden standardmäßig alle 5 Minuten abgefragt; bei Erschöpfung und Erholung gibt es Hinweise. Fehlgeschlagene Abfragen behalten die letzten Daten; dies ist kein Echtzeitkontingent.',
+  'usage.refresh': 'Kontingent jetzt abfragen', 'usage.ready': 'Abfrage erfolgreich', 'usage.unavailable': 'Abfrage nicht verfügbar', 'usage.noData': 'Noch keine Kontingentdaten; manuell abfragen oder auf die nächste Aktualisierung warten',
+  'usage.remaining': '{percent}% verbleibend',
   'usage.averageSpeed': '{speed} Ø tok/s', 'usage.measuredSpeed': 'Tatsächliche zuletzt von der CLI gemeldete Ausgabetokens geteilt durch die vereinigten gemessenen Zeitintervalle; Messungen bleiben 4 Sekunden erhalten. — bedeutet keine Messung, keine Live-Generierungsgeschwindigkeit. Claude nutzt die Nachrichtendauer, Codex den ganzen Durchlauf einschließlich Wartezeiten und Werkzeugen. Gemeldete Denktokens sind enthalten, ohne Schätzungen.',
   'project.verify': 'Prüfbefehl',
   'project.verifyHint': 'Wird im Worktree der Aufgabe ausgeführt (z. B. npm test); in PROJECT.md gespeichert.',
@@ -36,6 +44,7 @@ export const de: Record<MessageKey, string> = {
   'settings.notifications': 'Bei Abschluss oder nötiger Antwort benachrichtigen', 'settings.notificationPermission': 'Systembenachrichtigungen erlauben', 'notification.done': 'Die KI hat ihre Antwort abgeschlossen', 'notification.answer': 'Die KI benötigt deine Antwort',
   'connection.reconnecting': 'Verbindung zum Kern getrennt. Erneute Verbindung…',
   'usage.region': 'Kontingent und Ausgabegeschwindigkeit', 'usage.none': 'Noch keine Kontingentdaten; Aktualisierung nach der nächsten Anweisung', 'usage.quotaAt': 'Kontingentdaten von {at}', 'usage.window': '{label}-Fenster: {percent} verbraucht, Zurücksetzung {reset}', 'usage.windowNoReset': '{label}-Fenster: {percent} verbraucht', 'usage.windowReset': '{label}-Fenster wurde um {reset} zurückgesetzt; warte auf die nächste Meldung', 'usage.limited': 'Limit erreicht',
+  'usage.alertTitle': 'Kontingenthinweis', 'usage.alertFull': 'Das Kontingent von {ai} ist aufgebraucht ({windows}); Zurücksetzung {reset}', 'usage.alertFullNoReset': 'Das Kontingent von {ai} ist aufgebraucht ({windows})', 'usage.alertRecovered': 'Das Kontingent von {ai} ist wieder verfügbar; es kann weitergehen',
   'tree.search': 'Projekte und Aufgaben suchen…',
   'settings.enterToSend': 'Enter sendet, Shift+Enter fügt eine neue Zeile ein', 'chat.placeholderEnter': 'Anweisungen schreiben… (Enter sendet, Shift+Enter für neue Zeile)', 'chat.hintEnter': 'Enter sendet, Shift+Enter für neue Zeile', 'chat.hintModifier': '⌘ / Ctrl + Enter zum Senden',
   'markdown.copy': 'Code kopieren', 'markdown.copied': 'Kopiert', 'markdown.copyFailed': 'Kopieren fehlgeschlagen',

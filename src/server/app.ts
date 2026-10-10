@@ -24,13 +24,10 @@ import { loadRoles } from '../roles/roles.ts';
 import type { Config } from '../shared/config.ts';
 import { AppError } from '../shared/errors.ts';
 import { log } from '../shared/log.ts';
-import type { AppState, ChatEvent, Roles } from '../shared/types.ts';
+import type { AppState, ChatEvent, Roles, UsageState } from '../shared/types.ts';
 import { buildState, type StateSnapshot } from '../state/state.ts';
 
 const pkg = createRequire(import.meta.url)('../../package.json') as { version: string };
-
-/** 向 CLI 重新查額度的間隔；額度在終端機或其他裝置上也會變。 */
-const USAGE_POLL_MS = 120_000;
 
 export interface AppOptions {
   /** 測試用：取代真實 CLI。 */
@@ -109,7 +106,7 @@ export class App {
       publish: (project, task, ev) => this.sse.publish(taskKey(project, task), ev),
       watching: (project, task) => this.sse.watching(taskKey(project, task)),
       onChanged: (project, task) => this.changed(project, task),
-      onUsage: (ai, ev) => this.usage.record(ai, ev),
+      onUsage: (ai, ev, account) => this.usage.record(ai, ev, account),
     });
     // AI 一開始動手，之前的驗證結果就不再代表目前的檔案。
     this.runner.on('event', (project: string, task: string, ev: ChatEvent) => { if (ev.event === 'busy') this.verify.invalidate(project, task); });
@@ -128,8 +125,13 @@ export class App {
     this.uploadTimer.unref();
     this.watcher = new LedgerWatcher(this.ws, (project, task) => this.changed(project, task));
     await this.watcher.start();
-    // 向各 CLI 查帳號目前額度（Codex 走 app-server，失敗退回本機紀錄）；不擋啟動，查到會以 usage 事件推給客戶端，之後定期更新。
-    void this.usage.poll(this.providers, USAGE_POLL_MS);
+    // 帳戶查詢不擋啟動；每輪重新讀設定，新增／移除的帳戶即時生效。
+    void this.usage.poll(this.providers, this.config.limits.usagePollSeconds * 1000, async () => (await this.settings.get()).accounts);
+  }
+
+  async refreshUsage(): Promise<UsageState> {
+    await this.usage.load(this.providers, (await this.settings.get()).accounts);
+    return this.usage.snapshot();
   }
 
   /** 每次讀檔：roles.yaml 可手改，不快取。 */

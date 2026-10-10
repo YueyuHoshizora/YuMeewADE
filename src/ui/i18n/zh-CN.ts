@@ -1,6 +1,14 @@
 import type { MessageKey } from './zh-TW.ts';
 
 export const zhCN: Record<MessageKey, string> = {
+  'usage.details': '账号与额度详情', 'usage.openDetails': '打开 {ai} 账号与额度详情',
+  'usage.defaultAccount': '默认账号', 'usage.active': '使用中', 'usage.activate': '切换账号',
+  'usage.addAccount': '添加账号', 'usage.remove': '移除账号', 'usage.removeConfirm': '移除「{name}」的登记？不会删除 CLI 设置或退出账号。',
+  'usage.provider': 'AI', 'usage.configDir': '已登录的 CLI 设置文件夹（绝对路径，可用 ~）',
+  'usage.accountHelp': '请先在另一个独立的 CLI 设置文件夹完成登录，再填写该文件夹。Claude 使用 CLAUDE_CONFIG_DIR，Codex 使用 CODEX_HOME。这里不输入或复制登录凭据。',
+  'usage.accountNotice': '底部只显示各 AI 的使用中账号。切换只影响下一次发送的指示，不会改变运行中的作业。支持查询的额度默认每 5 分钟更新，用尽与恢复时提醒；查询失败保留上次数据，并非实时额度。',
+  'usage.refresh': '立即查询额度', 'usage.ready': '查询成功', 'usage.unavailable': '目前无法查询', 'usage.noData': '尚无额度数据；可手动查询或等待下次更新',
+  'usage.remaining': '剩余 {percent}%',
   'usage.averageSpeed': '{speed} 平均 tok/s', 'usage.measuredSpeed': '最近 CLI 回报的实际输出 token 总数除以测量时间区间的并集，测量保留 4 秒；没有测量时显示 —，不是实时生成速度。Claude 按每条消息耗时；Codex 按完整回合（含等待与工具）。包含 CLI 回报的思考用量，不做估算。',
   'project.verify': '验证指令',
   'project.verifyHint': '在作业的工作副本执行（例如 npm test）；指令保存在 PROJECT.md。',
@@ -36,6 +44,7 @@ export const zhCN: Record<MessageKey, string> = {
   'settings.notifications': '作业完成或需要回答时通知', 'settings.notificationPermission': '允许系统通知', 'notification.done': 'AI 已完成回复', 'notification.answer': 'AI 需要你的回答',
   'connection.reconnecting': '核心连接中断，正在重新连接…',
   'usage.region': '账号额度与输出速度', 'usage.none': '暂无额度数据；发送一次指示后更新', 'usage.quotaAt': '额度数据时间 {at}', 'usage.window': '{label} 时间窗已用 {percent}，{reset} 重置', 'usage.windowNoReset': '{label} 时间窗已用 {percent}', 'usage.windowReset': '{label} 时间窗已于 {reset} 重置，等待下一次回报', 'usage.limited': '已达上限',
+  'usage.alertTitle': '额度提醒', 'usage.alertFull': '{ai} 额度已用满（{windows}），{reset} 重置', 'usage.alertFullNoReset': '{ai} 额度已用满（{windows}）', 'usage.alertRecovered': '{ai} 额度已恢复，可以继续使用',
   'tree.search': '搜索项目与作业…',
   'settings.enterToSend': 'Enter 发送，Shift+Enter 换行', 'chat.placeholderEnter': '写下指示…（Enter 发送，Shift+Enter 换行）', 'chat.hintEnter': 'Enter 发送，Shift+Enter 换行', 'chat.hintModifier': '⌘ / Ctrl + Enter 发送',
   'markdown.copy': '复制代码', 'markdown.copied': '已复制', 'markdown.copyFailed': '复制失败',

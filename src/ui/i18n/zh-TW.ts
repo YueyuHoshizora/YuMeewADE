@@ -1,5 +1,13 @@
 // 繁體中文定義訊息契約；專案內容與 AI 輸出不翻譯。
 export const zhTW = {
+  'usage.details': '帳號與額度詳情', 'usage.openDetails': '開啟 {ai} 帳號與額度詳情',
+  'usage.defaultAccount': '預設帳號', 'usage.active': '使用中', 'usage.activate': '切換帳號',
+  'usage.addAccount': '新增帳號', 'usage.remove': '移除帳號', 'usage.removeConfirm': '移除「{name}」的登錄？不會刪除 CLI 設定或登出帳號。',
+  'usage.provider': 'AI', 'usage.configDir': '已登入的 CLI 設定資料夾（絕對路徑，可用 ~）',
+  'usage.accountHelp': '請先在另一個獨立的 CLI 設定資料夾完成登入，再填入該資料夾。Claude 使用 CLAUDE_CONFIG_DIR，Codex 使用 CODEX_HOME。這裡不輸入或複製登入憑證。',
+  'usage.accountNotice': '底部只顯示各 AI 的使用中帳號。切換只影響下一次送出的指示，不會改變執行中的作業。支援查詢的額度預設每 5 分鐘更新，用盡與恢復時提醒；查詢失敗保留上次資料，並非即時額度。',
+  'usage.refresh': '立即查詢額度', 'usage.ready': '查詢成功', 'usage.unavailable': '目前無法查詢', 'usage.noData': '尚無額度資料；可手動查詢或等待下次更新',
+  'usage.remaining': '剩餘 {percent}%',
   'usage.averageSpeed': '{speed} 平均 tok/s', 'usage.measuredSpeed': '最近 CLI 回報的實際輸出 token 總數除以量測時間區間的聯集，量測保留 4 秒；沒有量測時顯示 —，不是即時生成速度。Claude 採每則訊息耗時；Codex 採完整回合（含等待與工具）。包含 CLI 回報的思考用量，不做估算。',
   'project.verify': '驗證指令',
   'project.verifyHint': '在作業的工作副本執行（例如 npm test）；指令儲存在 PROJECT.md。',
@@ -35,6 +43,7 @@ export const zhTW = {
   'settings.notifications': '作業完成或需要回答時通知', 'settings.notificationPermission': '允許系統通知', 'notification.done': 'AI 已完成回覆', 'notification.answer': 'AI 需要你的回答',
   'connection.reconnecting': '核心連線中斷，重新連線中…',
   'usage.region': '帳號額度與輸出速度', 'usage.none': '尚無額度資料；送出一次指示後更新', 'usage.quotaAt': '額度資料時間 {at}', 'usage.window': '{label} 時間窗已用 {percent}，{reset} 重置', 'usage.windowNoReset': '{label} 時間窗已用 {percent}', 'usage.windowReset': '{label} 時間窗已於 {reset} 重置，等待下一次回報', 'usage.limited': '已達上限',
+  'usage.alertTitle': '額度提醒', 'usage.alertFull': '{ai} 額度已用滿（{windows}），{reset} 重置', 'usage.alertFullNoReset': '{ai} 額度已用滿（{windows}）', 'usage.alertRecovered': '{ai} 額度已恢復，可以繼續使用',
   'tree.search': '搜尋專案與作業…',
   'settings.enterToSend': 'Enter 送出，Shift+Enter 換行', 'chat.placeholderEnter': '寫下指示…（Enter 送出，Shift+Enter 換行）', 'chat.hintEnter': 'Enter 送出，Shift+Enter 換行', 'chat.hintModifier': '⌘ / Ctrl + Enter 送出',
   'markdown.copy': '複製程式碼', 'markdown.copied': '已複製', 'markdown.copyFailed': '複製失敗',

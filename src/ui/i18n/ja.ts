@@ -1,6 +1,14 @@
 import type { MessageKey } from './zh-TW.ts';
 
 export const ja: Record<MessageKey, string> = {
+  'usage.details': 'アカウントと利用枠の詳細', 'usage.openDetails': '{ai} のアカウントと利用枠の詳細を開く',
+  'usage.defaultAccount': '既定のアカウント', 'usage.active': '使用中', 'usage.activate': 'アカウントを切り替え',
+  'usage.addAccount': 'アカウントを追加', 'usage.remove': 'アカウントを削除', 'usage.removeConfirm': '「{name}」の登録を削除しますか？CLI 設定の削除やログアウトは行いません。',
+  'usage.provider': 'AI', 'usage.configDir': 'ログイン済み CLI 設定フォルダー（絶対パス、~ 使用可）',
+  'usage.accountHelp': '別の独立した CLI 設定フォルダーで事前にログインし、そのフォルダーを入力してください。Claude は CLAUDE_CONFIG_DIR、Codex は CODEX_HOME を使用します。ここでは認証情報を入力・コピーしません。',
+  'usage.accountNotice': 'フッターには各 AI の使用中アカウントだけを表示します。切り替えは次の指示から有効で、実行中の作業は変わりません。取得に対応した利用枠は既定で 5 分ごとに更新し、使い切った時と回復した時に通知します。取得失敗時は前回のデータを保持し、リアルタイムの値ではありません。',
+  'usage.refresh': '利用枠を今すぐ取得', 'usage.ready': '取得成功', 'usage.unavailable': '現在取得できません', 'usage.noData': '利用枠データはまだありません。手動で取得するか次の更新をお待ちください',
+  'usage.remaining': '残り {percent}%',
   'usage.averageSpeed': '{speed} 平均 tok/s', 'usage.measuredSpeed': '直近の CLI が報告した実際の出力 token 合計を計測区間の和集合の長さで割り、計測を 4 秒間保持します。未計測は — で表示し、リアルタイムの生成速度ではありません。Claude は各メッセージの時間、Codex は待機・ツールを含むターン全体の時間です。CLI が報告する思考用量を含み、推定はしません。',
   'project.verify': '検証コマンド',
   'project.verifyHint': '作業の worktree で実行（例：npm test）。PROJECT.md に保存されます。',
@@ -36,6 +44,7 @@ export const ja: Record<MessageKey, string> = {
   'settings.notifications': '作業の完了や回答が必要なときに通知', 'settings.notificationPermission': 'システム通知を許可', 'notification.done': 'AI の返信が完了しました', 'notification.answer': 'AI があなたの回答を待っています',
   'connection.reconnecting': 'コアとの接続が切れました。再接続中…',
   'usage.region': 'アカウントの利用枠と出力速度', 'usage.none': '利用枠データはまだありません。次の指示を送ると更新されます', 'usage.quotaAt': '利用枠データの時刻 {at}', 'usage.window': '{label} 枠：{percent} 使用、{reset} にリセット', 'usage.windowNoReset': '{label} 枠：{percent} 使用', 'usage.windowReset': '{label} 枠は {reset} にリセット済み。次の報告を待っています', 'usage.limited': '上限到達',
+  'usage.alertTitle': '利用枠のお知らせ', 'usage.alertFull': '{ai} の利用枠を使い切りました（{windows}）。{reset} にリセット', 'usage.alertFullNoReset': '{ai} の利用枠を使い切りました（{windows}）', 'usage.alertRecovered': '{ai} の利用枠が回復しました。続行できます',
   'tree.search': 'プロジェクトと作業を検索…',
   'settings.enterToSend': 'Enter で送信、Shift+Enter で改行', 'chat.placeholderEnter': '指示を入力…（Enter で送信、Shift+Enter で改行）', 'chat.hintEnter': 'Enter で送信、Shift+Enter で改行', 'chat.hintModifier': '⌘ / Ctrl + Enter で送信',
   'markdown.copy': 'コードをコピー', 'markdown.copied': 'コピーしました', 'markdown.copyFailed': 'コピーできませんでした',

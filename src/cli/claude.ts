@@ -1,11 +1,9 @@
 // Claude stream-json adapter；工具與問題獨立於回答文字。
 import type { CliCommandConfig } from '../shared/config.ts';
 import { randomUUID } from 'node:crypto';
-import { promises as fs } from 'node:fs';
-import os from 'node:os';
-import path from 'node:path';
 import type { Ask, QuotaWindow, TurnUsage } from '../shared/types.ts';
-import { captureCommand, findExecutable, minimalEnv, runLineProcess } from './process.ts';
+import { findExecutable, minimalEnv, runLineProcess } from './process.ts';
+import { readClaudeToken } from './claude-credentials.ts';
 import type { CliEvent, CliProvider, CliRun, SendOptions } from './provider.ts';
 
 export function claudeArgs(cfg: CliCommandConfig, opts: SendOptions): string[] {
@@ -41,7 +39,6 @@ export function claudeQuota(info: unknown): { windows: QuotaWindow[]; limited: b
 }
 
 const OAUTH_USAGE_URL = 'https://api.anthropic.com/api/oauth/usage';
-const KEYCHAIN_SERVICE = 'Claude Code-credentials';
 const USAGE_WINDOWS: Record<string, string> = { five_hour: '5h', seven_day: '7d', seven_day_opus: '7d opus', seven_day_sonnet: '7d sonnet' };
 
 /** `/api/oauth/usage` 的回應（utilization 已是 0–100 百分比、resets_at 為 ISO）→ 額度窗口；只收已知的窗口，未知欄位忽略。 */
@@ -50,7 +47,7 @@ export function claudeOauthQuota(body: unknown): { windows: QuotaWindow[]; limit
   const windows: QuotaWindow[] = [];
   for (const [key, label] of Object.entries(USAGE_WINDOWS)) {
     const w = (body as Record<string, unknown>)[key];
-    if (!w || typeof w !== 'object' || !('utilization' in w) || typeof w.utilization !== 'number') continue;
+    if (!w || typeof w !== 'object' || !('utilization' in w) || typeof w.utilization !== 'number' || !Number.isFinite(w.utilization)) continue;
     const resets = 'resets_at' in w && typeof w.resets_at === 'string' ? Date.parse(w.resets_at) : NaN;
     windows.push({
       label,
@@ -61,34 +58,12 @@ export function claudeOauthQuota(body: unknown): { windows: QuotaWindow[]; limit
   return windows.length ? { windows, limited: windows.some(w => w.usedPercent >= 100) } : null;
 }
 
-/** 讀 Claude Code 自己存的 OAuth 憑證（使用者 2026-10-11 同意只為查額度而讀）：macOS 鑰匙圈，其餘平台／讀不到時讀 `.credentials.json`。 */
-async function readClaudeToken(env: NodeJS.ProcessEnv): Promise<string> {
-  const texts: string[] = [];
-  if (process.platform === 'darwin') {
-    const out = await captureCommand({ command: 'security', args: ['find-generic-password', '-s', KEYCHAIN_SERVICE, '-w'], env, timeoutMs: 5000 });
-    if (out.ok) texts.push(out.stdout);
-  }
-  try { texts.push(await fs.readFile(path.join(env['CLAUDE_CONFIG_DIR'] || path.join(os.homedir(), '.claude'), '.credentials.json'), 'utf8')); }
-  catch { /* 沒有檔案就只剩鑰匙圈。 */ }
-  for (const text of texts) {
-    try {
-      const oauth = (JSON.parse(text) as { claudeAiOauth?: { accessToken?: unknown; expiresAt?: unknown } }).claudeAiOauth;
-      if (typeof oauth?.accessToken !== 'string') continue;
-      // 過期的 token 不重新整理（那是 CLI 的事，CLI 下次執行會更新）；回報讓上層退回回合中的額度。
-      if (typeof oauth.expiresAt === 'number' && oauth.expiresAt <= Date.now()) throw new Error('claude credentials expired');
-      return oauth.accessToken;
-    } catch (err) {
-      if (err instanceof Error && err.message === 'claude credentials expired') throw err;
-    }
-  }
-  throw new Error('claude credentials not found');
-}
-
 /** 向 Anthropic 查帳號目前的 5 小時／7 天用量；憑證只用於這個請求，不寫日誌。 */
 export async function fetchClaudeQuota(env: NodeJS.ProcessEnv, timeoutMs = 15_000, url = OAUTH_USAGE_URL, readToken = readClaudeToken): Promise<{ type: 'quota'; windows: QuotaWindow[]; limited: boolean; at: string } | null> {
   const token = await readToken(env);
   const res = await fetch(url, {
     headers: { Authorization: `Bearer ${token}`, 'anthropic-beta': 'oauth-2025-04-20' },
+    redirect: 'error',
     signal: AbortSignal.timeout(timeoutMs),
   });
   if (!res.ok) throw new Error(`usage endpoint ${res.status}`);
@@ -245,7 +220,9 @@ export class ClaudeCliProvider implements CliProvider {
   async available(): Promise<boolean> { return (await findExecutable(this.cfg.command, this.env)) !== null; }
 
   /** 帳號目前的 5 小時／7 天用量（讀 CLI 存的 OAuth 憑證查詢）；失敗由呼叫端記日誌，額度仍會隨回合中的 rate_limit_event 更新。 */
-  quota(): Promise<Extract<CliEvent, { type: 'quota' }> | null> { return fetchClaudeQuota(this.env); }
+  quota(configDir?: string): Promise<Extract<CliEvent, { type: 'quota' }> | null> {
+    return fetchClaudeQuota(configDir ? { ...this.env, CLAUDE_CONFIG_DIR: configDir } : this.env);
+  }
 
   send(opts: SendOptions, onEvent: (ev: CliEvent) => void): CliRun {
     const imagePrompt = opts.images?.length ? `\n\n# 圖片附件\n請用 Read 工具查看以下圖片：\n${opts.images.join('\n')}` : '';
@@ -254,7 +231,7 @@ export class ClaudeCliProvider implements CliProvider {
     const run = runLineProcess(
       {
         command: this.cfg.command, args: claudeArgs(this.cfg, opts),
-        cwd: opts.cwd, env: this.env, prompt: opts.prompt + imagePrompt, label: 'claude',
+        cwd: opts.cwd, env: opts.configDir ? { ...this.env, CLAUDE_CONFIG_DIR: opts.configDir } : this.env, prompt: opts.prompt + imagePrompt, label: 'claude',
       },
       createClaudeParser(ev => {
         if (ev.type === 'result') completed = true;

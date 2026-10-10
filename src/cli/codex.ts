@@ -6,7 +6,6 @@ import os from 'node:os';
 import path from 'node:path';
 import type { CliCommandConfig } from '../shared/config.ts';
 import type { QuotaWindow } from '../shared/types.ts';
-import { log } from '../shared/log.ts';
 import { findExecutable, minimalEnv, runLineProcess } from './process.ts';
 import type { CliEvent, CliProvider, CliRun, SendOptions } from './provider.ts';
 
@@ -282,13 +281,11 @@ export class CodexCliProvider implements CliProvider {
 
   async available(): Promise<boolean> { return (await findExecutable(this.cfg.command, this.env)) !== null; }
 
-  /** 優先問 app-server 取得帳號即時額度（與其他裝置／終端機的用量一致）；沒設定或失敗才退回本機 rollout 的最後一筆。 */
-  async quota(): Promise<QuotaEvent | null> {
-    if (this.cfg.quotaArgs.length) {
-      try { return await fetchCodexQuota(this.cfg.command, this.cfg.quotaArgs, this.env); }
-      catch (err) { log.warn('Codex 即時額度查詢失敗，改讀本機紀錄', { reason: err instanceof Error ? err.message.slice(0, 200) : 'unknown' }); }
-    }
-    return readCodexQuota(this.home);
+  /** 查詢指定帳戶；即時查詢失敗不得拿舊 rollout 偽裝成恢復。 */
+  async quota(configDir?: string): Promise<QuotaEvent | null> {
+    const env = configDir ? { ...this.env, CODEX_HOME: configDir } : this.env;
+    if (this.cfg.quotaArgs.length) return fetchCodexQuota(this.cfg.command, this.cfg.quotaArgs, env);
+    return readCodexQuota(configDir ?? this.home);
   }
 
   send(opts: SendOptions, onEvent: (ev: CliEvent) => void): CliRun {
@@ -298,7 +295,7 @@ export class CodexCliProvider implements CliProvider {
     const run = runLineProcess(
       {
         command: this.cfg.command, args: codexArgs(this.cfg, opts),
-        cwd: opts.cwd, env: this.env, prompt: opts.prompt, label: 'codex',
+        cwd: opts.cwd, env: opts.configDir ? { ...this.env, CODEX_HOME: opts.configDir } : this.env, prompt: opts.prompt, label: 'codex',
       },
       createCodexParser(ev => {
         if (ev.type === 'session') thread = ev.id;
@@ -313,7 +310,7 @@ export class CodexCliProvider implements CliProvider {
         // 額度不論成敗都更新；撞到上限的失敗回合正是最需要看額度的時候。
         if (thread) {
           try {
-            const quota = await readCodexQuota(this.home, thread);
+            const quota = await readCodexQuota(opts.configDir ?? this.home, thread);
             if (quota) onEvent(quota);
           } catch { /* 讀不到 CLI 紀錄只是少了額度顯示，不影響回合結果。 */ }
         }

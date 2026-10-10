@@ -1,6 +1,14 @@
 import type { MessageKey } from './zh-TW.ts';
 
 export const fr: Record<MessageKey, string> = {
+  'usage.details': 'Comptes et détails du quota', 'usage.openDetails': 'Ouvrir les comptes et détails du quota de {ai}',
+  'usage.defaultAccount': 'Compte par défaut', 'usage.active': 'Actif', 'usage.activate': 'Utiliser ce compte',
+  'usage.addAccount': 'Ajouter un compte', 'usage.remove': 'Retirer le compte', 'usage.removeConfirm': 'Retirer l’enregistrement de « {name} » ? Les réglages CLI ne seront pas supprimés et le compte ne sera pas déconnecté.',
+  'usage.provider': 'IA', 'usage.configDir': 'Dossier de réglages CLI déjà connecté (chemin absolu ; ~ accepté)',
+  'usage.accountHelp': 'Connecte-toi au préalable avec un dossier de réglages CLI distinct, puis indique ce dossier ici. Claude utilise CLAUDE_CONFIG_DIR ; Codex utilise CODEX_HOME. Aucun identifiant n’est saisi ni copié ici.',
+  'usage.accountNotice': 'Le pied de page affiche seulement le compte actif de chaque IA. Un changement ne concerne que les prochaines instructions, jamais les tâches en cours. Les quotas pris en charge sont consultés toutes les 5 minutes par défaut, avec des alertes à leur épuisement et à leur rétablissement. Une requête échouée conserve les dernières données ; ce quota n’est pas en temps réel.',
+  'usage.refresh': 'Actualiser le quota maintenant', 'usage.ready': 'Requête réussie', 'usage.unavailable': 'Requête indisponible', 'usage.noData': 'Pas encore de données de quota ; actualiser manuellement ou attendre la prochaine mise à jour',
+  'usage.remaining': '{percent}% restants',
   'usage.averageSpeed': '{speed} tok/s moy.', 'usage.measuredSpeed': 'Total des tokens de sortie réels récemment signalés par la CLI divisé par l’union des intervalles mesurés ; mesures conservées 4 secondes. — signifie aucune mesure, pas une vitesse de génération en direct. Claude utilise la durée de chaque message ; Codex celle du tour complet, attente et outils compris. Inclut la réflexion signalée par la CLI, sans estimation.',
   'project.verify': 'Commande de vérification',
   'project.verifyHint': 'Exécutée dans le worktree de la tâche (ex. npm test) ; enregistrée dans PROJECT.md.',
@@ -36,6 +44,7 @@ export const fr: Record<MessageKey, string> = {
   'settings.notifications': 'Notifier à la fin des tâches ou si une réponse est nécessaire', 'settings.notificationPermission': 'Autoriser les notifications système', 'notification.done': 'La réponse de l’IA est terminée', 'notification.answer': 'L’IA attend votre réponse',
   'connection.reconnecting': 'Connexion au cœur perdue. Reconnexion…',
   'usage.region': 'Quota du compte et vitesse de sortie', 'usage.none': 'Aucune donnée de quota ; mise à jour après la prochaine instruction', 'usage.quotaAt': 'Données de quota de {at}', 'usage.window': 'Fenêtre {label} : {percent} utilisé, réinitialisation {reset}', 'usage.windowNoReset': 'Fenêtre {label} : {percent} utilisé', 'usage.windowReset': 'Fenêtre {label} réinitialisée à {reset} ; en attente du prochain relevé', 'usage.limited': 'Limite atteinte',
+  'usage.alertTitle': 'Alerte de quota', 'usage.alertFull': 'Le quota de {ai} est épuisé ({windows}) ; réinitialisation {reset}', 'usage.alertFullNoReset': 'Le quota de {ai} est épuisé ({windows})', 'usage.alertRecovered': 'Le quota de {ai} est rétabli ; vous pouvez continuer',
   'tree.search': 'Rechercher des projets et tâches…',
   'settings.enterToSend': 'Entrée pour envoyer, Maj+Entrée pour un saut de ligne', 'chat.placeholderEnter': 'Écrivez vos instructions… (Entrée pour envoyer, Maj+Entrée pour un saut de ligne)', 'chat.hintEnter': 'Entrée pour envoyer, Maj+Entrée pour un saut de ligne', 'chat.hintModifier': '⌘ / Ctrl + Entrée pour envoyer',
   'markdown.copy': 'Copier le code', 'markdown.copied': 'Copié', 'markdown.copyFailed': 'Échec de la copie',

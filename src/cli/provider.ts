@@ -16,6 +16,10 @@ export interface SendOptions {
   fullAccess?: boolean;
   /** 已保存的圖片絕對路徑。 */
   images?: string[];
+  /** 本輪固定的帳戶；省略＝default。執行中切換不改變這一輪。 */
+  accountId?: string;
+  /** 額外帳戶的 CLI 設定目錄；省略＝繼承 CLI 預設。 */
+  configDir?: string;
 }
 
 export type CliEvent =
@@ -52,6 +56,6 @@ export interface CliProvider {
   readonly dangerous: boolean;
   available(): Promise<boolean>;
   send(opts: SendOptions, onEvent: (ev: CliEvent) => void): CliRun;
-  /** 不送指示、從 CLI 本機紀錄讀最近一次額度；沒有可讀紀錄回 null。 */
-  quota?(): Promise<Extract<CliEvent, { type: 'quota' }> | null>;
+  /** 不送指示，查指定設定目錄的帳號額度；沒有資料回 null。 */
+  quota?(configDir?: string): Promise<Extract<CliEvent, { type: 'quota' }> | null>;
 }
