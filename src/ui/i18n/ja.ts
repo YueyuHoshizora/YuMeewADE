@@ -1,6 +1,7 @@
 import type { MessageKey } from './zh-TW.ts';
 
 export const ja: Record<MessageKey, string> = {
+  'chat.earlier': '以前のメッセージを読み込む',
   'settings.notifications': '作業の完了や回答が必要なときに通知', 'settings.notificationPermission': 'システム通知を許可', 'notification.done': 'AI の返信が完了しました', 'notification.answer': 'AI があなたの回答を待っています',
   'connection.reconnecting': 'コアとの接続が切れました。再接続中…',
   'tree.search': 'プロジェクトと作業を検索…',

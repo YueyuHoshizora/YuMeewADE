@@ -1,4 +1,4 @@
-import type { AppState, Busy, ChatEvent, ChatRow, ProjectView, QueueItem, SendMode, TaskView } from '../../shared/types.ts';
+import type { AppState, Busy, ChatEvent, ChatHistory, ChatRow, ProjectView, QueueItem, SendMode, TaskView } from '../../shared/types.ts';
 import { TASK_STATES } from '../../shared/types.ts';
 import { api, query, request } from '../api.ts';
 import { t } from '../i18n/index.ts';
@@ -6,6 +6,7 @@ import { attachments } from '../components/attachments.ts';
 import { aiPicker } from '../components/picker.ts';
 import { markdown } from '../components/markdown.ts';
 import { MarkdownStream } from '../components/markdown-stream.ts';
+import { HistoryWindow } from '../components/history.ts';
 import { area, button, confirmModal, disclosure, el, field, input, link, modal, projectHash, readLocal, row, run, select, storeLocal, toast, type View, type ViewContext } from '../components/dom.ts';
 import { aiLabel, effortLabel, localTime, modelLabel } from '../components/display.ts';
 import { shouldSend } from '../components/composer.ts';
@@ -15,6 +16,8 @@ export function taskView(context: ViewContext, initialProject: ProjectView, init
   let task = initialTask;
   let alive = true;
   let rows: ChatRow[] = [];
+  const history = new HistoryWindow();
+  let loadingHistory: Promise<void> | null = null;
   let busy: Busy | null = null;
   let partial = '';
   let queue: QueueItem[] = [];
@@ -45,6 +48,41 @@ export function taskView(context: ViewContext, initialProject: ProjectView, init
   transcript.setAttribute('role', 'log');
   transcript.setAttribute('aria-live', 'polite');
   const transcriptRows = el('div', 'transcript-rows');
+  const earlier = button(t('chat.earlier'), () => loadEarlier(), 'load-earlier');
+  earlier.hidden = true;
+  async function loadEarlier(): Promise<void> {
+    if (loadingHistory) return loadingHistory;
+    if (history.start === 0) return;
+    const before = history.start;
+    const revision = history.revision;
+    earlier.disabled = true;
+    loadingHistory = (async () => {
+      try {
+        const page = await request<ChatHistory>(
+          query('/api/chat/history', { project: project.id, task: task.id, before: String(before) }),
+        );
+        if (!alive || !history.prepend(page, before, revision)) return;
+        const top = transcript.scrollTop;
+        const height = transcript.scrollHeight;
+        const savedGroup = toolGroup;
+        const savedCount = toolCount;
+        toolGroup = null;
+        const prepend = el('div');
+        for (const [offset, entry] of page.rows.entries()) {
+          appendRow(entry, page.start + offset, prepend);
+        }
+        transcriptRows.prepend(...Array.from(prepend.childNodes));
+        toolGroup = savedGroup;
+        toolCount = savedCount;
+        earlier.hidden = history.start === 0;
+        transcript.scrollTop = top + transcript.scrollHeight - height;
+      } finally {
+        loadingHistory = null;
+        earlier.disabled = false;
+      }
+    })();
+    return loadingHistory;
+  }
   const latest = button(
     t('chat.latest'),
     () => {
@@ -61,7 +99,7 @@ export function taskView(context: ViewContext, initialProject: ProjectView, init
   const question = el('div', 'question-area');
   const queueNode = el('div', 'queue-strip');
   const composer = el('div', 'composer');
-  transcript.append(transcriptRows, question);
+  transcript.append(earlier, transcriptRows, question);
   const draftKey = `yumeewade.draft.${project.id}/${task.id}`;
   const pickKey = `yumeewade.pick.${project.id}/${task.id}`;
   const draft = area(
@@ -218,25 +256,31 @@ export function taskView(context: ViewContext, initialProject: ProjectView, init
     clock();
     follow();
   }
-  function appendRow(entry: ChatRow): void {
+  function appendRow(entry: ChatRow, index: number, target = transcriptRows): void {
+    const before = target === transcriptRows ? live : null;
     if (entry.role === 'event' && entry.tool) {
       if (!toolGroup) {
         toolCount = 0;
         toolGroup = disclosure('');
         toolGroup.className = 'tool-events';
         toolGroup.open = readLocal('yumeewade.tools', false);
-        transcriptRows.insertBefore(toolGroup, live);
+        target.insertBefore(toolGroup, before);
       }
       toolGroup.querySelector('summary')!.textContent = t('chat.tools', { n: ++toolCount });
-      toolGroup.append(el('pre', 'tool-row', entry.text));
+      const toolRow = el('pre', 'tool-row', entry.text);
+      toolRow.dataset['index'] = String(index);
+      toolGroup.append(toolRow);
       return;
     }
     toolGroup = null;
     if (entry.role === 'event') {
-      transcriptRows.insertBefore(el('div', 'event-row', entry.text), live);
+      const eventRow = el('div', 'event-row', entry.text);
+      eventRow.dataset['index'] = String(index);
+      target.insertBefore(eventRow, before);
       return;
     }
     const item = el('article', `chat-card ${entry.role}`);
+    item.dataset['index'] = String(index);
     const metadata = el('div', 'chat-meta');
     if (entry.role === 'user') {
       metadata.append(
@@ -287,17 +331,16 @@ export function taskView(context: ViewContext, initialProject: ProjectView, init
       metadata.append(el('span', 'error-mark', t(entry.error === 'interrupted' ? 'chat.interrupted' : 'chat.error')));
       item.append(metadata, markdown(entry.text));
     }
-    transcriptRows.insertBefore(item, live);
+    target.insertBefore(item, before);
   }
   function renderTranscript(): void {
     const top = transcript.scrollTop;
     removeLive();
     toolGroup = null;
     transcriptRows.replaceChildren();
-    for (
-    const entry
-    of rows)
-    appendRow(entry);
+    for (const [offset, entry] of rows.entries()) {
+      appendRow(entry, history.start + offset);
+    }
     addLive();
     renderQuestion();
     if (!following)
@@ -527,7 +570,9 @@ export function taskView(context: ViewContext, initialProject: ProjectView, init
   function receive(event: ChatEvent): void {
     switch (event.event) {
     case 'snapshot':
-    rows = event.data.rows;
+    history.reset({ rows: event.data.rows, start: event.data.start });
+    rows = history.rows;
+    earlier.hidden = history.start === 0;
     busy = event.data.busy;
     partial = event.data.partial;
     queue = event.data.queue;
@@ -558,7 +603,7 @@ export function taskView(context: ViewContext, initialProject: ProjectView, init
       partial = '';
       removeLive();
     }
-    appendRow(event.data);
+    appendRow(event.data, history.start + rows.length - 1);
     renderQuestion();
     follow();
     break;

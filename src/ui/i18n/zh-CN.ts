@@ -1,6 +1,7 @@
 import type { MessageKey } from './zh-TW.ts';
 
 export const zhCN: Record<MessageKey, string> = {
+  'chat.earlier': '载入更早的消息',
   'settings.notifications': '作业完成或需要回答时通知', 'settings.notificationPermission': '允许系统通知', 'notification.done': 'AI 已完成回复', 'notification.answer': 'AI 需要你的回答',
   'connection.reconnecting': '核心连接中断，正在重新连接…',
   'tree.search': '搜索项目与作业…',

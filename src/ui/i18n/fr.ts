@@ -1,6 +1,7 @@
 import type { MessageKey } from './zh-TW.ts';
 
 export const fr: Record<MessageKey, string> = {
+  'chat.earlier': 'Charger les messages précédents',
   'settings.notifications': 'Notifier à la fin des tâches ou si une réponse est nécessaire', 'settings.notificationPermission': 'Autoriser les notifications système', 'notification.done': 'La réponse de l’IA est terminée', 'notification.answer': 'L’IA attend votre réponse',
   'connection.reconnecting': 'Connexion au cœur perdue. Reconnexion…',
   'tree.search': 'Rechercher des projets et tâches…',
