@@ -343,9 +343,40 @@ export interface UploadResult {
   url: string;
 }
 
-/** 作業對話流（`GET /api/chat/stream?project&task`）。 */
+/** 對話分頁：snapshot 只帶最後 HISTORY_PAGE 列，往上捲時以 /api/chat/history 補較早的列。 */
+export const HISTORY_PAGE = 200;
+
+/** `GET /api/chat/history?project&task&before=<index>`：對話檔第 [max(0, before − HISTORY_PAGE), before) 列。 */
+export interface ChatHistory {
+  rows: ChatRow[];
+  /** rows[0] 在整份對話中的索引（0 起算；對話檔只追加，索引不變）。 */
+  start: number;
+}
+
+/** `GET /api/search?q=`：跨專案搜尋作業標題與對話內容。 */
+export interface SearchHit {
+  project: string;
+  task: string;
+  /** 作業標題。 */
+  title: string;
+  kind: 'task' | 'chat';
+  /** kind＝chat：命中列在整份對話中的索引（同 ChatHistory.start 的座標）。 */
+  index?: number;
+  role?: ChatRow['role'];
+  at?: string;
+  /** 命中處前後的純文字片段。 */
+  snippet: string;
+}
+
+export interface SearchResult {
+  hits: SearchHit[];
+  /** 命中數超過上限而截斷。 */
+  truncated: boolean;
+}
+
+/** 作業對話流（`GET /api/chat/stream?project&task`）。snapshot 的 start 為 rows[0] 的索引。 */
 export type ChatEvent =
-  | { event: 'snapshot'; data: { rows: ChatRow[]; busy: Busy | null; partial: string; queue: QueueItem[] } }
+  | { event: 'snapshot'; data: { rows: ChatRow[]; start: number; busy: Busy | null; partial: string; queue: QueueItem[] } }
   | { event: 'busy'; data: Busy }
   /** 增量文字（客戶端自行累加到 partial）。 */
   | { event: 'delta'; data: { request: string; text: string } }

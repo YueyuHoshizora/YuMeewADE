@@ -8,6 +8,7 @@ import { registerGitRoutes } from './git.ts';
 import { registerLedgerRoutes } from './ledger.ts';
 import { registerStateRoutes } from './state.ts';
 import { registerSystemRoutes } from './system.ts';
+import { registerSearchRoutes } from './search.ts';
 
 export function registerRoutes(router: Router, app: App): void {
   registerStateRoutes(router, app);
@@ -16,4 +17,5 @@ export function registerRoutes(router: Router, app: App): void {
   registerSystemRoutes(router, app);
   registerChatRoutes(router, app);
   registerAiRoutes(router, app);
+  registerSearchRoutes(router, app);
 }
