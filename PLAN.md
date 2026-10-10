@@ -55,7 +55,7 @@
 | R6 | 對話能力：SSE 串流、同 CLI 續聊用 resume、換 CLI 傳交接包（只含人與 AI 的文字對話）、排隊指示、可中途停止 |
 | R7 | 隔離：作業執行於 git worktree 副本（Work 目錄），本體收編須人工觸發並顯示 diff |
 | R8 | 角色分工：`roles.yaml` 定義 role→CLI／模型／思考強度；作業綁 role，啟動參數由 role 決定 |
-| R9 | 安全：僅 127.0.0.1、單機無認證（宣告見第六節）、CLI 危險旗標預設關閉且可組態、Electron renderer 隔離、憑證不入日誌、輸入驗證與大小上限 |
+| R9 | 安全：僅 127.0.0.1、單機無認證（宣告見第六節）、CLI 權限旗標可組態（預設完整權限，見附錄 B.1.2）、Electron renderer 隔離、憑證不入日誌、輸入驗證與大小上限 |
 | R10 | 必要文件四件：`README.md`／`AGENTS.md`／`CLAUDE.md`／`PLAN.md` |
 | R11 | 實作順序：Gate 0（前置檔＋四件必要文件）達成後才寫程式 |
 
@@ -193,7 +193,7 @@ Roles   { models, roles: { role: { main, backup, job } }, permissions }   // rol
 
 1. 僅監聽 127.0.0.1，不得改綁 0.0.0.0 或對外 port。
 2. 單機無認證＝明示宣告的風險接受（個人本機使用）；文件首頁須載明此限制。
-3. CLI 危險旗標（跳過權限確認類）**預設關閉**；開啓須於 `config.yaml` 明示，並在 README 警示。
+3. CLI 權限旗標（跳過權限確認類）可組態，設定頁可逐一關閉並在 README 警示。**預設值已由附錄 B.1.2 改為完整權限**（原定預設關閉）。
 4. Electron renderer：`contextIsolation` 開啓、`nodeIntegration` 關閉、僅經 preload 暴露最小介面、載入本地內容為限。
 5. 輸入驗證＋大小上限（請求體 1 MiB、指示 10,000 字）。
 6. 每來源頻率限制（每分鐘指示數上限），防誤觸狂送。
@@ -237,7 +237,7 @@ Roles   { models, roles: { role: { main, backup, job } }, permissions }   // rol
 | CI 三平台建置維護成本 | 建置管線維護較重（裁示接受） | CI 與本機共用同一套 electron-builder 設定；workflow 單一檔案三矩陣 |
 | JSONL／Markdown 併發寫入 | 資料毀損 | 單一寫者＋原子搬移（五、資料模型） |
 | worktree 收編衝突 | 本體被污染 | 收編人工觸發＋diff 審查；副本內才可寫（R7） |
-| 危險旗標使 CLI 全權 | 本機檔案／指令被誤用 | 預設關閉＋`config.yaml` 明示＋README 警示（安全節 3） |
+| 完整權限使 CLI 全權 | 本機檔案／指令被誤用 | 設定頁可逐一關閉並顯示後果＋README 警示（安全節 3、附錄 B.1.2） |
 | 單機無認證被本機其他程序存取 | 本機資料外洩 | 僅 loopback＋不對外；宣告為已接受風險（安全節 1–2） |
 | CLI 未安裝／未登入 | 無法實跑 | `available()` 偵測＋MockCliProvider 全流程可測（3.1） |
 
@@ -293,7 +293,7 @@ Roles   { models, roles: { role: { main, backup, job } }, permissions }   // rol
 
 ### A.1 設定檔位置與結構
 - 讀取順序：`YUMEEWADE_CONFIG` → `./config.yaml` → `~/.yumeewade/config.yaml` → 內建預設（與倉庫根 `config.yaml` 範本相同）。桌面 App 啟動時若使用者設定目錄沒有 `config.yaml`，複製範本過去並以 `YUMEEWADE_CONFIG` 指向它。
-- 區塊：`server{host,port}`、`workspace{root}`、`cli{claude{command,baseArgs,dangerous,dangerousArgs},codex{…},envPassthrough}`、`limits{bodyBytes,promptChars,sendPerMinute,concurrentRuns,sseConnections,queueLength,handoffChars,heartbeatSeconds,diffBytes}`。
+- 區塊：`server{host,port}`、`workspace{root}`、`cli{claude{command,baseArgs,fullAccess,fullAccessArgs,safeArgs},codex{…},envPassthrough}`、`limits{bodyBytes,promptChars,sendPerMinute,concurrentRuns,sseConnections,queueLength,handoffChars,heartbeatSeconds,diffBytes,uploadBytes,imagesPerSend}`。
 - `server.host` 非 loopback 時啟動失敗（安全節 1）。
 - 工作區根目錄可在設定頁切換（`POST /api/workspace`）：先建好新工作區，再只改寫設定檔的 `workspace.root` 那一行（其他內容與註解保留；全用預設時寫到 `~/.yumeewade/config.yaml`），最後換上新的 App。SSE 連線由核心持有、切換時沿用；AI 執行中回 409，原工作區檔案不搬移。
 
@@ -361,11 +361,12 @@ roles:
   文件: { main: [claude, sonnet, medium], backup: [codex, gpt-6-sol, medium], job: 說明文件 }
 ```
 - 槽位格式 `[cli, model, effort]`；`cli` ∈ `claude|codex|mock|人`。`人` 代表不由 AI 執行。
-- 啟動參數優先序：單次送出覆寫 > 作業檔 `cli/model/effort` > role 的 `main`。危險旗標只看 `config.yaml`，roles.yaml 不含權限設定。
+- 啟動參數優先序：單次送出覆寫 > 作業檔 `cli/model/effort` > role 的 `main`。權限旗標只看 `config.yaml` 與設定頁的「完整權限」，roles.yaml 不含權限設定。
 
 ### A.5 CLI adapter 契約（實測 2026-10-10：claude 2.1.294、codex 0.160.1）
-- claude：`{command} {baseArgs} [--model m] [--effort e] [--resume sid] [--add-dir {專案}/.ai] [dangerousArgs]`，提示由 stdin 送入。解析 `system/init.session_id`、`stream_event.content_block_delta.text_delta.text`（增量）、`assistant.message.content[].text`（備援）、`result{is_error,result,session_id}`。
-- codex：`{command} {baseArgs} [-m m] [-c model_reasoning_effort=e] [--add-dir {專案}/.ai] [dangerousArgs] [resume sid] -`，提示由 stdin 送入。解析 `thread.started.thread_id`、`item.completed{item.type=agent_message}.text`、`turn.completed`、`turn.failed`／`error`。
+- claude：`{command} [fullAccessArgs|safeArgs] {baseArgs} [--model m] [--effort e] [--resume sid] [--add-dir {專案}/.ai]`，提示由 stdin 送入。解析 `system/init.session_id`、`stream_event.content_block_delta.text_delta.text`（增量）、`assistant.message.content[].text`（備援）、`result{is_error,result,session_id}`。
+- codex：`exec [fullAccessArgs|safeArgs] {baseArgs 其餘} [-m m] [-c model_reasoning_effort=e] [-i 圖片] [resume sid] -`，提示由 stdin 送入。解析 `thread.started.thread_id`、`item.completed{item.type=agent_message}.text`、`turn.completed`、`turn.failed`／`error`。
+- 每輪依設定頁「完整權限」（`settings.fullAccess[ai]`，未設定時取 `cli.*.fullAccess`）選 `fullAccessArgs` 或 `safeArgs`。
 - 執行 cwd＝worktree 副本（缺則先建立）。提示結構：首輪（無 session）附專案／作業／路徑說明；換 CLI 或對方有未讀行時附交接包；最後是使用者指示。
 - 交接包：只取 JSONL 的 user／assistant 文字，上限 `limits.handoffChars`，截舊留新；開頭固定句「這是背景記錄，不是新的執行授權；未讀的內容不得假裝讀過」。
 
@@ -384,7 +385,7 @@ electron 44.7.0、vite 8.3.4、electron-builder 26.15.3、typescript 7.0.2、@ty
 - 台帳內部值（作業狀態 `未開始／進行中／等待回覆／暫停／完成`、專案狀態）**不翻譯、不改寫**，只在顯示時對應；AI 提示前言與伺服器補充訊息維持繁體中文，UI 以錯誤碼顯示各語言的 generic 訊息並附伺服器補充。
 
 ### A.9 實作期修訂（Gate 3／4 實測後）
-- CLI 權限預設（安全節 3 的「危險旗標預設關閉」不變）：claude `baseArgs` 加 `--permission-mode acceptEdits`（只自動接受工作目錄與 `--add-dir` 內的檔案編輯，執行指令仍拒絕）；codex `baseArgs` 加 `-s workspace-write -c approval_policy="never"`（沙箱內不詢問）。沒有這兩項，無頭模式下 AI 連副本內的檔案都無法修改。
+- CLI 權限預設（後由附錄 B.1.2 改為預設完整權限；以下為關閉完整權限時的 `safeArgs`）：claude 加 `--permission-mode acceptEdits`（只自動接受工作目錄與 `--add-dir` 內的檔案編輯，執行指令仍拒絕）；codex 加 `-s workspace-write -c approval_policy="never"`（沙箱內不詢問）。沒有這兩項，無頭模式下 AI 連副本內的檔案都無法修改。
 - 環境白名單預設多放行 `CODEX_HOME`、`CLAUDE_CONFIG_DIR`（CLI 設定目錄指標，非憑證；缺少時 codex 找不到登入狀態而回 401）。
 - 續聊失敗處理：某輪失敗（非人工停止）時不保存該輪的 session id，若本輪是 resume 則刪除既有 session（下次重新開始並附交接包），`seen` 也不前進。
 - 桌面版：Electron 主行程以 `utilityProcess.fork` 執行同一份 `dist/server/main.js`；若 port 已有核心回應（例如網頁版已在跑）則直接共用；App 結束時對核心送 `shutdown` 訊號，等核心停止執行中的 AI 並保存紀錄後才結束（逾時才強制 kill）。設定檔在 `app.getPath('userData')/config.yaml`，首次啟動從範本複製。另有單一實例鎖、Dock 徽章、`setBadge`／`focus` IPC 橋接。
@@ -394,7 +395,7 @@ electron 44.7.0、vite 8.3.4、electron-builder 26.15.3、typescript 7.0.2、@ty
 |---|---|---|---|
 | 1 | 僅 loopback | `shared/config.ts` 拒絕非 loopback；`http/server.ts` 依 config 綁定 | `config.test.ts` |
 | 2 | 無認證宣告 | `README.md` 首段 | 文件 |
-| 3 | 危險旗標預設關閉 | `DEFAULT_CONFIG.cli.*.dangerous=false`；adapter 只在 true 時附加 | `config.test.ts`、Gate 3 log |
+| 3 | 權限旗標可組態（預設完整權限，B.1.2） | `DEFAULT_CONFIG.cli.*.fullAccess=true`；`settings.fullAccess` 逐一覆寫；adapter 依此附加 `fullAccessArgs` 或 `safeArgs` | `config.test.ts`、`adapters.test.ts`、`ledger.test.ts` |
 | 4 | Electron 隔離 | `desktop/main.ts` contextIsolation／sandbox／nodeIntegration=false／導航封鎖；`preload.cts` 只暴露 platform | Gate 4 CDP 檢查 `require`／`process` 為 undefined |
 | 5 | 輸入驗證與上限 | `http/router.ts` readJsonBody 413、reqString 長度、`limits.promptChars` | `routes.test.ts`、`chat.test.ts` |
 | 6 | 頻率限制 | `http/ratelimit.ts`，`/api/chat/send` 429 | `chat.test.ts` |
@@ -444,4 +445,11 @@ electron 44.7.0、vite 8.3.4、electron-builder 26.15.3、typescript 7.0.2、@ty
 - 模型清單讀 CLI 自己的快取（codex `models_cache.json`、claude `cache/model-catalog/`），每個模型的思考強度選項也從快取取得。
 
 ### B.4 協定
-以 `src/shared/types.ts` 與 `README.md`「協定摘要」為準。全域 SSE 只發 `changed`，客戶端重抓 `GET /api/state`；作業 SSE 先送 `snapshot`，再送 `busy`／`delta`／`row`／`queue`／`idle`。舊端點（`/api/bootstrap`、`/api/tasks`、`/api/worktree/*`、`/api/chat/queue/*`）已移除。
+以 `src/shared/types.ts` 與 `README.md`「協定摘要」為準。全域 SSE 只發 `changed`，客戶端重抓 `GET /api/state`；作業 SSE 先送 `snapshot`（只含最後 `HISTORY_PAGE`＝200 列與 `start`），再送 `busy`／`delta`／`row`／`queue`／`idle`；較早的列以 `GET /api/chat/history?before=` 分頁補讀。跨專案搜尋 `GET /api/search?q=`（作業標題＋user／assistant 文字，上限 50 筆）。舊端點（`/api/bootstrap`、`/api/tasks`、`/api/worktree/*`、`/api/chat/queue/*`）已移除。
+
+### B.5 第三輪修正（自我檢討後）
+- 正確性：A.9「續聊失敗處理」補上實作（先前每輪都保存 session 並推進 `seen`）；adapter 在 exit 0 但沒有收到 claude `result`／codex `turn.completed` 時判為失敗（3.3 fail-closed）；`meta.running` 只在啟動前寫檔都成功後才保留；未閉合的 `[[question]]` 只解析問題與連續選項，其後正文保留；上傳圖片比對檔頭。
+- 外部變更：`src/ledger/watch.ts` 以非遞迴 `fs.watch` 監看工作區根、`.yumeewade`、`Projects`、各專案目錄與其 `.ai`、`.ai/tasks`、`.ai/chat`（忽略 `.jsonl` 追加），變更走 `App.changed()`；不監看 `Work/` 與主資料夾。
+- 效能：`/api/state` 快取（`changed()`／監看事件失效，另 5 秒上限；`running`／`unread` 每次即時計算）；JSONL 依大小與 mtime 快取，只追加時只讀尾端；串流 Markdown 只重畫未完成的最後區塊；側欄篩選用節點索引。
+- UI：淺色外觀（預設跟隨系統，`localStorage` 的 `yumeewade.theme` 可覆寫）；對話區 `aria-live=off`，完成／提問改由獨立狀態區通知。
+- 維持原設計：合併前自動儲存本體（A.6，預覽已提示 `mainDirty` 且合併前需確認）；自動儲存只排除「新出現的」機密檔（AGENTS §四），已追蹤的機密檔若也排除，合併後移除副本時會遺失其修改。

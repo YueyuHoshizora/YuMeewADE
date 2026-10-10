@@ -98,7 +98,9 @@ HTTP JSON plus SSE, identical in desktop and web versions. Types are defined in 
 |---|---|
 | `GET /api/state` | Overall state: projects (including tasks and computed fields), ordering, running tasks, unread results, AI and models, settings, roles, limits |
 | `GET /api/events` | SSE (global): refetch `/api/state` on `changed` |
-| `GET /api/chat/stream?project=&task=` | SSE (single task): `snapshot`／`busy`／`delta`／`row`／`queue`／`idle` |
+| `GET /api/chat/stream?project=&task=` | SSE (single task): `snapshot` (last 200 rows plus `start`)／`busy`／`delta`／`row`／`queue`／`idle` |
+| `GET /api/chat/history?project=&task=&before=` | Load the 200 chat rows before `before` |
+| `GET /api/search?q=` | Search task titles and chat text across projects (up to 50 hits) |
 | `POST /api/project/new`、`/api/project/update`、`/api/project/archive` | Projects |
 | `POST /api/phase/next`、`/api/phase/continue` | Phases |
 | `POST /api/order`、`/api/pin` | Project ordering and pinning |

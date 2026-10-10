@@ -98,7 +98,9 @@ HTTP JSON と SSE を使い、デスクトップ版と Web 版で完全に共通
 |---|---|
 | `GET /api/state` | 全体の状態：プロジェクト（タスクと計算フィールドを含む）、順序、実行中、未読、AI とモデル、設定、役割、上限 |
 | `GET /api/events` | SSE（全体）：`changed` 時に `/api/state` を再取得 |
-| `GET /api/chat/stream?project=&task=` | SSE（単一タスク）：`snapshot`／`busy`／`delta`／`row`／`queue`／`idle` |
+| `GET /api/chat/stream?project=&task=` | SSE（単一タスク）：`snapshot`（最後の 200 行と `start`）／`busy`／`delta`／`row`／`queue`／`idle` |
+| `GET /api/chat/history?project=&task=&before=` | `before` より前の 200 行を読み込む |
+| `GET /api/search?q=` | プロジェクト横断でタスク名と会話内容を検索（最大 50 件） |
 | `POST /api/project/new`、`/api/project/update`、`/api/project/archive` | プロジェクト |
 | `POST /api/phase/next`、`/api/phase/continue` | フェーズ |
 | `POST /api/order`、`/api/pin` | プロジェクトの順序とピン留め |
