@@ -102,9 +102,28 @@ export class CodexCliProvider implements CliProvider {
   async available(): Promise<boolean> { return (await findExecutable(this.cfg.command, this.env)) !== null; }
 
   send(opts: SendOptions, onEvent: (ev: CliEvent) => void): CliRun {
-    return runLineProcess(
-      { command: this.cfg.command, args: codexArgs(this.cfg, opts), cwd: opts.cwd, env: this.env, prompt: opts.prompt, label: 'codex' },
-      createCodexParser(onEvent),
+    let completed = false;
+    let failed = false;
+    const run = runLineProcess(
+      {
+        command: this.cfg.command, args: codexArgs(this.cfg, opts),
+        cwd: opts.cwd, env: this.env, prompt: opts.prompt, label: 'codex',
+      },
+      createCodexParser(ev => {
+        if (ev.type === 'result') completed = true;
+        if (ev.type === 'error') failed = true;
+        onEvent(ev);
+      }),
     );
+    return {
+      stop: run.stop,
+      done: run.done.then(outcome => {
+        if (!outcome.ok || outcome.stopped) return outcome;
+        if (failed) return { ...outcome, ok: false, reason: 'turn failed' };
+        if (completed) return outcome;
+        onEvent({ type: 'error', reason: 'no result event' });
+        return { ...outcome, ok: false, reason: 'no result event' };
+      }),
+    };
   }
 }

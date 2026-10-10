@@ -2,12 +2,15 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import { DEFAULT_CONFIG } from '../shared/config.ts';
-import { claudeArgs, createClaudeParser } from './claude.ts';
-import { codexArgs, createCodexParser } from './codex.ts';
+import { ClaudeCliProvider, claudeArgs, createClaudeParser } from './claude.ts';
+import { CodexCliProvider, codexArgs, createCodexParser } from './codex.ts';
 import { captureCommand, redactArgs } from './process.ts';
 import { MockCliProvider } from './mock.ts';
 import { createProviders } from './providers.ts';
 import type { CliEvent } from './provider.ts';
+import { promises as fs } from 'node:fs';
+import os from 'node:os';
+import path from 'node:path';
 
 const SID = 'a1224e07-3f81-4d3b-b53c-db386228e920';
 const CLAUDE_LINES: Record<string, unknown>[] = [
@@ -192,4 +195,40 @@ test('captureCommand：捕捉輸出、退出失敗與 timeout', async () => {
   // 子行程不共用測試的 fake clock；此 integration case 故意使用真正的 timeout。
   const timed = await captureCommand({ command: process.execPath, args: ['-e', 'setInterval(()=>{},1000)'], timeoutMs: 30 });
   assert.equal(timed.reason, 'command timeout');
+});
+
+test('CLI 零退出但沒有最終結果時失敗，保留部分文字', async () => {
+  const dir = await fs.mkdtemp(path.join(os.tmpdir(), 'cli-result-'));
+  try {
+    for (const ai of ['claude', 'codex'] as const) {
+      const partial = ai === 'claude'
+        ? { type: 'assistant', message: { content: [{ type: 'text', text: 'partial' }] } }
+        : { type: 'item.completed', item: { type: 'agent_message', text: 'partial' } };
+      const terminal = ai === 'claude'
+        ? { type: 'result', subtype: 'success', result: 'partial' }
+        : { type: 'turn.completed' };
+      for (const lines of [[], ['not json'], [JSON.stringify(partial)], [JSON.stringify(partial), JSON.stringify(terminal)]]) {
+        const script = path.join(dir, 'fake.ts');
+        await fs.writeFile(script, `process.stdin.resume(); process.stdin.on('end', () => { console.log(${JSON.stringify(lines.join('\n'))}); });`);
+        const cfg = {
+          ...DEFAULT_CONFIG.cli[ai], command: process.execPath,
+          baseArgs: [script], fullAccessArgs: [], safeArgs: [],
+        };
+        const provider = ai === 'claude'
+          ? new ClaudeCliProvider(cfg, []) : new CodexCliProvider(cfg, []);
+        const events: CliEvent[] = [];
+        const outcome = await provider.send({ prompt: 'go', cwd: dir }, ev => events.push(ev)).done;
+        assert.equal(outcome.ok, lines.length === 2);
+        if (lines.length < 2) {
+          assert.equal(outcome.reason, 'no result event');
+          assert.deepEqual(events.at(-1), { type: 'error', reason: 'no result event' });
+        }
+        if (lines.includes(JSON.stringify(partial))) {
+          assert.deepEqual(events.filter(ev => ev.type === 'delta'), [{ type: 'delta', text: 'partial' }]);
+        }
+      }
+    }
+  } finally {
+    await fs.rm(dir, { recursive: true, force: true });
+  }
 });

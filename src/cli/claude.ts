@@ -111,9 +111,28 @@ export class ClaudeCliProvider implements CliProvider {
 
   send(opts: SendOptions, onEvent: (ev: CliEvent) => void): CliRun {
     const imagePrompt = opts.images?.length ? `\n\n# 圖片附件\n請用 Read 工具查看以下圖片：\n${opts.images.join('\n')}` : '';
-    return runLineProcess(
-      { command: this.cfg.command, args: claudeArgs(this.cfg, opts), cwd: opts.cwd, env: this.env, prompt: opts.prompt + imagePrompt, label: 'claude' },
-      createClaudeParser(onEvent),
+    let completed = false;
+    let failed = false;
+    const run = runLineProcess(
+      {
+        command: this.cfg.command, args: claudeArgs(this.cfg, opts),
+        cwd: opts.cwd, env: this.env, prompt: opts.prompt + imagePrompt, label: 'claude',
+      },
+      createClaudeParser(ev => {
+        if (ev.type === 'result') completed = true;
+        if (ev.type === 'error') failed = true;
+        onEvent(ev);
+      }),
     );
+    return {
+      stop: run.stop,
+      done: run.done.then(outcome => {
+        if (!outcome.ok || outcome.stopped) return outcome;
+        if (failed) return { ...outcome, ok: false, reason: 'result failed' };
+        if (completed) return outcome;
+        onEvent({ type: 'error', reason: 'no result event' });
+        return { ...outcome, ok: false, reason: 'no result event' };
+      }),
+    };
   }
 }
