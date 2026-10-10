@@ -185,7 +185,6 @@ export const de: Record<MessageKey, string> = {
   'ai.warning': 'Voller Zugriff überspringt Bestätigungen für Befehle und Dateizugriffe. Die KI kann mit deinen Rechten Dateien ändern und Befehle ausführen. Nur für vertrauenswürdige Projekte aktivieren.',
   'settings.general': 'Allgemein',
   'settings.language': 'Sprache',
-  'settings.tools': 'Tool-Details anzeigen',
   'settings.root': 'Arbeitsbereich-Stammordner',
   'settings.initial': 'Standard-KI für neue Aufgaben',
   'settings.ais': 'KI-Tools',

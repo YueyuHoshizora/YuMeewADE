@@ -185,7 +185,6 @@ export const fr: Record<MessageKey, string> = {
   'ai.warning': 'L’accès complet désactive les confirmations pour les commandes et l’accès aux fichiers. L’IA peut modifier des fichiers et exécuter des commandes avec tes droits. À activer uniquement pour les projets de confiance.',
   'settings.general': 'Général',
   'settings.language': 'Langue',
-  'settings.tools': 'Afficher les détails des outils',
   'settings.root': 'Racine de l’espace de travail',
   'settings.initial': 'IA par défaut des nouvelles tâches',
   'settings.ais': 'Outils IA',

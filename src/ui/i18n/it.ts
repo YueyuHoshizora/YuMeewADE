@@ -185,7 +185,6 @@ export const it: Record<MessageKey, string> = {
   'ai.warning': 'L’accesso completo salta le conferme per i comandi e l’accesso ai file. L’IA può modificare file ed eseguire comandi con i tuoi permessi. Attivalo solo per progetti attendibili.',
   'settings.general': 'Generali',
   'settings.language': 'Lingua',
-  'settings.tools': 'Mostra dettagli degli strumenti',
   'settings.root': 'Cartella radice dell’area di lavoro',
   'settings.initial': 'IA predefinita per nuove attività',
   'settings.ais': 'Strumenti IA',

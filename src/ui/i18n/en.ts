@@ -185,7 +185,6 @@ export const en: Record<MessageKey, string> = {
   'ai.warning': 'Full access skips confirmation for commands and file access. AI can modify files and run commands with your permissions. Enable only for trusted projects.',
   'settings.general': 'General',
   'settings.language': 'Language',
-  'settings.tools': 'Show tool details',
   'settings.root': 'Workspace root',
   'settings.initial': 'Default AI for new tasks',
   'settings.ais': 'AI tools',

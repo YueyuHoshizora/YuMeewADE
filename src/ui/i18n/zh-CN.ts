@@ -185,7 +185,6 @@ export const zhCN: Record<MessageKey, string> = {
   'ai.warning': '完整权限会跳过执行命令与文件访问的确认。AI 可在你的权限范围内修改文件与执行命令，仅对可信任的项目开启。',
   'settings.general': '常规',
   'settings.language': '语言',
-  'settings.tools': '显示工具详情',
   'settings.root': '工作区根目录',
   'settings.initial': '新任务的默认 AI',
   'settings.ais': 'AI 工具',

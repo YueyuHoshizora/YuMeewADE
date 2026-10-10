@@ -372,7 +372,6 @@ export function taskView(
         toolCount = 0;
         toolGroup = disclosure('');
         toolGroup.className = 'tool-events';
-        toolGroup.open = readLocal('yumeewade.tools', false);
         target.insertBefore(toolGroup, before);
       }
       toolGroup.querySelector('summary')!.textContent = t('chat.tools', { n: ++toolCount });

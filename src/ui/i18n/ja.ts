@@ -185,7 +185,6 @@ export const ja: Record<MessageKey, string> = {
   'ai.warning': 'フルアクセスではコマンド実行とファイルアクセスの確認を省略します。AI はあなたの権限でファイルを変更し、コマンドを実行できます。信頼できるプロジェクトのみで有効にしてください。',
   'settings.general': '一般',
   'settings.language': '言語',
-  'settings.tools': 'ツールの詳細を表示',
   'settings.root': 'ワークスペースのルート',
   'settings.initial': '新規タスクの既定 AI',
   'settings.ais': 'AI ツール',
