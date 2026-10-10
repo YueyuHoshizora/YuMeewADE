@@ -417,3 +417,5 @@ body { height: 100dvh; display: grid; grid-template-rows: 64px minmax(0, 1fr) au
 .file-pane { min-width: 0; }
 .file-content { margin: 6px 0 0; padding: 8px 10px; max-height: 52vh; overflow: auto; border: 1px solid var(--border); border-radius: 8px; white-space: pre; font-size: 12px; }
 @media (max-width: 700px) { .file-viewer { grid-template-columns: 1fr; } }
+.snippet-list h3 { margin: 12px 0 6px; font-size: 13px; color: var(--muted); }
+.snippet-list .snippet-use { flex: 1; text-align: left; }

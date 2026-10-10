@@ -22,6 +22,7 @@ import { parseDiff, type DiffLine } from '../components/diff.ts';
 import { buildReviewPrompt, type ReviewItem } from '../components/review.ts';
 import { openFileBrowser } from '../components/files.ts';
 import { attachMention } from '../components/mention.ts';
+import { snippetsButton } from '../components/snippet-menu.ts';
 
 export function taskView(
   context: ViewContext,
@@ -815,7 +816,7 @@ export function taskView(
     footer.title = task.memo;
     footer.replaceChildren(row(state, phase, detail, memo, leaveMemo));
   }
-  const composerControls = row(pick.node, upload.node, actions);
+  const composerControls = row(pick.node, upload.node, snippetsButton(draft), actions);
   composerControls.classList.add('composer-controls');
   const mentions = attachMention(draft, async q => (await request<{ files: string[] }>(query('/api/task/files', { project: project.id, task: task.id, q }))).files);
   composer.append(queueNode, mentions, draft, upload.strip, running, composerControls);
