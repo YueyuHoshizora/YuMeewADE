@@ -15,6 +15,7 @@ export const de: Record<MessageKey, string> = {
   'chat.fork': 'Ab hier verzweigen', 'chat.forked': 'Zweig-Aufgabe erstellt', 'detail.fork_while_running': 'Laufende Aufgabe vor dem Verzweigen stoppen', 'log.task.fork': 'Aufgabe ab Anweisung verzweigt',
   'chat.timedOut': 'Gestoppt: Laufzeitlimit überschritten',
   'chat.changes': 'Diese Runde: {files} Dateien +{added} −{removed}',
+  'git.review': '{ai} um Review bitten', 'git.reviewBusy': 'Die KI läuft; warte, bis die Runde beendet ist, bevor du eine andere KI um ein Review bittest', 'git.reviewPrompt': 'Prüfe als Reviewer alle Änderungen der aktuellen Arbeitskopie gegenüber {target} (git diff {target}...HEAD plus Uncommittetes). Melde nur Probleme, Risiken und Vorschläge mit Dateinamen und Zeilennummern. Ändere KEINE Datei.',
   'chat.turnUsage': 'Eingabe {input} · Ausgabe {output}', 'chat.cachedUsage': ' · Cache {cached}',
   'chat.usageHint': 'Diese Tokenzahlen werden von der CLI gemeldet.',
   'chat.queuePaused': 'Warteschlange pausiert: Der erste Eintrag ist fehlgeschlagen. Weitere warten, bis er entfernt oder manuell gestartet wird.',

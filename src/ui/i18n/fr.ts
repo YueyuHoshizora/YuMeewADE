@@ -15,6 +15,7 @@ export const fr: Record<MessageKey, string> = {
   'chat.fork': 'Créer une branche d’ici', 'chat.forked': 'Tâche de branche créée', 'detail.fork_while_running': 'Arrête la tâche en cours avant de créer une branche', 'log.task.fork': 'Tâche ramifiée depuis une instruction',
   'chat.timedOut': 'Arrêtée : durée d’exécution maximale dépassée',
   'chat.changes': 'Ce tour : {files} fichiers +{added} −{removed}',
+  'git.review': 'Demander une revue à {ai}', 'git.reviewBusy': 'L’IA est en cours d’exécution ; attends la fin du tour avant de demander une revue à une autre IA', 'git.reviewPrompt': 'En tant que relecteur, examine toutes les modifications de la copie de travail actuelle par rapport à {target} (git diff {target}...HEAD et le contenu non commité). Signale uniquement les problèmes, risques et suggestions, avec noms de fichiers et numéros de ligne. Ne modifie AUCUN fichier.',
   'chat.turnUsage': 'entrée {input} · sortie {output}', 'chat.cachedUsage': ' · cache {cached}',
   'chat.usageHint': 'Ces nombres de tokens sont rapportés par la CLI.',
   'chat.queuePaused': 'File en pause : le premier élément a échoué. Les suivants attendent son retrait ou son lancement manuel.',

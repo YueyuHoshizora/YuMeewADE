@@ -709,6 +709,14 @@ export function taskView(
     const preview = await api.preview(project.id, task.id);
     if (!alive || serial !== previewSerial || !preview) return;
     if (mergeButton) mergeButton.disabled = preview.files === 0;
+    const reviewer = context.state.ais.find(a => a.name !== 'mock' && a.available && a.name !== task.cli);
+    if (reviewer && preview.files > 0) {
+      actions.append(button(t('git.review', { ai: aiLabel(reviewer.name) }), async () => {
+        if (busy) return toast(t('git.reviewBusy'));
+        await api.send({ project: project.id, task: task.id, text: t('git.reviewPrompt', { target: preview.target }), ai: reviewer.name });
+        await context.refresh();
+      }));
+    }
     setGitBadge(preview.files, preview.conflict);
     info.append(
       gitRow(t('git.branch'), preview.branch),

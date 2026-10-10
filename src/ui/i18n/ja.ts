@@ -15,6 +15,7 @@ export const ja: Record<MessageKey, string> = {
   'chat.fork': 'ここから分岐', 'chat.forked': '分岐タスクを作成しました', 'detail.fork_while_running': '実行中のタスクを停止してから分岐してください', 'log.task.fork': '指示から作業を分岐',
   'chat.timedOut': '実行時間の上限を超えたため停止しました',
   'chat.changes': 'このターンの変更 {files} ファイル +{added} −{removed}',
+  'git.review': '{ai} にレビューを依頼', 'git.reviewBusy': 'AI の実行中です。このターンが終わってから別の AI にレビューを依頼してください', 'git.reviewPrompt': 'レビュアーとして、現在の作業コピーの {target} に対するすべての変更（git diff {target}...HEAD と未コミットの内容）を確認してください。問題・リスク・提案だけをファイル名と行番号つきで報告し、ファイルは一切変更しないでください。',
   'chat.turnUsage': '入力 {input} · 出力 {output}', 'chat.cachedUsage': ' · キャッシュ {cached}',
   'chat.usageHint': 'これらのトークン数は CLI が報告した値です。',
   'chat.queuePaused': 'キューは一時停止中：先頭の指示が失敗しました。削除するか手動で開始するまで後続の指示は待機します。',

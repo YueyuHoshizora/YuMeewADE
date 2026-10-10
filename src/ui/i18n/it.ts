@@ -15,6 +15,7 @@ export const it: Record<MessageKey, string> = {
   'chat.fork': 'Crea ramo da qui', 'chat.forked': 'Attività di ramo creata', 'detail.fork_while_running': 'Interrompi l’attività in corso prima di creare un ramo', 'log.task.fork': 'Attività ramificata da un’istruzione',
   'chat.timedOut': 'Interrotta: superato il tempo massimo di esecuzione',
   'chat.changes': 'Questo turno: {files} file +{added} −{removed}',
+  'git.review': 'Chiedi a {ai} una revisione', 'git.reviewBusy': 'L’IA è in esecuzione; attendi la fine del turno prima di chiedere una revisione a un’altra IA', 'git.reviewPrompt': 'Come revisore, esamina tutte le modifiche della copia di lavoro attuale rispetto a {target} (git diff {target}...HEAD più il contenuto non salvato). Segnala solo problemi, rischi e suggerimenti, con nomi di file e numeri di riga. NON modificare nessun file.',
   'chat.turnUsage': 'input {input} · output {output}', 'chat.cachedUsage': ' · cache {cached}',
   'chat.usageHint': 'Questi conteggi di token sono riportati dalla CLI.',
   'chat.queuePaused': 'Coda in pausa: il primo elemento è fallito. I successivi attendono la sua rimozione o l’avvio manuale.',

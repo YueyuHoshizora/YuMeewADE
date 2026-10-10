@@ -14,6 +14,7 @@ export const zhTW = {
   'chat.fork': '從這裡分支', 'chat.forked': '已建立分支作業', 'detail.fork_while_running': '作業執行中，請先停止再分支', 'log.task.fork': '從指示分支作業',
   'chat.timedOut': '超過執行時間上限，已停止',
   'chat.changes': '本輪變更 {files} 檔 +{added} −{removed}',
+  'git.review': '請 {ai} 審查', 'git.reviewBusy': 'AI 執行中，請等這一輪結束再請另一個 AI 審查', 'git.reviewPrompt': '請以審查者的身分檢查目前工作副本相對於 {target} 的所有變更（git diff {target}...HEAD，加上尚未提交的內容）。只回報問題、風險與建議，並附上檔名與行號；嚴禁修改任何檔案。',
   'chat.turnUsage': '輸入 {input} · 輸出 {output}', 'chat.cachedUsage': ' · 快取 {cached}',
   'chat.usageHint': '這些 token 用量由 CLI 回報。',
   'chat.queuePaused': '隊列已暫停：第一筆指示失敗，後續指示會等待，直到移除失敗項目或手動開始。',
