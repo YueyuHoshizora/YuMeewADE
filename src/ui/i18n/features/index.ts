@@ -35,6 +35,7 @@ import * as gitWorktrees from './git-worktrees.ts';
 import * as overview from './overview.ts';
 import * as taskBoard from './task-board.ts';
 import * as taskBulk from './task-bulk.ts';
+import * as terminalRecovery from './terminal-recovery.ts';
 import * as testExplorer from './test-explorer.ts';
 import * as contextBudget from './context-budget.ts';
 import * as ideWorkbench from './ide-workbench.ts';
@@ -78,6 +79,7 @@ export const featureZhTW = {
   ...overview.featureZhTW,
   ...taskBoard.featureZhTW,
   ...taskBulk.featureZhTW,
+  ...terminalRecovery.featureZhTW,
   ...testExplorer.featureZhTW,
   ...contextBudget.featureZhTW,
   ...ideWorkbench.featureZhTW,
@@ -121,6 +123,7 @@ export const featureZhCN = {
   ...overview.featureZhCN,
   ...taskBoard.featureZhCN,
   ...taskBulk.featureZhCN,
+  ...terminalRecovery.featureZhCN,
   ...testExplorer.featureZhCN,
   ...contextBudget.featureZhCN,
   ...ideWorkbench.featureZhCN,
@@ -164,6 +167,7 @@ export const featureEn = {
   ...overview.featureEn,
   ...taskBoard.featureEn,
   ...taskBulk.featureEn,
+  ...terminalRecovery.featureEn,
   ...testExplorer.featureEn,
   ...contextBudget.featureEn,
   ...ideWorkbench.featureEn,
@@ -207,6 +211,7 @@ export const featureJa = {
   ...overview.featureJa,
   ...taskBoard.featureJa,
   ...taskBulk.featureJa,
+  ...terminalRecovery.featureJa,
   ...testExplorer.featureJa,
   ...contextBudget.featureJa,
   ...ideWorkbench.featureJa,
@@ -250,6 +255,7 @@ export const featureDe = {
   ...overview.featureDe,
   ...taskBoard.featureDe,
   ...taskBulk.featureDe,
+  ...terminalRecovery.featureDe,
   ...testExplorer.featureDe,
   ...contextBudget.featureDe,
   ...ideWorkbench.featureDe,
@@ -293,6 +299,7 @@ export const featureFr = {
   ...overview.featureFr,
   ...taskBoard.featureFr,
   ...taskBulk.featureFr,
+  ...terminalRecovery.featureFr,
   ...testExplorer.featureFr,
   ...contextBudget.featureFr,
   ...ideWorkbench.featureFr,
@@ -336,6 +343,7 @@ export const featureIt = {
   ...overview.featureIt,
   ...taskBoard.featureIt,
   ...taskBulk.featureIt,
+  ...terminalRecovery.featureIt,
   ...testExplorer.featureIt,
   ...contextBudget.featureIt,
   ...ideWorkbench.featureIt,

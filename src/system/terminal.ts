@@ -3,6 +3,7 @@ import * as pty from 'node-pty';
 import { captureCommand, findExecutable, minimalEnv } from '../cli/process.ts';
 import { AppError } from '../shared/errors.ts';
 import type { TerminalLease, TerminalRequest, TerminalSession } from '../shared/execution-tools.ts';
+import type { TerminalRecoveryLease, TerminalRecoveryTab } from '../shared/terminal-recovery.ts';
 import type { ExecutionService } from './commands.ts';
 import { executionArgs, executionEnv } from './execution-input.ts';
 
@@ -13,12 +14,15 @@ export interface TerminalOptions {
 }
 interface Entry { view: TerminalSession; owner: Buffer; process: pty.IPty; bytes: number; touched: number; inputAt: number; inputBytes: number; done: Promise<void>; finish: () => void; stopping?: Promise<void> }
 const dimension = (value: unknown, fallback: number): number => { if (value === undefined) return fallback; if (!Number.isSafeInteger(value) || typeof value !== 'number' || value < 2 || value > 300) throw new AppError('bad_request'); return value; };
+interface Recovery { binding: string; renderer: string; ticket: Buffer; label: string; expires: number }
 
 export class TerminalService {
   private readonly execution: ExecutionService;
   private readonly options: TerminalOptions;
   private readonly sessions = new Map<string, Entry>();
   private readonly pending = new Map<string, { project: string; task: string }>();
+  readonly recoveryGeneration = randomUUID();
+  private readonly recovery = new Map<string, Recovery>();
   private closed = false;
   private readonly sweep: NodeJS.Timeout;
   constructor(execution: ExecutionService, options: TerminalOptions = {}) {
@@ -87,6 +91,42 @@ export class TerminalService {
     e.process.resize(cols, rows); e.view.cols = cols; e.view.rows = rows;
   }
   async stop(project: string, task: string, id: string, owner: string): Promise<void> { await this.terminate(this.get(project, task, id, owner)); }
+  private pruneRecovery(): void {
+    for (const [id, record] of this.recovery) if (record.expires <= Date.now() || !this.sessions.has(id)) this.recovery.delete(id);
+  }
+  private recoveryIdentity(binding: string, renderer: string): void {
+    if (!/^[a-f0-9]{64}$/u.test(binding) || !/^[a-f0-9]{64}$/u.test(renderer)) throw new AppError('forbidden');
+  }
+  bindRecovery(project: string, task: string, id: string, owner: string, binding: string, renderer: string, label: string): { ticket: string } {
+    this.recoveryIdentity(binding, renderer); this.pruneRecovery();
+    if (typeof label !== 'string' || !label.trim() || label.length > 80 || /[\0\r\n]/u.test(label)) throw new AppError('bad_request');
+    this.get(project, task, id, owner);
+    const prior = this.recovery.get(id);
+    if (prior && (prior.binding !== binding || prior.renderer !== renderer)) throw new AppError('forbidden');
+    if (!prior && this.recovery.size >= (this.options.history ?? 64)) throw new AppError('unavailable');
+    const ticket = prior?.ticket ?? randomBytes(32);
+    this.recovery.set(id, { binding, renderer, ticket, label, expires: Date.now() + 86_400_000 });
+    return { ticket: ticket.toString('hex') };
+  }
+  listRecovery(binding: string, renderer: string): TerminalRecoveryTab[] {
+    this.recoveryIdentity(binding, renderer); this.pruneRecovery();
+    const tabs: TerminalRecoveryTab[] = [];
+    for (const [id, record] of this.recovery) {
+      if (record.binding !== binding || record.renderer !== renderer) continue;
+      const view = this.sessions.get(id)!.view;
+      tabs.push({ id, project: view.project, task: view.task, label: record.label, sequence: view.sequence, status: view.status });
+    }
+    return tabs;
+  }
+  claimRecovery(project: string, task: string, id: string, binding: string, renderer: string, ticket: string): TerminalRecoveryLease {
+    this.recoveryIdentity(binding, renderer); this.pruneRecovery();
+    const record = this.recovery.get(id); const entry = this.sessions.get(id);
+    if (!record || !entry || entry.view.project !== project || entry.view.task !== task) throw new AppError('not_found');
+    if (record.binding !== binding || record.renderer !== renderer || typeof ticket !== 'string' || !/^[a-f0-9]{64}$/u.test(ticket) || !timingSafeEqual(record.ticket, Buffer.from(ticket, 'hex'))) throw new AppError('forbidden');
+    // Synchronous rotation makes simultaneous claims and replay fail closed.
+    entry.owner = randomBytes(32); record.ticket = randomBytes(32); record.expires = Date.now() + 86_400_000; entry.touched = Date.now();
+    return { session: this.snapshot(entry), owner: entry.owner.toString('hex'), ticket: record.ticket.toString('hex') };
+  }
   private async terminate(e: Entry): Promise<void> {
     if (e.stopping) return e.stopping;
     if (e.view.status !== 'running') return;
@@ -110,6 +150,6 @@ export class TerminalService {
   active(): number { return [...this.sessions.values()].filter(e => e.view.status === 'running').length; }
   isBusy(): boolean { return this.pending.size > 0 || this.active() > 0; }
   isRunning(project: string, task?: string): boolean { return [...this.pending.values()].some(e => e.project === project && (task === undefined || e.task === task)) || [...this.sessions.values()].some(e => e.view.project === project && (task === undefined || e.view.task === task) && e.view.status === 'running'); }
-  close(): void { this.closed = true; clearInterval(this.sweep); for (const e of this.sessions.values()) void this.terminate(e).catch(() => undefined); }
-  async stopAll(): Promise<void> { this.closed = true; clearInterval(this.sweep); await Promise.all([...this.sessions.values()].map(e => this.terminate(e))); }
+  close(): void { this.closed = true; clearInterval(this.sweep); this.recovery.clear(); for (const e of this.sessions.values()) void this.terminate(e).catch(() => undefined); }
+  async stopAll(): Promise<void> { this.closed = true; clearInterval(this.sweep); this.recovery.clear(); await Promise.all([...this.sessions.values()].map(e => this.terminate(e))); }
 }

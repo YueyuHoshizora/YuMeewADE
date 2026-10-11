@@ -1,11 +1,14 @@
 import { t } from '../i18n/index.ts';
 import { button, el, readLocal, row, run, storeLocal } from './dom.ts';
 import { embeddedTerminal, type TerminalTabs } from './terminal.ts';
+import { discoverTerminalRecovery, resetTerminalRecovery } from './terminal-recovery.ts';
 
 const groups = new Map<string, TerminalTabs>();
 let panel: HTMLElement | undefined;
 let chooser: HTMLSelectElement;
 let content: HTMLElement;
+let restoring: Promise<void> | undefined;
+let workspaceEpoch = 0;
 let visible = readLocal<boolean>('yumeewade.terminalDock.visible', false) === true;
 let height = readLocal('yumeewade.terminalDock.height', 320);
 function setHeight(value: number): void {
@@ -41,17 +44,37 @@ export function mountTerminalDock(): void {
   window.addEventListener('resize', () => setHeight(height));
   window.addEventListener('keydown', event => { if (!event.isComposing && (event.ctrlKey || event.metaKey) && event.code === 'Backquote') { event.preventDefault(); event.stopPropagation(); show(!visible); } }, true);
   // Navigation and hiding never dispose leases. A lost renderer is reclaimed by the server idle timeout.
+  window.addEventListener('yumeewade:terminal-unavailable', () => {
+    const notice = el('p', 'muted', t('terminalRecovery.unavailable')); content.append(notice); show(true);
+  });
+  window.addEventListener('yumeewade:workspace-changed', resetTerminalDock);
+  restoring = run(restoreDock).finally(() => { restoring = undefined; });
 }
 export function toggleTerminalDock(): void { show(!visible); }
-export async function openDockTerminal(project: string, task: string): Promise<void> {
-  show(true);
+function groupFor(project: string, task: string): TerminalTabs {
   const key = JSON.stringify([project, task]);
   let group = groups.get(key);
   if (!group) {
     group = embeddedTerminal(project, task); groups.set(key, group); content.append(group.node);
     const option = el('option', '', `${project} / ${task}`); option.value = key; chooser.append(option);
   }
-  selectGroup(key); await group.add();
+  selectGroup(key); return group;
+}
+async function restoreDock(): Promise<void> {
+  const epoch = workspaceEpoch;
+  const tabs = await discoverTerminalRecovery();
+  for (const tab of tabs) { if (epoch !== workspaceEpoch) return; await run(() => groupFor(tab.project, tab.task).restore(tab)); }
+}
+export function resetTerminalDock(): void {
+  workspaceEpoch++;
+  for (const group of groups.values()) group.dispose();
+  groups.clear(); content?.replaceChildren(); chooser?.replaceChildren(); resetTerminalRecovery();
+  restoring = undefined;
+}
+export async function openDockTerminal(project: string, task: string): Promise<void> {
+  const epoch = workspaceEpoch;
+  show(true); await restoring;
+  if (epoch === workspaceEpoch) await groupFor(project, task).add();
 }
 export function dockTerminalButton(project: string, task: string): HTMLElement {
   return button(t('terminalDock.open'), () => run(() => openDockTerminal(project, task)));

@@ -1,11 +1,12 @@
-import type { TerminalLease, TerminalSession } from '../../shared/types.ts';
-import { request } from '../api.ts';
+import type { TerminalLease, TerminalSession, TerminalRecoveryTab } from '../../shared/types.ts';
+import { ApiFailure, request } from '../api.ts';
 import { t } from '../i18n/index.ts';
 import { button, confirmModal, el, field, input, renameModal, row, run } from './dom.ts';
 import { TerminalScreen } from './terminal-screen.ts';
+import { bindTerminalRecovery, claimTerminalRecovery, forgetTerminalRecovery, initializeTerminalRecovery } from './terminal-recovery.ts';
 
-interface TerminalPanel { node: HTMLElement; dispose: () => void; launch: () => Promise<void>; stop: () => Promise<void>; running: () => boolean }
-function terminalSession(project: string, task: string): TerminalPanel {
+interface TerminalPanel { node: HTMLElement; dispose: () => void; launch: () => Promise<void>; stop: () => Promise<void>; running: () => boolean; rename: (label: string) => Promise<void> }
+function terminalSession(project: string, task: string, label: string, recover?: TerminalRecoveryTab): TerminalPanel {
   const node = el('section', 'card'); const screen = new TerminalScreen(100, 24, t('tools.terminal'));
   const status = el('p'); const controls = row();
   const columns = input('100'); const lines = input('24');
@@ -14,6 +15,7 @@ function terminalSession(project: string, task: string): TerminalPanel {
   receiver.style.cssText = 'position:absolute;width:1px;height:1px;opacity:0;overflow:hidden';
   let lease: TerminalLease | undefined; let alive = true; let timer: number | undefined; let after = 0; let inputQueue = ''; let sending = false;
   let starting = false;
+  let replaying = false;
   const identity = () => ({ project, task, id: lease!.session.id, owner: lease!.owner });
   async function flush(): Promise<void> {
     if (sending || !lease || !alive) return;
@@ -22,7 +24,7 @@ function terminalSession(project: string, task: string): TerminalPanel {
     finally { sending = false; }
   }
   function send(text: string): void {
-    if (!lease || lease.session.status !== 'running' || inputQueue.length + text.length > 65536) return;
+    if (replaying || !lease || lease.session.status !== 'running' || inputQueue.length + text.length > 65536) return;
     inputQueue += text; void run(flush);
   }
   screen.onReply = send;
@@ -32,16 +34,32 @@ function terminalSession(project: string, task: string): TerminalPanel {
       const current = await request<TerminalSession>('/api/terminal/output', { ...identity(), after });
       if (!alive) return;
       if (current.output.length && current.output[0]!.sequence > after + 1) screen.write('\x1b[2J\x1b[H');
-      if (current.output.length) screen.write(current.output.map(event => event.text).join(''));
+      replaying = after === 0;
+      try { if (current.output.length) screen.write(current.output.map(event => event.text).join('')); }
+      finally { replaying = false; }
       after = current.sequence; lease.session = current;
       status.textContent = `${t(current.status === 'running' ? 'tools.running' : 'tools.closed')}${current.truncated ? ' · ' + t('execution.truncated') : ''}`;
+    } catch (error) {
+      if (error instanceof ApiFailure && (error.status === 403 || error.status === 404)) {
+        lease = undefined; inputQueue = ''; status.textContent = t('terminalRecovery.unavailable');
+      }
+      throw error;
     } finally { if (alive && lease?.session.status === 'running') timer = window.setTimeout(() => { void run(poll); }, 100); }
   }
   async function launch(): Promise<void> {
     if (!alive || starting || lease?.session.status === 'running') return;
     starting = true;
     try {
-      lease = await request<TerminalLease>('/api/terminal/start', { project, task, cols: screen.cols, rows: screen.rows });
+      if (!recover && lease) forgetTerminalRecovery(lease.session.id);
+      await initializeTerminalRecovery();
+      if (recover) {
+        lease = await claimTerminalRecovery(recover); recover = undefined;
+        screen.resize(lease.session.cols, lease.session.rows); columns.value = String(lease.session.cols); lines.value = String(lease.session.rows);
+      } else {
+        lease = await request<TerminalLease>('/api/terminal/start', { project, task, cols: screen.cols, rows: screen.rows });
+        try { await bindTerminalRecovery(identity(), label); }
+        catch (error) { await request('/api/terminal/stop', identity()); throw error; }
+      }
       if (!alive) { await request('/api/terminal/stop', identity()); return; }
       after = 0; screen.write('\x1b[2J\x1b[H'); receiver.focus(); await poll();
     } finally { starting = false; }
@@ -50,6 +68,7 @@ function terminalSession(project: string, task: string): TerminalPanel {
     if (lease?.session.status === 'running') {
       await request('/api/terminal/stop', identity()); lease.session.status = 'stopped'; clearTimeout(timer); status.textContent = t('tools.closed');
     }
+    if (lease) forgetTerminalRecovery(lease.session.id);
   }
   controls.append(button(t('tools.terminal'), launch), button(t('execution.stop'), async () => {
     if (lease?.session.status === 'running' && await confirmModal(t('execution.stop'), t('terminalTabs.confirmClose'), t('execution.stop'))) await stop();
@@ -83,11 +102,11 @@ function terminalSession(project: string, task: string): TerminalPanel {
     resizeTimer = window.setTimeout(() => { columns.value = String(cols); const rows = screen.rows; screen.resize(cols, rows); if (alive && lease?.session.status === 'running') void run(() => request('/api/terminal/resize', { ...identity(), cols, rows })); }, 100);
   });
   node.append(el('h3', '', t('tools.terminal')), controls, status, screen.node, receiver); observer.observe(node);
-  const dispose = () => { alive = false; clearTimeout(timer); clearTimeout(resizeTimer); observer.disconnect(); inputQueue = ''; if (lease?.session.status === 'running') void request('/api/terminal/stop', identity()).catch(() => undefined); };
-  return { node, dispose, launch, stop, running: () => lease?.session.status === 'running' };
+  const dispose = () => { alive = false; clearTimeout(timer); clearTimeout(resizeTimer); observer.disconnect(); inputQueue = ''; if (lease) { forgetTerminalRecovery(lease.session.id); if (lease.session.status === 'running') void request('/api/terminal/stop', identity()).catch(() => undefined); } };
+  return { node, dispose, launch, stop, running: () => lease?.session.status === 'running', rename: async value => { label = value; if (lease) await bindTerminalRecovery(identity(), label); } };
 }
 
-export interface TerminalTabs { node: HTMLElement; add: () => Promise<void>; dispose: () => void }
+export interface TerminalTabs { node: HTMLElement; add: () => Promise<void>; restore: (tab: TerminalRecoveryTab) => Promise<void>; dispose: () => void }
 export function embeddedTerminal(project: string, task: string): TerminalTabs {
   const node = el('section', 'terminal-tabs');
   const tabs = row(); tabs.setAttribute('role', 'tablist');
@@ -102,20 +121,21 @@ export function embeddedTerminal(project: string, task: string): TerminalTabs {
       item.tab.setAttribute('aria-selected', String(item === entry));
     }
   }
-  async function add(): Promise<void> {
-    const terminal = terminalSession(project, task);
-    const entry: typeof sessions[number] = { label: `${t('tools.terminal')} ${++serial}`, terminal, tab: button('', () => select(entry)) };
+  async function create(recover?: TerminalRecoveryTab): Promise<void> {
+    const label = recover?.label ?? `${t('tools.terminal')} ${++serial}`;
+    const terminal = terminalSession(project, task, label, recover);
+    const entry: typeof sessions[number] = { label, terminal, tab: button('', () => select(entry)) };
     entry.tab.setAttribute('role', 'tab'); entry.tab.textContent = entry.label;
     sessions.push(entry); tabs.append(entry.tab); body.append(terminal.node); select(entry);
     try { await terminal.launch(); }
     catch (error) { sessions.splice(sessions.indexOf(entry), 1); terminal.dispose(); terminal.node.remove(); entry.tab.remove(); selected = undefined; if (sessions.length) select(sessions.at(-1)!); throw error; }
   }
   node.append(row(el('strong', '', `${project} / ${task}`),
-    button(t('terminalTabs.new'), add),
+    button(t('terminalTabs.new'), () => create()),
     button(t('terminalTabs.rename'), async () => {
       if (!selected) return;
       const label = (await renameModal(selected.label))?.trim();
-      if (label && label.length <= 80) { selected.label = label; selected.tab.textContent = label; }
+      if (label && label.length <= 80) { await selected.terminal.rename(label); selected.label = label; selected.tab.textContent = label; }
     }),
     button(t('terminalTabs.close'), async () => {
       const entry = selected; if (!entry) return;
@@ -124,5 +144,5 @@ export function embeddedTerminal(project: string, task: string): TerminalTabs {
       sessions.splice(sessions.indexOf(entry), 1); selected = undefined;
       if (sessions.length) select(sessions.at(-1)!);
     })), tabs, body);
-  return { node, add, dispose: () => { for (const entry of sessions) entry.terminal.dispose(); } };
+  return { node, add: () => create(), restore: tab => create(tab), dispose: () => { for (const entry of sessions) entry.terminal.dispose(); } };
 }
