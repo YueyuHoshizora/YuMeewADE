@@ -520,3 +520,6 @@ electron 44.7.0、vite 8.3.4、electron-builder 26.15.3、typescript 7.0.2、@ty
 - 還原涉及 checkout 仍須符合原保存信任及目前 root，拒絕則回滾，不自動信任封存專案。信任檢查在台帳恢復後、第一次 checkout 前執行；不涉及 checkout 的直接作業台帳還原仍可使用。
 - 使用者批准對釘選 `sprintf-js@1.1.3` 套用局部 precision DoS 修補：精確來源 SHA256、原子替換、冪等、來源漂移 fail-closed，保留版本與授權；CI 與打包重現此修補。上游 registry advisory 仍存在，不宣稱 `npm audit` 清零，不升級未批准工具鏈。
 
+
+### B.12 IDE 缺口補齊（使用者裁示 2026-10-12：「全部都做」）
+- 前端編輯器改用 CodeMirror 6（`devDependencies` 確切版本，Vite 打包；使用者核准）。其他新增功能逐項記於本節。

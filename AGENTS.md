@@ -7,7 +7,7 @@
 - 全案 **TypeScript**，不使用其他語言（含建置腳本；shell 僅限 CI workflow 內一行指令）。
 - 執行環境 **Node.js v24**（`engines.node >= 24`）。可在更新版本開發，但**不得使用 v24 以後才有的 API**。
 - 桌面外殼 **Electron**；前端建置 **Vite**；打包 **electron-builder**。三者與 TypeScript 皆**釘選確切版本**，升版需人工裁示；`package-lock.json` 入庫。
-- 其餘一律用 Node 內建模組（`node:http`、`node:child_process`、`node:fs/promises`、`node:test`…）。**不得新增執行期相依或 ORM**，唯一原生終端例外為使用者明確核准的 `node-pty` **1.1.0**（跨平台 PTY；不得以 pipe 冒充）；升版或新增其他相依仍須裁示。資料庫僅允許使用者 2026-10-11 明確要求的帳號憑證庫（Node 24 `node:sqlite`，見 PLAN.md B.10）；台帳仍不得改用資料庫。
+- 其餘一律用 Node 內建模組（`node:http`、`node:child_process`、`node:fs/promises`、`node:test`…）。**不得新增執行期相依或 ORM**，唯一原生終端例外為使用者明確核准的 `node-pty` **1.1.0**（跨平台 PTY；不得以 pipe 冒充）；升版或新增其他相依仍須裁示。前端編輯器使用使用者 2026-10-12 核准的 **CodeMirror 6**（`codemirror`、`@codemirror/*`、`@lezer/highlight`）：列在 `devDependencies` 並釘選確切版本，由 Vite 打包進 `dist/ui/`，不是核心執行期相依；不得用它以外的編輯器或 UI 框架。資料庫僅允許使用者 2026-10-11 明確要求的帳號憑證庫（Node 24 `node:sqlite`，見 PLAN.md B.10）；台帳仍不得改用資料庫。
 - 模組系統：Node ESM（`"type": "module"`，`module: nodenext`）。原始碼相對匯入寫 `.ts` 副檔名，由 `rewriteRelativeImportExtensions` 轉為 `.js`。
 - 只用可擦除語法（`erasableSyntaxOnly`）：不用 `enum`、namespace、參數屬性；測試以 Node 原生型別剝離直接執行 `.ts`。
 
