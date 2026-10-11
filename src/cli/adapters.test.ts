@@ -2,7 +2,7 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import { DEFAULT_CONFIG } from '../shared/config.ts';
-import { ClaudeCliProvider, claudeArgs, claudeOauthQuota, claudeQuota, createClaudeParser, fetchClaudeQuota } from './claude.ts';
+import { ClaudeCliProvider, claudeArgs, claudeOauthQuota, claudeQuota, claudeResetCredits, createClaudeParser, fetchClaudeQuota } from './claude.ts';
 import { CodexCliProvider, codexAppServerQuota, codexArgs, codexQuota, createCodexParser, fetchCodexQuota, readCodexQuota } from './codex.ts';
 import { captureCommand, redactArgs } from './process.ts';
 import { MockCliProvider } from './mock.ts';
@@ -466,13 +466,37 @@ test('Claude OAuth 用量回應轉成窗口：只收已知窗口、百分比夾�
   assert.equal(claudeOauthQuota('x'), null);
 });
 
+test('Claude 重置券：cedar_ember.grants 依剩餘次數展開、略過過期與用盡者、依到期日排序，缺欄位忽略', () => {
+  const now = Date.parse('2026-10-11T00:00:00Z');
+  const grant = (label: unknown, left: unknown, ends: unknown) => ({ id: 'g', label, resets_left: left, ends_at: ends });
+  assert.deepEqual(claudeResetCredits({ cedar_ember: { grants: [
+    grant('later', 2, '2026-11-01T00:00:00+00:00'),
+    grant('soon', 1, '2026-10-22T16:00:00+00:00'),
+    grant('used', 0, '2026-10-30T00:00:00+00:00'),
+    grant('expired', 1, '2026-10-01T00:00:00+00:00'),
+    grant(null, 1, null),
+    'junk',
+  ] } }, now), {
+    availableCount: 4,
+    credits: [
+      { title: 'soon', expiresAt: '2026-10-22T16:00:00.000Z' },
+      { title: 'later', expiresAt: '2026-11-01T00:00:00.000Z' },
+      { title: 'later', expiresAt: '2026-11-01T00:00:00.000Z' },
+      { title: null, expiresAt: null },
+    ],
+  });
+  assert.deepEqual(claudeResetCredits({ cedar_ember: { grants: [] } }, now), { availableCount: 0, credits: [] });
+  assert.equal(claudeResetCredits({ cedar_ember: { eligible: false } }, now), undefined);
+  assert.equal(claudeResetCredits({}, now), undefined);
+});
+
 test('Claude 即時用量查詢：帶 Bearer 憑證與 beta 標頭，HTTP 錯誤與缺憑證都 reject', async () => {
   const dir = await fs.mkdtemp(path.join(os.tmpdir(), 'claude-quota-'));
   const seen: Record<string, string | undefined>[] = [];
   const server = http.createServer((req, res) => {
-    seen.push({ auth: req.headers.authorization, beta: req.headers['anthropic-beta'] as string | undefined });
+    seen.push({ auth: req.headers.authorization, beta: req.headers['anthropic-beta'] as string | undefined, agent: req.headers['user-agent'] });
     if (req.headers.authorization !== 'Bearer tok-1') { res.writeHead(401).end('{}'); return; }
-    res.writeHead(200, { 'content-type': 'application/json' }).end(JSON.stringify({ five_hour: { utilization: 12, resets_at: null } }));
+    res.writeHead(200, { 'content-type': 'application/json' }).end(JSON.stringify({ five_hour: { utilization: 12, resets_at: null }, cedar_ember: { grants: [{ label: 'launch', resets_left: 1, ends_at: '2099-01-01T00:00:00Z' }] } }));
   });
   await new Promise<void>(resolve => server.listen(0, '127.0.0.1', resolve));
   const url = `http://127.0.0.1:${(server.address() as { port: number }).port}/usage`;
@@ -483,13 +507,18 @@ test('Claude 即時用量查詢：帶 Bearer 憑證與 beta 標頭，HTTP 錯誤
     // HTTP 部分用注入的憑證讀取，在所有平台都跑。
     const quota1 = await fetchClaudeQuota(env, 2000, url, async () => 'tok-1');
     assert.deepEqual(quota1?.windows, [{ label: '5h', usedPercent: 12, resetsAt: null }]);
-    assert.deepEqual(seen[0], { auth: 'Bearer tok-1', beta: 'oauth-2025-04-20' });
+    assert.equal(seen[0]?.auth, 'Bearer tok-1');
+    assert.equal(seen[0]?.beta, 'oauth-2025-04-20');
+    assert.notEqual(seen[0]?.agent, 'claude-cli/2.1.296 (external, cli)');
+    assert.deepEqual(quota1?.resetCredits, { availableCount: 1, credits: [{ title: 'launch', expiresAt: '2099-01-01T00:00:00.000Z' }] });
+    await fetchClaudeQuota(env, 2000, url, async () => 'tok-1', '2.1.296');
+    assert.equal(seen.at(-1)?.agent, 'claude-cli/2.1.296 (external, cli)');
     await assert.rejects(fetchClaudeQuota(env, 2000, url, async () => 'bad'), /401/);
     if (process.platform !== 'darwin') {
       await creds('tok-1', Date.now() + 60_000);
       const quota = await fetchClaudeQuota(env, 2000, url);
       assert.deepEqual(quota?.windows, [{ label: '5h', usedPercent: 12, resetsAt: null }]);
-      assert.deepEqual(seen[0], { auth: 'Bearer tok-1', beta: 'oauth-2025-04-20' });
+      assert.equal(seen.at(-1)?.auth, 'Bearer tok-1');
       await creds('bad', Date.now() + 60_000);
       await assert.rejects(fetchClaudeQuota(env, 2000, url), /401/);
       await creds('tok-1', Date.now() - 1);

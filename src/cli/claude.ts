@@ -1,8 +1,8 @@
 // Claude stream-json adapter；工具與問題獨立於回答文字。
 import type { CliCommandConfig } from '../shared/config.ts';
 import { randomUUID } from 'node:crypto';
-import type { Ask, QuotaWindow, TurnUsage } from '../shared/types.ts';
-import { findExecutable, minimalEnv, runLineProcess } from './process.ts';
+import type { Ask, QuotaWindow, ResetCredit, ResetCredits, TurnUsage } from '../shared/types.ts';
+import { captureCommand, findExecutable, minimalEnv, runLineProcess } from './process.ts';
 import { readClaudeToken } from './claude-credentials.ts';
 import type { CliEvent, CliProvider, CliRun, SendOptions } from './provider.ts';
 import { claudeCommands, slashName } from './commands.ts';
@@ -41,7 +41,9 @@ export function claudeQuota(info: unknown): { windows: QuotaWindow[]; limited: b
   return windows.length || limited ? { windows, limited } : null;
 }
 
-const OAUTH_USAGE_URL = 'https://api.anthropic.com/api/oauth/usage';
+// cedar_ember=1 讓回應附上 `cedar_ember`（可用的限額重置）；伺服器依 User-Agent 判斷來源，沒帶 claude-cli 版本會回 surface 不符且無資料。
+const OAUTH_USAGE_URL = 'https://api.anthropic.com/api/oauth/usage?cedar_ember=1&skip_spend=1';
+const MAX_RESET_CREDITS = 20;
 const USAGE_WINDOWS: Record<string, string> = { five_hour: '5h', seven_day: '7d', seven_day_opus: '7d opus', seven_day_sonnet: '7d sonnet' };
 
 /** `/api/oauth/usage` 的回應（utilization 已是 0–100 百分比、resets_at 為 ISO）→ 額度窗口；只收已知的窗口，未知欄位忽略。 */
@@ -61,17 +63,58 @@ export function claudeOauthQuota(body: unknown): { windows: QuotaWindow[]; limit
   return windows.length ? { windows, limited: windows.some(w => w.usedPercent >= 100) } : null;
 }
 
-/** 向 Anthropic 查帳號目前的 5 小時／7 天用量；憑證只用於這個請求，不寫日誌。 */
-export async function fetchClaudeQuota(env: NodeJS.ProcessEnv, timeoutMs = 15_000, url = OAUTH_USAGE_URL, readToken = readClaudeToken): Promise<{ type: 'quota'; windows: QuotaWindow[]; limited: boolean; at: string } | null> {
+/** `cedar_ember.grants`（限額重置的發放：label、resets_left、ends_at）→ 重置券；每張剩餘次數展開成一筆，已過期或沒有剩餘者略過。 */
+export function claudeResetCredits(body: unknown, now = Date.now()): ResetCredits | undefined {
+  const cedar = body && typeof body === 'object' ? (body as Record<string, unknown>)['cedar_ember'] : undefined;
+  const grants = cedar && typeof cedar === 'object' ? (cedar as Record<string, unknown>)['grants'] : undefined;
+  if (!Array.isArray(grants)) return undefined;
+  const credits: ResetCredit[] = [];
+  let availableCount = 0;
+  for (const row of grants) {
+    if (!row || typeof row !== 'object') continue;
+    const grant = row as Record<string, unknown>;
+    const left = grant['resets_left'];
+    if (typeof left !== 'number' || !Number.isSafeInteger(left) || left <= 0) continue;
+    const ends = typeof grant['ends_at'] === 'string' ? Date.parse(grant['ends_at']) : NaN;
+    if (!Number.isNaN(ends) && ends <= now) continue;
+    availableCount += left;
+    for (let i = 0; i < left && credits.length < MAX_RESET_CREDITS; i++) {
+      credits.push({
+        title: typeof grant['label'] === 'string' && grant['label'] ? grant['label'].slice(0, 80) : null,
+        expiresAt: Number.isNaN(ends) ? null : new Date(ends).toISOString(),
+      });
+    }
+  }
+  credits.sort((a, b) => (a.expiresAt ?? '9').localeCompare(b.expiresAt ?? '9'));
+  return { availableCount, credits };
+}
+
+const clientVersions = new Map<string, Promise<string | undefined>>();
+
+/** 本機 `claude --version` 的版本號（僅成功時快取），用於 User-Agent；取不到就回 undefined。 */
+export function claudeClientVersion(command: string, env: NodeJS.ProcessEnv): Promise<string | undefined> {
+  const cached = clientVersions.get(command);
+  if (cached) return cached;
+  const pending = captureCommand({ command, args: ['--version'], env, timeoutMs: 10_000 })
+    .then(result => result.ok ? /\b\d+\.\d+\.\d+\b/.exec(result.stdout)?.[0] : undefined, () => undefined)
+    .then(version => { if (!version) clientVersions.delete(command); return version; });
+  clientVersions.set(command, pending);
+  return pending;
+}
+
+/** 向 Anthropic 查帳號目前的 5 小時／7 天用量與重置券；憑證只用於這個請求，不寫日誌。 */
+export async function fetchClaudeQuota(env: NodeJS.ProcessEnv, timeoutMs = 15_000, url = OAUTH_USAGE_URL, readToken = readClaudeToken, clientVersion?: string): Promise<{ type: 'quota'; windows: QuotaWindow[]; limited: boolean; at: string; resetCredits?: ResetCredits } | null> {
   const token = await readToken(env);
   const res = await fetch(url, {
-    headers: { Authorization: `Bearer ${token}`, 'anthropic-beta': 'oauth-2025-04-20' },
+    headers: { Authorization: `Bearer ${token}`, 'anthropic-beta': 'oauth-2025-04-20', ...(clientVersion ? { 'User-Agent': `claude-cli/${clientVersion} (external, cli)` } : {}) },
     redirect: 'error',
     signal: AbortSignal.timeout(timeoutMs),
   });
   if (!res.ok) throw new Error(`usage endpoint ${res.status}`);
-  const quota = claudeOauthQuota(await res.json());
-  return quota ? { type: 'quota', ...quota, at: new Date().toISOString() } : null;
+  const body: unknown = await res.json();
+  const quota = claudeOauthQuota(body);
+  const resetCredits = claudeResetCredits(body);
+  return quota ? { type: 'quota', ...quota, at: new Date().toISOString(), ...(resetCredits ? { resetCredits } : {}) } : null;
 }
 
 function parseUsage(value: unknown): TurnUsage | undefined {
@@ -226,8 +269,8 @@ export class ClaudeCliProvider implements CliProvider {
   async available(): Promise<boolean> { return (await findExecutable(this.cfg.command, this.env)) !== null; }
 
   /** 帳號目前的 5 小時／7 天用量（讀 CLI 存的 OAuth 憑證查詢）；失敗由呼叫端記日誌，額度仍會隨回合中的 rate_limit_event 更新。 */
-  quota(configDir?: string): Promise<Extract<CliEvent, { type: 'quota' }> | null> {
-    return fetchClaudeQuota(configDir ? { ...this.env, CLAUDE_CONFIG_DIR: configDir } : this.env);
+  async quota(configDir?: string): Promise<Extract<CliEvent, { type: 'quota' }> | null> {
+    return fetchClaudeQuota(configDir ? { ...this.env, CLAUDE_CONFIG_DIR: configDir } : this.env, undefined, undefined, undefined, await claudeClientVersion(this.cfg.command, this.env));
   }
 
   commands(cwd: string, configDir?: string) {

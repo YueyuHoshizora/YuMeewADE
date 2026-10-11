@@ -6,7 +6,7 @@ import type { CredentialVault } from '../credentials/vault.ts';
 import type { CliCommandConfig } from '../shared/config.ts';
 import { AppError } from '../shared/errors.ts';
 import { acquireWorkspaceLock } from '../shared/fsx.ts';
-import { ClaudeCliProvider, fetchClaudeQuota } from './claude.ts';
+import { ClaudeCliProvider, claudeClientVersion, fetchClaudeQuota } from './claude.ts';
 import { claudeCredentialToken, readClaudeCredentialRecord, readKeychain } from './claude-credentials.ts';
 import { CodexCliProvider } from './codex.ts';
 import { GeminiCliProvider } from './gemini.ts';
@@ -387,7 +387,7 @@ export class CredentialAccounts {
         return this.track((async () => {
           if (this.closed) throw new Error(FAILURE);
           const text = await this.credential(profile);
-          if (ai === 'claude') return fetchClaudeQuota({}, 15_000, undefined, async () => claudeCredentialToken(text));
+          if (ai === 'claude') return fetchClaudeQuota({}, 15_000, undefined, async () => claudeCredentialToken(text), await claudeClientVersion(config.command, this.env));
           return fetchGrokQuota(undefined, this.env, { readCredentials: async () => parseGrokCredentials(JSON.parse(text), this.sourceEnv) });
         })());
       },
