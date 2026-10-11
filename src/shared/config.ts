@@ -29,6 +29,8 @@ export interface CliCommandConfig {
 export interface Config {
   server: { host: string; port: number };
   workspace: { root: string };
+  /** 檢查 GitHub 發行頁有沒有新版本（只通知，不自動安裝）。 */
+  update: { enabled: boolean; repo: string; checkHours: number };
   cli: { claude: CliCommandConfig; codex: CliCommandConfig; grok: CliCommandConfig; gemini: CliCommandConfig; envPassthrough: string[] };
   limits: {
     bodyBytes: number;
@@ -54,6 +56,7 @@ export interface Config {
 export const DEFAULT_CONFIG: Config = {
   server: { host: '127.0.0.1', port: 4560 },
   workspace: { root: '~/Documents/YuMeewWorkspace' },
+  update: { enabled: true, repo: 'YueyuHoshizora/YuMeewADE', checkHours: 6 },
   cli: {
     claude: {
       command: 'claude',
@@ -176,6 +179,11 @@ function bool(map: YamlMap, key: string, fallback: boolean, where: string): bool
   return v;
 }
 
+function repoName(value: string): string {
+  if (!/^[A-Za-z0-9_.-]+\/[A-Za-z0-9_.-]+$/.test(value)) throw new ConfigError('update.repo 必須是「擁有者/倉庫」格式');
+  return value;
+}
+
 function strList(map: YamlMap, key: string, fallback: string[], where: string): string[] {
   const v: YamlValue | undefined = map[key];
   if (v === undefined || v === null) return fallback;
@@ -214,6 +222,7 @@ export function parseConfig(text: string, source: string | null): Config {
   const map = parseYamlMap(text);
   const server = section(map, 'server');
   const workspace = section(map, 'workspace');
+  const update = section(map, 'update');
   const cli = section(map, 'cli');
   const limits = section(map, 'limits');
   const d = DEFAULT_CONFIG;
@@ -225,6 +234,11 @@ export function parseConfig(text: string, source: string | null): Config {
   return {
     server: { host, port },
     workspace: { root: expandHome(str(workspace, 'root', d.workspace.root, 'workspace')) },
+    update: {
+      enabled: bool(update, 'enabled', d.update.enabled, 'update'),
+      repo: repoName(str(update, 'repo', d.update.repo, 'update')),
+      checkHours: int(update, 'checkHours', d.update.checkHours, 'update'),
+    },
     cli: {
       claude: cliSection(cli, 'claude'),
       codex: cliSection(cli, 'codex'),

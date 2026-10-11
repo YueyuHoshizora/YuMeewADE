@@ -61,6 +61,11 @@ cli:
   # 子行程環境變數採白名單；除了內建的 PATH／HOME／LANG 等基本變數外，額外要放行的名稱寫在這裡
   envPassthrough: []
 
+update:
+  enabled: true                    # 定時檢查 GitHub 發行頁有沒有新版本（只通知，不自動安裝）
+  repo: YueyuHoshizora/YuMeewADE   # 擁有者/倉庫
+  checkHours: 6                    # 檢查間隔（小時）
+
 limits:
   bodyBytes: 2097152       # JSON 請求體上限（2 MiB）
   promptChars: 100000      # 單則指示字數上限

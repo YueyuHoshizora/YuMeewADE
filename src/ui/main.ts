@@ -14,6 +14,7 @@ import { attention } from './components/attention.ts';
 import { searchView } from './views/search.ts';
 import { usageBar } from './components/usage.ts';
 import { runningChip } from './components/running.ts';
+import { openUpdateDialog, updateChip, visibleUpdate } from './components/update.ts';
 import { openUsageDetails } from './components/usage-details.ts';
 
 const header = document.getElementById('header')!; const sidebar = document.getElementById('sidebar')!; const main = document.getElementById('main')!; const footer = document.getElementById('footer')!;
@@ -50,6 +51,19 @@ function deliverQuota(alerts: QuotaAlert[]): void {
   }
 }
 function announceQuota(next: UsageState): void { deliverQuota(quotaAlerts(usage, next)); announceCodexReset(next); }
+let notifiedUpdate: string | undefined;
+/** 發現（尚未略過的）新版本就通知一次；同一個版本不重複打擾。 */
+function announceUpdate(next: AppState): void {
+  const info = visibleUpdate(next.update);
+  if (!info || info.version === notifiedUpdate) return;
+  const first = notifiedUpdate === undefined; notifiedUpdate = info.version;
+  if (first && !document.hidden && document.hasFocus()) return;
+  if (!readLocal('yumeewade.notifications', true) || !('Notification' in window) || Notification.permission !== 'granted') return;
+  try {
+    const notice = new Notification(t('update.title'), { body: t('update.notice', { version: info.version }), tag: `update-${info.version}` });
+    notice.onclick = () => { window.yumeewade?.focus?.(); window.focus(); openUpdateDialog(info, next.version, drawShell); notice.close(); };
+  } catch { /* 系統通知不可用時不影響狀態更新。 */ }
+}
 let notifiedReset: string | undefined;
 /** 抓到（新的）Codex 重置排程就通知一次；同一個排程不重複打擾。 */
 function announceCodexReset(next: UsageState): void {
@@ -66,7 +80,7 @@ function drawShell(): void {
   if (!state) return;
   const tasks = state.projects.flatMap(p => p.tasks); const replies = tasks.filter(needsReply).length; const confirmations = tasks.filter(task => task.confirm && !needsReply(task)).length;
   const menu = button('☰', () => document.body.classList.toggle('sidebar-open'), 'menu-toggle'); menu.setAttribute('aria-label', t('nav.menu'));
-  header.replaceChildren(menu, link(t('app.title'), '#/turn', 'brand'), el('span', 'version', `v${state.version}`), el('span', 'spacer'), link(`${t('nav.turn')} · ${t('tree.reply')} ${replies} · ${t('tree.confirm')} ${confirmations}`, '#/turn', 'turn-button'), link(t('nav.settings'), '#/settings', 'settings-button'));
+  header.replaceChildren(menu, link(t('app.title'), '#/turn', 'brand'), el('span', 'version', `v${state.version}`), ...(visibleUpdate(state.update) ? [updateChip(state.update!, state.version, drawShell)] : []), el('span', 'spacer'), link(`${t('nav.turn')} · ${t('tree.reply')} ${replies} · ${t('tree.confirm')} ${confirmations}`, '#/turn', 'turn-button'), link(t('nav.settings'), '#/settings', 'settings-button'));
   const searching = document.activeElement instanceof HTMLInputElement && document.activeElement.classList.contains('tree-search'); const top = sidebar.scrollTop;
   sidebar.replaceChildren(el('div', 'sidebar-heading', t('nav.projects')), tree({ state, refresh }), link(t('nav.new'), '#/new', 'new-project'));
   sidebar.scrollTop = top; if (searching) sidebar.querySelector<HTMLInputElement>('.tree-search')?.focus({ preventScroll: true });
@@ -105,7 +119,7 @@ function refresh(): Promise<void> {
   refreshJob = (async () => {
     try {
       do {
-        refreshAgain = false; const next = await api.state(); notify(state, next); announceQuota(next.usage); state = next; usage = next.usage; drawShell();
+        refreshAgain = false; const next = await api.state(); notify(state, next); announceQuota(next.usage); announceUpdate(next); state = next; usage = next.usage; drawShell();
         navigate(); view?.update?.(state);
       } while (refreshAgain);
     } catch (error) {

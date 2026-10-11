@@ -37,7 +37,7 @@ export async function startTestServer(configYaml = '', options: AppOptions = {})
   const dir = await fs.mkdtemp(path.join(os.tmpdir(), 'yumeewade-http-'));
   const port = await freePort();
   const configFile = path.join(dir, 'config.yaml');
-  const text = `server:\n  port: ${port}\nworkspace:\n  root: ${JSON.stringify(path.join(dir, 'root'))}\n${configYaml}`;
+  const text = `server:\n  port: ${port}\nworkspace:\n  root: ${JSON.stringify(path.join(dir, 'root'))}\nupdate:\n  enabled: false\n${configYaml}`;
   await fs.writeFile(configFile, text);
   const host = new CoreHost(parseConfig(text, configFile), { app: { ...options, providers: options.providers ?? { mock: new MockCliProvider(5) }, home: options.home ?? path.join(dir, 'home') } });
   await host.init();

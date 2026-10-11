@@ -27,6 +27,7 @@ import { AppError } from '../shared/errors.ts';
 import { log } from '../shared/log.ts';
 import type { AppState, ChatEvent, Roles, UsageState } from '../shared/types.ts';
 import { fetchCodexReset } from '../ai/codex-reset.ts';
+import { UpdateWatcher, fetchLatestRelease } from '../system/update.ts';
 import { buildState, type StateSnapshot } from '../state/state.ts';
 
 const pkg = createRequire(import.meta.url)('../../package.json') as { version: string };
@@ -63,6 +64,7 @@ export class App {
   readonly store: ChatStore;
   readonly runner: ChatRunner;
   readonly usage: UsageBoard;
+  readonly update: UpdateWatcher;
   private readonly providers: Record<string, CliProvider>;
   private readonly accounts: CredentialAccounts | undefined;
   readonly sse: SseHub;
@@ -115,6 +117,7 @@ export class App {
     this.sse = options.sse ?? new SseHub(config.limits.sseConnections, config.limits.heartbeatSeconds * 1000);
     this.sendLimiter = new RateLimiter(config.limits.sendPerMinute);
     this.usage = new UsageBoard(usage => this.sse.publish(GLOBAL, { event: 'usage', data: usage }));
+    this.update = new UpdateWatcher(pkg.version, () => fetchLatestRelease(config.update.repo), () => this.changed());
     this.providers = options.providers ?? createProviders(config, options.accounts!);
     this.runner = new ChatRunner({
       ws: this.ws,
@@ -162,6 +165,7 @@ export class App {
     this.watcher = new LedgerWatcher(this.ws, (project, task) => this.changed(project, task));
     await this.watcher.start();
     // 帳戶查詢不擋啟動；每輪重新讀設定，新增／移除的帳戶即時生效。
+    if (this.config.update.enabled) void this.update.poll(this.config.update.checkHours * 60 * 60 * 1000);
     void this.usage.pollCodexReset(fetchCodexReset, 60 * 60 * 1000);
     void this.usage.poll(this.providers, this.config.limits.usagePollSeconds * 1000, async () => (await this.settings.get()).accounts);
   }
@@ -201,7 +205,8 @@ export class App {
         if (this.stateFlight === flight) this.stateFlight = null;
       }
     }
-    return { ...value, running: this.runner.running(), unread: this.runner.unread(), usage: this.usage.snapshot() };
+    const update = this.update.snapshot();
+    return { ...value, running: this.runner.running(), unread: this.runner.unread(), usage: this.usage.snapshot(), ...(update ? { update } : {}) };
   }
 
   /** 通知所有客戶端重抓 /api/state；100ms 內的多次變更合併成一次。 */
@@ -232,6 +237,7 @@ export class App {
     this.uploadTimer = null;
     this.watcher?.close();
     this.usage.close();
+    this.update.close();
     if (this.ownsSse) this.sse.closeAll();
   }
 }

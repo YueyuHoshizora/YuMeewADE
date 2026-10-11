@@ -588,8 +588,15 @@ export interface Limits {
   imagesPerSend: number;
 }
 
+/** 發行頁上適合本機系統的下載檔；installer＝安裝版，portable＝免安裝版。 */
+export interface UpdateAsset { name: string; url: string; size: number; kind: 'installer' | 'portable' }
+/** 比目前版本新的正式發行。 */
+export interface UpdateInfo { version: string; url: string; notes: string; assets: UpdateAsset[] }
+
 export interface AppState {
   version: string;
+  /** 有比目前版本新的發行才有。 */
+  update?: UpdateInfo;
   root: string;
   projects: ProjectView[];
   /** 專案排序：key＝上層專案 id（頂層為 ''），值＝子專案 id 順序。 */

@@ -279,6 +279,9 @@ body { height: 100dvh; display: grid; grid-template-rows: 64px minmax(0, 1fr) au
 .usage-speed.running { color: var(--accent); }
 .usage-action { padding: 2px 5px; font: inherit; color: inherit; background: transparent; border-color: transparent; flex: 0 0 auto; }
 .usage-action:hover { border-color: var(--border); }
+.update-chip { padding: 1px 9px; border-radius: 999px; font-size: 12px; background: var(--c-b4a5ff); color: var(--c-151225); border-color: transparent; white-space: nowrap; margin-left: 8px; }
+.update-modal { max-width: 560px; }
+.update-notes { max-height: 240px; overflow: auto; font-size: 13px; }
 .usage-reset { color: #facc15; font-weight: 700; white-space: nowrap; margin-left: 8px; }
 .usage-account { max-width: 140px; overflow: hidden; text-overflow: ellipsis; }
 .usage-unavailable { color: var(--yellow); }
