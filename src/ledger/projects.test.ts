@@ -6,6 +6,16 @@ import { AUTO_FIX_MAX, type ProjectPatch } from '../shared/types.ts';
 import { withTmpWorkspace } from '../testing/tmp.ts';
 import { ProjectLedger, RULES_MAX } from './projects.ts';
 
+test('create reuses an empty leftover folder but never touches one with data', () => withTmpWorkspace(async ws => {
+  const projects = new ProjectLedger(ws);
+  await fs.mkdir(ws.projectDir('Empty'), { recursive: true });
+  assert.equal((await projects.create({ name: 'Empty' })).name, 'Empty');
+  await fs.mkdir(ws.projectDir('Busy'), { recursive: true });
+  await fs.writeFile(path.join(ws.projectDir('Busy'), 'keep.txt'), 'data');
+  await assert.rejects(projects.create({ name: 'Busy' }), (error: unknown) => (error as { detail?: string }).detail === 'project_exists');
+  assert.equal(await fs.readFile(path.join(ws.projectDir('Busy'), 'keep.txt'), 'utf8'), 'data');
+}));
+
 test('verify command is trimmed, persisted, preserved and cleared', () => withTmpWorkspace(async ws => {
   const projects = new ProjectLedger(ws);
   assert.equal((await projects.create({ name: 'P', verify: '  npm test  ' })).verify, 'npm test');

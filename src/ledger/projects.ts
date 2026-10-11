@@ -106,6 +106,8 @@ export class ProjectLedger {
       const patch = { ...input, phases: phases.map((name, i) => ({ name: name.trim(), state: i === 0 ? '進行中' as const : '未開始' as const })) };
       await this.validate(patch, input.name);
       const dir = this.ws.projectDir(input.name);
+      // 先前失敗或中斷的建立會留下空資料夾；它不含任何資料，可直接重用（rmdir 只刪空資料夾）。
+      if (await pathExists(dir) && (await fs.readdir(dir).catch(() => ['.'])).length === 0) await fs.rmdir(dir);
       if (await pathExists(dir) || (await this.list()).some(p => p.name.toLowerCase() === input.name.toLowerCase())) throw new AppError('conflict', 'project_exists');
       await fs.mkdir(dir, { recursive: false });
       await copyProjectTemplate(path.join(TEMPLATES_DIR, 'project'), dir);
