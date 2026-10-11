@@ -36,6 +36,7 @@ import * as overview from './overview.ts';
 import * as taskBoard from './task-board.ts';
 import * as taskBulk from './task-bulk.ts';
 import * as testExplorer from './test-explorer.ts';
+import * as contextBudget from './context-budget.ts';
 import * as ideWorkbench from './ide-workbench.ts';
 
 export const featureZhTW = {
@@ -78,6 +79,7 @@ export const featureZhTW = {
   ...taskBoard.featureZhTW,
   ...taskBulk.featureZhTW,
   ...testExplorer.featureZhTW,
+  ...contextBudget.featureZhTW,
   ...ideWorkbench.featureZhTW,
 };
 export const featureZhCN = {
@@ -120,6 +122,7 @@ export const featureZhCN = {
   ...taskBoard.featureZhCN,
   ...taskBulk.featureZhCN,
   ...testExplorer.featureZhCN,
+  ...contextBudget.featureZhCN,
   ...ideWorkbench.featureZhCN,
 };
 export const featureEn = {
@@ -162,6 +165,7 @@ export const featureEn = {
   ...taskBoard.featureEn,
   ...taskBulk.featureEn,
   ...testExplorer.featureEn,
+  ...contextBudget.featureEn,
   ...ideWorkbench.featureEn,
 };
 export const featureJa = {
@@ -204,6 +208,7 @@ export const featureJa = {
   ...taskBoard.featureJa,
   ...taskBulk.featureJa,
   ...testExplorer.featureJa,
+  ...contextBudget.featureJa,
   ...ideWorkbench.featureJa,
 };
 export const featureDe = {
@@ -246,6 +251,7 @@ export const featureDe = {
   ...taskBoard.featureDe,
   ...taskBulk.featureDe,
   ...testExplorer.featureDe,
+  ...contextBudget.featureDe,
   ...ideWorkbench.featureDe,
 };
 export const featureFr = {
@@ -288,6 +294,7 @@ export const featureFr = {
   ...taskBoard.featureFr,
   ...taskBulk.featureFr,
   ...testExplorer.featureFr,
+  ...contextBudget.featureFr,
   ...ideWorkbench.featureFr,
 };
 export const featureIt = {
@@ -330,5 +337,6 @@ export const featureIt = {
   ...taskBoard.featureIt,
   ...taskBulk.featureIt,
   ...testExplorer.featureIt,
+  ...contextBudget.featureIt,
   ...ideWorkbench.featureIt,
 };

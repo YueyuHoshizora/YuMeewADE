@@ -15,11 +15,11 @@ import { AppError } from '../shared/errors.ts';
 import { log } from '../shared/log.ts';
 import type {
   Ask, Busy, ChatEvent, ChatHistory, ChatRow, QueueItem, Roles, RunningInfo,
-  SendInput, SendResult, Task, TurnUsage, VerifyResult, ContextPreview,
+  SendInput, SendResult, Task, TurnUsage, VerifyResult, ContextPreview, ContextManifest,
 } from '../shared/types.ts';
 import { HISTORY_PAGE } from '../shared/types.ts';
 import { buildHandoff, buildPreamble, buildPrompt, inspectHandoff } from './prompt.ts';
-import { buildTaskContext } from './context.ts';
+import { buildTaskContext, recordContextManifest } from './context.ts';
 import { ChatStore, type ChatMeta } from './store.ts';
 import { attachImages } from './attachments.ts';
 import { parseMentions, resolveMentions } from './mentions.ts';
@@ -433,6 +433,9 @@ export class ChatRunner extends EventEmitter {
         fullAccess,
         accountId,
         addDirs: [path.join(this.deps.ws.projectDir(p), '.ai')], images,
+      }, command?.standalone ? null : {
+        request: item.id, ai: item.ai, ...(item.model === undefined ? {} : { model: item.model }), context: taskContext,
+        handoff: inspectHandoff(selectedHistory, this.deps.limits.handoffChars, prior.length - selectedHistory.length),
       }, checkpoint, cancelled);
       this.trackQueuedRun(p, t, s);
       return { request: item.id, queued: false };
@@ -507,7 +510,8 @@ export class ChatRunner extends EventEmitter {
 
   private async execute(
     p: string, t: string, item: QueueItem, provider: CliProvider,
-    meta: ChatMeta, opts: Parameters<CliProvider['send']>[0], startCheckpoint?: string, cancelled: () => boolean = () => false,
+    meta: ChatMeta, opts: Parameters<CliProvider['send']>[0], manifest: Omit<ContextManifest, 'at'> | null,
+    startCheckpoint?: string, cancelled: () => boolean = () => false,
   ): Promise<void> {
     const s = this.slot(p, t);
     const started = Date.now();
@@ -573,7 +577,15 @@ export class ChatRunner extends EventEmitter {
         s.permissions?.close();
         run.stop();
       }, this.deps.limits.runSeconds * 1000);
-      const outcome = await run.done.finally(() => clearTimeout(limit));
+      let outcome;
+      try {
+        if (manifest) await recordContextManifest(this.deps.ws, p, t, { ...manifest, at: new Date().toISOString() });
+        outcome = await run.done;
+      } catch (error) {
+        run.stop();
+        await run.done.catch(() => undefined);
+        throw error;
+      } finally { clearTimeout(limit); }
       await writes;
       if (writeFailure) throw writeFailure.error;
       const parsed = parseAsk(result ?? s.partial);

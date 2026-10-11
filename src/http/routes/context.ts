@@ -3,7 +3,7 @@ import path from 'node:path';
 import type { App } from '../../server/app.ts';
 import { AppError } from '../../shared/errors.ts';
 import { reqString, type Router } from '../router.ts';
-import { readContext, saveContext, validateContext } from '../../chat/context.ts';
+import { readContext, readContextManifest, saveContext, validateContext } from '../../chat/context.ts';
 import { draftImagePath, readDraft, updateDraft, validateReviews } from '../../chat/drafts.ts';
 import { IMAGE_TYPES } from '../../chat/attachments.ts';
 
@@ -19,8 +19,14 @@ export function registerContextRoutes(router: Router, app: App): void {
   router.post('/api/task/context', async ({ body }) => {
     const project = reqString(body, 'project', 100); const task = reqString(body, 'task', 100);
     await app.tasks.get(project, task);
+    if (app.taskBusy(project, task)) throw new AppError('conflict');
     const value = validateContext(body['context'], app.config.limits.handoffChars);
-    await saveContext(app.ws, project, task, value); return value;
+    await saveContext(app.ws, project, task, value); return readContext(app.ws, project, task);
+  });
+  router.get('/api/task/context/manifest', async ({ query }) => {
+    const project = reqString(query, 'project', 100); const task = reqString(query, 'task', 100);
+    await app.tasks.get(project, task);
+    return readContextManifest(app.ws, project, task, reqString(query, 'request', 100));
   });
   router.get('/api/task/handoff', async ({ query }) => app.runner.contextPreview(reqString(query, 'project', 100), reqString(query, 'task', 100), reqString(query, 'ai', 100), query.get('model') ?? ''));
   router.get('/api/chat/draft', async ({ query }) => {

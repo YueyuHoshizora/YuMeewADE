@@ -1,6 +1,7 @@
 // UI 與核心共用的型別（API 契約）；只放純資料型別，不得 import Node 模組。
 // 流程對齊參考專案 project-hub：專案（含階段）→ 作業（含子作業／分支）→ 同一作業內的對話；狀態值寫入檔案。
 import type { ReviewSnapshot } from './review-types.ts';
+import type { BuiltTaskContext } from './context-budget.ts';
 export type * from './project-trust.ts';
 export type * from './editor-workbench.ts';
 export type * from './review-types.ts';
@@ -9,6 +10,7 @@ export type * from './execution-tools.ts';
 export type * from './usage-history-types.ts';
 export type * from './backup-types.ts';
 export type * from './update-types.ts';
+export type * from './context-budget.ts';
 export type * from './editor-preferences.ts';
 export type * from './test-explorer.ts';
 
@@ -734,11 +736,9 @@ export interface GitPullRequestStatus { available: boolean; authenticated: boole
 export interface ReviewInput { ai: string; model?: string; effort?: string; text: string }
 export interface ReviewResult { request: string; text: string; ai: string; session?: string; ok: boolean; asks?: Ask[]; approved: boolean; structured: boolean; snapshot?: ReviewSnapshot }
 export interface ReviewCapability { supported: boolean; enforcement: 'native-sandbox' | 'tool-allowlist' | 'unsupported' }
-export interface PinnedSource { path: string; start: number; end: number }
-export interface TaskContext { decisions: string; sources: PinnedSource[] }
 export interface ReviewDraft { path: string; oldLine?: number; newLine?: number; hash: string; code: string; comment: string }
 export interface HandoffPreview { text: string; rows: number[]; start: number | null; end: number | null; truncated: boolean }
-export interface ContextPreview { handoff: HandoffPreview; context: { text: string; truncated: boolean; sources: PinnedSource[] } }
+export interface ContextPreview { handoff: HandoffPreview; context: BuiltTaskContext }
 export interface CareBackup { id: string; createdAt: string; complete: boolean; externalCount: number; containsSecrets: true; bytes: number }
 export interface CareHealth {
   checkedAt: string; node: string; electron: string | null;

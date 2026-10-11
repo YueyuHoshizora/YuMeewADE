@@ -95,7 +95,7 @@ Claude／Codex のモデル一覧・推論強度は CLI キャッシュから取
 - **独立した読み取り専用審査**：書き込み session／full-access 旗標を流用しません。Codex は Darwin／Linux のみネイティブ read-only sandbox、Claude は Read／Glob／Grep のみの **CLI ツールポリシーで、OS sandbox ではありません**。Grok／Gemini や有効な制限設定のない provider は明確に拒否し、プロンプトだけを隔離保証にしません。CLI 自体は信頼するローカルプログラムです。
   構造化 `schema:1` JSON 審査は内容／HEAD に結び付く snapshot と、重大度・証拠・ライフサイクル履歴付き findings を保存します。手動 resolved／dismissed は証拠必須で、AI 承認を作りません。任意のマージ関門は現在の内容への明示承認と未解決重大指摘なしを要求します。
 - **役割／workflow**：役割が選んだ主 CLI が開始前に利用不可の場合だけ明示 backup を選びます。手動指定は回避せず、実行失敗後に AI を切り替えません。永続 workflow は依存、役割／審査ステップ、人間の関門に対応し、人工証拠は空でない文字列です。ステップ再実行は過去の試行を残して当該／後続の checkpoint を無効化します。タスク比較は2つの実際の作業ツリーから有界ファイル／内容差分を表示します。依存は完了と人工承認が必要で、再起動後は停止し許可を自動更新しません。
-- **見える背景／草稿**：固定決定、指定ファイル行範囲、引き継ぎプレビューで出典と切り詰めを確認できます。背景は今回の許可ではありません。画像と行コメント草稿は永続化し、コメントは diff hash に結び付け、差分変更後は古い状態として扱い、黙って送信しません。
+- **見える背景／草稿**：固定決定・固定ソースを個別に有効化、優先順位／順序と文字予算を設定し、採用／切り詰めを確認できます。実際の各ターンの背景／引き継ぎmanifestをタスク最新100件保存し、後日のソース変更で書き換えません。文字予算はtoken数ではなく、背景は今回の許可ではありません。画像と行コメント草稿は永続化し、diff hash変更後は古いコメントを黙って送信しません。
 - **健康／バックアップ／診断**：既定はローカル検査のみ。非公開バックアップは台帳、会話、添付、Git／worktree、復元資料やプロジェクトの秘密を含みますが、App 認証庫／CLI アカウントは除外し、復元後は再ログインが必要です。一覧は bytes、正確な ID での削除、検証済み完全バックアップの保持整理に対応し、workspace ごとのスケジュールは既定で無効です。外部メインは opt-in、不完全または非対応 linked／alternates repo は復元不可。fingerprint 検証と worktree 関連変更後、新規保存先だけに復元します。可搬エクスポートは AES-256-GCM／scrypt でストリーム暗号化し、展開前にパスワード／完全性を検証します。プロジェクトの秘密は含みますが App アカウント認証は同梱しません。診断はパス、会話、内容、token、任意ログを除外します。
 - **使用量／予算**：永続履歴は provider が実際に報告した既知の tokens、Codex credits、Claude USD だけを記録し、単位混算や残高差による推測はしません。未知はゼロではありません。project／task／AI／account scope の閾値、残り利用枠、クラウド点数期限の警告を各新規ターン／workflow ステップで確認します。継続には scope に結び付いた5分間・一度限りの人工 acknowledgment が必要で、請求の強制上限を保証しません。
 - **プロジェクト信頼**：`unreviewed` は全体の権限既定を維持し、`trusted` は次のターン向け AI 別 override を許可します。`restricted` は新規 AI、検証、実行／端末、Git 読み書き、タスク差分／マージプレビュー、アーカイブプレビュー／アーカイブ、LSP 起動を拒否し、承認済み root の変更は再承認が必要です。Git diff は ext-diff／textconv を無効にしても repository の `filter.clean` を実行し得るため、Git 閲覧にも信頼承認が必要です。停止、ファイル閲覧、通常の文書編集は可能です。OS user、root、cwd、追加ディレクトリーを表示しますが、**OS sandbox ではありません**。
@@ -224,6 +224,7 @@ HTTP JSON と SSE を使い、デスクトップ版と Web 版で完全に共通
 | エディター | `GET /api/editor/file`、`/api/editor/image`（画像、20 MiB）；`POST /api/editor/save`（revision）、`/api/editor/language`（definition／references／diagnostics） |
 | 編集設定／同期 | `GET/POST /api/editor/settings`；`GET /api/editor/preferences`；`POST /api/editor/{revisions,merge}` |
 | テスト／検証履歴 | `GET /api/task/tests`、`/api/task/verify/history`；`POST /api/task/tests/{configure,run}` |
+| 送信背景manifest | `GET /api/task/context/manifest?project=&task=&request=` |
 | 実行／統合 | `POST /api/execution/{start,stop,preview,ide,terminal,debug}`；`GET /api/execution/{list,output}` |
 | Git | `GET /api/git/{status,pr-status}`；`POST /api/git/{stage,unstage,resolve,commit,fetch,branch,push,pr}` |
 | Git 履歴 | `GET /api/git/{history,commit-detail,blame}` |

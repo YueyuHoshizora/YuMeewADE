@@ -100,7 +100,7 @@ Claude／Codex 模型清單直接讀 CLI 自己的快取（`~/.codex/models_cach
 - **獨立唯讀審查**：不借用寫作 session 或 full-access 旗標。Codex 使用原生 read-only sandbox，僅 Darwin／Linux；Claude 僅允許 Read／Glob／Grep，**是 CLI 工具政策，不是 OS 沙箱**。Grok／Gemini 或不符受限設定的 provider 明確拒絕，不以提示詞冒充安全隔離。CLI 本身仍是受信任的本機程式。
   結構化 `schema:1` JSON 審查持久化內容／HEAD 綁定的快照與 findings，含嚴重性、證據及生命週期歷史。人工 resolved／dismissed 必須附證據，不製造 AI 核准；可選合併門檻要求目前內容明確核准且沒有未解重大發現。
 - **角色與流程**：僅角色選取的主 CLI 在開始前不可用時，才用明確 backup；手動選擇不回退，執行失敗不換 AI。持久化 workflow 支援相依、角色／審查步驟與人工關卡，人工證據為非空字串。逐步重跑保留歷次結果並使該步及下游檢查點失效；作業比較使用兩個實際工作樹，列出有界檔案／內容差異。相依須完成且人工確認；重啟中斷後暫停，不自動恢復授權。
-- **可見背景與草稿**：固定決策、釘選檔案行段及交接預覽呈現來源與截斷，背景不等於本次授權。圖片與逐行審查草稿持久化；評論綁 diff hash，差異變動會標過期，不能悄悄送出舊評論。
+- **可見背景與草稿**：固定決策、釘選來源可個別啟用、排序／優先級及分配字元預算，預覽顯示納入與截斷。每回合保存真正送出的背景／交接清單（每作業最新 100 筆），日後來源變更不改寫舊清單；字元預算不是 token 計數，背景不是本次授權。圖片與逐行審查草稿持久化；評論綁 diff hash，差異變動會標過期，不能悄悄送出舊評論。
 - **健康／備份／診斷**：本機健康檢查預設不探測外網。私有備份含台帳、對話、附件、Git／工作副本、恢復資料與可能的專案機密；不含 App 憑證庫／CLI 帳號，恢復後須登入。列表顯示 bytes、精確 ID 刪除及驗證完整備份的保留清理；依工作區隔離的排程預設關閉。外部主資料夾須 opt-in，不完整或不支援的 linked／alternates repo 拒絕恢復。驗證指紋並改寫 worktree 關聯，僅恢復到新目的地。可攜匯出以 AES-256-GCM／scrypt 串流加密，解出前驗證密碼及完整性；仍含專案機密，不夾帶 App 帳號憑證。診斷不含路徑、對話、內容、token 或任意日誌。
 - **用量／預算**：持久化歷史只記錄 provider 實際回報且已知的 tokens、Codex credits、Claude USD，不混算單位或以餘額差推估費用；未知不是零。專案／作業／AI／帳號 scope 門檻、剩餘額度及雲端點數到期警告每個新回合／流程步驟重新檢查；繼續需 scope 綁定、5 分鐘、一次性的人工 acknowledgment，不保證帳單硬上限。
 - **專案信任**：`unreviewed` 保留全域權限預設，`trusted` 可逐 AI override 下輪權限；`restricted` 禁止新 AI、驗證、執行／終端、Git 讀寫、作業差異／合併預覽、封存預覽／封存與 LSP 啟動，已核准 root 變更須重新核准。Git diff 即使停用 ext-diff／textconv 仍可能執行儲存庫的 `filter.clean`，因此查看 Git 也須通過信任政策。停止、檔案閱讀與純文件編輯仍可用。畫面呈現 OS user、root、cwd 及附加目錄；**不是 OS 沙箱**。
@@ -230,6 +230,7 @@ HTTP JSON 加 SSE，桌面版與網頁版完全相同。型別定義在 [`src/sh
 | 編輯器 | `GET /api/editor/file`、`/api/editor/image`（圖片，20 MiB）；`POST /api/editor/save`（含 revision）、`/api/editor/language`（definition／references／diagnostics） |
 | 編輯設定／同步 | `GET/POST /api/editor/settings`；`GET /api/editor/preferences`；`POST /api/editor/{revisions,merge}` |
 | 測試／驗證歷史 | `GET /api/task/tests`、`/api/task/verify/history`；`POST /api/task/tests/{configure,run}` |
+| 真正送出背景 | `GET /api/task/context/manifest?project=&task=&request=` |
 | 執行／整合 | `POST /api/execution/start`、`/stop`、`/preview`、`/ide`、`/terminal`、`/debug`；`GET /api/execution/list`、`/output`（上述短路徑均接 `/api/execution`） |
 | Git | `GET /api/git/status`、`/api/git/pr-status`；`POST /api/git/{stage,unstage,resolve,commit,fetch,branch,push,pr}` |
 | Git 歷史 | `GET /api/git/{history,commit-detail,blame}` |

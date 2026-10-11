@@ -27,7 +27,7 @@ import { openFileBrowser } from '../components/files.ts';
 import { attachComposeInsert, attachMention } from '../components/mention.ts';
 import { snippetsButton } from '../components/snippet-menu.ts';
 import { attachSlashCommands } from '../components/slash-menu.ts';
-import { contextButton } from '../components/context.ts';
+import { contextButton, contextManifestButton } from '../components/context.ts';
 import { reviewButton } from '../components/review-button.ts';
 import { renderPermissions } from '../components/permissions.ts';
 import { reviewDrafts } from '../components/review-drafts.ts';
@@ -535,6 +535,7 @@ export function taskView(
       }
       item.append(metadata, markdown(entry.text));
     }
+    if (entry.request) metadata.append(contextManifestButton(project.id, task.id, entry.request));
     metadata.append(button(t('chat.copy'), async () => {
       try { await copyText(entry.text); toast(t('markdown.copied')); }
       catch { toast(t('markdown.copyFailed')); }
