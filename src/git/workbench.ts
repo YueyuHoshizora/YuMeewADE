@@ -19,7 +19,8 @@ export class GitWorkbench {
   private readonly deps: { ws: Workspace; projects: ProjectLedger; tasks: TaskLedger; isRunning: (project: string, task: string) => boolean; ghCommand?: string };
   constructor(deps: { ws: Workspace; projects: ProjectLedger; tasks: TaskLedger; isRunning: (project: string, task: string) => boolean; ghCommand?: string }) { this.deps = deps; }
   private async command(root: string, args: string[]): Promise<string> {
-    const result = await git(root, ['--literal-pathspecs', ...args]);
+    // Stash internally uses magic pathspecs to remove saved untracked files.
+    const result = await git(root, args[0] === 'stash' ? args : ['--literal-pathspecs', ...args]);
     if (result.code !== 0 || result.truncated) throw new AppError('conflict', 'git_failed');
     return result.stdout;
   }
@@ -98,6 +99,51 @@ export class GitWorkbench {
     return this.locked(project, task, false, async root => {
       await this.safePath(root, relative);
       return this.command(root, ['blame', '--line-porcelain', '--', relative]);
+    });
+  }
+  async stashes(project: string, task?: string): Promise<Array<{ sha: string; ref: string; message: string }>> {
+    return this.locked(project, task, false, root => this.stashEntries(root));
+  }
+  private async stashEntries(root: string): Promise<Array<{ sha: string; ref: string; message: string }>> {
+    const records = split(await this.command(root, ['stash', 'list', '--max-count=100', '--format=%H%x00%gd%x00%gs%x00']));
+    const entries = [];
+    for (let i = 0; i + 2 < records.length; i += 3) entries.push({ sha: records[i]!.trim(), ref: records[i + 1]!, message: records[i + 2]! });
+    return entries;
+  }
+  async stash(project: string, task: string | undefined, action: string, options: { sha?: string; message?: string; includeUntracked?: boolean; confirmed?: boolean }): Promise<void> {
+    if (!['push', 'apply', 'pop', 'drop'].includes(action)) throw new AppError('bad_request');
+    if (action === 'drop' && !options.confirmed) throw new AppError('bad_request', 'git_confirm_required');
+    return this.locked(project, task, true, async root => {
+      if (action === 'push') {
+        const message = options.message ?? '';
+        if (!message.trim() || message.length > 10_000 || message.includes('\0')) throw new AppError('bad_request', 'git_commit_message');
+        await this.command(root, ['stash', 'push', ...(options.includeUntracked ? ['--include-untracked'] : []), '-m', message]);
+      } else {
+        const entry = (await this.stashEntries(root)).find(item => item.sha === options.sha);
+        if (!entry) throw new AppError('conflict', 'git_workbench_path');
+        await this.command(root, ['stash', action, entry.ref]);
+      }
+    });
+  }
+  async rewrite(project: string, task: string | undefined, action: string, target: string, confirmed: boolean): Promise<{ conflicts: boolean }> {
+    if (!['cherry-pick', 'rebase', 'continue', 'abort'].includes(action)) throw new AppError('bad_request');
+    if (!confirmed) throw new AppError('bad_request', 'git_confirm_required');
+    return this.locked(project, task, true, async root => {
+      const active = await Promise.all(['rebase-merge', 'rebase-apply'].map(async name => fs.stat((await this.command(root, ['rev-parse', '--path-format=absolute', '--git-path', name])).trim()).then(() => true, () => false)));
+      if (action === 'continue' || action === 'abort') {
+        if (!active.some(Boolean)) throw new AppError('conflict', 'git_workbench_path');
+      } else {
+        if (active.some(Boolean) || (await this.files(root)).length) throw new AppError('conflict', 'git_workbench_path');
+        if (action === 'cherry-pick' ? !/^[a-f0-9]{40,64}$/.test(target) : !branchName(target)) throw new AppError('bad_request', 'git_branch_invalid');
+        if (action === 'rebase') await this.command(root, ['show-ref', '--verify', `refs/heads/${target}`]);
+      }
+      const result = await git(root, ['-c', 'core.editor=true', '-c', 'sequence.editor=true', action === 'cherry-pick' ? 'cherry-pick' : 'rebase', ...(action === 'continue' || action === 'abort' ? [`--${action}`] : [target])]);
+      if (result.code !== 0 || result.truncated) {
+        if (action === 'cherry-pick') { await this.command(root, ['cherry-pick', '--abort']); throw new AppError('conflict', 'merge_conflict'); }
+        if (result.code > 0 && !result.truncated && (await this.files(root)).some(file => file.conflict)) return { conflicts: true };
+        throw new AppError('conflict', 'git_failed');
+      }
+      return { conflicts: false };
     });
   }
   async stage(project: string, task: string | undefined, relative: string, unstage = false): Promise<void> {

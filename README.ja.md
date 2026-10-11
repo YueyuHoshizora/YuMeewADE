@@ -47,6 +47,7 @@ Claude／Codex のモデル一覧・推論強度は CLI キャッシュから取
 ## IDE・復元・メンテナンス
 
 - **Git 履歴**：ページ付きグラフとファイル履歴、コミット情報／ファイル／差分、行の blame を表示。秘密・範囲外パスは拒否します。
+- **Stash／リベース**：未追跡ファイルも保存可能、適用／pop／確認削除。cherry-pick の競合は自動中止。リベースは dirty tree を拒否し、三者比較で解決後に続行・中止できます。強制 push は行いません。
 - **アーカイブ復元**：プロジェクト／タスクへの影響をプレビューしてからアーカイブ・復元できます。強制アーカイブはブランチと元の作業コピーの復元スナップショットを保持し、未追跡・ignored・秘密ファイルと削除状態も保存します。復元は worktree を再作成し、既存の保存先を上書きしません。`.yumeewade/recovery/` は非公開資料であり、公開 Git バックアップや外部メインフォルダー全体のバックアップではありません。
   復元が成功した世代は保持領域へ移し、後のアーカイブには再適用しません。元のデータは残し、後からマージした内容を上書きしません。
   checkout を伴う復元は保存済み信頼と現在の root を満たす必要があり、拒否時は台帳復元をロールバックします。アーカイブ済みプロジェクトを自動で信頼しません。checkout のない直接タスクの台帳復元は利用できます。
@@ -181,6 +182,7 @@ HTTP JSON と SSE を使い、デスクトップ版と Web 版で完全に共通
 | 実行／統合 | `POST /api/execution/{start,stop,preview,ide,terminal,debug}`；`GET /api/execution/{list,output}` |
 | Git | `GET /api/git/{status,pr-status}`；`POST /api/git/{stage,unstage,resolve,commit,fetch,branch,push,pr}` |
 | Git 履歴 | `GET /api/git/{history,commit-detail,blame}` |
+| Git stash／リベース | `GET /api/git/stashes`；`POST /api/git/{stash,rewrite}` |
 | 審査／workflow | `GET /api/review/capabilities`；`POST /api/review/{run,stop}`；`GET /api/task/workflow`；`POST /api/task/workflow/{configure,start,stop,approve}` |
 | 背景／草稿 | `GET/POST /api/task/context`、`GET /api/task/handoff`；`GET/POST /api/chat/draft`、`GET /api/chat/draft-image` |
 | 維持管理 | `GET/POST /api/care/health`；`GET /api/care/{backups,diagnostics}`；`POST /api/care/backup`（includeExternal）、`/api/care/restore`（id、destination） |

@@ -12,6 +12,18 @@ export function registerWorkbenchRoutes(router: Router, app: App): void {
   router.get('/api/git/history', async ({ query }) => app.gitWorkbench.history(reqString(query, 'project', 120), query.has('task') ? reqString(query, 'task', 120) : undefined, Number(query.get('skip') ?? 0), query.has('path') ? reqString(query, 'path', 1000) : undefined));
   router.get('/api/git/commit-detail', async ({ query }) => app.gitWorkbench.commitDetail(reqString(query, 'project', 120), query.has('task') ? reqString(query, 'task', 120) : undefined, reqString(query, 'sha', 64)));
   router.get('/api/git/blame', async ({ query }) => ({ text: await app.gitWorkbench.blame(reqString(query, 'project', 120), query.has('task') ? reqString(query, 'task', 120) : undefined, reqString(query, 'path', 1000)) }));
+  router.get('/api/git/stashes', async ({ query }) => app.gitWorkbench.stashes(reqString(query, 'project', 120), query.has('task') ? reqString(query, 'task', 120) : undefined));
+  for (const operation of ['stash', 'rewrite'] as const) router.post(`/api/git/${operation}`, async ({ body }) => {
+    const project = reqString(body, 'project', 120); const task = body.task === undefined ? undefined : reqString(body, 'task', 120);
+    if (body.includeUntracked !== undefined && typeof body.includeUntracked !== 'boolean') throw new AppError('bad_request');
+    const action = reqString(body, 'action', 30);
+    const result = operation === 'stash'
+      ? await app.gitWorkbench.stash(project, task, action, { ...(body.sha === undefined ? {} : { sha: reqString(body, 'sha', 64) }), ...(body.message === undefined ? {} : { message: reqString(body, 'message', 10_000) }), includeUntracked: body.includeUntracked === true, confirmed: body.confirmed === true })
+      : await app.gitWorkbench.rewrite(project, task, action, typeof body.target === 'string' ? body.target : '', body.confirmed === true);
+    await app.oplog.record({ action: `git.${operation}.${action}`, project, ...(task ? { task } : {}) });
+    if (task) app.verify.invalidate(project, task);
+    app.changed(project, task); return result ?? { ok: true };
+  });
   router.post('/api/git/stage-lines', async ({ body }) => {
     if (typeof body.staged !== 'boolean' || !Array.isArray(body.lines) || body.lines.length > 100_000 || body.lines.some((line: unknown) => typeof line !== 'number' || !Number.isSafeInteger(line))) throw new AppError('bad_request');
     const project = reqString(body, 'project', 120); const task = body.task === undefined ? undefined : reqString(body, 'task', 120);

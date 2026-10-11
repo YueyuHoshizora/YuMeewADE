@@ -100,6 +100,21 @@ export function gitWorkbenchButton(context: ViewContext, project: string, task?:
         const result = await request<{ text: string }>(query('/api/git/blame', { ...ids, path: historyPath.value }));
         modal(t('gitManage.blame'), el('pre', '', result.text));
       })), field(t('gitManage.sha'), commitSha), button(t('gitManage.detail'), () => detail(commitSha.value)));
+      const stashMessage = input(); const untracked = input(); untracked.type = 'checkbox';
+      panel.append(field(t('gitManage.stashMessage'), stashMessage), field(t('gitManage.untracked'), untracked), button(t('gitManage.stashPush'), () => mutate('stash', { action: 'push', message: stashMessage.value, includeUntracked: untracked.checked })));
+      for (const entry of await request<Array<{ sha: string; ref: string; message: string }>>(query('/api/git/stashes', ids))) {
+        const actions = row(el('code', '', `${entry.ref} ${entry.message}`));
+        for (const action of ['apply', 'pop', 'drop'] as const) actions.append(button(t(`gitManage.${action}`), async () => {
+          if (action === 'drop' && !await confirmModal(t('gitManage.drop'), entry.message, t('gitManage.drop'))) return;
+          await mutate('stash', { action, sha: entry.sha, confirmed: true });
+        }));
+        panel.append(actions);
+      }
+      const rewriteTarget = input();
+      panel.append(field(t('gitManage.rewriteTarget'), rewriteTarget));
+      for (const action of ['cherry-pick', 'rebase', 'continue', 'abort'] as const) panel.append(button(t(`gitManage.${action}`), async () => {
+        if (await confirmModal(t(`gitManage.${action}`), `${state.branch} → ${rewriteTarget.value}\n${t('gitManage.rewriteConfirm')}`, t(`gitManage.${action}`))) await mutate('rewrite', { action, target: rewriteTarget.value, confirmed: true });
+      }));
       const message = area(); message.maxLength = 10_000;
       panel.append(field(t('workbench.message'), message), row(button(t('workbench.commit'), () => mutate('commit', { message: message.value })), button(t('gitPrecision.bypass'), async () => {
         if (await confirmModal(t('gitPrecision.bypass'), t('gitPrecision.confirmBypass'), t('workbench.commit'))) await mutate('commit', { message: message.value, bypassHooks: true, confirmed: true });

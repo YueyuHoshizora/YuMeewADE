@@ -47,6 +47,7 @@ Claude/Codex model lists and reasoning efforts come from their own caches, with 
 ## IDE, recovery and maintenance
 
 - **Git history**: the workbench provides paginated graph and file history, commit metadata/files/diffs and line blame; secret and out-of-scope paths are refused.
+- **Stash/rebase**: save optionally untracked files, apply/pop/confirmed drop; conflicting cherry-picks abort automatically. Rebase refuses dirty trees and supports three-way resolution followed by continue/abort, never force-push.
 - **Archive recovery**: preview impact before archiving/restoring projects or tasks. Forced archive retains the branch and original working-copy recovery snapshot, including untracked/ignored/secret files and deletions. Restore rebuilds the worktree and refuses existing destinations. `.yumeewade/recovery/` is private, not a public Git backup or a complete backup of an external main folder.
   After successful restoration, that recovery generation is retained but no longer eligible for replay on a later archive; original bytes remain available without overwriting subsequently merged content.
   Restoration involving checkout must satisfy saved trust and the current root; refusal rolls back ledger restoration and never automatically trusts an archived project. Direct-task ledger restoration without checkout remains available.
@@ -181,6 +182,7 @@ New route groups (exact requests/responses in [`src/http/routes/`](src/http/rout
 | Execution/integrations | `POST /api/execution/{start,stop,preview,ide,terminal,debug}`; `GET /api/execution/{list,output}` |
 | Git | `GET /api/git/{status,pr-status}`; `POST /api/git/{stage,unstage,resolve,commit,fetch,branch,push,pr}` |
 | Git history | `GET /api/git/{history,commit-detail,blame}` |
+| Git stash/rebase | `GET /api/git/stashes`; `POST /api/git/{stash,rewrite}` |
 | Review/workflows | `GET /api/review/capabilities`; `POST /api/review/{run,stop}`; `GET /api/task/workflow`; `POST /api/task/workflow/{configure,start,stop,approve}` |
 | Context/drafts | `GET/POST /api/task/context`, `GET /api/task/handoff`; `GET/POST /api/chat/draft`, `GET /api/chat/draft-image` |
 | Care | `GET/POST /api/care/health`; `GET /api/care/{backups,diagnostics}`; `POST /api/care/backup` (includeExternal), `/api/care/restore` (id, destination) |
