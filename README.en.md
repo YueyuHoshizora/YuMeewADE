@@ -111,7 +111,7 @@ npm run desktop      # 桌面版（開發機）
 - New projects copy `.ai/rules.md` (AI work rules), `.ai/memory/INDEX.md`, `CLAUDE.md`, and `AGENTS.md` from `templates/project/`. You can customize the templates.
 - Archiving is not deletion: tasks are archived to `Projects/{專案}/.ai/trash/`, and projects to `Projects/.trash/`.
 - Development mode: `npm run dev` (tsc / vite watch, with automatic core restarts).
-- Package the current platform: `npm run dist` → `release/`. CI can optionally use platform-signing/notarization and manifest-signing credentials; none are supplied here, so artifacts remain ad-hoc/unsigned, not officially publisher-signed. Release workflows target three platforms, not evidence of a new three-platform pass.
+- Package the current platform: `npm run dist` (runs `npm run build` first) → `release/`. CI can optionally use platform-signing/notarization and manifest-signing credentials; none are supplied here, so artifacts remain ad-hoc/unsigned, not officially publisher-signed. Release workflows target three platforms, not evidence of a new three-platform pass.
 - `node-pty@1.1.0` is the sole approved additional runtime dependency. The front-end editor uses CodeMirror 6, approved on 2026-10-12 (exact versions in `devDependencies`, bundled into the UI by Vite; not a core runtime dependency). Installation/build uses `npm run prepare:pty` to prepare Darwin helper executable permissions before packaging, never runtime chmod of a signed app. The approved local `sprintf-js@1.1.3` precision guard uses an exact source SHA256, atomic/idempotent patching and fails closed on drift (`npm run patch:build-deps`); the upstream advisory remains open, not a clean `npm audit` claim.
 
 ## `config.yaml`

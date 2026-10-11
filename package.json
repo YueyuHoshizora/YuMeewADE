@@ -17,7 +17,7 @@
     "start": "node dist/server/main.js",
     "dev": "npm run prepare:pty && node scripts/dev.ts",
     "desktop": "electron .",
-    "dist": "node scripts/package-signing.ts",
+    "dist": "npm run build && node scripts/package-signing.ts",
     "patch:build-deps": "node scripts/patch-sprintf.ts",
     "prepare:pty": "node scripts/prepare-pty.ts"
   },

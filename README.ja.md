@@ -111,7 +111,7 @@ npm run desktop      # 桌面版（開發機）
 - 新規プロジェクトには `templates/project/` から `.ai/rules.md`（AI の作業ルール）、`.ai/memory/INDEX.md`、`CLAUDE.md`、`AGENTS.md` をコピーします。テンプレートは自由に変更できます。
 - アーカイブは削除ではありません。タスクは `Projects/{專案}/.ai/trash/`、プロジェクトは `Projects/.trash/` に移動します。
 - 開発モード：`npm run dev`（tsc／vite watch、コアは自動再起動）。
-- 現在のプラットフォームをパッケージ化：`npm run dist` → `release/`。CI は任意のプラットフォーム署名／公証・manifest 署名認証を利用できますが、今回は未提供のため ad-hoc／unsigned で、公式発行者署名を主張しません。3プラットフォーム向け workflow は今回の新たな全平台成功証拠ではありません。
+- 現在のプラットフォームをパッケージ化：`npm run dist`（先に `npm run build` を実行）→ `release/`。CI は任意のプラットフォーム署名／公証・manifest 署名認証を利用できますが、今回は未提供のため ad-hoc／unsigned で、公式発行者署名を主張しません。3プラットフォーム向け workflow は今回の新たな全平台成功証拠ではありません。
 - `node-pty@1.1.0` は唯一承認された追加ランタイム依存です。フロントエンドのエディターは 2026-10-12 に承認された CodeMirror 6 を使います（`devDependencies` に正確なバージョンで固定し、Vite でフロントエンドに同梱。コアのランタイム依存ではありません）。インストール／ビルド時の `npm run prepare:pty` がパッケージ前に Darwin helper の実行権限を準備し、署名済み App を runtime chmod しません。承認済みローカル `sprintf-js@1.1.3` precision guard は正確なソース SHA256、原子的・冪等修正、変更時 fail closed（`npm run patch:build-deps`）を使用します。上流 advisory は未解決で、`npm audit` 解消は主張しません。
 
 ## `config.yaml`
