@@ -73,6 +73,8 @@ export class EditorContent {
   private editable = new Compartment();
   private preferences = new Compartment();
   private debug = new Compartment();
+  private proposals = new Compartment();
+  private pendingRanges: { from: number; to: number }[] = [];
   private format: EditorResolvedFormatPreferences | undefined;
   private breakpoints: number[] = [];
   private activeLine: number | undefined;
@@ -113,12 +115,30 @@ export class EditorContent {
     this.breakpoints = breakpoints.filter(line => Number.isSafeInteger(line) && line > 0); this.activeLine = active;
     this.view.dispatch({ effects: this.debug.reconfigure(this.debugExtensions()) });
   }
+  proposalDecoration(ranges: { from: number; to: number }[]): void {
+    const max = this.view.state.doc.length;
+    this.pendingRanges = ranges.filter(range => Number.isSafeInteger(range.from) && Number.isSafeInteger(range.to) && range.from >= 0 && range.to >= range.from && range.to <= max).map(range => ({ ...range }));
+    const owner = this;
+    this.view.dispatch({ effects: this.proposals.reconfigure([
+      gutter({ class: 'proposal-gutter', lineMarker: (view, line) => owner.pendingRanges.some(range => range.from <= line.to && range.to >= line.from) ? new DebugMarker(false, true) : null }),
+      ViewPlugin.fromClass(class {
+        decorations: DecorationSet;
+        constructor() { this.decorations = this.build(); }
+        build(): DecorationSet { return Decoration.set(owner.pendingRanges.filter(range => range.to > range.from).map(range => Decoration.mark({ class: 'editor-proposal-pending' }).range(range.from, range.to)), true); }
+        update(update: { docChanged: boolean; changes: { mapPos(position: number, assoc?: number): number } }): void {
+          if (update.docChanged) owner.pendingRanges = owner.pendingRanges.map(range => ({ from: update.changes.mapPos(range.from, 1), to: update.changes.mapPos(range.to, -1) })).filter(range => range.to >= range.from);
+          this.decorations = this.build();
+        }
+      }, { decorations: plugin => plugin.decorations })
+    ]) });
+  }
   private state(text: string): EditorState {
     return EditorState.create({ doc: text, extensions: [
       basicSetup, syntaxHighlighting(appHighlight), rectangularSelection(), crosshairCursor(),
       EditorView.clickAddsSelectionRange.of(event => event.altKey || event.metaKey || event.ctrlKey),
       keymap.of([indentWithTab]), this.language.of([]), this.editable.of(EditorState.readOnly.of(true)), this.preferences.of(this.preferenceExtensions()),
       this.debug.of(this.debugExtensions()),
+      this.proposals.of([]),
       lintGutter(), autocompletion({ override: [context => this.complete?.(context) ?? null] }),
       EditorView.theme({
         '&': { backgroundColor: 'var(--panel)', color: 'var(--c-e7eaf4)' },

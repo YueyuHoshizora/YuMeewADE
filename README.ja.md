@@ -95,7 +95,8 @@ Claude／Codex のモデル一覧・推論強度は CLI キャッシュから取
 - **統合設定**：`config.yaml` の `execution.ide`／`terminal`／`browser` は `{command, args}`、argv 内で `{cwd}`／`{url}`／`{command}` を置換します。IDE フォルダーには `{cwd}`、IDE debug には `{url}` が必要。カスタム端末には `{cwd}`、コマンド指定時には `{command}` も必要です。外部ツールは自分でインストールし、指示は自分の権限で実行します。
 - **Git**：status／PR 状態、staged diff、実際の revision に結び付いたファイル／hunk／選択行 stage／unstage、base／ours／theirs 3方向競合表示と手動マージ文、commit、fetch、branch 操作。手動 commit は既定で hooks を実行し、bypass は明示確認が必要です。Push は確認必須・force 禁止、PR は確認とログイン済み `gh` が必要です。自動 push／PR は行わず、fetch／push／PR は外部通信です。
 - **GitHub フィードバックタスク**：PR 討論／issue を出典付きローカルタスクと編集可能な草稿へ変換し、AIへ自動送信しません。`gh` の返信、thread 解決／再開、issue状態更新は明示確認が必須です。repository、安定 comment／thread ID、head OID を検証し、古い revision／新 HEAD には書き戻しません。
-- **provider 能力**：実際の承認、読み取り専用隔離、resume、slash command、用量対応を設定画面に表示します。Codex 通常対話は専用 stdio JSON-RPC app-server（thread／turn／resume／interrupt／ツール承認）が既定で、`cli.codex.mode: exec` は従来 exec を明示選択します。審査は独立制限 exec を使い、執筆 session は流用しません。
+- **provider 能力**：実際の承認、読み取り専用隔離、resume、slash command、用量対応を設定画面に表示します。Codex 通常対話は専用 stdio JSON-RPC app-server（thread／turn／resume／interrupt／ツール承認）が既定で、`cli.codex.mode: exec` は従来 exec を明示選択します。審査・局部提案は独立制限 exec を使い、執筆 session は流用しません。
+- **AI 局部編集提案**：選択範囲（未選択は全文）、文書 revision、buffer snapshot に結び付く読み取り専用提案を生成します。hunk別にプレビュー／採用／拒否し、未採用範囲を gutter 表示、採用ごとに個別 undo できます。UTF-16境界、LFの置換文字、隣接編集のoffset、古いsnapshotを検証します。決定中はワークベンチのsnapshotを予約・ロックし、通信中断後は明示確認で承認済み下書きを復元できます。草稿のみ変更し、ファイルには別途保存が必要です。
 - **独立した読み取り専用審査**：書き込み session／full-access 旗標を流用しません。Codex は Darwin／Linux のみネイティブ read-only sandbox、Claude は Read／Glob／Grep のみの **CLI ツールポリシーで、OS sandbox ではありません**。Grok／Gemini や有効な制限設定のない provider は明確に拒否し、プロンプトだけを隔離保証にしません。CLI 自体は信頼するローカルプログラムです。
   構造化 `schema:1` JSON 審査は内容／HEAD に結び付く snapshot と、重大度・証拠・ライフサイクル履歴付き findings を保存します。手動 resolved／dismissed は証拠必須で、AI 承認を作りません。任意のマージ関門は現在の内容への明示承認と未解決重大指摘なしを要求します。
 - **役割／workflow**：役割が選んだ主 CLI が開始前に利用不可の場合だけ明示 backup を選びます。手動指定は回避せず、実行失敗後に AI を切り替えません。永続 workflow は依存、役割／審査ステップ、人間の関門に対応し、人工証拠は空でない文字列です。ステップ再実行は過去の試行を残して当該／後続の checkpoint を無効化します。タスク比較は2つの実際の作業ツリーから有界ファイル／内容差分を表示します。依存は完了と人工承認が必要で、再起動後は停止し許可を自動更新しません。
@@ -226,7 +227,7 @@ HTTP JSON と SSE を使い、デスクトップ版と Web 版で完全に共通
 |---|---|
 | アーカイブ | `GET /api/archive/list`、`/api/archive/preview`；`POST /api/archive/restore` |
 | エディター | `GET /api/editor/file`、`/api/editor/image`（画像、20 MiB）；`POST /api/editor/save`（revision）、`/api/editor/language`（definition／references／diagnostics） |
-| 編集設定／同期 | `GET/POST /api/editor/settings`；`GET /api/editor/preferences`；`POST /api/editor/{revisions,merge}` |
+| 編集設定／同期／提案 | `GET/POST /api/editor/settings`；`GET /api/editor/preferences`；`POST /api/editor/{revisions,merge}`；`GET /api/editor/proposals`；`POST /api/editor/proposals/{generate,decide,stop}` |
 | provider 能力 | `GET /api/ai/capabilities` |
 | テスト／検証履歴 | `GET /api/task/tests`、`/api/task/verify/history`；`POST /api/task/tests/{configure,run}` |
 | 端末復元／sourceデバッグ | `POST /api/terminal/recovery/{init,list,bind,claim}`；`POST /api/debugger/{source-breakpoint,source-breakpoint/delete,watch}` |

@@ -1,13 +1,15 @@
 import type { EditorDiagnostic, EditorDocument, EditorAction, EditorActionResult, EditorChange, EditorMutation, EditorSearchResult, EditorProblem, EditorRecovery, TaskContext, EditorResolvedFormatPreferences } from '../../shared/types.ts';
 import { query, request } from '../api.ts';
+import { isolateHistory } from '@codemirror/commands';
 import { t } from '../i18n/index.ts';
 import { el, input, area, button, row, confirmModal, run, toast } from './dom.ts';
 import { EditorContent } from './editor-engine.ts';
 import { FilePreview, isImage } from './file-preview.ts';
 import { selectionMention } from './editor-mention.ts';
-import { fileHierarchy, normalizeLayout } from './editor-layout.ts';
+import { fileHierarchy, normalizeLayout, pendingProposalRanges } from './editor-layout.ts';
 import { preferenceCommand, readPreferences, serializeEol } from './editor-preferences.ts';
 import { debuggerWorkbench } from './debugger.ts';
+import { mountEditorProposals } from './editor-proposals.ts';
 
 export interface WorkbenchEditorHost {
   snapshot(): { path: string; revision: string; text: string; selection: { from: number; to: number } } | null;
@@ -21,6 +23,7 @@ export function registerWorkbenchPanel(id: string, factory: (context: WorkbenchP
   window.dispatchEvent(new Event('yumeewade:workbench-panels'));
 }
 registerWorkbenchPanel('debugger', debuggerWorkbench);
+registerWorkbenchPanel('proposals', mountEditorProposals);
 let workbenchMount: HTMLElement | undefined;
 let activeWorkspace = '';
 export function mountEditorWorkbench(main: HTMLElement): void {
@@ -143,6 +146,17 @@ export function openFileBrowser(project: string, task: string, workspace = activ
     debugState = { breakpoints: detail.breakpoints, ...(detail.active ? { active: detail.active } : {}) }; renderDebug();
   };
   window.addEventListener('yumeewade:debug-decoration', debugDecoration);
+  const proposalRanges = new Map<string, { from: number; to: number; state: string; text?: string }[]>();
+  const renderProposals = (path: string) => { for (const view of views) if (view.path === path) view.content.proposalDecoration(pendingProposalRanges(proposalRanges.get(path) ?? [])); };
+  const proposalDecoration = (event: Event) => {
+    const detail = (event as CustomEvent).detail;
+    if (!detail || detail.project !== project || detail.task !== task || typeof detail.path !== 'string') return;
+    if (Array.isArray(detail.edits)) proposalRanges.set(detail.path, detail.edits.filter((edit: { from: number; to: number; state: string }) => edit && Number.isSafeInteger(edit.from) && Number.isSafeInteger(edit.to) && edit.from >= 0 && edit.to >= edit.from && typeof edit.state === 'string').slice(0, 500));
+    else if (event.type === 'yumeewade:proposal-decision') proposalRanges.set(detail.path, (proposalRanges.get(detail.path) ?? []).filter(edit => edit.from !== detail.from || edit.to !== detail.to));
+    renderProposals(detail.path);
+  };
+  dialog.addEventListener('yumeewade:proposal-generated', proposalDecoration);
+  dialog.addEventListener('yumeewade:proposal-decision', proposalDecoration);
   function renderDiagnostics(path: string): void {
     const items = live.get(path)?.diagnostics ?? [];
     for (const view of views) if (view.path === path) {
@@ -230,6 +244,7 @@ export function openFileBrowser(project: string, task: string, workspace = activ
     if (!isImage(path)) view.content.focus(); focused = index; refreshTabs();
     capture(index); schedulePersist();
     renderDebug();
+    renderProposals(path);
     window.dispatchEvent(new CustomEvent('yumeewade:editor-active', { detail: { project, task, path, content: view.content } }));
     if (!isImage(path)) { renderDiagnostics(path); scheduleDiagnostics(path); }
     if (view.content.readOnly && !isImage(path)) output.replaceChildren(el('p', 'warning', buffer.document.binary ? t('files.binary') : buffer.document.truncated ? t('files.truncated') : t('detail.editor_readonly')));
@@ -469,7 +484,7 @@ export function openFileBrowser(project: string, task: string, workspace = activ
       const buffer = current(); if (!buffer || buffer.document.path !== expected.path || buffer.document.revision !== expected.revision || buffer.text !== expected.text || (!editReserved && views[focused]!.content.readOnly)) return false;
       const sorted = [...edits].sort((a, b) => a.from - b.from);
       if (sorted.some((edit, index) => !Number.isSafeInteger(edit.from) || !Number.isSafeInteger(edit.to) || edit.from < 0 || edit.to < edit.from || edit.to > buffer.text.length || (index > 0 && edit.from < sorted[index - 1]!.to))) return false;
-      views[focused]!.content.view.dispatch({ changes: sorted.map(edit => ({ from: edit.from, to: edit.to, insert: edit.text })) }); return true;
+      views[focused]!.content.view.dispatch({ changes: sorted.map(edit => ({ from: edit.from, to: edit.to, insert: edit.text })), annotations: isolateHistory.of('full') }); return true;
     }
   };
   const mountedPanels = new Set<string>();

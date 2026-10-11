@@ -100,7 +100,8 @@ Claude／Codex 模型清單直接讀 CLI 自己的快取（`~/.codex/models_cach
 - **整合設定**：`config.yaml` 的 `execution.ide`／`terminal`／`browser` 各為 `{command, args}`；argv 支援 `{cwd}`、`{url}`、`{command}` 替換。IDE 開資料夾需要 `{cwd}`，IDE debug 需要 `{url}`；自訂 terminal 需要 `{cwd}`，帶指令時也需 `{command}`。外部工具需自行安裝，指令以你的權限執行。
 - **Git**：status／PR、staged diff、綁定實際版本的逐檔／hunk／選取行 stage／unstage、base／ours／theirs 三方衝突與人工合併文字、commit、fetch 及 branch 操作。手動 commit 預設執行 hooks，bypass 必須明確確認。Push 須確認且禁止 force；PR 須確認及已登入 `gh`。不自動 push／發 PR，fetch／push／PR 是網路操作。
 - **GitHub 回饋作業**：PR 討論／issue 可轉為連結來源的本機作業與可編輯草稿，不自動送 AI。人工確認後才透過 `gh` 回覆、解決／重開 thread 或回寫 issue 狀態；PR 綁定 repository、穩定 comment／thread ID 與 head OID，過期 revision 或新 HEAD 拒絕寫回。
-- **提供者能力**：設定頁揭示各 provider 的實際核准、唯讀隔離、續聊、斜線指令與用量支援。Codex 一般對話預設使用獨立 stdio JSON-RPC app-server（thread／turn／resume／interrupt／工具核准）；設定 `cli.codex.mode: exec` 可明確使用原 exec adapter。唯讀審查使用獨立受限 exec，不借用一般寫作 session。
+- **提供者能力**：設定頁揭示各 provider 的實際核准、唯讀隔離、續聊、斜線指令與用量支援。Codex 一般對話預設使用獨立 stdio JSON-RPC app-server（thread／turn／resume／interrupt／工具核准）；設定 `cli.codex.mode: exec` 可明確使用原 exec adapter。唯讀審查與局部提案使用獨立受限 exec，不借用一般寫作 session。
+- **AI 局部修改提案**：編輯器以目前選取（無選取則整個文件）的 revision／buffer 快照產生唯讀提案，逐 hunk 預覽／接受／拒絕，待接受範圍在 gutter 標示；每次接受可獨立 undo。UTF-16 邊界、LF 替換文字、相鄰編輯位移及過期快照均驗證。決定期間保留並鎖定工作台快照；傳輸中斷後可明確確認恢復已接受的草稿。只修改編輯草稿，必須另按儲存才寫檔。
 - **獨立唯讀審查**：不借用寫作 session 或 full-access 旗標。Codex 使用原生 read-only sandbox，僅 Darwin／Linux；Claude 僅允許 Read／Glob／Grep，**是 CLI 工具政策，不是 OS 沙箱**。Grok／Gemini 或不符受限設定的 provider 明確拒絕，不以提示詞冒充安全隔離。CLI 本身仍是受信任的本機程式。
   結構化 `schema:1` JSON 審查持久化內容／HEAD 綁定的快照與 findings，含嚴重性、證據及生命週期歷史。人工 resolved／dismissed 必須附證據，不製造 AI 核准；可選合併門檻要求目前內容明確核准且沒有未解重大發現。
 - **角色與流程**：僅角色選取的主 CLI 在開始前不可用時，才用明確 backup；手動選擇不回退，執行失敗不換 AI。持久化 workflow 支援相依、角色／審查步驟與人工關卡，人工證據為非空字串。逐步重跑保留歷次結果並使該步及下游檢查點失效；作業比較使用兩個實際工作樹，列出有界檔案／內容差異。相依須完成且人工確認；重啟中斷後暫停，不自動恢復授權。
@@ -232,7 +233,7 @@ HTTP JSON 加 SSE，桌面版與網頁版完全相同。型別定義在 [`src/sh
 |---|---|
 | 封存 | `GET /api/archive/list`、`/api/archive/preview`；`POST /api/archive/restore` |
 | 編輯器 | `GET /api/editor/file`、`/api/editor/image`（圖片，20 MiB）；`POST /api/editor/save`（含 revision）、`/api/editor/language`（definition／references／diagnostics） |
-| 編輯設定／同步 | `GET/POST /api/editor/settings`；`GET /api/editor/preferences`；`POST /api/editor/{revisions,merge}` |
+| 編輯設定／同步／提案 | `GET/POST /api/editor/settings`；`GET /api/editor/preferences`；`POST /api/editor/{revisions,merge}`；`GET /api/editor/proposals`；`POST /api/editor/proposals/{generate,decide,stop}` |
 | 提供者能力 | `GET /api/ai/capabilities` |
 | 測試／驗證歷史 | `GET /api/task/tests`、`/api/task/verify/history`；`POST /api/task/tests/{configure,run}` |
 | 終端恢復／source 除錯 | `POST /api/terminal/recovery/{init,list,bind,claim}`；`POST /api/debugger/{source-breakpoint,source-breakpoint/delete,watch}` |

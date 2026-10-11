@@ -509,3 +509,5 @@ body.terminal-dock-open { grid-template-rows: 64px minmax(0, 1fr) var(--terminal
 .editor-comparison textarea { width: 33%; min-height: 160px; }
 .debug-breakpoint { color: var(--red); cursor: pointer; }
 .debug-active-line { background: color-mix(in srgb,var(--yellow) 22%,transparent); }
+.editor-proposal-pending { background: color-mix(in srgb,var(--purple) 18%,transparent); border-bottom: 1px dashed var(--purple); }
+.proposal-gutter .debug-breakpoint { color: var(--purple); cursor: default; }

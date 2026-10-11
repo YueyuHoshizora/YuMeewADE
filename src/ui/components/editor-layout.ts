@@ -10,3 +10,11 @@ export function fileHierarchy(paths: string[]): Map<string, string[]> {
   for (const path of paths) { const at = path.lastIndexOf('/'); const folder = at < 0 ? '' : path.slice(0, at); const entries = groups.get(folder) ?? []; entries.push(path); groups.set(folder, entries); }
   return groups;
 }
+export function pendingProposalRanges(edits: { from: number; to: number; state: string; text?: string }[]): { from: number; to: number }[] {
+  const accepted = edits.filter(edit => edit.state === 'accepted' && typeof edit.text === 'string');
+  return edits.filter(edit => edit.state === 'pending').map(edit => {
+    let shift = 0;
+    for (const previous of accepted) if (previous.to <= edit.from) shift += previous.text!.length - (previous.to - previous.from);
+    return { from: edit.from + shift, to: edit.to + shift };
+  });
+}

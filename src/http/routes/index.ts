@@ -24,6 +24,7 @@ import { registerUpdateRoutes } from './update.ts';
 import { registerMemoryRoutes } from './memory.ts';
 import { registerMcpRoutes } from './mcp.ts';
 import { registerTerminalRecoveryRoutes } from './terminal-recovery.ts';
+import { registerEditorProposalRoutes } from './editor-proposals.ts';
 import { registerDebuggerExtensionRoutes } from './debugger-extensions.ts';
 
 export function registerRoutes(router: Router, app: App): void {
@@ -61,5 +62,6 @@ export function registerRoutes(router: Router, app: App): void {
   registerMemoryRoutes(router, app);
   registerMcpRoutes(router, app);
   registerTerminalRecoveryRoutes(router, app);
+  registerEditorProposalRoutes(router, app);
   registerDebuggerExtensionRoutes(router, app);
 }

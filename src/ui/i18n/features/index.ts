@@ -41,6 +41,7 @@ import * as debuggerExtensions from './debugger-extensions.ts';
 import * as githubFeedback from './github-feedback.ts';
 import * as contextBudget from './context-budget.ts';
 import * as providerCapabilities from './provider-capabilities.ts';
+import * as editorProposals from './editor-proposals.ts';
 import * as ideWorkbench from './ide-workbench.ts';
 
 export const featureZhTW = {
@@ -88,6 +89,7 @@ export const featureZhTW = {
   ...githubFeedback.featureZhTW,
   ...contextBudget.featureZhTW,
   ...providerCapabilities.featureZhTW,
+  ...editorProposals.featureZhTW,
   ...ideWorkbench.featureZhTW,
 };
 export const featureZhCN = {
@@ -135,6 +137,7 @@ export const featureZhCN = {
   ...githubFeedback.featureZhCN,
   ...contextBudget.featureZhCN,
   ...providerCapabilities.featureZhCN,
+  ...editorProposals.featureZhCN,
   ...ideWorkbench.featureZhCN,
 };
 export const featureEn = {
@@ -182,6 +185,7 @@ export const featureEn = {
   ...githubFeedback.featureEn,
   ...contextBudget.featureEn,
   ...providerCapabilities.featureEn,
+  ...editorProposals.featureEn,
   ...ideWorkbench.featureEn,
 };
 export const featureJa = {
@@ -229,6 +233,7 @@ export const featureJa = {
   ...githubFeedback.featureJa,
   ...contextBudget.featureJa,
   ...providerCapabilities.featureJa,
+  ...editorProposals.featureJa,
   ...ideWorkbench.featureJa,
 };
 export const featureDe = {
@@ -276,6 +281,7 @@ export const featureDe = {
   ...githubFeedback.featureDe,
   ...contextBudget.featureDe,
   ...providerCapabilities.featureDe,
+  ...editorProposals.featureDe,
   ...ideWorkbench.featureDe,
 };
 export const featureFr = {
@@ -323,6 +329,7 @@ export const featureFr = {
   ...githubFeedback.featureFr,
   ...contextBudget.featureFr,
   ...providerCapabilities.featureFr,
+  ...editorProposals.featureFr,
   ...ideWorkbench.featureFr,
 };
 export const featureIt = {
@@ -370,5 +377,6 @@ export const featureIt = {
   ...githubFeedback.featureIt,
   ...contextBudget.featureIt,
   ...providerCapabilities.featureIt,
+  ...editorProposals.featureIt,
   ...ideWorkbench.featureIt,
 };
