@@ -58,6 +58,7 @@ test('真實 merge conflict 可人工編輯、resolve、提交且不改其他wor
   assert.equal((await git(dir, ['merge', 'main'])).code, 1);
   const workbench = new GitWorkbench({ ws, projects, tasks, isRunning: () => false });
   assert.equal((await workbench.status('P', task.id)).files.find(file => file.path === 'conflict.txt')?.conflict, true);
+  assert.deepEqual(await workbench.conflict('P', task.id, 'conflict.txt'), { path: 'conflict.txt', base: 'base\n', ours: 'task\n', theirs: 'main\n' });
   await assert.rejects(workbench.resolve('P', task.id, 'conflict.txt'), (error: unknown) => error instanceof AppError && error.detail === 'git_conflict_markers');
   await fs.writeFile(path.join(dir, 'conflict.txt'), 'resolved\n');
   await workbench.resolve('P', task.id, 'conflict.txt');
@@ -80,4 +81,72 @@ test('PR缺gh與缺auth明確拒絕且不進行網路發布', () => withTmpWorks
     assert.deepEqual(await unauthenticated.pullRequestStatus('P'), { available: true, authenticated: false, repository: null });
     await assert.rejects(unauthenticated.pullRequest('P', undefined, input), (error: unknown) => error instanceof AppError && error.detail === 'gh_auth_required');
   }
+}));
+
+test('行暫存／取消以精確index與worktree指紋拒絕過期選取，保留未選取變更', () => withTmpWorkspace(async ws => {
+  const projects = new ProjectLedger(ws); const tasks = new TaskLedger(ws); await projects.create({ name: 'P' });
+  const root = ws.projectDir('P'); const full = path.join(root, 'lines.txt');
+  await fs.writeFile(full, 'one\ntwo\nthree\n'); await commitAll(root, 'base');
+  const workbench = new GitWorkbench({ ws, projects, tasks, isRunning: () => false });
+  await fs.writeFile(full, 'ONE\ntwo\nTHREE\n');
+  const diff = await workbench.diff('P', undefined, 'lines.txt', false);
+  const selected = diff.hunks.flatMap(h => h.lines).filter(line => line.text === 'one' || line.text === 'ONE').map(line => line.id);
+  await workbench.stageLines('P', undefined, 'lines.txt', false, diff.fingerprint, selected);
+  assert.equal(await gitOk(root, ['show', ':lines.txt']), 'ONE\ntwo\nthree\n');
+  assert.equal(await fs.readFile(full, 'utf8'), 'ONE\ntwo\nTHREE\n');
+  await assert.rejects(workbench.stageLines('P', undefined, 'lines.txt', false, diff.fingerprint, selected));
+  const staged = await workbench.diff('P', undefined, 'lines.txt', true);
+  await workbench.stageLines('P', undefined, 'lines.txt', true, staged.fingerprint, staged.hunks.flatMap(h => h.lines).filter(line => line.kind !== 'context').map(line => line.id));
+  assert.equal(await gitOk(root, ['show', ':lines.txt']), 'one\ntwo\nthree\n');
+  const fresh = await workbench.diff('P', undefined, 'lines.txt', false);
+  await fs.appendFile(full, 'external\n');
+  await assert.rejects(workbench.stageLines('P', undefined, 'lines.txt', false, fresh.fingerprint, fresh.hunks.flatMap(h => h.lines).filter(line => line.kind !== 'context').map(line => line.id)));
+}));
+
+test('新檔、刪檔與沒有最後換行的部分暫存保留未選取資料', () => withTmpWorkspace(async ws => {
+  const projects = new ProjectLedger(ws); const tasks = new TaskLedger(ws); await projects.create({ name: 'P' });
+  const root = ws.projectDir('P'); const workbench = new GitWorkbench({ ws, projects, tasks, isRunning: () => false });
+  await fs.writeFile(path.join(root, 'new.txt'), 'first\nsecond\n');
+  const fresh = await workbench.diff('P', undefined, 'new.txt', false);
+  await workbench.stageLines('P', undefined, 'new.txt', false, fresh.fingerprint, [fresh.hunks[0]!.lines[0]!.id]);
+  assert.equal(await gitOk(root, ['show', ':new.txt']), 'first\n');
+  await workbench.stage('P', undefined, 'new.txt'); await workbench.commit('P', undefined, 'base');
+  await fs.unlink(path.join(root, 'new.txt'));
+  const deleted = await workbench.diff('P', undefined, 'new.txt', false);
+  await workbench.stageLines('P', undefined, 'new.txt', false, deleted.fingerprint, [deleted.hunks[0]!.lines[0]!.id]);
+  assert.equal(await gitOk(root, ['show', ':new.txt']), 'second\n');
+  await fs.writeFile(path.join(root, 'new.txt'), 'second');
+  const newline = await workbench.diff('P', undefined, 'new.txt', false);
+  await workbench.stageLines('P', undefined, 'new.txt', false, newline.fingerprint, newline.hunks.flatMap(h => h.lines).filter(line => line.kind !== 'context').map(line => line.id));
+  assert.equal(await gitOk(root, ['show', ':new.txt']), 'second');
+}));
+
+test('人工commit預設執行hook，略過需明確確認', () => withTmpWorkspace(async ws => {
+  if (process.platform === 'win32') return;
+  const projects = new ProjectLedger(ws); const tasks = new TaskLedger(ws); await projects.create({ name: 'P' });
+  const root = ws.projectDir('P'); const workbench = new GitWorkbench({ ws, projects, tasks, isRunning: () => false });
+  const hooks = path.join(ws.root, 'hooks'); await fs.mkdir(hooks);
+  await fs.writeFile(path.join(hooks, 'pre-commit'), `#!${process.execPath}\nprocess.exit(1);\n`, { mode: 0o700 });
+  await gitOk(root, ['config', 'core.hooksPath', hooks]);
+  await fs.writeFile(path.join(root, 'hook.txt'), 'text\n'); await workbench.stage('P', undefined, 'hook.txt');
+  await assert.rejects(workbench.commit('P', undefined, 'blocked'));
+  await assert.rejects(workbench.commit('P', undefined, 'unconfirmed', { bypassHooks: true }));
+  const result = await workbench.commit('P', undefined, 'confirmed', { bypassHooks: true, confirmed: true });
+  assert.equal((await gitOk(root, ['rev-parse', 'HEAD'])).trim(), result.sha);
+}));
+
+test('比較真實作業副本未提交變更且不外洩secret／不接受symlink', () => withTmpWorkspace(async ws => {
+  const projects = new ProjectLedger(ws); const tasks = new TaskLedger(ws); await projects.create({ name: 'P' });
+  const left = await tasks.create('P', { title: 'left' }); const right = await tasks.create('P', { title: 'right' });
+  const wt = new WorktreeService({ ws, projects, tasks, diffBytes: 100_000 });
+  const a = await wt.prepare('P', left.id); const b = await wt.prepare('P', right.id);
+  await fs.writeFile(path.join(a, 'solution.txt'), 'left\n'); await fs.writeFile(path.join(b, 'solution.txt'), 'right\n');
+  await fs.writeFile(path.join(a, '.env.private'), 'secret-token');
+  const workbench = new GitWorkbench({ ws, projects, tasks, isRunning: () => false });
+  const comparison = await workbench.compareTasks('P', left.id, right.id);
+  assert.deepEqual(comparison.files.map(file => file.path), ['solution.txt']);
+  assert.match(comparison.files[0]!.patch, /-left/); assert.match(comparison.files[0]!.patch, /\+right/);
+  assert.equal(JSON.stringify(comparison).includes('secret-token'), false);
+  await fs.symlink(path.join(ws.root, 'outside'), path.join(a, 'escape.txt'));
+  await assert.rejects(workbench.compareTasks('P', left.id, right.id));
 }));

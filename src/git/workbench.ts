@@ -1,5 +1,9 @@
 import { promises as fs } from 'node:fs';
 import path from 'node:path';
+import os from 'node:os';
+import { createHash } from 'node:crypto';
+import type { GitFileDiff, GitConflictView, TaskComparison } from '../shared/git-precision.ts';
+import { parseHunks, selectedPatch } from './precision.ts';
 import type { Workspace } from '../ledger/workspace.ts';
 import type { ProjectLedger } from '../ledger/projects.ts';
 import type { TaskLedger } from '../ledger/tasks.ts';
@@ -43,7 +47,8 @@ export class GitWorkbench {
     });
   }
   private async files(root: string): Promise<GitWorkbenchFile[]> {
-    const records = split(await this.command(root, ['status', '--porcelain=v1', '-z', '--untracked-files=all']));
+    // Status must not rewrite index stat-cache metadata between fingerprint validation and patch application.
+    const records = split(await this.command(root, ['--no-optional-locks', 'status', '--porcelain=v1', '-z', '--untracked-files=all']));
     const files: GitWorkbenchFile[] = [];
     for (let index = 0; index < records.length; index++) {
       const record = records[index]!; const x = record[0]!; const y = record[1]!; const name = record.slice(3);
@@ -81,6 +86,101 @@ export class GitWorkbench {
       await this.command(root, unstage ? await hasCommits(root) ? ['reset', '-q', 'HEAD', '--', ...paths] : ['rm', '--cached', '-q', '--', ...paths] : ['add', '--', ...paths]);
     });
   }
+  private async fingerprint(root: string, relative: string): Promise<string> {
+    await this.safePath(root, relative);
+    const index = (await this.command(root, ['rev-parse', '--path-format=absolute', '--git-path', 'index'])).trim();
+    const indexStat = await fs.stat(index).catch((error: NodeJS.ErrnoException) => { if (error.code === 'ENOENT') return null; throw error; });
+    if (indexStat && indexStat.size > 10 * 1024 * 1024) throw new AppError('too_large');
+    const hash = createHash('sha256');
+    hash.update(await fs.readFile(index).catch((error: NodeJS.ErrnoException) => { if (error.code === 'ENOENT') return Buffer.alloc(0); throw error; }));
+    const full = path.join(root, relative);
+    const stat = await fs.stat(full).catch((error: NodeJS.ErrnoException) => { if (error.code === 'ENOENT') return null; throw error; });
+    if (stat && (!stat.isFile() || stat.size > 1024 * 1024)) throw new AppError('too_large');
+    hash.update(stat ? await fs.readFile(full) : 'absent');
+    hash.update(await this.command(root, ['rev-parse', '--verify', 'HEAD']).catch(() => 'unborn'));
+    return hash.digest('hex');
+  }
+  private async fileDiff(root: string, relative: string, staged: boolean): Promise<GitFileDiff> {
+    await this.safePath(root, relative);
+    const before = await this.fingerprint(root, relative);
+    let patch = await this.command(root, ['diff', '--no-ext-diff', '--no-textconv', '--no-renames', '--unified=3', ...(staged ? ['--cached', '-R'] : []), '--', relative]);
+    if (!staged && !patch && (await this.files(root)).some(file => file.path === relative && file.untracked)) {
+      const result = await git(root, ['diff', '--no-index', '--no-ext-diff', '--no-textconv', '--', '/dev/null', relative], { maxBytes: 2 * 1024 * 1024 });
+      if (result.code !== 1 || result.truncated) throw new AppError('conflict', 'git_failed');
+      patch = result.stdout;
+    }
+    if (before !== await this.fingerprint(root, relative)) throw new AppError('conflict', 'git_workbench_path');
+    return { path: relative, staged, fingerprint: before, patch, hunks: parseHunks(patch), selectable: patch.includes('@@ ') && !/(?:Binary files|GIT binary patch)/.test(patch) };
+  }
+  async diff(project: string, task: string | undefined, relative: string, staged: boolean): Promise<GitFileDiff> {
+    return this.locked(project, task, false, root => this.fileDiff(root, relative, staged));
+  }
+  async stageLines(project: string, task: string | undefined, relative: string, staged: boolean, fingerprint: string, lines: number[]): Promise<void> {
+    return this.locked(project, task, true, async root => {
+      const current = await this.fileDiff(root, relative, staged);
+      if (current.fingerprint !== fingerprint || !current.selectable || (await this.files(root)).some(file => file.path === relative && file.conflict)) throw new AppError('conflict', 'git_workbench_path');
+      const patch = selectedPatch(current.patch, lines);
+      const temp = await fs.mkdtemp(path.join(os.tmpdir(), 'yumeewade-patch-'));
+      try {
+        const patchFile = path.join(temp, 'patch');
+        await fs.writeFile(patchFile, patch, { mode: 0o600 });
+        await this.command(root, ['apply', '--cached', '--check', '--', patchFile]);
+        if (current.fingerprint !== await this.fingerprint(root, relative)) throw new AppError('conflict', 'git_workbench_path');
+        await this.command(root, ['apply', '--cached', '--', patchFile]);
+      } finally { await fs.rm(temp, { recursive: true, force: true }); }
+    });
+  }
+  async conflict(project: string, task: string | undefined, relative: string): Promise<GitConflictView> {
+    return this.locked(project, task, false, async root => {
+      await this.safePath(root, relative);
+      const entries = split(await this.command(root, ['ls-files', '--unmerged', '-z', '--', relative]));
+      if (!entries.length) throw new AppError('conflict', 'git_workbench_path');
+      const contents = new Map<number, string>();
+      for (const entry of entries) {
+        const match = /^(\d+) ([a-f0-9]+) ([123])\t/.exec(entry);
+        if (!match || match[1] === '120000' || match[1] === '160000') throw new AppError('forbidden', 'git_workbench_path');
+        const size = Number((await this.command(root, ['cat-file', '-s', match[2]!])).trim());
+        if (size > 1024 * 1024) throw new AppError('too_large');
+        const content = await this.command(root, ['cat-file', 'blob', match[2]!]);
+        if (content.includes('\0')) throw new AppError('conflict', 'git_workbench_path');
+        contents.set(Number(match[3]), content);
+      }
+      return { path: relative, base: contents.get(1) ?? null, ours: contents.get(2) ?? null, theirs: contents.get(3) ?? null };
+    });
+  }
+  async compareTasks(project: string, leftTask: string, rightTask: string): Promise<TaskComparison> {
+    if (leftTask === rightTask) throw new AppError('bad_request', 'git_workbench_path');
+    return this.locked(project, undefined, false, async () => {
+      const left = (await this.location(project, leftTask)).root;
+      const right = (await this.location(project, rightTask)).root;
+      const leftBranch = (await this.command(left, ['rev-parse', '--abbrev-ref', 'HEAD'])).trim();
+      const rightBranch = (await this.command(right, ['rev-parse', '--abbrev-ref', 'HEAD'])).trim();
+      const paths = new Set([...split(await this.command(left, ['ls-files', '-z', '--cached', '--others', '--exclude-standard'])), ...split(await this.command(right, ['ls-files', '-z', '--cached', '--others', '--exclude-standard']))]);
+      if (paths.size > 5000) throw new AppError('too_large');
+      const files: TaskComparison['files'] = []; let bytes = 0; let inputBytes = 0;
+      for (const relative of paths) {
+        if (isLocalSecret(relative)) continue;
+        await this.safePath(left, relative); await this.safePath(right, relative);
+        const content = async (root: string) => {
+          const full = path.join(root, relative);
+          const stat = await fs.stat(full).catch((error: NodeJS.ErrnoException) => { if (error.code === 'ENOENT') return null; throw error; });
+          if (stat && (!stat.isFile() || stat.size > 1024 * 1024)) throw new AppError('too_large');
+          inputBytes += stat?.size ?? 0;
+          if (inputBytes > 32 * 1024 * 1024) throw new AppError('too_large');
+          return stat ? await fs.readFile(full) : null;
+        };
+        const a = await content(left); const b = await content(right);
+        if (a === null && b === null || a !== null && b !== null && a.equals(b)) continue;
+        if (files.length >= 100) throw new AppError('too_large');
+        const result = await git(left, ['diff', '--no-index', '--no-ext-diff', '--no-textconv', '--', a === null ? '/dev/null' : path.join(left, relative), b === null ? '/dev/null' : path.join(right, relative)], { maxBytes: 1024 * 1024 });
+        if (result.truncated || result.code !== 1) throw new AppError('conflict', 'git_failed');
+        bytes += Buffer.byteLength(result.stdout);
+        if (bytes > 2 * 1024 * 1024) throw new AppError('too_large');
+        files.push({ path: relative, patch: result.stdout.split('\n').map(line => /^(?:diff --git |--- |\+\+\+ |Binary files )/.test(line) ? line.replaceAll(left, 'left').replaceAll(right, 'right') : line).join('\n') });
+      }
+      return { leftTask, rightTask, leftBranch, rightBranch, files };
+    });
+  }
   async resolve(project: string, task: string | undefined, relative: string): Promise<void> {
     return this.locked(project, task, true, async root => {
       if (!(await this.files(root)).some(file => file.path === relative && file.conflict)) throw new AppError('conflict', 'git_workbench_path');
@@ -95,14 +195,15 @@ export class GitWorkbench {
       await this.command(root, ['add', '--', relative]);
     });
   }
-  async commit(project: string, task: string | undefined, message: string): Promise<{ sha: string }> {
+  async commit(project: string, task: string | undefined, message: string, options: { bypassHooks?: boolean; confirmed?: boolean } = {}): Promise<{ sha: string }> {
     if (!message.trim() || message.length > 10_000 || message.includes('\0')) throw new AppError('bad_request', 'git_commit_message');
+    if (options.bypassHooks && !options.confirmed) throw new AppError('bad_request', 'git_confirm_required');
     return this.locked(project, task, true, async root => {
       const files = await this.files(root);
       if (files.some(file => file.conflict)) throw new AppError('conflict', 'merge_conflict');
       if (files.some(file => file.staged && file.secret) || split(await this.command(root, ['diff', '--cached', '--name-only', '-z'])).some(isLocalSecret)) throw new AppError('forbidden', 'git_workbench_secret');
       if (!files.some(file => file.staged)) throw new AppError('conflict', 'git_nothing_staged');
-      await this.command(root, ['-c', 'core.hooksPath=/dev/null', 'commit', '--no-verify', '-m', message]);
+      await this.command(root, [...(options.bypassHooks ? ['-c', 'core.hooksPath=/dev/null'] : []), 'commit', ...(options.bypassHooks ? ['--no-verify'] : []), '-m', message]);
       return { sha: (await this.command(root, ['rev-parse', 'HEAD'])).trim() };
     });
   }

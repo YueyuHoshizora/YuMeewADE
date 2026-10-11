@@ -5,6 +5,19 @@ import { Router, reqString } from '../router.ts';
 export function registerWorkbenchRoutes(router: Router, app: App): void {
   router.get('/api/git/status', async ({ query }) => app.gitWorkbench.status(reqString(query, 'project', 120), query.has('task') ? reqString(query, 'task', 120) : undefined));
   router.get('/api/git/pr-status', async ({ query }) => app.gitWorkbench.pullRequestStatus(reqString(query, 'project', 120), query.has('task') ? reqString(query, 'task', 120) : undefined));
+  router.get('/api/git/diff', async ({ query }) => app.gitWorkbench.diff(reqString(query, 'project', 120), query.has('task') ? reqString(query, 'task', 120) : undefined, reqString(query, 'path', 1000), query.get('staged') === 'true'));
+  router.get('/api/git/conflict', async ({ query }) => app.gitWorkbench.conflict(reqString(query, 'project', 120), query.has('task') ? reqString(query, 'task', 120) : undefined, reqString(query, 'path', 1000)));
+  router.get('/api/git/compare-options', async ({ query }) => (await app.tasks.list(reqString(query, 'project', 120))).filter(task => task.workdir || task.workspace === 'direct').map(task => ({ id: task.id, title: task.title })));
+  router.get('/api/git/compare-tasks', async ({ query }) => app.gitWorkbench.compareTasks(reqString(query, 'project', 120), reqString(query, 'leftTask', 120), reqString(query, 'rightTask', 120)));
+  router.post('/api/git/stage-lines', async ({ body }) => {
+    if (typeof body.staged !== 'boolean' || !Array.isArray(body.lines) || body.lines.length > 100_000 || body.lines.some((line: unknown) => typeof line !== 'number' || !Number.isSafeInteger(line))) throw new AppError('bad_request');
+    const project = reqString(body, 'project', 120); const task = body.task === undefined ? undefined : reqString(body, 'task', 120);
+    await app.gitWorkbench.stageLines(project, task, reqString(body, 'path', 1000), body.staged, reqString(body, 'fingerprint', 64), body.lines as number[]);
+    await app.oplog.record({ action: 'git.stage-lines', project, ...(task ? { task } : {}) });
+    if (task) app.verify.invalidate(project, task);
+    app.changed(project, task);
+    return { ok: true };
+  });
   for (const action of ['stage', 'unstage', 'resolve', 'commit', 'fetch', 'branch', 'push', 'pr'] as const) {
     router.post(`/api/git/${action}`, async ({ body }) => {
       const project = reqString(body, 'project', 120);
@@ -13,7 +26,9 @@ export function registerWorkbenchRoutes(router: Router, app: App): void {
       switch (action) {
         case 'stage': case 'unstage': await app.gitWorkbench.stage(project, task, reqString(body, 'path', 1000), action === 'unstage'); break;
         case 'resolve': await app.gitWorkbench.resolve(project, task, reqString(body, 'path', 1000)); break;
-        case 'commit': result = await app.gitWorkbench.commit(project, task, reqString(body, 'message', 10_000)); break;
+        case 'commit':
+          if (body.bypassHooks !== undefined && typeof body.bypassHooks !== 'boolean') throw new AppError('bad_request');
+          result = await app.gitWorkbench.commit(project, task, reqString(body, 'message', 10_000), { bypassHooks: body.bypassHooks === true, confirmed: body.confirmed === true }); break;
         case 'fetch': await app.gitWorkbench.fetch(project, task, reqString(body, 'remote', 100)); break;
         case 'branch':
           if (typeof body.create !== 'boolean') throw new AppError('bad_request');
