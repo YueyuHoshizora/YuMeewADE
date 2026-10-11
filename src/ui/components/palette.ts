@@ -56,6 +56,7 @@ export function openCommandPalette(context: ViewContext): void {
     { label: t('nav.settings'), action: go('#/settings') },
     { label: t('search.title'), action: go('#/search') },
     { label: t('nav.turn'), action: go('#/turn') },
+    { label: t('overview.title'), action: go('#/overview') },
     { label: t('palette.theme'), action: () => setTheme(getTheme() === 'dark' ? 'light' : 'dark') },
     { label: t('archive.browse'), action: () => archiveButton(context).click() },
   ];

@@ -19,6 +19,7 @@ import { openUsageDetails } from './components/usage-details.ts';
 import { showInitialCare } from './components/care.ts';
 import { mountTerminalDock, toggleTerminalDock } from './components/terminal-dock.ts';
 import { openCommandPalette, paletteShortcut } from './components/palette.ts';
+import { overviewView } from './views/overview.ts';
 
 const header = document.getElementById('header')!; const sidebar = document.getElementById('sidebar')!; const main = document.getElementById('main')!; const footer = document.getElementById('footer')!;
 mountTerminalDock();
@@ -88,7 +89,7 @@ function drawShell(): void {
   header.replaceChildren(menu, link(t('app.title'), '#/turn', 'brand'), el('span', 'version', `v${state.version}`), ...(visibleUpdate(state.update) ? [updateChip(state.update!, state.version, drawShell)] : []), el('span', 'spacer'), link(`${t('nav.turn')} · ${t('tree.reply')} ${replies} · ${t('tree.confirm')} ${confirmations}`, '#/turn', 'turn-button'), link(t('nav.settings'), '#/settings', 'settings-button'));
   header.append(button(t('terminalDock.toggle'), toggleTerminalDock));
   const searching = document.activeElement instanceof HTMLInputElement && document.activeElement.classList.contains('tree-search'); const top = sidebar.scrollTop;
-  const shell = { state, refresh }; sidebar.replaceChildren(el('div', 'sidebar-heading', t('nav.projects')), tree(shell), button(t('project.openExisting'), () => openProjectFromFolder(shell), 'new-project'), link(t('nav.new'), '#/new', 'new-project'));
+  const shell = { state, refresh }; sidebar.replaceChildren(link(t('overview.title'), '#/overview', 'new-project'), el('div', 'sidebar-heading', t('nav.projects')), tree(shell), button(t('project.openExisting'), () => openProjectFromFolder(shell), 'new-project'), link(t('nav.new'), '#/new', 'new-project'));
   sidebar.scrollTop = top; if (searching) sidebar.querySelector<HTMLInputElement>('.tree-search')?.focus({ preventScroll: true });
   document.documentElement.lang = getLocale(); drawFooter();
 }
@@ -114,6 +115,7 @@ function navigate(force = false): void {
   else if (parts[0] === 'open') view = openProjectView(context);
   else if (parts[0] === 'settings') view = settingsView(context, () => { drawShell(); navigate(true); });
   else if (parts[0] === 'search') view = searchView();
+  else if (parts[0] === 'overview') view = overviewView(context);
   else if (parts[0] === 'p' && project) view = projectView(context, project, params);
   else if (parts[0] === 't' && project && task) view = taskView(context, project, task, params);
   else view = turnView(context);

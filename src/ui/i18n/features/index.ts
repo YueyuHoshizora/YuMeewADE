@@ -32,6 +32,7 @@ import * as mcpManagement from './mcp-management.ts';
 import * as gitRemotes from './git-remotes.ts';
 import * as sideDiff from './side-diff.ts';
 import * as gitWorktrees from './git-worktrees.ts';
+import * as overview from './overview.ts';
 
 export const featureZhTW = {
   ...archive.featureZhTW,
@@ -69,6 +70,7 @@ export const featureZhTW = {
   ...gitRemotes.featureZhTW,
   ...sideDiff.featureZhTW,
   ...gitWorktrees.featureZhTW,
+  ...overview.featureZhTW,
 };
 export const featureZhCN = {
   ...archive.featureZhCN,
@@ -106,6 +108,7 @@ export const featureZhCN = {
   ...gitRemotes.featureZhCN,
   ...sideDiff.featureZhCN,
   ...gitWorktrees.featureZhCN,
+  ...overview.featureZhCN,
 };
 export const featureEn = {
   ...archive.featureEn,
@@ -143,6 +146,7 @@ export const featureEn = {
   ...gitRemotes.featureEn,
   ...sideDiff.featureEn,
   ...gitWorktrees.featureEn,
+  ...overview.featureEn,
 };
 export const featureJa = {
   ...archive.featureJa,
@@ -180,6 +184,7 @@ export const featureJa = {
   ...gitRemotes.featureJa,
   ...sideDiff.featureJa,
   ...gitWorktrees.featureJa,
+  ...overview.featureJa,
 };
 export const featureDe = {
   ...archive.featureDe,
@@ -217,6 +222,7 @@ export const featureDe = {
   ...gitRemotes.featureDe,
   ...sideDiff.featureDe,
   ...gitWorktrees.featureDe,
+  ...overview.featureDe,
 };
 export const featureFr = {
   ...archive.featureFr,
@@ -254,6 +260,7 @@ export const featureFr = {
   ...gitRemotes.featureFr,
   ...sideDiff.featureFr,
   ...gitWorktrees.featureFr,
+  ...overview.featureFr,
 };
 export const featureIt = {
   ...archive.featureIt,
@@ -291,4 +298,5 @@ export const featureIt = {
   ...gitRemotes.featureIt,
   ...sideDiff.featureIt,
   ...gitWorktrees.featureIt,
+  ...overview.featureIt,
 };

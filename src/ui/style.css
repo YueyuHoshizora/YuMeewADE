@@ -467,3 +467,13 @@ body.terminal-dock-open { grid-template-rows: 64px minmax(0, 1fr) var(--terminal
 .terminal-dock-resize { height: 8px; flex-shrink: 0; cursor: ns-resize; touch-action: none; border-top: 2px solid var(--border); }
 .terminal-tabs [role="tab"][aria-selected="true"] { border-color: var(--accent); color: var(--accent); }
 @media (max-width: 760px) { body.terminal-dock-open { grid-template-rows: 58px minmax(0, 1fr) var(--terminal-dock-height, 320px) auto; } }
+
+.overview-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 320px), 1fr)); gap: 16px; margin-top: 16px; }
+.overview-card { min-width: 0; padding: 16px; background: var(--panel); border: 1px solid var(--border); border-radius: 8px; }
+.overview-wide { grid-column: 1 / -1; }
+.overview-counts { display: flex; flex-wrap: wrap; gap: 16px; }
+.overview-counts details { flex: 1; min-width: 150px; }
+.overview-list { list-style: none; padding: 0; margin: 0; }
+.overview-list li { padding: 10px 0; overflow-wrap: anywhere; }
+.overview-list li + li { border-top: 1px solid var(--border); }
+.overview-card progress { max-width: 160px; }
