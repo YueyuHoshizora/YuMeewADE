@@ -11,6 +11,7 @@ import { cliGuidance } from '../components/onboarding.ts';
 import { mcpPanel } from '../components/mcp-management.ts';
 import { editorPreferencesPanel } from '../components/editor-preferences-panel.ts';
 import { editorLspPanel } from '../components/editor-lsp-panel.ts';
+import { mountProviderCapabilities } from '../components/provider-capabilities.ts';
 
 export function settingsView(context: ViewContext, redraw: () => void): View {
   const { state } = context; const node = el('div', 'page settings-page'); node.append(el('h1', '', t('nav.settings')));
@@ -39,6 +40,7 @@ export function settingsView(context: ViewContext, redraw: () => void): View {
   node.append(mcpPanel(context));
   node.append(editorPreferencesPanel());
   node.append(editorLspPanel(context));
+  node.append(mountProviderCapabilities());
   const initial = aiPicker(state, state.settings.initial); node.append(card(t('settings.initial'), initial.node, button(t('common.save'), async () => { await api.settings({ initial: initial.value() }); await context.refresh(); toast(t('common.saved')); }, 'primary')));
   const aiSection = card(t('settings.ais'));
   for (const info of state.ais.filter(ai => ai.name !== 'mock')) {

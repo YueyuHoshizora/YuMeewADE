@@ -11,6 +11,7 @@ function reqLogin(body: Record<string, unknown>): boolean {
 
 export function registerAiRoutes(router: Router, app: App): void {
   const refreshUsage = () => { void app.refreshUsage().catch(() => {}); };
+  router.get('/api/ai/capabilities', async () => ({ providers: app.providerCapabilities }));
   router.post('/api/accounts/add', async ({ body }) => {
     const settings = await app.settings.addAccount(reqString(body, 'ai', 20), reqString(body, 'name', 80), body['configDir'] === undefined ? undefined : reqString(body, 'configDir', 4096), reqLogin(body));
     app.changed();

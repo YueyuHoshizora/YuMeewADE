@@ -35,6 +35,7 @@ async function fixture(t: { after(fn: () => Promise<void>): void }) {
   config.cli.claude.command = path.join(root, 'missing-claude');
   config.cli.codex.command = path.join(root, 'missing-codex');
   config.cli.grok.command = path.join(root, 'missing-grok');
+  config.cli.gemini.command = path.join(root, 'missing-gemini');
   const settings: Settings = { initial: { ai: 'codex', model: 'gpt-6.1-sol', effort: 'high' }, hiddenModels: {}, modelOrder: {}, fullAccess: {}, accounts: {}, activeAccounts: {} };
   const deps = { config, ws, home, settings: { async get() { return settings; } } };
   return { root, home, ws, config, settings, deps, catalog: new AiCatalog(deps) };

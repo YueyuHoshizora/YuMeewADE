@@ -12,6 +12,13 @@ test('空設定等於預設值', () => {
   assert.equal(c.workspace.root, path.join(os.homedir(), 'Documents', 'YuMeewWorkspace'));
 });
 
+test('Codex defaults to local app-server and accepts explicit exec only', () => {
+  assert.equal(parseConfig('', null).cli.codex.mode, 'app-server');
+  assert.equal(parseConfig('cli:\n  codex:\n    mode: exec\n', null).cli.codex.mode, 'exec');
+  for (const override of ['mode: hybrid', 'appServerArgs: [app-server, --stdio, --listen, ws://127.0.0.1:1]', 'appServerArgs: [app-server, --stdio, --code-mode-host, https://example.com]', 'appServerArgs: [app-server, proxy]']) assert.throws(() => parseConfig(`cli:\n  codex:\n    ${override}\n`, null), ConfigError);
+  assert.equal(parseConfig('', null).cli.codex.fullAccess, true);
+});
+
 test('部分覆寫與型別驗證', () => {
   const c = parseConfig('server:\n  port: 5000\ncli:\n  codex:\n    fullAccess: false\nlimits:\n  queueLength: 3\n', null);
   assert.equal(c.server.port, 5000);

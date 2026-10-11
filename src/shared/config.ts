@@ -9,6 +9,9 @@ import { parseYamlMap, yamlScalar, type YamlMap, type YamlValue } from './yaml.t
 
 export interface CliCommandConfig {
   command: string;
+  /** Codex ordinary conversation transport; readonly remains its dedicated invocation. */
+  mode?: 'app-server' | 'exec';
+  appServerArgs?: string[];
   /** 無頭模式必要旗標（adapter 依此解析輸出）。 */
   baseArgs: string[];
   /** 預設是否跳過權限確認；設定頁可逐一覆寫（.yumeewade/settings.json）。 */
@@ -90,6 +93,8 @@ export const DEFAULT_CONFIG: Config = {
     },
     codex: {
       command: 'codex',
+      mode: 'app-server',
+      appServerArgs: ['app-server', '--stdio', '-c', 'cli_auth_credentials_store="file"'],
       baseArgs: ['exec', '--json', '--skip-git-repo-check'],
       fullAccess: true,
       fullAccessArgs: ['--dangerously-bypass-approvals-and-sandbox'],
@@ -241,9 +246,14 @@ function cliSection(map: YamlMap, name: 'claude' | 'codex' | 'grok' | 'gemini'):
   const where = `cli.${name}`;
   let baseArgs = strList(s, 'baseArgs', d.baseArgs, where);
   if ((name === 'claude' || name === 'codex') && JSON.stringify(baseArgs) === LEGACY_BASE_ARGS[name]) baseArgs = d.baseArgs;
+  const mode = str(s, 'mode', d.mode ?? 'exec', where);
+  if (mode !== 'app-server' && mode !== 'exec') throw new ConfigError(`${where}.mode 必須是 app-server 或 exec`);
+  const appServerArgs = mcpArgs(s, 'appServerArgs', d.appServerArgs ?? [], where);
+  if (name === 'codex' && mode === 'app-server' && (appServerArgs[0] !== 'app-server' || !appServerArgs.includes('--stdio') || appServerArgs.some(arg => /^(--listen|--code-mode-host|--ws-|proxy|daemon)/u.test(arg)))) throw new ConfigError(`${where}.appServerArgs 必須使用本機 stdio`);
   // 0.1 版的 dangerous／dangerousArgs 是自動複製的範本值，不代表使用者選擇，略過
   return {
     command: str(s, 'command', d.command, where),
+    ...(name === 'codex' ? { mode: mode as 'app-server' | 'exec', appServerArgs } : {}),
     baseArgs,
     fullAccess: bool(s, 'fullAccess', d.fullAccess, where),
     fullAccessArgs: strList(s, 'fullAccessArgs', d.fullAccessArgs, where),

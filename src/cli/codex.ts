@@ -12,6 +12,7 @@ import type { CliEvent, CliProvider, CliRun, SendOptions } from './provider.ts';
 import { codexPrompts, expandCodexPrompt, slashName } from './commands.ts';
 import { AppError } from '../shared/errors.ts';
 import { readonlyConfigured, reviewArgs } from './readonly.ts';
+import { codexAppServerRun } from './codex-app-server.ts';
 
 type QuotaEvent = Extract<CliEvent, { type: 'quota' }>;
 
@@ -317,6 +318,7 @@ export class CodexCliProvider implements CliProvider {
   readonly dangerous: boolean;
   readonly readonlyEnforcement = 'native-sandbox' as const;
   get supportsReadonly(): boolean { return readonlyConfigured('codex', this.cfg) && (process.platform === 'darwin' || process.platform === 'linux'); }
+  get supportsApprovals(): boolean { return (this.cfg.mode ?? 'app-server') === 'app-server'; }
   private readonly cfg: CliCommandConfig;
   private readonly env: NodeJS.ProcessEnv;
   private readonly home: string;
@@ -350,6 +352,7 @@ export class CodexCliProvider implements CliProvider {
 
   send(opts: SendOptions, onEvent: (ev: CliEvent) => void): CliRun {
     if (opts.readonly && !this.supportsReadonly) throw new AppError('bad_request', 'cli_unsupported');
+    if (!opts.readonly && (this.cfg.mode ?? 'app-server') === 'app-server') return codexAppServerRun(this.cfg, opts, opts.configDir ? { ...this.env, CODEX_HOME: opts.configDir } : this.env, onEvent);
     let completed = false;
     let failed = false;
     let thread = opts.resumeId;

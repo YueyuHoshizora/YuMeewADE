@@ -384,6 +384,7 @@ export class CredentialAccounts {
     return {
       name: ai, dangerous: config.fullAccess,
       supportsReadonly: base.supportsReadonly === true,
+      supportsApprovals: base.supportsApprovals === true,
       ...(base.readonlyEnforcement ? { readonlyEnforcement: base.readonlyEnforcement } : {}),
       available: () => base.available(),
       quota: async (configDir) => {

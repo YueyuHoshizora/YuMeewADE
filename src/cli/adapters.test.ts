@@ -211,6 +211,7 @@ test('CLI 零退出但沒有最終結果時失敗，保留部分文字', async (
         await fs.writeFile(script, `process.stdin.resume(); process.stdin.on('end', () => { console.log(${JSON.stringify(lines.join('\n'))}); });`);
         const cfg = {
           ...DEFAULT_CONFIG.cli[ai], command: process.execPath,
+          mode: 'exec' as const,
           baseArgs: [script], fullAccessArgs: [], safeArgs: [],
         };
         const provider = ai === 'claude'

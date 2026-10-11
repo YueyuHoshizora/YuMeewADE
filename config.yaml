@@ -37,6 +37,10 @@ cli:
     mcpRemoveArgs: [mcp, remove, --scope, user]
   codex:
     command: codex
+    # Separate stdio JSON-RPC lifecycle (Codex 0.162.1); use exec explicitly for legacy JSONL.
+    mode: app-server
+    appServerArgs: [app-server, --stdio, -c, 'cli_auth_credentials_store="file"']
+    # app-server safe mode uses on-request approvals and workspace-write; fullAccess remains explicit.
     baseArgs: [exec, --json, --skip-git-repo-check]
     # ⚠ 預設跳過權限確認與沙箱。
     fullAccess: true

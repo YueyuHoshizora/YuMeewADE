@@ -8,6 +8,8 @@ import { ChatStore } from '../chat/store.ts';
 import { cleanupUploads } from '../chat/attachments.ts';
 import type { CliProvider } from '../cli/provider.ts';
 import { createProviders } from '../cli/providers.ts';
+import { providerCapabilities } from '../cli/capabilities.ts';
+import type { ProviderCapability } from '../shared/ai-capabilities.ts';
 import type { CredentialAccounts } from '../cli/accounts.ts';
 import { WorktreeService } from '../git/worktree.ts';
 import { VerifyService } from '../git/verify.ts';
@@ -101,6 +103,7 @@ export class App {
   readonly memory: MemoryLedger;
   readonly mutations = new MutationGate();
   private readonly providers: Record<string, CliProvider>;
+  readonly providerCapabilities: ProviderCapability[];
   private readonly accounts: CredentialAccounts | undefined;
   readonly sse: SseHub;
   readonly sendLimiter: RateLimiter;
@@ -181,6 +184,7 @@ export class App {
       ...(process.env.YUMEEWADE_UPDATE_WINDOWS_THUMBPRINT ? { windowsThumbprint: process.env.YUMEEWADE_UPDATE_WINDOWS_THUMBPRINT } : {}),
     });
     this.providers = options.providers ?? createProviders(config, options.accounts!);
+    this.providerCapabilities = providerCapabilities(this.providers);
     this.testExplorer = new TestExplorerService({ ws: this.ws, projects: this.projects, tasks: this.tasks, verify: this.verify,
       beforeRun: project => this.trust.assertExecutable(project),
       isRunning: (p, t) => this.runner.isRunning(p, t) || this.execution.isRunning(p, t) || this.terminal.isRunning(p, t) || this.review.isBusy(p, t) || this.workflows.isBusy(p, t),
