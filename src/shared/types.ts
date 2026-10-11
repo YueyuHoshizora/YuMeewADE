@@ -706,6 +706,11 @@ export interface ExecutionRun {
 /** `body`：封存專案的外部主資料夾（PROJECT.md 有填時才有），供「開啟專案」比對選到的資料夾。 */
 export interface ArchiveEntry { key: string; project: string; task: string; name: string; archivedAt: number; body?: string }
 export interface ArchivePreview { git: string[]; preserved: string[]; unavailable: string[] }
+export interface WorktreeMaintenanceEntry {
+  path: string; branch: string; task: string;
+  kind: 'main' | 'active' | 'archived' | 'orphan';
+  locked: boolean; prunable: boolean; dirty: boolean | null; removable: boolean;
+}
 export interface GitWorkbenchFile {
   path: string; originalPath?: string; index: string; working: string;
   staged: boolean; unstaged: boolean; untracked: boolean; conflict: boolean; secret: boolean;

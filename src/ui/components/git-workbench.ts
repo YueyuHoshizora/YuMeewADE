@@ -1,4 +1,4 @@
-import type { EditorDocument, GitWorkbenchStatus, GitFileDiff, GitConflictView, GitRemote } from '../../shared/types.ts';
+import type { EditorDocument, GitWorkbenchStatus, GitFileDiff, GitConflictView, GitRemote, WorktreeMaintenanceEntry } from '../../shared/types.ts';
 import { query, request } from '../api.ts';
 import { t } from '../i18n/index.ts';
 import { area, button, confirmModal, el, field, input, modal, row, select, toast, type ViewContext } from './dom.ts';
@@ -43,6 +43,30 @@ export function gitWorkbenchButton(context: ViewContext, project: string, task?:
     const refresh = async () => {
       const state = await request<GitWorkbenchStatus>(query('/api/git/status', ids));
       panel.replaceChildren(el('p', '', `${t(state.location === 'main' ? 'workbench.main' : 'workbench.task')}: ${state.root}`), el('p', '', `${t('workbench.branch')}: ${state.branch}`), el('p', '', `${t('workbench.upstream')}: ${state.upstream ?? '—'} / ${state.ahead} / ${state.behind}`), button(t('workbench.refresh'), refresh));
+      panel.append(button(t('worktrees.title'), async () => {
+        const content = el('div', 'form');
+        const reload = async () => {
+          content.replaceChildren(el('p', '', t('worktrees.leaveDirty')));
+          for (const entry of await request<WorktreeMaintenanceEntry[]>(query('/api/git/worktrees', { project }))) {
+            const item = el('div', 'form');
+            item.append(el('p', '', `${entry.path} — ${entry.branch || '—'} — ${t(`worktrees.${entry.kind}`)} — ${t(entry.dirty === null ? 'worktrees.missing' : entry.dirty ? 'worktrees.dirty' : 'worktrees.clean')}${entry.locked ? ` — ${t('worktrees.locked')}` : ''}${entry.prunable ? ` — ${t('worktrees.prunable')}` : ''}`));
+            if (entry.removable) item.append(button(t('worktrees.remove'), async () => {
+              if (!await confirmModal(t('worktrees.remove'), entry.path, t('worktrees.remove'))) return;
+              await request('/api/git/worktrees/remove', { project, path: entry.path, confirmed: true });
+              await reload(); await context.refresh();
+            }));
+            content.append(item);
+          }
+          content.append(button(t('worktrees.prune'), async () => {
+            const { preview } = await request<{ preview: string }>(query('/api/git/worktrees/prune-preview', { project }));
+            if (!preview.trim()) { toast(t('worktrees.noPrune')); return; }
+            if (!await confirmModal(t('worktrees.prune'), preview, t('worktrees.prune'))) return;
+            await request('/api/git/worktrees/prune', { project, preview, confirmed: true });
+            await reload(); await context.refresh();
+          }));
+        };
+        await reload(); modal(t('worktrees.title'), content);
+      }));
       for (const [title, files] of [
         ['workbench.conflicts', state.files.filter(file => file.conflict)],
         ['workbench.staged', state.files.filter(file => file.staged)],

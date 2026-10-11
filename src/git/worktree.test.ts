@@ -512,3 +512,57 @@ test('revive refuses a preexisting user checkout without overwriting it', () => 
   assert.equal(await fs.readFile(path.join(dir, 'unique.txt'), 'utf8'), 'user checkout change\n');
   assert.equal(await fs.readFile(path.join(dir, '.git'), 'utf8'), registration);
 }));
+
+test('maintenance classifies main, active, archived, orphan, locked and missing copies safely', () => withTmpWorkspace(async ws => {
+  const projects = new ProjectLedger(ws), tasks = new TaskLedger(ws);
+  await projects.create({ name: 'P' });
+  const wt = new WorktreeService({ ws, projects, tasks, diffBytes: 100_000 });
+  const task = await tasks.create('P', { title: 'active' });
+  const active = await wt.prepare('P', task.id), repo = ws.projectDir('P');
+  const orphan = ws.worktreeDir('P', 'T999'), missing = ws.worktreeDir('P', 'T998');
+  const locked = ws.worktreeDir('P', 'T997');
+  for (const dir of [orphan, missing, locked]) await gitOk(repo, ['worktree', 'add', '--detach', dir, 'HEAD']);
+  await gitOk(repo, ['worktree', 'lock', locked]);
+  await fs.rm(missing, { recursive: true });
+  let entries = await wt.maintenance('P');
+  assert.equal(entries.find(entry => entry.path === repo)?.kind, 'main');
+  assert.equal(entries.find(entry => entry.path === active)?.kind, 'active');
+  assert.equal(entries.find(entry => entry.path === active)?.removable, false);
+  assert.equal(entries.find(entry => entry.path === missing)?.prunable, true);
+  assert.equal(entries.find(entry => entry.path === locked)?.locked, true);
+  assert.equal(entries.find(entry => entry.path === orphan)?.removable, true);
+  await assert.rejects(wt.removeStale('P', active));
+  await assert.rejects(wt.removeStale('P', repo));
+  await assert.rejects(wt.removeStale('P', locked));
+  await fs.writeFile(path.join(orphan, 'dirty.txt'), 'keep');
+  await assert.rejects(wt.removeStale('P', orphan));
+  assert.equal(await fs.readFile(path.join(orphan, 'dirty.txt'), 'utf8'), 'keep');
+  await fs.rm(path.join(orphan, 'dirty.txt'));
+  await fs.writeFile(path.join(orphan, '.env'), 'ignored secret');
+  assert.equal((await wt.maintenance('P')).find(entry => entry.path === orphan)?.dirty, true);
+  await assert.rejects(wt.removeStale('P', orphan));
+  await fs.rm(path.join(orphan, '.env'));
+  const trash = path.join(ws.projectDir('P'), '.ai', 'trash', `${task.id}-abc`);
+  await fs.mkdir(trash, { recursive: true });
+  await fs.rename(ws.taskFile('P', task.id), path.join(trash, `${task.id}.md`));
+  entries = await wt.maintenance('P');
+  assert.equal(entries.find(entry => entry.path === active)?.kind, 'archived');
+  await wt.removeStale('P', active);
+  await wt.removeStale('P', orphan);
+  const preview = await wt.prunePreview('P');
+  assert.ok(preview.includes(path.basename(missing)));
+  await assert.rejects(wt.pruneStale('P', 'outdated preview'));
+  await wt.pruneStale('P', preview);
+  assert.equal((await wt.maintenance('P')).some(entry => entry.path === missing), false);
+}));
+
+test('maintenance refuses pruning a missing active task copy', () => withTmpWorkspace(async ws => {
+  const projects = new ProjectLedger(ws), tasks = new TaskLedger(ws);
+  await projects.create({ name: 'P' });
+  const wt = new WorktreeService({ ws, projects, tasks, diffBytes: 100_000 });
+  const task = await tasks.create('P', { title: 'active' });
+  const dir = await wt.prepare('P', task.id);
+  await fs.rm(dir, { recursive: true });
+  await assert.rejects(wt.pruneStale('P', await wt.prunePreview('P')));
+  assert.equal((await wt.maintenance('P')).find(entry => entry.path === dir)?.kind, 'active');
+}));

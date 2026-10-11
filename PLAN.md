@@ -560,3 +560,4 @@ electron 44.7.0、vite 8.3.4、electron-builder 26.15.3、typescript 7.0.2、@ty
 - Git 遠端管理：fetch／push URL 列表、名稱與 URL 白名單驗證、新增／改名／set-url／確認移除；本地分支改名與 `-d` 安全刪除，`-D` 必須另行二次確認，拒絕現行及 live 作業 `ym/<task>` 分支；沿用 `/api/git/` 信任閘門與有界／逾時 Git helper。
 - 作業副本與 Git 逐檔差異加入唯讀 CodeMirror MergeView 並排切換，重用語言上色、摺疊未變區段、單一同步捲動容器與 localStorage 偏好；`GET /api/git/diff-contents` 沿用信任閘門、路徑／symlink／機密驗證，每版本上限 1 MiB，二進位／超大回旗標並保留統一差異。副本以主線 merge-base 為基底，working 以 index 為基底，staged 使用 index→HEAD 的取消暫存方向。
 - 專案範圍的前往檔案／檔案瀏覽：`GET /api/task/files` 與 `/api/task/file` 在 `task` 省略或空字串時使用專案主資料夾；保留機密排除、50 筆結果、256 KiB 讀取與 realpath 防逃逸。兩路由在執行 Git 前檢查專案信任，受限專案拒絕；作業範圍維持副本語意。
+- 工作副本維護：`GET /api/git/worktrees` 以 NUL porcelain 比對使用中／封存台帳，顯示主副本、孤立、缺失／可 prune、locked、branch 與 dirty（含 ignored）；`GET /api/git/worktrees/prune-preview` 預覽，`POST /api/git/worktrees/prune` 精確核對預覽及確認並拒絕缺失的使用中副本；`POST /api/git/worktrees/remove` 僅確認移除本專案 Work 內乾淨孤立／封存副本，絕不 force。dirty 孤立副本留在原地並說明手動備份／處理；主副本與使用中作業永不移除。全部沿用 `/api/git/` 信任閘門。

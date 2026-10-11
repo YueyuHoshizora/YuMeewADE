@@ -3,6 +3,21 @@ import { AppError } from '../../shared/errors.ts';
 import { Router, reqString, optString } from '../router.ts';
 
 export function registerGitRoutes(router: Router, app: App): void {
+  router.get('/api/git/worktrees', async ({ query }) => app.worktree.maintenance(reqString(query, 'project', 120)));
+  router.get('/api/git/worktrees/prune-preview', async ({ query }) => ({ preview: await app.worktree.prunePreview(reqString(query, 'project', 120)) }));
+  router.post('/api/git/worktrees/prune', async ({ body }) => {
+    if (body.confirmed !== true) throw new AppError('bad_request', 'field_type', { field: 'confirmed' });
+    const project = reqString(body, 'project', 120);
+    if (typeof body.preview !== 'string' || body.preview.length > 100_000) throw new AppError('bad_request', 'field_type', { field: 'preview' });
+    await app.worktree.pruneStale(project, body.preview);
+    app.changed(project); return { ok: true };
+  });
+  router.post('/api/git/worktrees/remove', async ({ body }) => {
+    if (body.confirmed !== true) throw new AppError('bad_request', 'field_type', { field: 'confirmed' });
+    const project = reqString(body, 'project', 120);
+    await app.worktree.removeStale(project, reqString(body, 'path', 4000));
+    app.changed(project); return { ok: true };
+  });
   router.get('/api/task/preview', async ({ query }) => app.worktree.preview(reqString(query, 'project', 120), reqString(query, 'task', 120)));
   router.get('/api/task/diff', async ({ query }) => app.worktree.diff(reqString(query, 'project', 120), reqString(query, 'task', 120)));
   router.post('/api/task/merge', async ({ body }) => {

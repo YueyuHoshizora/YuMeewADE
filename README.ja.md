@@ -60,6 +60,7 @@ Claude／Codex のモデル一覧・推論強度は CLI キャッシュから取
 
 ## IDE・復元・メンテナンス
 
+- **ワークツリー保守**：Git ワークベンチでメイン、使用中／アーカイブ済みタスク、孤立、欠落、ロックとブランチ・変更状態を表示。無効な登録はプレビュー後に確認して削除します。コピー削除は確認が必要で、プロジェクトの Work 内の変更のない孤立／アーカイブ済みコピーのみ対象。使用中・メイン・変更あり（ignored を含む）は保持します。
 - **Git 履歴**：ページ付きグラフとファイル履歴、コミット情報／ファイル／差分、行の blame を表示。秘密・範囲外パスは拒否します。
 - **左右差分**：作業コピーと Git ファイル差分に読み取り専用 CodeMirror 比較を追加。構文色分け、未変更領域の折りたたみ、同期スクロールと表示設定の保存に対応。バイナリや片方が 1 MiB 超の場合は統一差分を維持。行レビュー／ステージは統一表示で操作します。
 - **Stash／リベース**：未追跡ファイルも保存可能、適用／pop／確認削除。cherry-pick の競合は自動中止。リベースは dirty tree を拒否し、三者比較で解決後に続行・中止できます。強制 push は行いません。
@@ -193,6 +194,7 @@ HTTP JSON と SSE を使い、デスクトップ版と Web 版で完全に共通
 | `GET /api/mcp/list?ai=`, `POST /api/mcp/add`, `POST /api/mcp/remove` | 現在のアカウントの一覧／追加 `{ai,server}`／削除 `{ai,name,confirmed:true}`；秘密の値は返しません |
 | `POST /api/upload`、`GET /api/upload`、`GET /api/attachment` | 画像アップロード、プレビュー、会話の添付ファイル |
 | `GET /api/task/preview`、`GET /api/task/diff`、`POST /api/task/merge`、`/api/task/merge-exclusion`、`/api/task/copyclear` | 作業コピー |
+| `GET /api/git/worktrees`, `GET /api/git/worktrees/prune-preview`, `POST /api/git/worktrees/{prune,remove}` | プロジェクトのワークツリー保守。POST は `confirmed: true`、prune は完全一致の `preview`、remove は `path` が必要 |
 | `GET /api/task/merged`、`POST /api/task/unmerge` | メインフォルダの最新コミットがこのタスクのマージ（`YuMeewADE-Task:` トレーラー）ならそのハッシュを返す。マージの取り消し：メインフォルダをマージ前に戻し、ブランチと作業コピーを再作成してタスクを進行中に戻す。新しいコミットや未コミットの内容があると 409 |
 | `GET /api/task/files?project=&task=&q=`、`GET /api/task/file?project=&task=&path=` | 読み取り専用閲覧と `@ファイル名` メンション：`task` 省略／空文字はメインフォルダー、それ以外はタスクの閲覧ルートを使用。制限付きプロジェクトは403。秘密を除外して最大50件検索、先頭256 KiBを読み取り、一覧内かつ解決後もルート内のパスのみ許可。バイナリは内容なし |
 | `POST /api/task/revert-file` | `{project, task, path}`：1 ファイルをメインフォルダから分岐した時点の状態に戻す（既存ファイルは元の内容に、新規追加は削除）。パスは現在変更のあるファイルであること（なければ 404）。AI 実行中は 409 |

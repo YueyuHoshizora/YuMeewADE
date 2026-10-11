@@ -54,6 +54,7 @@ Claude/Codex model lists and reasoning efforts come from their own caches, with 
 
 ## IDE, recovery and maintenance
 
+- **Worktree maintenance**: the Git workbench lists main, active/archived task, orphan, missing and locked checkouts with branch and cleanliness. Preview and confirm pruning stale registrations. Removal requires confirmation and only accepts clean orphan/archived copies inside the project's Work directory; active/main and dirty copies (including ignored files) remain untouched.
 - **Git history**: the workbench provides paginated graph and file history, commit metadata/files/diffs and line blame; secret and out-of-scope paths are refused.
 - **Side-by-side diff**: task copies and Git file diffs offer read-only CodeMirror comparison with syntax highlighting, collapsed unchanged regions and synchronized scrolling. The preference persists; binary files or either version above 1 MiB retain unified diff. Use unified view for line reviews/staging.
 - **Stash/rebase**: save optionally untracked files, apply/pop/confirmed drop; conflicting cherry-picks abort automatically. Rebase refuses dirty trees and supports three-way resolution followed by continue/abort, never force-push.
@@ -193,6 +194,7 @@ HTTP JSON plus SSE, identical in desktop and web versions. Types are defined in 
 | `GET /api/mcp/list?ai=`, `POST /api/mcp/add`, `POST /api/mcp/remove` | Active-account MCP list/add `{ai,server}`/remove `{ai,name,confirmed:true}`; secret values are never returned |
 | `POST /api/upload`、`GET /api/upload`、`GET /api/attachment` | Image upload, preview, conversation attachments |
 | `GET /api/task/preview`、`GET /api/task/diff`、`POST /api/task/merge`、`/api/task/merge-exclusion`、`/api/task/copyclear` | Working copies |
+| `GET /api/git/worktrees`, `GET /api/git/worktrees/prune-preview`, `POST /api/git/worktrees/{prune,remove}` | Project worktree maintenance; POST requires `confirmed: true`, prune requires exact `preview`, remove requires `path` |
 | `GET /api/task/merged`, `POST /api/task/unmerge` | Returns the hash when the main folder’s latest commit is this task’s merge (`YuMeewADE-Task:` trailer). Undo merge: the main folder goes back to before the merge, the branch and working copy are recreated and the task returns to in progress. 409 if newer commits or uncommitted content exist |
 | `GET /api/task/files?project=&task=&q=`, `GET /api/task/file?project=&task=&path=` | Read-only browsing and `@file` mentions: omitted/empty `task` uses the main folder, otherwise the task view root; restricted projects return 403. Search returns up to 50 files excluding local secrets; reads return the first 256 KiB, require a listed path resolving inside the root, and omit binary content |
 | `POST /api/task/revert-file` | `{project, task, path}`: revert one file to how it was when the copy branched from the main folder (existing files get their original content back, newly added ones are deleted); the path must be a currently changed file, otherwise 404; 409 while the AI is running |

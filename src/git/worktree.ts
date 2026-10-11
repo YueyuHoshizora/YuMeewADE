@@ -6,11 +6,12 @@ import type { Workspace } from '../ledger/workspace.ts';
 import type { ProjectLedger } from '../ledger/projects.ts';
 import type { TaskLedger } from '../ledger/tasks.ts';
 import { CompletionStore } from '../ledger/completion.ts';
+import { ArchiveService } from '../ledger/archive.ts';
 import { OpLog } from '../ledger/oplog.ts';
 import { AppError } from '../shared/errors.ts';
 import { isInside, pathExists, withFileLocks } from '../shared/fsx.ts';
 import { log } from '../shared/log.ts';
-import type { FileView, MergePreview, MergeResult, Task, TaskOverlap, TurnChanges } from '../shared/types.ts';
+import type { FileView, MergePreview, MergeResult, Task, TaskOverlap, TurnChanges, WorktreeMaintenanceEntry } from '../shared/types.ts';
 import { branchExists, commitAll, ensureRepo, git, gitOk, isLocalSecret, isRepo } from './git.ts';
 import { RecoveryStore } from './recovery.ts';
 
@@ -39,6 +40,60 @@ export class WorktreeService {
     this.diffBytes = deps.diffBytes;
   }
   branch(task: string): string { return `ym/${task}`; }
+  /** NUL-delimited porcelain keeps whitespace and newlines in paths unambiguous. */
+  async maintenance(project: string): Promise<WorktreeMaintenanceEntry[]> {
+    const repo = await this.bodyPath(project);
+    if (!(await isRepo(repo))) return [];
+    const records = await this.tasks.list(project);
+    const archived = await new ArchiveService(this.ws, this.projects, this.tasks, this).list(project);
+    const raw = await gitOk(repo, ['worktree', 'list', '--porcelain', '-z']);
+    const entries: WorktreeMaintenanceEntry[] = [];
+    const realRoot = await fs.realpath(this.ws.root);
+    for (const block of raw.split('\0\0').filter(Boolean)) {
+      const fields = block.split('\0');
+      const listed = fields.find(value => value.startsWith('worktree '))?.slice(9);
+      if (!listed) throw new AppError('internal', 'git_failed');
+      // Git canonicalizes macOS /var aliases; ledger paths retain the configured root.
+      const dir = isInside(realRoot, listed) ? path.join(this.ws.root, path.relative(realRoot, listed)) : listed;
+      const resolved = path.resolve(dir);
+      const task = records.find(record => record.workspace !== 'direct' && [record.workdir, this.ws.worktreeDir(project, record.id)].filter(Boolean).some(value => path.resolve(value) === resolved));
+      const archivedTask = archived.find(record => this.ws.worktreeDir(project, record.task) === resolved);
+      const main = entries.length === 0 || resolved === path.resolve(repo);
+      const missing = !(await pathExists(dir));
+      const locked = fields.some(value => value === 'locked' || value.startsWith('locked '));
+      const kind = main ? 'main' : task ? 'active' : archivedTask ? 'archived' : 'orphan';
+      const dirty = missing ? null : (await gitOk(dir, ['status', '--porcelain', '--untracked-files=all', '--ignored'])).length > 0;
+      const managed = path.dirname(resolved) === path.join(this.ws.workDir, project);
+      entries.push({ path: dir, branch: fields.find(value => value.startsWith('branch '))?.slice(7).replace(/^refs\/heads\//, '') ?? '', kind, task: task?.id ?? archivedTask?.task ?? '', locked, prunable: missing && !locked, dirty, removable: managed && !main && !task && !missing && !locked && dirty === false });
+    }
+    return entries;
+  }
+  async prunePreview(project: string): Promise<string> {
+    const result = await git(await this.bodyPath(project), ['worktree', 'prune', '--dry-run', '--verbose', '--expire', 'now']);
+    if (result.code !== 0 || result.truncated || result.stderr.length >= 4000) throw new AppError('internal', 'git_failed');
+    return result.stdout + result.stderr;
+  }
+  async pruneStale(project: string, preview: string): Promise<void> {
+    await this.mutate(project, async () => {
+      const entries = await this.maintenance(project);
+      if (entries.some(entry => entry.prunable && (entry.kind === 'active' || entry.kind === 'main'))) throw new AppError('conflict', 'archive_unsafe_path');
+      if (await this.prunePreview(project) !== preview) throw new AppError('conflict', 'archive_restore_conflict');
+      await gitOk(await this.bodyPath(project), ['worktree', 'prune', '--verbose', '--expire', 'now']);
+      await new OpLog(this.ws).record({ action: 'worktree.prune', project });
+    });
+  }
+  async removeStale(project: string, target: string): Promise<void> {
+    await this.mutate(project, async () => {
+      const entry = (await this.maintenance(project)).find(item => item.path === target);
+      if (!entry?.removable) throw new AppError('conflict', 'archive_unsafe_path');
+      const parent = await fs.realpath(path.dirname(target));
+      if ((await fs.lstat(target)).isSymbolicLink() || (await fs.lstat(path.dirname(target))).isSymbolicLink() || !isInside(await fs.realpath(this.ws.workDir), parent)) throw new AppError('conflict', 'archive_unsafe_path');
+      await this.verifyFamily(await this.bodyPath(project), target);
+      // Git rechecks cleanliness; never force deletion, even after a clean preview.
+      await gitOk(await this.bodyPath(project), ['worktree', 'remove', '--', target]);
+      await new OpLog(this.ws).record({ action: 'worktree.remove-stale', project });
+    });
+  }
   async bodyPath(project: string): Promise<string> {
     return (await this.projects.get(project)).body || this.ws.projectDir(project);
   }
