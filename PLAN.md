@@ -538,3 +538,4 @@ electron 44.7.0、vite 8.3.4、electron-builder 26.15.3、typescript 7.0.2、@ty
 - GET `/api/care/log` 僅讀目前工作區固定 `.yumeewade/yumeewade.log`，拒絕 symlink，尾端 256 KiB／1000 行有界；套用 home／憑證欄位／Bearer／token-like 防禦遮蔽。Care 提供等級／文字篩選、刷新與複製；本機日誌既有堆疊可呈現，不聲稱完美去識別。
 - GitHub PR：Git 工作台只在使用者按下取得時連網，依目前分支查詢 PR、CI／checks、reviewDecision、mergeStateStatus、審查／留言／reviewThreads 及外部連結。上限 50 checks、30 reviews/comments/threads、每 thread 10 comments；無 gh／未登入明確顯示，所有路由沿用 `/api/git/` 信任門檻。
 - GitHub Issues：手動搜尋最多 30 筆 open issues，本文上限 10,000 字，從 issue 建立作業並預填可編輯的標題／第一指示草稿，寫入 `issue`／`issueUrl`；不自動送出。專案頁同時顯示 PROJECT.md 人工維護的本地 issues（text／level），不混淆遠端清單；路由同 PR 信任門檻。
+- 命令面板：⌘/Ctrl+Shift+P，穩定排序的模糊篩選、原生 modal dialog／combobox／listbox、鍵盤選取；依路由列出檔案／Git／執行操作，支援所有專案作業、語言、外觀、封存清單與確認後停止全部 AI。

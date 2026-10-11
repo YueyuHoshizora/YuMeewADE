@@ -56,6 +56,7 @@ Claude/Codex model lists and reasoning efforts come from their own caches, with 
 
 - **Git history**: the workbench provides paginated graph and file history, commit metadata/files/diffs and line blame; secret and out-of-scope paths are refused.
 - **Stash/rebase**: save optionally untracked files, apply/pop/confirmed drop; conflicting cherry-picks abort automatically. Rebase refuses dirty trees and supports three-way resolution followed by continue/abort, never force-push.
+- **Command palette**: ⌘/Ctrl+Shift+P fuzzy-filters projects, tasks and available actions; ↑↓ selects, Enter runs, Esc closes. Change language/appearance, open scoped files/Git tools, or stop all AI runs after confirmation.
 - **Archive recovery**: preview impact before archiving/restoring projects or tasks. Forced archive retains the branch and original working-copy recovery snapshot, including untracked/ignored/secret files and deletions. Restore rebuilds the worktree and refuses existing destinations. `.yumeewade/recovery/` is private, not a public Git backup or a complete backup of an external main folder.
   After successful restoration, that recovery generation is retained but no longer eligible for replay on a later archive; original bytes remain available without overwriting subsequently merged content.
   Restoration involving checkout must satisfy saved trust and the current root; refusal rolls back ledger restoration and never automatically trusts an archived project. Direct-task ledger restoration without checkout remains available.

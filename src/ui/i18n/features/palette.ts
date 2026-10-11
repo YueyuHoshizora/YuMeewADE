@@ -1,0 +1,7 @@
+export const featureZhTW = { 'palette.title': '命令面板', 'palette.empty': '沒有符合的項目', 'palette.theme': '切換淺色／深色外觀', 'palette.language': '切換語言', 'palette.files': '開啟檔案瀏覽器' };
+export const featureZhCN = { 'palette.title': '命令面板', 'palette.empty': '没有匹配的项目', 'palette.theme': '切换浅色／深色外观', 'palette.language': '切换语言', 'palette.files': '打开文件浏览器' };
+export const featureEn = { 'palette.title': 'Command palette', 'palette.empty': 'No matches', 'palette.theme': 'Toggle light / dark appearance', 'palette.language': 'Change language', 'palette.files': 'Open file browser' };
+export const featureJa = { 'palette.title': 'コマンドパレット', 'palette.empty': '一致する項目なし', 'palette.theme': 'ライト／ダーク切り替え', 'palette.language': '言語を変更', 'palette.files': 'ファイルブラウザーを開く' };
+export const featureDe = { 'palette.title': 'Befehlspalette', 'palette.empty': 'Keine Treffer', 'palette.theme': 'Hell / Dunkel umschalten', 'palette.language': 'Sprache ändern', 'palette.files': 'Dateibrowser öffnen' };
+export const featureFr = { 'palette.title': 'Palette de commandes', 'palette.empty': 'Aucun résultat', 'palette.theme': 'Basculer clair / sombre', 'palette.language': 'Changer de langue', 'palette.files': 'Ouvrir les fichiers' };
+export const featureIt = { 'palette.title': 'Tavolozza dei comandi', 'palette.empty': 'Nessun risultato', 'palette.theme': 'Alterna chiaro / scuro', 'palette.language': 'Cambia lingua', 'palette.files': 'Apri i file' };

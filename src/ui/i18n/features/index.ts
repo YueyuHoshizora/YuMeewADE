@@ -21,6 +21,7 @@ import * as mention from './mention.ts';
 import * as onboarding from './onboarding.ts';
 import * as coreLog from './core-log.ts';
 import * as github from './github.ts';
+import * as palette from './palette.ts';
 
 export const featureZhTW = {
   ...archive.featureZhTW,
@@ -46,6 +47,7 @@ export const featureZhTW = {
   ...onboarding.featureZhTW,
   ...coreLog.featureZhTW,
   ...github.featureZhTW,
+  ...palette.featureZhTW,
 };
 export const featureZhCN = {
   ...archive.featureZhCN,
@@ -71,6 +73,7 @@ export const featureZhCN = {
   ...onboarding.featureZhCN,
   ...coreLog.featureZhCN,
   ...github.featureZhCN,
+  ...palette.featureZhCN,
 };
 export const featureEn = {
   ...archive.featureEn,
@@ -96,6 +99,7 @@ export const featureEn = {
   ...onboarding.featureEn,
   ...coreLog.featureEn,
   ...github.featureEn,
+  ...palette.featureEn,
 };
 export const featureJa = {
   ...archive.featureJa,
@@ -121,6 +125,7 @@ export const featureJa = {
   ...onboarding.featureJa,
   ...coreLog.featureJa,
   ...github.featureJa,
+  ...palette.featureJa,
 };
 export const featureDe = {
   ...archive.featureDe,
@@ -146,6 +151,7 @@ export const featureDe = {
   ...onboarding.featureDe,
   ...coreLog.featureDe,
   ...github.featureDe,
+  ...palette.featureDe,
 };
 export const featureFr = {
   ...archive.featureFr,
@@ -171,6 +177,7 @@ export const featureFr = {
   ...onboarding.featureFr,
   ...coreLog.featureFr,
   ...github.featureFr,
+  ...palette.featureFr,
 };
 export const featureIt = {
   ...archive.featureIt,
@@ -196,4 +203,5 @@ export const featureIt = {
   ...onboarding.featureIt,
   ...coreLog.featureIt,
   ...github.featureIt,
+  ...palette.featureIt,
 };

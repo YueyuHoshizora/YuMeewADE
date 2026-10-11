@@ -18,6 +18,7 @@ import { openUpdateDialog, updateChip, visibleUpdate } from './components/update
 import { openUsageDetails } from './components/usage-details.ts';
 import { showInitialCare } from './components/care.ts';
 import { mountTerminalDock, toggleTerminalDock } from './components/terminal-dock.ts';
+import { openCommandPalette, paletteShortcut } from './components/palette.ts';
 
 const header = document.getElementById('header')!; const sidebar = document.getElementById('sidebar')!; const main = document.getElementById('main')!; const footer = document.getElementById('footer')!;
 mountTerminalDock();
@@ -136,7 +137,11 @@ function refresh(): Promise<void> {
   return refreshJob;
 }
 window.addEventListener('hashchange', () => { void run(async () => navigate()); });
+window.addEventListener('yumeewade:menu', event => {
+  if ((event as CustomEvent<{ command: string }>).detail?.command === 'palette' && state) openCommandPalette({ state, refresh });
+});
 window.addEventListener('keydown', event => {
+  if (state && paletteShortcut(event, { state, refresh })) return;
   if ((event.ctrlKey || event.metaKey) && event.shiftKey && event.key.toLowerCase() === 'f') {
     event.preventDefault();
     location.hash = '#/search';
