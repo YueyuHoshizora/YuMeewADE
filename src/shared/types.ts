@@ -748,3 +748,9 @@ export interface TaskTemplate {
   instruction: string;
 }
 export interface MemoryFile { name: string; text: string; revision: string }
+
+export type McpAi = 'claude' | 'codex' | 'grok' | 'gemini';
+export type McpTransport = 'stdio' | 'http' | 'sse';
+export interface McpServer { name: string; transport: McpTransport; command?: string; url?: string; envKeys: string[]; headerKeys: string[]; scope: string; status: 'connected' | 'failed' | 'disabled' | 'pending' | 'enabled' | 'unknown' }
+export interface McpList { supported: boolean; transports: McpTransport[]; servers: McpServer[] }
+export interface McpInput { name: string; transport: McpTransport; command?: string; args?: string[]; env?: Record<string, string>; url?: string; headers?: Record<string, string> }

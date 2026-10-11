@@ -243,7 +243,7 @@ export class CredentialAccounts {
       // Reuse the core's stale-PID recovery for each managed CLI home.
       const unlock = await acquireWorkspaceLock(profile.runtime, 0);
       lease = { env: { ...this.env }, authFile: path.join(profile.runtime, profile.ai === 'claude' ? '.credentials.json' : profile.ai === 'gemini' ? GEMINI_TOKEN : 'auth.json'), text, refs: 1, unlock };
-      if (profile.ai !== 'grok' && profile.ai !== 'gemini') await this.seed(profile);
+      await this.seed(profile);
       if (profile.ai === 'claude') {
         lease.env['CLAUDE_CONFIG_DIR'] = profile.runtime;
         if (process.platform === 'darwin') {
@@ -257,7 +257,7 @@ export class CredentialAccounts {
       } else {
         lease.socketDirectory = await fs.mkdtemp(path.join(os.tmpdir(), 'ym-leader-'));
         await fs.chmod(lease.socketDirectory, 0o700);
-        lease.env['GROK_HOME'] = profile.source;
+        lease.env['GROK_HOME'] = profile.runtime;
         lease.env['GROK_AUTH_PATH'] = lease.authFile;
         lease.env['GROK_LEADER_SOCKET'] = path.join(lease.socketDirectory, 'leader.sock');
       }
@@ -355,11 +355,11 @@ export class CredentialAccounts {
     try { await fs.access(path.join(profile.runtime, '.seeded')); return; }
     catch (error) { if ((error as NodeJS.ErrnoException).code !== 'ENOENT') throw error; }
     try {
-      const sourceRoot = await fs.realpath(profile.source);
-      await fs.cp(sourceRoot, profile.runtime, { recursive: true, force: false, errorOnExist: false, filter: async (source) => {
+      const sourceRoot = await fs.realpath(profile.ai === 'gemini' ? path.join(profile.source, '.gemini') : profile.source);
+      await fs.cp(sourceRoot, profile.ai === 'gemini' ? path.join(profile.runtime, '.gemini') : profile.runtime, { recursive: true, force: false, errorOnExist: false, filter: async (source) => {
         const name = path.basename(source);
         const info = await fs.lstat(source);
-        return !info.isSymbolicLink() && (info.isDirectory() || info.isFile()) && !AUTH_FILES.has(name) && !name.startsWith('auth.json.') && !name.startsWith('.credentials.json.') && !['.yumeewade', '.seeded', 'leader.sock'].includes(name);
+        return !info.isSymbolicLink() && (info.isDirectory() || info.isFile()) && !AUTH_FILES.has(name) && name !== 'antigravity-oauth-token' && !name.startsWith('auth.json.') && !name.startsWith('.credentials.json.') && !['.yumeewade', '.seeded', 'leader.sock'].includes(name);
       } });
     } catch (error) { if ((error as NodeJS.ErrnoException).code !== 'ENOENT') throw error; }
     if (profile.ai === 'claude' && profile.source === path.join(this.sourceEnv['HOME'] || os.homedir(), '.claude')) {

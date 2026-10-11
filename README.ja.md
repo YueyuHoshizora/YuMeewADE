@@ -69,6 +69,7 @@ Claude／Codex のモデル一覧・推論強度は CLI キャッシュから取
 - **画面障害からの復旧**：クラッシュ時は再読み込み／終了、応答停止時は待機／再読み込みを選択。非公開ログをサイズ制限でローテーションし、自動再起動ループは行いません。
 - **プロジェクトメモリ**：ルールの隣で `.ai/memory/`（`INDEX.md` 含む）の一覧・閲覧・プレビュー・追加・編集・確認付き削除ができます。許可された `.md` 名のみ、1 ファイル 256 KiB／200 ファイル、symlink は追跡しません。保存・削除は内容 revision を確認し、AI の新しい編集があれば 409。編集をコピーしてから再読み込みしてください。
   プロジェクト AI の実行中は保存・削除を拒否します。閲覧と編集の下書きは引き続き利用できます。
+- **MCP 管理**：現在の App アカウントの隔離 user scope に四つの AI を管理し、元の CLI／プロジェクト設定は変更しません。stdio コマンド、1 行 1 引数、KEY=value env、HTTP URL と Name: value headers に対応し、Claude／Grok は SSE も利用できます。保存後は env/header のキーのみ表示し、削除は確認必須です。MCP プログラムはあなたの権限で実行します。
 - **アーカイブ復元**：プロジェクト／タスクへの影響をプレビューしてからアーカイブ・復元できます。強制アーカイブはブランチと元の作業コピーの復元スナップショットを保持し、未追跡・ignored・秘密ファイルと削除状態も保存します。復元は worktree を再作成し、既存の保存先を上書きしません。`.yumeewade/recovery/` は非公開資料であり、公開 Git バックアップや外部メインフォルダー全体のバックアップではありません。
   復元が成功した世代は保持領域へ移し、後のアーカイブには再適用しません。元のデータは残し、後からマージした内容を上書きしません。
   checkout を伴う復元は保存済み信頼と現在の root を満たす必要があり、拒否時は台帳復元をロールバックします。アーカイブ済みプロジェクトを自動で信頼しません。checkout のない直接タスクの台帳復元は利用できます。
@@ -155,6 +156,7 @@ npm run desktop      # 桌面版（開發機）
 | `cli.claude` / `cli.codex` / `cli.grok` | `command`、`baseArgs`、`fullAccess`、`fullAccessArgs`、`safeArgs` | コマンドとヘッドレスモードのフラグ。`fullAccess` は既定の権限で、設定画面の切り替えが優先 |
 | `cli.claude` | `approvalArgs` | 安全モードの双方向 stream-json 承認フラグ。空リストで無効化 |
 | `limits` | `approvalSeconds` | 承認待ち秒数、既定120。時間切れは拒否 |
+| `cli.<ai>` | `mcpListArgs`, `mcpAddArgs`, `mcpRemoveArgs` | MCP コマンドテンプレート。空配列で無効化。Codex HTTP headers は隔離 config.toml のネイティブ表を使用 |
 | `cli` | `envPassthrough` | CLI 子プロセスに追加で渡す環境変数（既定では PATH／HOME／LANG などのみ） |
 | `limits` | `bodyBytes`、`promptChars`、`sendPerMinute`、`concurrentRuns`、`sseConnections`、`queueLength`、`handoffChars`、`heartbeatSeconds`、`diffBytes`、`uploadBytes`、`imagesPerSend`、`verifySeconds`（検証のタイムアウト、既定 600）、`verifyOutputBytes`（検証出力の末尾保持バイト数、既定 65536）、`runSeconds`（AI 1 ターンの最長実行時間。超えると停止してタイムアウト扱い、既定 7200） | 各種上限 |
 | `limits` | `usagePollSeconds` | 利用枠取得間隔（秒）、既定 `60`＝1 分 |
@@ -185,6 +187,7 @@ HTTP JSON と SSE を使い、デスクトップ版と Web 版で完全に共通
 | `GET /api/chat/turn-diff?project=&task=&request=` | 1ターン分の差分（ターン前のチェックポイント → ターン終了時）。チェックポイントなしは 404 |
 | `GET /api/project/rules?project=`、`POST /api/project/rules` | プロジェクトの AI ルール（`.ai/rules.md`、20,000 文字まで）の読み書き。書き込みは `{project, text}` |
 | `GET /api/project/memory?project=&name=`, `POST /api/project/memory`, `POST /api/project/memory/delete` | name なしで一覧、読取は `{name,text,revision}`。保存 `{project,name,text,revision}`（追加は null）、削除には revision と confirm=true が必要 |
+| `GET /api/mcp/list?ai=`, `POST /api/mcp/add`, `POST /api/mcp/remove` | 現在のアカウントの一覧／追加 `{ai,server}`／削除 `{ai,name,confirmed:true}`；秘密の値は返しません |
 | `POST /api/upload`、`GET /api/upload`、`GET /api/attachment` | 画像アップロード、プレビュー、会話の添付ファイル |
 | `GET /api/task/preview`、`GET /api/task/diff`、`POST /api/task/merge`、`/api/task/merge-exclusion`、`/api/task/copyclear` | 作業コピー |
 | `GET /api/task/merged`、`POST /api/task/unmerge` | メインフォルダの最新コミットがこのタスクのマージ（`YuMeewADE-Task:` トレーラー）ならそのハッシュを返す。マージの取り消し：メインフォルダをマージ前に戻し、ブランチと作業コピーを再作成してタスクを進行中に戻す。新しいコミットや未コミットの内容があると 409 |

@@ -27,6 +27,9 @@ export interface CliCommandConfig {
   commandsArgs: string[];
   /** 獨立唯讀 slash 執行旗標；命令文字作為最後一個參數。 */
   slashArgs: string[];
+  mcpListArgs?: string[];
+  mcpAddArgs?: string[];
+  mcpRemoveArgs?: string[];
 }
 
 export interface NativeToolConfig { command: string; args: string[] }
@@ -81,6 +84,9 @@ export const DEFAULT_CONFIG: Config = {
       loginArgs: ['auth', 'login'],
       commandsArgs: [],
       slashArgs: [],
+      mcpListArgs: ['mcp', 'list'],
+      mcpAddArgs: ['mcp', 'add', '--scope', 'user'],
+      mcpRemoveArgs: ['mcp', 'remove', '--scope', 'user'],
     },
     codex: {
       command: 'codex',
@@ -94,6 +100,9 @@ export const DEFAULT_CONFIG: Config = {
       loginArgs: ['login', '-c', 'cli_auth_credentials_store="file"'],
       commandsArgs: [],
       slashArgs: [],
+      mcpListArgs: ['mcp', 'list', '--json'],
+      mcpAddArgs: ['mcp', 'add'],
+      mcpRemoveArgs: ['mcp', 'remove'],
     },
     grok: {
       command: 'grok',
@@ -107,6 +116,9 @@ export const DEFAULT_CONFIG: Config = {
       loginArgs: ['login', '--oauth'],
       commandsArgs: [],
       slashArgs: [],
+      mcpListArgs: ['mcp', 'list', '--json'],
+      mcpAddArgs: ['mcp', 'add', '--scope', 'user'],
+      mcpRemoveArgs: ['mcp', 'remove', '--scope', 'user'],
     },
     // Google 官方後繼：Antigravity CLI（agy）。提示經 stdin 的 stream-json 傳入，沒有 argv 外洩。
     gemini: {
@@ -121,6 +133,9 @@ export const DEFAULT_CONFIG: Config = {
       loginArgs: [],
       commandsArgs: ['-p', '/help', '--output-format', 'json'],
       slashArgs: ['--output-format', 'json', '--print'],
+      mcpListArgs: ['mcp', 'list'],
+      mcpAddArgs: ['mcp', 'add'],
+      mcpRemoveArgs: ['mcp', 'remove'],
     },
     envPassthrough: [],
   },
@@ -209,6 +224,11 @@ function strList(map: YamlMap, key: string, fallback: string[], where: string): 
   return v as string[];
 }
 
+function mcpArgs(map: YamlMap, key: string, fallback: string[], where: string): string[] {
+  const args = strList(map, key, fallback, where);
+  if (args.length > 128 || args.some(arg => arg.length > 8192 || /[\0\r\n]/u.test(arg))) throw new ConfigError(`${where}.${key} 無效`);
+  return args;
+}
 /** 0.1 版範本的 baseArgs（權限旗標混在裡面）；讀到就換成新預設，權限改由 fullAccess 決定。 */
 const LEGACY_BASE_ARGS: Record<'claude' | 'codex', string> = {
   claude: JSON.stringify(['-p', '--output-format', 'stream-json', '--verbose', '--include-partial-messages', '--permission-mode', 'acceptEdits']),
@@ -234,6 +254,9 @@ function cliSection(map: YamlMap, name: 'claude' | 'codex' | 'grok' | 'gemini'):
     loginArgs: strList(s, 'loginArgs', d.loginArgs, where),
     commandsArgs: strList(s, 'commandsArgs', d.commandsArgs, where),
     slashArgs: strList(s, 'slashArgs', d.slashArgs, where),
+    mcpListArgs: mcpArgs(s, 'mcpListArgs', d.mcpListArgs ?? [], where),
+    mcpAddArgs: mcpArgs(s, 'mcpAddArgs', d.mcpAddArgs ?? [], where),
+    mcpRemoveArgs: mcpArgs(s, 'mcpRemoveArgs', d.mcpRemoveArgs ?? [], where),
   };
 }
 

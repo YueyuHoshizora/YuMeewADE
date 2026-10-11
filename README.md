@@ -73,6 +73,7 @@ Claude／Codex 模型清單直接讀 CLI 自己的快取（`~/.codex/models_cach
 - **畫面故障恢復**：崩潰提供重新載入／離開，無回應提供等待／重新載入；私有日誌有界輪替，不自動循環重啟。
 - **專案記憶**：專案頁規則旁可列出、閱讀、預覽、新增、編輯與確認刪除 `.ai/memory/`（含 `INDEX.md`）。僅白名單 `.md` 名稱、每檔 256 KiB／最多 200 檔，不跟隨 symlink；儲存與刪除核對內容 revision，AI 已寫入新內容時回 409，先複製編輯再重新載入。
   專案 AI 執行中暫停儲存／刪除，仍可閱讀及保留編輯草稿。
+- **MCP 管理**：設定頁依目前 App 帳號管理四個 AI 的隔離 user scope，不改原 CLI／專案設定。stdio command／逐行 args／KEY=value env、HTTP URL／Name: value headers；Claude／Grok 另支援 SSE。新增後僅顯示 env/header 鍵、不回傳值，移除需確認。MCP 程式會以你的權限執行。
 - **封存恢復**：先預覽影響，再封存／還原專案或作業。強制封存保留分支及原工作副本恢復快照，含未追蹤、ignored、機密檔與刪除狀態；還原重建 worktree，拒絕覆蓋現有目的地。`.yumeewade/recovery/` 為私有資料，不是可公開的 Git 備份，也不是外部主資料夾的完整備份。
   成功還原後，該代快照移入保留區，不再套用到日後的封存；原始資料仍保留，不會覆蓋後續已合併的內容。
   還原涉及 checkout 仍須符合原保存信任及目前 root，拒絕則回滾，不自動信任封存專案；不涉及 checkout 的直接作業台帳還原仍可使用。
@@ -159,6 +160,7 @@ npm run desktop      # 桌面版（開發機）
 | `cli.claude` / `cli.codex` / `cli.grok` | `command`、`baseArgs`、`fullAccess`、`fullAccessArgs`、`safeArgs` | 指令與無頭模式旗標；`fullAccess` 是預設權限，設定頁的開關優先 |
 | `cli.claude` | `approvalArgs` | 安全模式雙向 stream-json 權限旗標；空清單停用互動核准 |
 | `limits` | `approvalSeconds` | 核准逾時秒數，預設 120，逾時拒絕 |
+| `cli.<ai>` | `mcpListArgs`、`mcpAddArgs`、`mcpRemoveArgs` | MCP 指令範本；空陣列停用管理。Codex HTTP headers 存入隔離 config.toml 原生表 |
 | `cli` | `envPassthrough` | 額外放行給 CLI 子行程的環境變數（預設只給 PATH／HOME／LANG 等） |
 | `limits` | `bodyBytes`、`promptChars`、`sendPerMinute`、`concurrentRuns`、`sseConnections`、`queueLength`、`handoffChars`、`heartbeatSeconds`、`diffBytes`、`uploadBytes`、`imagesPerSend`、`verifySeconds`（驗證逾時，預設 600）、`verifyOutputBytes`（驗證輸出保留尾端位元組，預設 65536）、`runSeconds`（單輪 AI 執行時間上限，超過就停止並標記逾時，預設 7200） | 各種上限 |
 | `limits` | `usagePollSeconds` | 帳號額度查詢間隔（秒），預設 `60`＝1 分鐘 |
@@ -190,6 +192,7 @@ HTTP JSON 加 SSE，桌面版與網頁版完全相同。型別定義在 [`src/sh
 | `GET /api/chat/turn-diff?project=&task=&request=` | 單輪的變更差異（輪前檢查點 → 該輪結束的檢查點）；沒有檢查點回 404 |
 | `GET /api/project/rules?project=`、`POST /api/project/rules` | 讀寫專案的 AI 規則（`.ai/rules.md`，上限 20,000 字；寫入 `{project, text}`） |
 | `GET /api/project/memory?project=&name=`、`POST /api/project/memory`、`POST /api/project/memory/delete` | 不帶 name 列檔；讀取回 `{name,text,revision}`；儲存 `{project,name,text,revision}`（新增 revision=null）；刪除需 revision 與 confirm=true |
+| `GET /api/mcp/list?ai=`、`POST /api/mcp/add`、`POST /api/mcp/remove` | 帳號 MCP 列表／新增 `{ai,server}`／移除 `{ai,name,confirmed:true}`；不回傳機密值 |
 | `POST /api/upload`、`GET /api/upload`、`GET /api/attachment` | 圖片上傳、預覽、對話附件 |
 | `GET /api/task/preview`、`GET /api/task/diff`、`POST /api/task/merge`、`/api/task/merge-exclusion`、`/api/task/copyclear` | 工作副本 |
 | `GET /api/task/merged`、`POST /api/task/unmerge` | 主資料夾最新 commit 若是該作業的合併（`YuMeewADE-Task:` 標記）就回其 hash；撤銷合併：主資料夾回到合併前、重建分支與副本、作業回到進行中。之後有新 commit 或未提交內容時回 409 |

@@ -32,6 +32,9 @@ cli:
     # Empty/modified unverified profiles disable review rather than weaken it.
     readonlyArgs: [--restricted, --safe-mode, --tools, 'Read,Glob,Grep', --allowedTools, 'Read,Glob,Grep', --permission-mode, dontAsk, --permission-prompts, none, --strict-mcp-config, --disable-slash-commands, --no-session-persistence, -p, --output-format, stream-json, --verbose, --include-partial-messages]
     loginArgs: [auth, login]                          # 新增帳號時的 OAuth 登入子命令
+    mcpListArgs: [mcp, list]
+    mcpAddArgs: [mcp, add, --scope, user]
+    mcpRemoveArgs: [mcp, remove, --scope, user]
   codex:
     command: codex
     baseArgs: [exec, --json, --skip-git-repo-check]
@@ -44,6 +47,9 @@ cli:
     # 查帳號即時額度用的子命令（app-server：與 CLI 同一份後端資料）；留空則只讀本機紀錄的最後一筆。
     quotaArgs: [app-server]
     loginArgs: [login, -c, 'cli_auth_credentials_store="file"']   # 登入結果寫入 CODEX_HOME/auth.json 供匯入
+    mcpListArgs: [mcp, list, --json]
+    mcpAddArgs: [mcp, add]
+    mcpRemoveArgs: [mcp, remove]
   grok:
     command: grok
     # Grok Build 原生 ACP JSONL 更新，保留完整／不完整 token 用量的區別。
@@ -54,6 +60,9 @@ cli:
     readonlyArgs: []                     # Review refused: protection not verified
     quotaArgs: []                         # 額度直接向 Grok API 查詢，不啟動子命令
     loginArgs: [login, --oauth]
+    mcpListArgs: [mcp, list, --json]
+    mcpAddArgs: [mcp, add, --scope, user]
+    mcpRemoveArgs: [mcp, remove, --scope, user]
   gemini:
     command: agy                          # Google Antigravity CLI（Gemini 的官方後繼）；沿用 CLI 自己的登入
     # 提示以 stream-json 的 user 訊息經 stdin 傳入，不出現在 argv。
@@ -66,6 +75,9 @@ cli:
     loginArgs: []
     commandsArgs: [-p, /help, --output-format, json]  # CLI 回報可用的唯讀 slash 命令
     slashArgs: [--output-format, json, --print]       # 獨立執行，不混入對話提示
+    mcpListArgs: [mcp, list]
+    mcpAddArgs: [mcp, add]
+    mcpRemoveArgs: [mcp, remove]
   # 子行程環境變數採白名單；除了內建的 PATH／HOME／LANG 等基本變數外，額外要放行的名稱寫在這裡
   envPassthrough: []
 

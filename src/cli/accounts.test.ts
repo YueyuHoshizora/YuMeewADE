@@ -181,8 +181,9 @@ test('Claude managed roots preserve copied nonauth state; Grok auth-only leases 
       assert.equal(env['ANTHROPIC_API_KEY'], undefined);
     });
     await f.accounts.withEnv('grok', undefined, async env => {
-      assert.equal(env['GROK_HOME'], grok);
+      assert.notEqual(env['GROK_HOME'], grok);
       grokRuntime = path.dirname(env['GROK_AUTH_PATH']!);
+      assert.equal(env['GROK_HOME'], grokRuntime);
       assert.notEqual(path.dirname(env['GROK_LEADER_SOCKET']!), grok);
       assert.notEqual(grokRuntime, grok);
       assert.equal(env['GROK_AUTH'], undefined);

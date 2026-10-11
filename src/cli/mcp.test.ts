@@ -1,0 +1,55 @@
+import assert from 'node:assert/strict';
+import { promises as fs } from 'node:fs';
+import os from 'node:os';
+import path from 'node:path';
+import { test } from 'node:test';
+import { CredentialAccounts } from './accounts.ts';
+import { CredentialVault } from '../credentials/vault.ts';
+import { DEFAULT_CONFIG } from '../shared/config.ts';
+import { addMcp, listMcp, parseMcpList, removeMcp, validateMcpInput } from './mcp.ts';
+
+test('MCP parsing returns only allowlisted metadata, not env, headers, arguments or URL credentials', () => {
+  const rows = parseMcpList(JSON.stringify([{ name: 'remote', enabled: false, transport: { type: 'streamable_http', url: 'https://user:password@example.com/mcp?token=secret', http_headers: { Authorization: 'secret' } }, env: { KEY: 'secret' } }, { name: 'local', transport: { type: 'stdio', command: 'node', args: ['secret'], env: { KEY: 'secret' } } }]));
+  assert.equal(rows[0]?.url, 'https://example.com/mcp'); assert.equal(rows[0]?.status, 'disabled');
+  assert.equal(rows[1]?.command, 'node'); assert.ok(!JSON.stringify(rows).includes('secret'));
+  assert.deepEqual(rows[0]?.envKeys, ['KEY']); assert.deepEqual(rows[0]?.headerKeys, ['Authorization']);
+  assert.deepEqual(rows[1]?.envKeys, ['KEY']); assert.deepEqual(rows[1]?.headerKeys, []);
+  assert.deepEqual(parseMcpList('Checking MCP server health...\nlocal: node private-argument - ✓ Connected\nremote: https://example.com/mcp?token=secret (HTTP) - ✗ Failed to connect').map(s => s.status), ['connected', 'failed']);
+  assert.deepEqual(parseMcpList('No MCP servers configured.'), []);
+  assert.throws(() => parseMcpList('unexpected output containing private-secret'), error => !String(error).includes('private-secret'));
+});
+
+test('MCP validates strict fields, bounded sizes and transport-specific values without echoing input', () => {
+  assert.deepEqual(validateMcpInput({ name: 'one', transport: 'stdio', command: 'node', args: ['--flag', 'value'], env: { KEY: 'secret' } }).args, ['--flag', 'value']);
+  for (const input of [
+    { name: '-bad', transport: 'stdio', command: 'node' },
+    { name: 'one', transport: 'stdio', command: '--flag' },
+    { name: 'one', transport: 'stdio', command: 'node', args: Array(129).fill('x') },
+    { name: 'one', transport: 'stdio', command: 'node', env: { BAD: 'private-secret\n' } },
+    { name: 'one', transport: 'http', url: 'file:///private-secret' },
+    { name: 'one', transport: 'http', url: 'https://user:private-secret@example.com' },
+    { name: 'one', transport: 'http', url: 'https://example.com', headers: { 'Invalid Header': 'private-secret' } },
+    { name: 'one', transport: 'http', url: 'https://example.com', args: [] },
+    { name: 'one', transport: 'stdio', command: 'node', extra: 'private-secret' },
+  ]) assert.throws(() => validateMcpInput(input), error => !String(error).includes('private-secret'));
+});
+
+test('fake CLI mutations persist across leases, isolate accounts and sanitize failures', async () => {
+  const root = await fs.realpath(await fs.mkdtemp(path.join(os.tmpdir(), 'ym-mcp-test-')));
+  const vault = await CredentialVault.open(path.join(root, 'vault'), { encrypt: async text => Buffer.from(text), decrypt: async bytes => Buffer.from(bytes).toString('utf8'), close: async () => {} });
+  const accounts = new CredentialAccounts(vault, path.join(root, 'data'), []);
+  try {
+    const command = path.join(root, 'fake-cli');
+    await fs.writeFile(command, `#!${process.execPath}\nconst fs=require('node:fs'),path=require('node:path');const args=process.argv.slice(2),home=process.env.CODEX_HOME,file=path.join(home,'mcp.json');if(args[0]==='--help'){console.log('Commands: mcp');process.exit(0)}let rows=fs.existsSync(file)?JSON.parse(fs.readFileSync(file,'utf8')):[];if(args[1]==='list'){console.log(JSON.stringify(rows));process.exit(0)}if(args[1]==='add'){const name=args.find((v,i)=>i>1&&!v.startsWith('-')&&args[i-1]!=='--env');if(name==='fail'){console.error('private-secret');process.exit(1)}const at=args.indexOf('--');rows.push({name,transport:{type:'stdio',command:args[at+1],args:args.slice(at+2),env:{KEY:'private-secret'}}})}if(args[1]==='remove')rows=rows.filter(r=>r.name!==args[2]);fs.writeFileSync(file,JSON.stringify(rows));console.log('private-secret');\n`, { mode: 0o700 });
+    const config = { ...DEFAULT_CONFIG.cli.codex, command };
+    const profiles = [path.join(root, 'a'), path.join(root, 'b')];
+    for (const directory of profiles) { await fs.mkdir(directory); await fs.writeFile(path.join(directory, 'auth.json'), JSON.stringify({ OPENAI_API_KEY: 'account-secret' })); await accounts.import('codex', directory); }
+    let home = '';
+    await accounts.withEnv('codex', profiles[0], async env => { home = env['CODEX_HOME']!; await addMcp('codex', config, env, { name: 'one', transport: 'stdio', command: 'node', args: ['private-secret'], env: { KEY: 'private-secret' } }); });
+    await accounts.withEnv('codex', profiles[0], async env => { assert.equal(env['CODEX_HOME'], home); const result = await listMcp('codex', config, env); assert.equal(result.servers[0]?.name, 'one'); assert.ok(!JSON.stringify(result).includes('private-secret')); await assert.rejects(addMcp('codex', config, env, { name: 'one', transport: 'stdio', command: 'node' })); await assert.rejects(addMcp('codex', config, env, { name: 'fail', transport: 'stdio', command: 'node' }), error => !String(error).includes('private-secret')); });
+    await accounts.withEnv('codex', profiles[1], async env => { assert.notEqual(env['CODEX_HOME'], home); assert.deepEqual((await listMcp('codex', config, env)).servers, []); });
+    assert.equal(await fs.stat(path.join(profiles[0]!, 'mcp.json')).catch(() => null), null);
+    await accounts.withEnv('codex', profiles[0], env => removeMcp('codex', config, env, 'one'));
+    await accounts.withEnv('codex', profiles[0], async env => assert.deepEqual((await listMcp('codex', config, env)).servers, []));
+  } finally { await accounts.close(); vault.close(); await fs.rm(root, { recursive: true, force: true }); }
+});

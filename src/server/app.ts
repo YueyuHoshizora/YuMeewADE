@@ -25,7 +25,7 @@ import { loadRoles } from '../roles/roles.ts';
 import type { Config } from '../shared/config.ts';
 import { AppError } from '../shared/errors.ts';
 import { log } from '../shared/log.ts';
-import type { AppState, ChatEvent, Roles, UsageState } from '../shared/types.ts';
+import type { AppState, ChatEvent, Roles, UsageState, McpAi } from '../shared/types.ts';
 import { fetchCodexReset } from '../ai/codex-reset.ts';
 import { UpdateWatcher, fetchLatestRelease } from '../system/update.ts';
 import { buildState, type StateSnapshot } from '../state/state.ts';
@@ -228,6 +228,20 @@ export class App {
     });
     // AI 一開始動手，之前的驗證結果就不再代表目前的檔案。
     this.runner.on('event', (project: string, task: string, ev: ChatEvent) => { if (ev.event === 'busy') this.verify.invalidate(project, task); });
+  }
+
+  private readonly mcpOperations = new Map<string, Promise<unknown>>();
+  async withMcpAccount<T>(ai: McpAi, callback: (env: NodeJS.ProcessEnv) => Promise<T>): Promise<T> {
+    if (!this.accounts) throw new AppError('unavailable', 'credentials_unavailable');
+    const settings = await this.settings.get();
+    const account = settings.accounts[ai]?.find(a => a.id === settings.activeAccounts[ai]);
+    const key = `${ai}:${account?.configDir ?? ''}`;
+    const previous = this.mcpOperations.get(key) ?? Promise.resolve();
+    const operation = previous.catch(() => {}).then(() => this.accounts!.withEnv(ai, account?.configDir, callback));
+    this.mcpOperations.set(key, operation);
+    try { return await operation; }
+    catch (error) { if (error instanceof AppError) throw error; throw new AppError('unavailable'); }
+    finally { if (this.mcpOperations.get(key) === operation) this.mcpOperations.delete(key); }
   }
 
   isBusy(): boolean { return this.runner.isBusy() || this.verify.isBusy() || this.execution.isBusy() || this.terminal.isBusy() || this.review.isBusy() || this.workflows.isBusy(); }
