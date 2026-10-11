@@ -15,7 +15,6 @@ export const en: Record<MessageKey, string> = {
   'usage.prepaidBalance': 'Prepaid balance {balance}',
   'update.title': 'Update available',
   'update.available': 'Update v{version}',
-  'update.summary': 'YuMeewADE v{version} is out (you have v{current}). Download and install it yourself; the builds are unsigned, so your OS may show a warning.',
   'update.notes': 'Release notes',
   'update.installer': 'Download installer',
   'update.portable': 'Download portable',

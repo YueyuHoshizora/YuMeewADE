@@ -126,6 +126,10 @@ export const DETAIL_MESSAGES = {
   care_external_required: '備份缺少外部程式碼，無法完整還原',
   care_repository_unsupported: '此儲存庫結構不支援安全完整備份',
   care_closed: '工作區維護服務已關閉',
+  project_trust_invalid: '專案信任設定不合法，請重新檢查',
+  project_trust_changed: '專案路徑或信任設定已改變，請重新確認',
+  project_restricted: '此專案已限制執行；請檢查來源並明確信任後再執行',
+  usage_ack_required: '下一輪 AI 執行前必須確認用量警告',
 } as const;
 
 export type DetailCode = keyof typeof DETAIL_MESSAGES;

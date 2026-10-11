@@ -15,7 +15,6 @@ export const ja: Record<MessageKey, string> = {
   'usage.prepaidBalance': 'プリペイド残高 {balance}',
   'update.title': '新しいバージョンがあります',
   'update.available': 'v{version} に更新できます',
-  'update.summary': 'YuMeewADE v{version} が公開されました（現在 v{current}）。ダウンロードして手動でインストールしてください。ビルドは未署名のため、OS が警告を表示することがあります。',
   'update.notes': 'リリースノート',
   'update.installer': 'インストーラー版をダウンロード',
   'update.portable': 'ポータブル版をダウンロード',

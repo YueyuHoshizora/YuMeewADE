@@ -70,14 +70,14 @@ export class CoreHost {
       try {
         await next.init();
       } catch (cause) {
-        next.close();
+        await next.shutdown();
         await releaseNext();
         throw new AppError('bad_request', 'root_unwritable', { cause });
       }
       try {
         await saveWorkspaceRoot(configWriteTarget(old.config), root);
       } catch (err) {
-        next.close();
+        await next.shutdown();
         await releaseNext();
         throw err;
       }

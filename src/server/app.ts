@@ -39,6 +39,11 @@ import { ReviewService } from '../chat/review.ts';
 import { WorkflowService } from '../chat/workflows.ts';
 import { CareService } from '../system/diagnostics.ts';
 import { MutationGate } from '../shared/mutations.ts';
+import { ProjectTrustService } from '../ledger/trust.ts';
+import { UsageHistory } from '../ai/usage-history.ts';
+import { TerminalService } from '../system/terminal.ts';
+import { DebuggerService } from '../system/debugger.ts';
+import { UpdateDownloads } from '../system/update-download.ts';
 
 const pkg = createRequire(import.meta.url)('../../package.json') as { version: string };
 
@@ -83,6 +88,11 @@ export class App {
   readonly review: ReviewService;
   readonly workflows: WorkflowService;
   readonly care: CareService;
+  readonly trust: ProjectTrustService;
+  readonly usageHistory: UsageHistory;
+  readonly terminal: TerminalService;
+  readonly debugger: DebuggerService;
+  readonly updateDownloads: UpdateDownloads;
   readonly mutations = new MutationGate();
   private readonly providers: Record<string, CliProvider>;
   private readonly accounts: CredentialAccounts | undefined;
@@ -126,17 +136,25 @@ export class App {
         catch { throw new AppError('unavailable', 'credentials_unavailable'); }
       }
     });
+    this.trust = new ProjectTrustService(this.ws, this.projects, this.tasks, this.settings);
+    this.usageHistory = new UsageHistory(this.ws.root);
     this.order = new OrderStore(this.ws);
     this.oplog = new OpLog(this.ws);
     this.worktree = new WorktreeService({ ws: this.ws, projects: this.projects, tasks: this.tasks, diffBytes: config.limits.diffBytes });
     this.verify = new VerifyService({ ws: this.ws, projects: this.projects, tasks: this.tasks, config,
-      isRunning: (project, task) => this.runner.isRunning(project, task) || this.execution.isRunning(project, task) || this.review.isBusy(project, task) });
-    this.archive = new ArchiveService(this.ws, this.projects, this.tasks, this.worktree);
+      isRunning: (project, task) => this.runner.isRunning(project, task) || this.execution.isRunning(project, task) || this.terminal.isRunning(project, task) || this.review.isBusy(project, task),
+      beforeRun: project => this.trust.assertExecutable(project) });
+    this.archive = new ArchiveService(this.ws, this.projects, this.tasks, this.worktree, project => this.trust.assertExecutable(project));
     this.editor = new EditorService(this.worktree, this.tasks);
     this.execution = new ExecutionService({ ws: this.ws, projects: this.projects, tasks: this.tasks, concurrent: config.limits.concurrentRuns,
       envPassthrough: config.cli.envPassthrough,
+      beforeStart: project => this.trust.assertExecutable(project),
+      isRunning: (project, task) => this.runner.isRunning(project, task) || this.terminal?.isRunning(project, task) || this.review.isBusy(project, task) || this.verify.isRunning(project, task) || this.workflows.isBusy(project, task) });
+    this.terminal = new TerminalService(this.execution, { concurrent: config.limits.concurrentRuns, envPassthrough: config.cli.envPassthrough,
+      beforeStart: project => this.trust.assertExecutable(project),
       isRunning: (project, task) => this.runner.isRunning(project, task) || this.review.isBusy(project, task) || this.verify.isRunning(project, task) || this.workflows.isBusy(project, task) });
-    this.integrations = new IntegrationService(this.execution, { ...config.execution, envPassthrough: config.cli.envPassthrough });
+    this.debugger = new DebuggerService(this.execution);
+    this.integrations = new IntegrationService(this.execution, { ...config.execution, envPassthrough: config.cli.envPassthrough, beforeStart: project => this.trust.assertExecutable(project) });
     this.gitWorkbench = new GitWorkbench({ ws: this.ws, projects: this.projects, tasks: this.tasks, isRunning: project => this.taskBusy(project) });
     this.ai = new AiCatalog({ config, ws: this.ws, settings: this.settings, ...(options.home ? { home: options.home } : {}), ...(options.accounts ? { accounts: options.accounts } : {}) });
     this.store = new ChatStore(this.ws);
@@ -145,10 +163,17 @@ export class App {
     this.sendLimiter = new RateLimiter(config.limits.sendPerMinute);
     this.usage = new UsageBoard(usage => this.sse.publish(GLOBAL, { event: 'usage', data: usage }));
     this.update = new UpdateWatcher(pkg.version, () => fetchLatestRelease(config.update.repo), () => this.changed());
+    this.updateDownloads = new UpdateDownloads(() => this.update.snapshot(), config.update.repo, {
+      ...(process.env.YUMEEWADE_UPDATE_PUBLIC_KEY ? { publicKey: process.env.YUMEEWADE_UPDATE_PUBLIC_KEY } : {}),
+      ...(process.env.YUMEEWADE_UPDATE_MAC_TEAM_ID ? { macTeamId: process.env.YUMEEWADE_UPDATE_MAC_TEAM_ID } : {}),
+      ...(process.env.YUMEEWADE_UPDATE_WINDOWS_THUMBPRINT ? { windowsThumbprint: process.env.YUMEEWADE_UPDATE_WINDOWS_THUMBPRINT } : {}),
+    });
     this.providers = options.providers ?? createProviders(config, options.accounts!);
-    this.review = new ReviewService({ providers: this.providers, store: this.store, worktree: this.worktree, tasks: this.tasks,
+    this.review = new ReviewService({ ws: this.ws, providers: this.providers, store: this.store, worktree: this.worktree, tasks: this.tasks,
       settings: this.settings, limits: config.limits, onChanged: (p, t) => this.changed(p, t),
-      isRunning: (p, t) => this.runner.isRunning(p, t) || this.execution.isRunning(p, t) || this.verify.isRunning(p, t),
+      beforeRun: async (project, task, ai, account) => { await this.trust.assertExecutable(project); await this.usageHistory.assertProceed({ project, task, ai, account }, this.usage.snapshot()); },
+      onCompleted: input => this.usageHistory.record({ ...input, ...(input.usage?.claudeUsd !== undefined ? { claudeUsd: input.usage.claudeUsd } : {}), ...(input.usage?.codexCredits !== undefined ? { codexCredits: input.usage.codexCredits } : {}) }),
+      isRunning: (p, t) => this.runner.isRunning(p, t) || this.execution.isRunning(p, t) || this.terminal.isRunning(p, t) || this.verify.isRunning(p, t),
       publish: (p, t, event) => this.sse.publish(taskKey(p, t), event) });
     this.runner = new ChatRunner({
       ws: this.ws,
@@ -161,9 +186,14 @@ export class App {
       oplog: this.oplog,
       verify: (project, task) => this.verify.run(project, task),
       beforeSend: async (p, t, workflow) => {
-        if (this.mutations.busy || this.execution.isRunning(p, t) || this.review.isBusy(p, t) || this.verify.isRunning(p, t)) throw new AppError('conflict', 'workflow_busy');
+        await this.trust.assertExecutable(p);
+        if (this.mutations.busy || this.execution.isRunning(p, t) || this.terminal.isRunning(p, t) || this.review.isBusy(p, t) || this.verify.isRunning(p, t)) throw new AppError('conflict', 'workflow_busy');
         await this.workflows.assertCanSend(p, t, workflow);
       },
+      beforeLaunch: (project, task, ai, account) => this.usageHistory.assertProceed({ project, task, ai, account }, this.usage.snapshot()),
+      resolveFullAccess: (project, ai, inherited) => this.trust.fullAccess(project, ai, inherited),
+      onCompleted: input => this.usageHistory.record({ ...input, ...(input.usage?.claudeUsd !== undefined ? { claudeUsd: input.usage.claudeUsd } : {}), ...(input.usage?.codexCredits !== undefined ? { codexCredits: input.usage.codexCredits } : {}) }),
+      onUsageFailure: () => this.sse.publish(GLOBAL, { event: 'usage_record_failed', data: {} }),
       roles: () => this.roles(),
       providers: this.providers,
       limits: config.limits,
@@ -179,6 +209,7 @@ export class App {
     this.care = new CareService({ config, ws: this.ws, version: this.version, catalog: this.ai, settings: this.settings,
       ...(options.home ? { privateDirectory: path.join(options.home, '.yumeewade', 'care') } : {}),
       reserve: work => this.mutations.exclusive(() => this.isBusy(), work),
+      notifyBackupFailure: () => this.sse.publish(GLOBAL, { event: 'care_backup_failed', data: {} }),
       loginState: async ai => {
         if (!this.accounts) return 'unknown';
         const settings = await this.settings.get();
@@ -196,10 +227,10 @@ export class App {
     this.runner.on('event', (project: string, task: string, ev: ChatEvent) => { if (ev.event === 'busy') this.verify.invalidate(project, task); });
   }
 
-  isBusy(): boolean { return this.runner.isBusy() || this.verify.isBusy() || this.execution.isBusy() || this.review.isBusy() || this.workflows.isBusy(); }
+  isBusy(): boolean { return this.runner.isBusy() || this.verify.isBusy() || this.execution.isBusy() || this.terminal.isBusy() || this.review.isBusy() || this.workflows.isBusy(); }
   taskBusy(project: string, task?: string): boolean {
     return this.runner.isBusy(project, task)
-      || this.verify.isRunning(project, task) || this.execution.isRunning(project, task)
+      || this.verify.isRunning(project, task) || this.execution.isRunning(project, task) || this.terminal.isRunning(project, task)
       || this.review.isBusy(project, task) || this.workflows.isBusy(project, task);
   }
 
@@ -216,6 +247,7 @@ export class App {
       }
     }
     await this.store.recoverInterrupted();
+    await this.care.init();
     await cleanupUploads(this.ws, this.store);
     this.uploadTimer = setInterval(() => {
       if (this.uploadCleanup) return;
@@ -288,7 +320,8 @@ export class App {
   }
 
   async shutdown(): Promise<void> {
-    try { await Promise.all([this.workflows.close(), this.review.close(), this.runner.stopAll(), this.verify.stopAll(), this.execution.stopAll()]); }
+    this.debugger.close();
+    try { await Promise.all([this.workflows.close(), this.review.close(), this.runner.stopAll(), this.verify.stopAll(), this.execution.stopAll(), this.terminal.stopAll(), this.care.close(), this.updateDownloads.close()]); }
     finally { this.close(); }
   }
 
@@ -296,7 +329,10 @@ export class App {
     this.verify.close();
     this.editor.dispose();
     this.execution.close();
-    this.care.close();
+    this.terminal.close();
+    this.debugger.close();
+    void this.updateDownloads.close().catch(error => log.error('更新下載清理失敗', error));
+    void this.care.close().catch(error => log.error('備份排程停止失敗', error));
     void this.review.close().catch(error => log.error('審查停止失敗', error));
     void this.workflows.close().catch(error => log.error('角色流程停止失敗', error));
     clearTimeout(this.changeTimer ?? undefined);

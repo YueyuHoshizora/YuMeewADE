@@ -1,7 +1,7 @@
 import type { AppState, UsageState } from '../shared/types.ts';
 import { api } from './api.ts';
 import { getLocale, t } from './i18n/index.ts';
-import { button, el, link, readLocal, run, showError, taskHash, type View, type ViewContext } from './components/dom.ts';
+import { button, el, link, readLocal, run, showError, taskHash, toast, type View, type ViewContext } from './components/dom.ts';
 import { aiLabel, localDateTime, localTime, quotaLabel } from './components/display.ts';
 import { quotaAlerts, quotaCountdowns, type QuotaAlert } from './components/quota-alert.ts';
 import { needsReply, tree } from './components/tree.ts';
@@ -147,6 +147,8 @@ window.setInterval(() => { deliverQuota(quotaCountdowns(usage, Date.now(), fired
 const events = stream('/api/events', {
   changed: () => { window.clearTimeout(debounce); debounce = window.setTimeout(() => { void refresh(); }, 150); },
   usage: event => { const next = JSON.parse(event.data) as UsageState; announceQuota(next); usage = next; drawFooter(); },
+  care_backup_failed: () => toast(t('care.scheduleFailed')),
+  usage_record_failed: () => toast(t('usageHistory.recordFailed')),
 }, () => { void refresh(); });
 window.addEventListener('pagehide', () => { events.close(); view?.dispose?.(); });
 void refresh();

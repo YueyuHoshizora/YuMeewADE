@@ -14,7 +14,6 @@ export const zhTW = {
   'usage.prepaidBalance': '預付餘額 {balance}',
   'update.title': '有新版本可用',
   'update.available': '有新版本 v{version}',
-  'update.summary': 'YuMeewADE v{version} 已發行（目前 v{current}）。請下載後自行安裝；安裝檔未簽名，系統可能會提示警告。',
   'update.notes': '發行說明',
   'update.installer': '下載安裝版',
   'update.portable': '下載免安裝版',

@@ -30,6 +30,8 @@ import { reviewDrafts } from '../components/review-drafts.ts';
 import { executionButton } from '../components/execution.ts';
 import { gitWorkbenchButton } from '../components/git-workbench.ts';
 import { workflowButton } from '../components/workflows.ts';
+import { confirmUsageRound } from '../components/usage-history.ts';
+import { projectTrustButton } from '../components/project-trust.ts';
 
 export function taskView(
   context: ViewContext,
@@ -170,6 +172,7 @@ export function taskView(
       button(t('files.open'), () => openFileBrowser(project.id, task.id)),
       executionButton(context, project.id, task.id),
       gitWorkbenchButton(context, project.id, task.id),
+      projectTrustButton(project.id, task.id),
       workflowButton(context, project.id, task.id),
       gitToggle
     ));
@@ -259,15 +262,16 @@ export function taskView(
   const upload = attachments(project.id, context.state.limits, draft, task.id);
   const actions = el('div', 'send-actions');
   const running = el('p', 'running-line');
-  async function send(mode?: SendMode, text = draft.value.trim(), answer = false, retry?: Extract<ChatRow, { role: 'user' }>): Promise<void> {
-    if (retry && busy) return;
+  async function send(mode?: SendMode, text = draft.value.trim(), answer = false, retry?: Extract<ChatRow, { role: 'user' }>): Promise<boolean> {
+    if (retry && busy) return false;
     if (!retry) await upload.ready();
     const images = retry ? (retry.images ?? []).map(path => path.split(/[\\/]/).pop()!) : answer ? [] : upload.ids();
     const selection = retry ? { ai: retry.to, ...(retry.model ? { model: retry.model } : {}), ...(retry.effort ? { effort: retry.effort } : {}) } : pick.value();
     if (!text && !images.length) {
       toast(t('chat.needText'));
-      return;
+      return false;
     }
+    if ((!busy || (mode !== undefined && mode !== 'queue')) && !await confirmUsageRound({ project: project.id, task: task.id, ai: selection.ai, account: context.state.settings.activeAccounts[selection.ai] ?? 'default' })) return false;
     await api.send({ project: project.id, task: task.id, text, ...selection, ...(busy ? { mode: mode ?? 'queue' } : {}), answer, images });
     if (!retry) storeLocal(pickKey, pick.value());
     if (!answer && !retry) {
@@ -277,6 +281,7 @@ export function taskView(
       await upload.clear();
     }
     await context.refresh();
+    return true;
   }
   draft.onkeydown = event => {
     if (shouldSend(event, readLocal('yumeewade.enterToSend', false))) {
@@ -331,7 +336,10 @@ export function taskView(
       if (!busy && index === 0) {
         q.append(button(
           t('chat.startQueued'),
-          () => api.send({ project: project.id, task: task.id, text: '', fromQueue: item.id }),
+          async () => {
+            if (!await confirmUsageRound({ project: project.id, task: task.id, ai: item.ai, account: context.state.settings.activeAccounts[item.ai] ?? 'default' })) return;
+            await api.send({ project: project.id, task: task.id, text: '', fromQueue: item.id });
+          },
           'primary',
         ));
       }
@@ -609,7 +617,7 @@ export function taskView(
     const comments = new Map<DiffLine, ReviewItem>();
     const reviewSend = button('', () => run(async () => {
       await savedReviews.ready();
-      await send(busy ? 'queue' : undefined, buildReviewPrompt(t('review.prompt'), [...comments.values()]));
+      if (!await send(busy ? 'queue' : undefined, buildReviewPrompt(t('review.prompt'), [...comments.values()]))) return;
       await savedReviews.clear();
       reviewSend.closest('dialog')?.close();
     }), 'primary');
@@ -765,7 +773,7 @@ export function taskView(
     if (reviewer && preview.files > 0) {
       const review = await reviewButton(project.id, task.id,
         () => ({ ai: reviewer.name, text: t('git.reviewPrompt', { target: preview.target }) }),
-        () => { if (alive) void run(() => context.refresh()); });
+        () => { if (alive) void run(() => context.refresh()); }, ai => context.state.settings.activeAccounts[ai] ?? 'default');
       if (!alive || serial !== previewSerial) return;
       actions.append(review);
     }
@@ -886,7 +894,7 @@ export function taskView(
   void run(async () => {
     const control = await reviewButton(project.id, task.id,
       () => ({ ...pick.value(), text: draft.value.trim() || t('readonlyReview.prompt') }),
-      () => { if (alive) void run(() => context.refresh()); });
+      () => { if (alive) void run(() => context.refresh()); }, ai => context.state.settings.activeAccounts[ai] ?? 'default');
     if (!alive) return;
     reviewControl = control;
     composerControls.append(control);

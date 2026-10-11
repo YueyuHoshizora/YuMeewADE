@@ -15,7 +15,6 @@ export const zhCN: Record<MessageKey, string> = {
   'usage.prepaidBalance': '预付余额 {balance}',
   'update.title': '有新版本可用',
   'update.available': '有新版本 v{version}',
-  'update.summary': 'YuMeewADE v{version} 已发布（当前 v{current}）。请下载后自行安装；安装包未签名，系统可能会提示警告。',
   'update.notes': '发布说明',
   'update.installer': '下载安装版',
   'update.portable': '下载免安装版',

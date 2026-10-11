@@ -1,5 +1,14 @@
 // UI 與核心共用的型別（API 契約）；只放純資料型別，不得 import Node 模組。
 // 流程對齊參考專案 project-hub：專案（含階段）→ 作業（含子作業／分支）→ 同一作業內的對話；狀態值寫入檔案。
+import type { ReviewSnapshot } from './review-types.ts';
+export type * from './project-trust.ts';
+export type * from './editor-workbench.ts';
+export type * from './review-types.ts';
+export type * from './git-precision.ts';
+export type * from './execution-tools.ts';
+export type * from './usage-history-types.ts';
+export type * from './backup-types.ts';
+export type * from './update-types.ts';
 
 // ---- 列舉值（寫進台帳檔案的原值；UI 依值翻譯顯示） ----
 
@@ -506,7 +515,9 @@ export type ChatEvent =
 export type GlobalEvent =
   | { event: 'ready'; data: { version: string } }
   | { event: 'changed'; data: { project?: string; task?: string } }
-  | { event: 'usage'; data: UsageState };
+  | { event: 'usage'; data: UsageState }
+  | { event: 'care_backup_failed'; data: Record<string, never> }
+  | { event: 'usage_record_failed'; data: Record<string, never> };
 
 // ---- 工作副本／合併 ----
 
@@ -516,6 +527,9 @@ export interface TurnUsage {
   output: number;
   /** 命中快取的輸入 token（有回報才帶）。 */
   cached?: number;
+  /** 供應商明確回報的本輪費用；缺少時未知，不由 token 或餘額推算。 */
+  claudeUsd?: number;
+  codexCredits?: number;
 }
 
 /** 作業工作副本的驗證指令執行結果（`POST /api/task/verify`）。 */
@@ -640,7 +654,7 @@ export interface ApiError {
 
 // ---- 明確啟動的角色流程與作業相依 ----
 export interface WorkflowStep { role: string; text: string; review: boolean }
-export interface WorkflowResult { role: string; ai: string; request: string; at: string; ok: boolean }
+export interface WorkflowResult { role: string; ai: string; request: string; at: string; ok: boolean; step?: number; invalidatedAt?: string; output?: string; approved?: boolean; evidence?: string; reviewSnapshot?: string }
 export interface WorkflowPlan {
   dependencies: string[];
   steps: WorkflowStep[];
@@ -656,7 +670,7 @@ export interface EditorDocument extends FileView { revision: string; language: s
 export interface EditorLocation { path: string; line: number; character: number }
 export interface EditorDiagnostic { line: number; character: number; message: string; severity: number }
 export interface EditorLanguageResult { locations: EditorLocation[]; diagnostics: EditorDiagnostic[] }
-export interface ExecutionRequest { command: string; args?: string[]; kind?: 'command' | 'preview' | 'debug' }
+export interface ExecutionRequest { command: string; args?: string[]; kind?: 'command' | 'preview' | 'debug'; cwd?: string; env?: Record<string, string> }
 export interface ExecutionOutput { sequence: number; stream: 'stdout' | 'stderr'; text: string }
 export interface ExecutionRun {
   id: string; project: string; task: string; kind: 'command' | 'preview' | 'debug'; command: string; args: string[];
@@ -676,14 +690,14 @@ export interface GitWorkbenchStatus {
 }
 export interface GitPullRequestStatus { available: boolean; authenticated: boolean; repository: string | null }
 export interface ReviewInput { ai: string; model?: string; effort?: string; text: string }
-export interface ReviewResult { request: string; text: string; ai: string; session?: string; ok: boolean; asks?: Ask[] }
+export interface ReviewResult { request: string; text: string; ai: string; session?: string; ok: boolean; asks?: Ask[]; approved: boolean; structured: boolean; snapshot?: ReviewSnapshot }
 export interface ReviewCapability { supported: boolean; enforcement: 'native-sandbox' | 'tool-allowlist' | 'unsupported' }
 export interface PinnedSource { path: string; start: number; end: number }
 export interface TaskContext { decisions: string; sources: PinnedSource[] }
 export interface ReviewDraft { path: string; oldLine?: number; newLine?: number; hash: string; code: string; comment: string }
 export interface HandoffPreview { text: string; rows: number[]; start: number | null; end: number | null; truncated: boolean }
 export interface ContextPreview { handoff: HandoffPreview; context: { text: string; truncated: boolean; sources: PinnedSource[] } }
-export interface CareBackup { id: string; createdAt: string; complete: boolean; externalCount: number; containsSecrets: true }
+export interface CareBackup { id: string; createdAt: string; complete: boolean; externalCount: number; containsSecrets: true; bytes: number }
 export interface CareHealth {
   checkedAt: string; node: string; electron: string | null;
   git: { available: boolean; version: string }; writable: boolean; loopback: boolean;
