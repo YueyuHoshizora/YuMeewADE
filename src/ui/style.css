@@ -477,7 +477,7 @@ body.terminal-dock-open { grid-template-rows: 64px minmax(0, 1fr) var(--terminal
 .overview-list li { padding: 10px 0; overflow-wrap: anywhere; }
 .overview-list li + li { border-top: 1px solid var(--border); }
 .overview-card progress { max-width: 160px; }
-.task-board { display: grid; grid-template-columns: repeat(5, minmax(220px, 1fr)); gap: 12px; overflow-x: auto; padding: 8px 0; }
+.task-board { display: grid; grid-template-columns: repeat(5, minmax(160px, 1fr)); gap: 12px; overflow-x: auto; padding: 8px 0; }
 .task-board-column { background: var(--panel); border: 1px solid var(--border); border-radius: 8px; padding: 10px; min-height: 180px; }
 .task-board-column h3 { margin: 0 0 12px; }
 .task-board-card { border: 1px solid var(--border); border-radius: 6px; padding: 10px; margin: 8px 0; overflow-wrap: anywhere; }

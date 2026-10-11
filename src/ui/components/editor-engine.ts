@@ -16,7 +16,8 @@ import { php } from '@codemirror/lang-php';
 import { sql } from '@codemirror/lang-sql';
 import { xml } from '@codemirror/lang-xml';
 import { yaml } from '@codemirror/lang-yaml';
-import { StreamLanguage } from '@codemirror/language';
+import { HighlightStyle, StreamLanguage, syntaxHighlighting } from '@codemirror/language';
+import { tags } from '@lezer/highlight';
 import { shell } from '@codemirror/legacy-modes/mode/shell';
 import { ruby } from '@codemirror/legacy-modes/mode/ruby';
 import { swift } from '@codemirror/legacy-modes/mode/swift';
@@ -27,6 +28,21 @@ import { properties } from '@codemirror/legacy-modes/mode/properties';
 import { kotlin } from '@codemirror/legacy-modes/mode/clike';
 import { autocompletion, type CompletionContext, type CompletionResult } from '@codemirror/autocomplete';
 import { lintGutter, setDiagnostics, type Diagnostic } from '@codemirror/lint';
+
+// basicSetup 的預設配色是亮底用色（fallback）；這組以 App 主題變數上色，深淺主題都可讀，且優先於預設。
+export const appHighlight = HighlightStyle.define([
+  { tag: [tags.keyword, tags.controlKeyword, tags.moduleKeyword, tags.operatorKeyword, tags.definitionKeyword, tags.modifier], color: 'var(--purple)' },
+  { tag: [tags.string, tags.special(tags.string), tags.regexp, tags.character], color: 'var(--green)' },
+  { tag: [tags.number, tags.bool, tags.null, tags.atom, tags.constant(tags.name)], color: 'var(--yellow)' },
+  { tag: [tags.comment, tags.lineComment, tags.blockComment, tags.docComment, tags.meta], color: 'var(--muted)', fontStyle: 'italic' },
+  { tag: [tags.typeName, tags.className, tags.namespace, tags.standard(tags.name)], color: 'var(--blue)' },
+  { tag: [tags.function(tags.variableName), tags.function(tags.propertyName), tags.macroName], color: 'var(--accent)' },
+  { tag: [tags.tagName, tags.heading], color: 'var(--red)', fontWeight: 'bold' },
+  { tag: [tags.attributeName, tags.propertyName, tags.labelName], color: 'var(--blue)' },
+  { tag: tags.link, color: 'var(--blue)', textDecoration: 'underline' },
+  { tag: tags.emphasis, fontStyle: 'italic' }, { tag: tags.strong, fontWeight: 'bold' },
+  { tag: tags.invalid, color: 'var(--red)' },
+]);
 
 export function editorLanguage(path: string) {
   const ext = path.split('.').at(-1)?.toLowerCase();
@@ -63,7 +79,7 @@ export class EditorContent {
   }
   private state(text: string): EditorState {
     return EditorState.create({ doc: text, extensions: [
-      basicSetup, rectangularSelection(), crosshairCursor(),
+      basicSetup, syntaxHighlighting(appHighlight), rectangularSelection(), crosshairCursor(),
       EditorView.clickAddsSelectionRange.of(event => event.altKey || event.metaKey || event.ctrlKey),
       keymap.of([indentWithTab]), this.language.of([]), this.editable.of(EditorState.readOnly.of(true)),
       lintGutter(), autocompletion({ override: [context => this.complete?.(context) ?? null] }),
