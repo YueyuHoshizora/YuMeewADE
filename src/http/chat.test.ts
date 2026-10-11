@@ -32,9 +32,7 @@ test('quickstart creates current-phase task, saves selection; settings and roles
     const task = (result.json as { task: Task }).task; assert.equal(task.phase, '計畫'); assert.equal(task.title, 'Make this'); await s.app.runner.whenIdle();
     assert.equal((await s.api('POST', '/api/settings', { fullAccess: { codex: false } })).status, 200);
     assert.equal((await s.api('POST', '/api/roles', { roles: [{ name: '人工', job: 'verify', main: { cli: '人', model: '', effort: '' } }] })).status, 200);
-    const ai = await s.api('GET', '/api/ai'); assert.equal(ai.status, 200); assert.ok(Array.isArray(ai.json));
-    // Grok and Gemini lists come only from their authenticated CLIs, so a fresh test HOME has none.
-    assert.ok((ai.json as { name: string; models: unknown[] }[]).filter(info => info.name === 'claude' || info.name === 'codex').every(info => info.models.length));
+    const ai = await s.api('GET', '/api/ai'); assert.equal(ai.status, 200); assert.ok(Array.isArray(ai.json)); assert.ok((ai.json as { models: unknown[] }[]).every(info => info.models.length));
   } finally { await s.close(); }
 });
 

@@ -2,7 +2,7 @@
 // renderer 走與網頁版完全相同的 http://127.0.0.1:{port}，不另立協定（安全節 4）。
 
 import { app, BrowserWindow, dialog, ipcMain, shell, utilityProcess, type UtilityProcess } from 'electron';
-import { mkdirSync, promises as fs } from 'node:fs';
+import { promises as fs } from 'node:fs';
 
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -10,23 +10,17 @@ import { hostAuthority, loadConfig } from '../shared/config.ts';
 import { probe, waitForCore } from './probe.ts';
 import { acceptsFrame, validBadgeCount } from './policy.ts';
 import { stopOwnedCore } from './shutdown.ts';
-import { configureSecretApplication, createSecretRequestHandler } from './secret-service.ts';
 
 const HERE = path.dirname(fileURLToPath(import.meta.url));
 const APP_ROOT = path.join(HERE, '..', '..');
 const SERVER_ENTRY = path.join(HERE, '..', 'server', 'main.js');
 const PRELOAD = path.join(HERE, 'preload.cjs');
-// Preserve existing packaged configuration while giving secrets one cross-mode identity.
-const CONFIG_DIRECTORY = app.getPath('userData');
 
 let core: UtilityProcess | null = null;
 let quitting = false;
 let shutdownComplete = false;
 let mainWindow: BrowserWindow | null = null;
 let coreOrigin = '';
-mkdirSync(CONFIG_DIRECTORY, { recursive: true, mode: 0o700 });
-app.setPath('sessionData', CONFIG_DIRECTORY);
-configureSecretApplication();
 const primaryInstance = app.requestSingleInstanceLock();
 if (!primaryInstance) app.quit();
 
@@ -44,7 +38,7 @@ app.on('second-instance', focusWindow);
 async function ensureConfigPath(): Promise<string> {
   const fromEnv = process.env['YUMEEWADE_CONFIG'];
   if (fromEnv) return fromEnv;
-  const file = path.join(CONFIG_DIRECTORY, 'config.yaml');
+  const file = path.join(app.getPath('userData'), 'config.yaml');
   try {
     await fs.access(file);
   } catch {
@@ -58,12 +52,7 @@ async function ensureConfigPath(): Promise<string> {
 async function startCore(host: string, port: number): Promise<void> {
   if (await probe(host, port)) return; // 已有核心在跑，直接用
   if (quitting) return;
-  core = utilityProcess.fork(SERVER_ENTRY, [], {
-    env: { ...process.env, YUMEEWADE_SECRET_PARENT: '1' },
-    stdio: 'pipe', serviceName: 'yumeewade-core',
-  });
-  const ownedCore = core;
-  ownedCore.on('message', createSecretRequestHandler(message => ownedCore.postMessage(message)));
+  core = utilityProcess.fork(SERVER_ENTRY, [], { env: { ...process.env }, stdio: 'pipe', serviceName: 'yumeewade-core' });
   core.stdout?.on('data', (c: Buffer) => process.stdout.write(c));
   core.stderr?.on('data', (c: Buffer) => process.stderr.write(c));
   core.on('exit', (code) => {

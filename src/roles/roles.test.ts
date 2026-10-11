@@ -11,12 +11,6 @@ test('real defaults and roleless fallback', () => withTmpWorkspace(async ws => {
   assert.deepEqual(resolveLaunch(roles, { role: '', cli: '', model: '', effort: '' }, {}, initial), { cli: initial.ai, model: initial.model, effort: initial.effort });
   assert.deepEqual(resolveLaunch(roles, { role: '實作', cli: 'claude', model: 'custom', effort: 'max' }, { model: 'override' }, initial), { cli: 'claude', model: 'override', effort: 'max' });
 }));
-test('switching AI does not inherit another provider effort; explicit CLI defaults clear saved choices', () => {
-  const roles = parseRoles('roles:\n  build: { main: [codex, codex-model, high] }\n');
-  const task = { role: 'build', cli: 'codex', model: 'codex-model', effort: 'high' };
-  assert.deepEqual(resolveLaunch(roles, task, { cli: 'grok' }, initial), { cli: 'grok', model: '', effort: '' });
-  assert.deepEqual(resolveLaunch(roles, { ...task, cli: 'grok', model: 'saved', effort: 'high' }, { model: '', effort: '' }, initial), { cli: 'grok', model: '', effort: '' });
-});
 test('role write round-trip retains header and unrelated sections', () => withTmpWorkspace(async ws => {
   await fs.writeFile(ws.rolesFile, '# header\npermissions:\n  auto: true\nroles:\n  old: { main: [人] }\nswitch:\n  auto: false\n');
   const inputs = [{ name: '設計:甲', job: '含 # 與冒號: 工作', main: { cli: 'claude', model: 'claude-opus-5-5', effort: 'max' }, backup: { cli: '人', model: '', effort: '' } }];

@@ -2,8 +2,6 @@ import type { AppState, UsageState } from '../shared/types.ts';
 import { api } from './api.ts';
 import { getLocale, t } from './i18n/index.ts';
 import { button, el, link, readLocal, run, showError, taskHash, type View, type ViewContext } from './components/dom.ts';
-import { aiLabel, localTime, quotaLabel } from './components/display.ts';
-import { quotaAlerts, quotaCountdowns, type QuotaAlert } from './components/quota-alert.ts';
 import { needsReply, tree } from './components/tree.ts';
 import { newProjectView, projectView } from './views/projects.ts';
 import { taskView } from './views/task.ts';
@@ -14,10 +12,9 @@ import { attention } from './components/attention.ts';
 import { searchView } from './views/search.ts';
 import { usageBar } from './components/usage.ts';
 import { runningChip } from './components/running.ts';
-import { openUsageDetails } from './components/usage-details.ts';
 
 const header = document.getElementById('header')!; const sidebar = document.getElementById('sidebar')!; const main = document.getElementById('main')!; const footer = document.getElementById('footer')!;
-let state: AppState | null = null; let usage: UsageState = { ais: [], tokensPerSecond: null }; let view: View | null = null; let route = ''; let viewTarget = ''; let refreshJob: Promise<void> | null = null; let refreshAgain = false; let debounce: number | undefined;
+let state: AppState | null = null; let usage: UsageState = { ais: [], tokensPerSecond: 0 }; let view: View | null = null; let route = ''; let viewTarget = ''; let refreshJob: Promise<void> | null = null; let refreshAgain = false; let debounce: number | undefined;
 function notify(previous: AppState | null, next: AppState): void {
   const items = attention(next); window.yumeewade?.setBadge?.(items.length);
   if (!previous || !readLocal('yumeewade.notifications', true) || !('Notification' in window) || Notification.permission !== 'granted' || (!document.hidden && document.hasFocus())) return;
@@ -28,28 +25,6 @@ function notify(previous: AppState | null, next: AppState): void {
     try { const notice = new Notification(item.title, { body: t(item.kind === 'answer' ? 'notification.answer' : 'notification.done'), tag: hash }); notice.onclick = () => { window.yumeewade?.focus?.(); window.focus(); location.hash = hash; notice.close(); }; } catch { /* 系統不支援通知時不影響狀態更新。 */ }
   }
 }
-
-/** 額度提醒只使用標準系統通知，前景與背景皆通知；沿用通知開關與授權。 */
-const firedCountdowns = new Set<string>();
-function deliverQuota(alerts: QuotaAlert[]): void {
-  for (const alert of alerts) {
-    const account = state?.settings.accounts[alert.ai]?.find(entry => entry.id === alert.account);
-    const ai = `${aiLabel(alert.ai)} · ${account?.name ?? t('usage.defaultAccount')}`;
-    const windows = alert.windows.map(quotaLabel).join('/') || t('usage.limited');
-    const reset = alert.resetsAt ? localTime(alert.resetsAt) : '';
-    const message = alert.kind === 'recovered' ? t('usage.alertRecovered', { ai })
-      : alert.kind === 'low' ? t('usage.alertLow', { ai, windows, threshold: alert.threshold ?? 20, remaining: alert.remaining ?? 0 })
-        : alert.kind === 'soon' ? t('usage.alertSoon', { ai, minutes: alert.minutes ?? 1, reset })
-          : alert.resetsAt ? t('usage.alertFull', { ai, windows, reset })
-            : t('usage.alertFullNoReset', { ai, windows });
-    if (!readLocal('yumeewade.notifications', true) || !('Notification' in window) || Notification.permission !== 'granted') continue;
-    try {
-      const notice = new Notification(t('usage.alertTitle'), { body: message, tag: `quota-${alert.ai}-${alert.account}-${alert.kind}${alert.threshold ?? alert.minutes ?? ''}` });
-      notice.onclick = () => { window.yumeewade?.focus?.(); window.focus(); if (state) openUsageDetails(() => state!, () => usage, refresh, alert.ai); notice.close(); };
-    } catch { /* 系統通知不可用時不影響額度更新。 */ }
-  }
-}
-function announceQuota(next: UsageState): void { deliverQuota(quotaAlerts(usage, next)); }
 
 function drawShell(): void {
   if (!state) return;
@@ -64,7 +39,7 @@ function drawShell(): void {
 function drawFooter(): void {
   if (!state) return;
   const chip = runningChip(state);
-  footer.setAttribute('aria-label', t('usage.region')); footer.replaceChildren(...(chip ? [chip] : []), ...usageBar(state, usage, Date.now(), ai => openUsageDetails(() => state!, () => usage, refresh, ai)));
+  footer.setAttribute('aria-label', t('usage.region')); footer.replaceChildren(...(chip ? [chip] : []), ...usageBar(state, usage));
 }
 function navigate(force = false): void {
   if (!state) return;
@@ -94,7 +69,7 @@ function refresh(): Promise<void> {
   refreshJob = (async () => {
     try {
       do {
-        refreshAgain = false; const next = await api.state(); notify(state, next); announceQuota(next.usage); state = next; usage = next.usage; drawShell();
+        refreshAgain = false; const next = await api.state(); notify(state, next); state = next; usage = next.usage; drawShell();
         navigate(); view?.update?.(state);
       } while (refreshAgain);
     } catch (error) {
@@ -115,10 +90,9 @@ window.addEventListener('keydown', event => {
 });
 window.addEventListener('focus', () => { void refresh(); });
 window.setInterval(() => { void refresh(); }, 15_000);
-window.setInterval(() => { deliverQuota(quotaCountdowns(usage, Date.now(), firedCountdowns)); }, 15_000);
 const events = stream('/api/events', {
   changed: () => { window.clearTimeout(debounce); debounce = window.setTimeout(() => { void refresh(); }, 150); },
-  usage: event => { const next = JSON.parse(event.data) as UsageState; announceQuota(next); usage = next; drawFooter(); },
+  usage: event => { usage = JSON.parse(event.data) as UsageState; drawFooter(); },
 }, () => { void refresh(); });
 window.addEventListener('pagehide', () => { events.close(); view?.dispose?.(); });
 void refresh();

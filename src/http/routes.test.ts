@@ -1,11 +1,9 @@
 import assert from 'node:assert/strict';
 import { promises as fs } from 'node:fs';
 import http from 'node:http';
-import os from 'node:os';
-import path from 'node:path';
 import { test } from 'node:test';
 import { startTestServer } from '../testing/server.ts';
-import type { AppState, Project, Settings, Task } from '../shared/types.ts';
+import type { AppState, Project, Task } from '../shared/types.ts';
 import { MockCliProvider } from '../cli/mock.ts';
 
 async function setup() {
@@ -136,33 +134,4 @@ test('HTTP gate rejects bad host/origin, malformed JSON and oversized bodies', a
     assert.equal((await s.api('POST', '/api/project/new', { name: 'x'.repeat(200) })).status, 413);
     assert.equal(await raw({ 'Transfer-Encoding': 'chunked' }, ['{"name":"', 'y'.repeat(300), '"}']), 413);
   } finally { await s.close(); }
-});
-
-test('account APIs register, activate, refresh and remove existing profiles safely', async () => {
-  const s = await startTestServer('');
-  const dir = await fs.mkdtemp(path.join(os.tmpdir(), 'ym-account-http-'));
-  try {
-    assert.equal((await s.api('POST', '/api/accounts/add', { ai: 'codex', name: 'Other', configDir: 'relative' })).status, 400);
-    const added = await s.api('POST', '/api/accounts/add', { ai: 'codex', name: 'Other', configDir: dir });
-    assert.equal(added.status, 200);
-    const account = (added.json as Settings).accounts.codex![0]!;
-    assert.equal(account.configDir, dir);
-    assert.equal((await s.api('POST', '/api/accounts/add', { ai: 'codex', name: 'Duplicate', configDir: dir })).status, 409);
-    assert.equal((await s.api('POST', '/api/settings', { accounts: {} })).status, 400);
-    assert.equal((await s.api('POST', '/api/settings', { activeAccounts: { codex: 'unknown' } })).status, 404);
-    const activated = await s.api('POST', '/api/settings', { activeAccounts: { codex: account.id } });
-    assert.equal(activated.status, 200);
-    assert.equal((activated.json as Settings).activeAccounts.codex, account.id);
-    assert.equal((await s.api('POST', '/api/accounts/refresh', {})).status, 200);
-    const removed = await s.api('POST', '/api/accounts/remove', { ai: 'codex', id: account.id });
-    assert.equal(removed.status, 200);
-    assert.equal((removed.json as Settings).activeAccounts.codex, 'default');
-    assert.ok((await fs.stat(dir)).isDirectory());
-    assert.equal((await s.api('POST', '/api/settings', { activeAccounts: { codex: account.id } })).status, 404);
-    s.app.refreshUsage = async () => { throw new Error('secret credential raw failure'); };
-    const failed = await s.api('POST', '/api/accounts/refresh', {});
-    assert.equal(failed.status, 503);
-    assert.equal(JSON.stringify(failed.json).includes('secret'), false);
-    assert.equal((await s.api('POST', '/api/accounts/add', { ai: 'claude', name: 'Refresh failure is safe', configDir: dir })).status, 200);
-  } finally { await s.close(); await fs.rm(dir, { recursive: true, force: true }); }
 });

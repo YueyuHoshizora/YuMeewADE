@@ -1,6 +1,6 @@
 import type {
   AppState, Busy, ChatEvent, ChatHistory, ChatRow, ProjectView,
-  QueueItem, SendMode, SlashCommand, Task, TaskView, VerifyResult, VerifyStatus,
+  QueueItem, SendMode, Task, TaskView, VerifyResult, VerifyStatus,
 } from '../../shared/types.ts';
 import { TASK_STATES } from '../../shared/types.ts';
 import { api, query, request } from '../api.ts';
@@ -23,7 +23,6 @@ import { buildReviewPrompt, type ReviewItem } from '../components/review.ts';
 import { openFileBrowser } from '../components/files.ts';
 import { attachMention } from '../components/mention.ts';
 import { snippetsButton } from '../components/snippet-menu.ts';
-import { attachSlashCommands } from '../components/slash-menu.ts';
 
 export function taskView(
   context: ViewContext,
@@ -226,10 +225,7 @@ export function taskView(
   const initialPick = readLocal(
     pickKey,
     { ai: task.cli || context.state.settings.initial.ai, model: task.model || context.state.settings.initial.model, effort: task.effort || context.state.settings.initial.effort });
-  const pick = aiPicker(context.state, initialPick, value => {
-    storeLocal(pickKey, value);
-    slashCommands.refresh();
-  }, false, true);
+  const pick = aiPicker(context.state, initialPick, value => storeLocal(pickKey, value), false, true);
   const upload = attachments(project.id, context.state.limits, draft);
   const actions = el('div', 'send-actions');
   const running = el('p', 'running-line');
@@ -267,7 +263,7 @@ export function taskView(
         button(t('chat.queue'), () => send('queue'), 'primary'),
       );
     } else {
-      actions.replaceChildren();
+      actions.replaceChildren(button(t('chat.send'), () => send(), 'primary'));
     }
     clock();
     renderQueue();
@@ -376,6 +372,7 @@ export function taskView(
         toolCount = 0;
         toolGroup = disclosure('');
         toolGroup.className = 'tool-events';
+        toolGroup.open = readLocal('yumeewade.tools', false);
         target.insertBefore(toolGroup, before);
       }
       toolGroup.querySelector('summary')!.textContent = t('chat.tools', { n: ++toolCount });
@@ -836,18 +833,10 @@ export function taskView(
     footer.title = task.memo;
     footer.replaceChildren(row(state, phase, detail, memo, leaveMemo));
   }
-  const composerControls = row(pick.node, upload.node, snippetsButton(draft));
+  const composerControls = row(pick.node, upload.node, snippetsButton(draft), actions);
   composerControls.classList.add('composer-controls');
   const mentions = attachMention(draft, async q => (await request<{ files: string[] }>(query('/api/task/files', { project: project.id, task: task.id, q }))).files);
-  const slashCommands = attachSlashCommands(draft, () => {
-    const ai = pick.value().ai;
-    return JSON.stringify([ai, context.state.settings.activeAccounts[ai], context.state.settings.accounts[ai], task.workdir, task.copy, task.copyMissing]);
-  }, async () => {
-    const ai = pick.value().ai;
-    if (ai !== 'claude' && ai !== 'codex' && ai !== 'grok' && ai !== 'gemini') return [];
-    return (await request<{ commands: SlashCommand[] }>(query('/api/chat/commands', { project: project.id, task: task.id, ai }))).commands;
-  });
-  composer.append(queueNode, mentions, slashCommands.node, draft, upload.strip, running, composerControls, actions);
+  composer.append(queueNode, mentions, draft, upload.strip, running, composerControls);
   const column = el('div', 'task-column');
   column.append(header, transcript, latest, composer, footer);
   node.append(column, gitPanel);
@@ -938,7 +927,6 @@ export function taskView(
       window.clearInterval(timer);
       cancelAnimationFrame(resizeFrame);
       upload.dispose();
-      slashCommands.dispose();
     },
     update: (state: AppState) => {
       context.state = state;
@@ -960,7 +948,6 @@ export function taskView(
       ]);
       project = nextProject;
       task = nextTask;
-      slashCommands.refresh();
       stateChip.textContent = t(`state.${task.state}`);
       if (document.activeElement !== title) title.value = task.title;
       renderQuestion();

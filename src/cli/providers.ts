@@ -1,15 +1,13 @@
 import type { Config } from '../shared/config.ts';
+import { ClaudeCliProvider } from './claude.ts';
+import { CodexCliProvider } from './codex.ts';
 import { MockCliProvider } from './mock.ts';
 import type { CliProvider } from './provider.ts';
-import type { CredentialAccounts } from './accounts.ts';
-import { GeminiCliProvider } from './gemini.ts';
 
-export function createProviders(config: Config, accounts: CredentialAccounts): Record<string, CliProvider> {
+export function createProviders(config: Config): Record<string, CliProvider> {
   return {
-    claude: accounts.provider('claude', config.cli.claude),
-    codex: accounts.provider('codex', config.cli.codex),
-    grok: accounts.provider('grok', config.cli.grok),
-    gemini: accounts.provider('gemini', config.cli.gemini),
+    claude: new ClaudeCliProvider(config.cli.claude, config.cli.envPassthrough),
+    codex: new CodexCliProvider(config.cli.codex, config.cli.envPassthrough),
     mock: new MockCliProvider(),
   };
 }

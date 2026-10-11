@@ -15,9 +15,6 @@ function images(body: Record<string, unknown>, max: number): string[] | undefine
   return body['images'] as string[];
 }
 export function registerChatRoutes(router: Router, app: App): void {
-  router.get('/api/chat/commands', async ({ query }) => ({
-    commands: await app.runner.commands(reqString(query, 'project', 100), optString(query, 'task', 100), reqString(query, 'ai', 100)),
-  }));
   router.get('/api/chat/export', async ({ query, res }) => {
     const p = reqString(query, 'project', 100);
     const t = reqString(query, 'task', 100);
@@ -53,8 +50,8 @@ export function registerChatRoutes(router: Router, app: App): void {
     if (mode && !SEND_MODES.includes(mode as typeof SEND_MODES[number])) throw new AppError('bad_request');
     if (body['answer'] !== undefined && typeof body['answer'] !== 'boolean') throw new AppError('bad_request');
     const input: SendInput = { project: reqString(body, 'project', 100), task: reqString(body, 'task', 100), text: optString(body, 'text', app.config.limits.promptChars) ?? '' };
-    const ai = optString(body, 'ai', 100); const model = body['model'] === '' ? '' : optString(body, 'model', 200); const effort = body['effort'] === '' ? '' : optString(body, 'effort', 20); const fromQueue = optString(body, 'fromQueue', 100); const pics = images(body, app.config.limits.imagesPerSend);
-    if (ai) input.ai = ai; if (model !== undefined) input.model = model; if (effort !== undefined) input.effort = effort; if (mode) input.mode = mode as typeof SEND_MODES[number]; if (fromQueue) input.fromQueue = fromQueue; if (pics) input.images = pics; if (body['answer'] === true) input.answer = true;
+    const ai = optString(body, 'ai', 100); const model = optString(body, 'model', 200); const effort = optString(body, 'effort', 20); const fromQueue = optString(body, 'fromQueue', 100); const pics = images(body, app.config.limits.imagesPerSend);
+    if (ai) input.ai = ai; if (model) input.model = model; if (effort) input.effort = effort; if (mode) input.mode = mode as typeof SEND_MODES[number]; if (fromQueue) input.fromQueue = fromQueue; if (pics) input.images = pics; if (body['answer'] === true) input.answer = true;
     return app.runner.send(input);
   });
   router.post('/api/chat/stop', async ({ body }) => ({ stopped: await app.runner.stop(reqString(body, 'project', 100), reqString(body, 'task', 100)) }));
@@ -76,7 +73,7 @@ export function registerChatRoutes(router: Router, app: App): void {
     const bodyPath = app.projects.bodyPath(project);
     const task = await app.tasks.create(p, { title: text.trim().split('\n')[0]?.slice(0, 40) || '看圖片', phase: app.projects.currentPhase(project), cli: ai, model, effort, workspace: bodyPath === app.ws.projectDir(p) || await isRepo(bodyPath) ? 'isolated' : 'direct' });
     await writeJson(app.ws.startPickFile(p), { ai, model, effort });
-    const sent = await app.runner.send({ project: p, task: task.id, text, ai, model, effort, ...(pics ? { images: pics } : {}) });
+    const sent = await app.runner.send({ project: p, task: task.id, text, ai, ...(model ? { model } : {}), ...(effort ? { effort } : {}), ...(pics ? { images: pics } : {}) });
     await app.oplog.record({ action: 'quickstart', project: p, task: task.id }); app.changed(p, task.id);
     return { task: await app.tasks.get(p, task.id), request: sent.request };
   });

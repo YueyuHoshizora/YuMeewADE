@@ -7,7 +7,7 @@
 - 全案 **TypeScript**，不使用其他語言（含建置腳本；shell 僅限 CI workflow 內一行指令）。
 - 執行環境 **Node.js v24**（`engines.node >= 24`）。可在更新版本開發，但**不得使用 v24 以後才有的 API**。
 - 桌面外殼 **Electron**；前端建置 **Vite**；打包 **electron-builder**。三者與 TypeScript 皆**釘選確切版本**，升版需人工裁示；`package-lock.json` 入庫。
-- 其餘一律用 Node 內建模組（`node:http`、`node:child_process`、`node:fs/promises`、`node:test`…）。**不得新增執行期相依或 ORM**。資料庫僅允許使用者 2026-10-11 明確要求的帳號憑證庫（Node 24 `node:sqlite`，見 PLAN.md B.10）；台帳仍不得改用資料庫。
+- 其餘一律用 Node 內建模組（`node:http`、`node:child_process`、`node:fs/promises`、`node:test`…）。**不得新增執行期相依**，也不得引入資料庫或 ORM。
 - 模組系統：Node ESM（`"type": "module"`，`module: nodenext`）。原始碼相對匯入寫 `.ts` 副檔名，由 `rewriteRelativeImportExtensions` 轉為 `.js`。
 - 只用可擦除語法（`erasableSyntaxOnly`）：不用 `enum`、namespace、參數屬性；測試以 Node 原生型別剝離直接執行 `.ts`。
 
@@ -29,13 +29,12 @@
 ## 三、結構對應
 
 ```
-src/server/          核心進入點（main.ts：App 層級憑證生命週期）與組裝（app.ts：工作區服務唯一建構處）
+src/server/          核心進入點（main.ts）與組裝（app.ts：所有服務的唯一建構處）
 src/shared/          純函式與契約：yaml 子集、frontmatter、路徑白名單、原子寫入、config、錯誤、types.ts（UI ⇄ 核心 API 型別）
 src/ledger/          台帳層：專案、作業、完成確認、設定、排序、操作紀錄（唯一碰台帳檔的地方）
-src/credentials/     App 本機 SQLite 加密憑證庫（不隨工作區移動、不暴露原始憑證）
 src/state/           /api/state 組裝：樹、圓點、交給你嚕、未讀等計算欄位
 src/chat/            對話層：JSONL、session、交接包、三種執行中指示與隊列、問題解析、附件、執行狀態機
-src/cli/             CliProvider 介面＋claude／codex／grok／mock adapter、憑證匯入及限生命週期傳輸（唯一 spawn AI CLI 的地方）
+src/cli/             CliProvider 介面＋claude／codex／mock adapter（唯一 spawn AI CLI 的地方）
 src/ai/              模型清單（讀 CLI 快取）、CLI 版本與更新
 src/git/             worktree 副本、合併預覽、合併、自動儲存
 src/roles/           roles.yaml 讀寫與 role→啟動參數解析
@@ -46,7 +45,7 @@ src/ui/              Vite 前端（vanilla TypeScript，無框架；views／comp
 config.yaml          設定範本；templates/ 內為 roles.yaml／PROJECT.md／作業檔／專案範本
 ```
 
-各層只能往下依賴：`http → state/chat/ledger/git/ai/roles → cli/shared`；CLI 的憑證協調可依賴 `credentials → shared`。`ui` 只透過 HTTP／SSE 與核心溝通，型別只從 `src/shared/types.ts` 取；桌面版與網頁版走**完全相同**的 API。OS 憑證加解密僅允許核心與 Electron 主程序間私有 IPC，不得暴露給 renderer／preload。
+各層只能往下依賴：`http → state/chat/ledger/git/ai/roles → cli/shared`。`ui` 只透過 HTTP／SSE 與核心溝通，型別只從 `src/shared/types.ts` 取；桌面版與網頁版走**完全相同**的 API，Electron 主行程不另立協定。
 
 ## 四、台帳與檔案規則
 
@@ -96,4 +95,4 @@ config.yaml          設定範本；templates/ 內為 roles.yaml／PROJECT.md／
 
 - 分功能、分階段提交（Phase 0–5 見 PLAN.md 第十節）；提交訊息格式 `phaseN: 摘要`。
 - 不自動 push；全部 Gate 驗證後再一次推送 `main`。
-- `LICENSE` 採 **GPL-3.0-only**（依使用者最新裁示取代 Apache-2.0）；未經使用者明確要求，不得再變更授權。
+- `LICENSE`（Apache-2.0）不得改寫。

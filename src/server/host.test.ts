@@ -69,8 +69,8 @@ test('切換工作區：拒絕相對路徑、檔案路徑與 AI 執行中，失�
 
 test('core startup refuses a second owner and shutdown releases workspace ownership', () => withTmpWorkspace(async ws => {
   const config = parseConfig(`workspace:\n  root: ${JSON.stringify(ws.root)}\n`, null);
-  const first = new CoreHost(config, { app: { providers: { mock: new MockCliProvider() } } });
-  const second = new CoreHost(config, { app: { providers: { mock: new MockCliProvider() } } });
+  const first = new CoreHost(config);
+  const second = new CoreHost(config);
   try {
     await first.init();
     await assert.rejects(second.init(), /已有核心程序/);

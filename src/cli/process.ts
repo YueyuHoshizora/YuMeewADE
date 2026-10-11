@@ -8,7 +8,7 @@ import type { RunOutcome } from './provider.ts';
 
 const BASE_ENV = ['PATH', 'HOME', 'USER', 'LOGNAME', 'LANG', 'TERM', 'TMPDIR', 'TMP', 'TEMP', 'SHELL', 'APPDATA', 'LOCALAPPDATA', 'USERPROFILE', 'SystemRoot', 'ComSpec', 'PATHEXT', 'HOMEDRIVE', 'HOMEPATH'];
 /** CLI 自己的設定目錄指標（不是憑證，但沒有它 CLI 會找不到登入狀態）。 */
-const CLI_HOME_ENV = ['CODEX_HOME', 'CLAUDE_CONFIG_DIR', 'GROK_HOME'];
+const CLI_HOME_ENV = ['CODEX_HOME', 'CLAUDE_CONFIG_DIR'];
 
 /** 只放行基本變數＋LC_*／XDG_*＋設定檔指定的名稱（安全節 8）。 */
 export function minimalEnv(passthrough: string[], source: NodeJS.ProcessEnv = process.env): NodeJS.ProcessEnv {
@@ -95,7 +95,7 @@ export function windowsCommandLine(command: string, args: string[]): string {
   return `"${[escapedCommand, ...escapedArgs].join(' ')}"`;
 }
 
-export function spawnCli(command: string, args: string[], options: Parameters<typeof spawn>[2]): ChildProcess {
+function spawnCli(command: string, args: string[], options: Parameters<typeof spawn>[2]): ChildProcess {
   if (process.platform === 'win32' && /\.(?:cmd|bat)$/i.test(command)) {
     return spawn(process.env['ComSpec'] || 'cmd.exe', ['/d', '/s', '/c', windowsCommandLine(command, args)], { ...options, windowsVerbatimArguments: true });
   }
@@ -200,7 +200,7 @@ function runResolvedLineProcess(opts: { command: string; args: string[]; cwd: st
 }
 
 /** 日誌只記旗標形狀：session id、路徑等帶值的旗標以 <…> 取代（安全節 8）。 */
-const VALUE_FLAGS: Record<string, true> = { '--resume': true, '--add-dir': true, '--model': true, '-m': true, '-c': true, '--effort': true, resume: true, '-i': true, '--append-system-prompt': true, '--prompt-file': true, '--prompt-json': true, '--single': true, '--reasoning-effort': true, '--session-id': true, '--rules': true, '--system-prompt-override': true, '--leader-socket': true };
+const VALUE_FLAGS: Record<string, true> = { '--resume': true, '--add-dir': true, '--model': true, '-m': true, '-c': true, '--effort': true, resume: true, '-i': true };
 export function redactArgs(args: string[]): string[] {
   const out: string[] = [];
   let hide = false;
@@ -224,13 +224,12 @@ export interface CommandCapture {
 }
 
 /** 非推論指令（版本、模型目錄、更新）；不使用 shell，不記錄輸出。 */
-export async function captureCommand(opts: { command: string; args: string[]; cwd?: string; env?: NodeJS.ProcessEnv; timeoutMs: number; maxOutputBytes?: number }): Promise<CommandCapture> {
+export async function captureCommand(opts: { command: string; args: string[]; cwd?: string; env?: NodeJS.ProcessEnv; timeoutMs: number }): Promise<CommandCapture> {
   const env = opts.env ?? minimalEnv([]);
   const command = await findExecutable(opts.command, env);
   if (!command) return { ok: false, stdout: '', stderr: '', reason: 'CLI executable not found' };
   const { promise, resolve } = Promise.withResolvers<CommandCapture>();
   let stdout = '';
-  let stdoutBytes = 0;
   let stderr = '';
   let reason: string | undefined;
   let settled = false;
@@ -258,8 +257,7 @@ export async function captureCommand(opts: { command: string; args: string[]; cw
   timer = setTimeout(() => terminate('command timeout'), opts.timeoutMs);
   child.stdout?.setEncoding('utf8');
   child.stdout?.on('data', (chunk: string) => {
-    stdoutBytes += Buffer.byteLength(chunk);
-    if (stdoutBytes > (opts.maxOutputBytes ?? 32 * 1024 * 1024)) terminate('command output limit exceeded');
+    if (stdout.length + chunk.length > 32 * 1024 * 1024) terminate('command output limit exceeded');
     else stdout += chunk;
   });
   child.stderr?.setEncoding('utf8');

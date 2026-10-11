@@ -14,7 +14,7 @@
 | 交付版本 | **四個**：macOS App（`YuMeewADE.app`）、Windows App（`YuMeewADE.exe` 安裝檔）、Linux App（AppImage／deb）、網頁版（瀏覽器開本機服務） |
 | 通訊/介面 | **http://127.0.0.1:4560**（HTTP＋SSE；host／port 值入 `config.yaml`，見 R4） |
 | 本作品倉庫 | https://github.com/YueyuHoshizora/YuMeewADE（main） |
-| 本作品授權 | **GPL-3.0-only**（依使用者最新裁示，取代原 Apache-2.0；以倉庫根 `LICENSE` 為準） |
+| 本作品授權 | **Apache-2.0**（裁示確認；以倉庫根 `LICENSE` 為準，實作不得改寫） |
 | 前置檔案 | `LICENSE` **已在 main**（2026-10-10 經 GitHub API 驗證；`README.md`／`AGENTS.md`／`CLAUDE.md`／`PLAN.md` 四件待補，見 Gate 0） |
 | 消費套件 | **Electron**（MIT，釘選）＋ **Vite**（MIT，dev，釘選）＋ **electron-builder**（MIT，dev，釘選）；lockfile 入庫 |
 | 外部系統 A／B | `claude` CLI／`codex` CLI（另案、使用者本機自裝自登）——契約見第三節，皆以 adapter＋Mock 先行 |
@@ -39,7 +39,7 @@
 - 帳號系統、多使用者、權限管理。
 - 套件發布（npm／JSR）：只開原始碼倉庫，不發套件。
 - 內嵌終端機（pty）畫面：第一版僅無頭串流對話。
-- ~~AI 帳號切換與用量監控~~ → **改為範圍內**（使用者裁示 2026-10-11，見附錄 B.6）：底部只顯示各 AI 使用中帳號，詳情可登錄既有已登入 CLI 設定資料夾並切換，查詢額度與轉換通知；不提供登入流程、不修改方案或額度上限。
+- AI 帳號切換、額度（上限）管理。~~用量監控~~ → **唯讀顯示改為範圍內**（使用者裁示 2026-10-11，見附錄 B.6）：底部列顯示 CLI 回報的額度與輸出速度，不做切換或管理。
 - 自動更新機制、程式碼簽名與公證、各平台商店上架（見假設 7）。
 - ~~多語系（第一版僅繁體中文）~~ → **改為範圍內**（使用者裁示 2026-10-10，見附錄 A.8）：UI 支援繁體中文／簡體中文／英文／日文／德文／法文／義大利文。
 - 即時通訊（Discord 等）整合、MCP 伺服器管理、圖片／影片生成流程。
@@ -165,7 +165,7 @@
 - 錯誤碼：400 輸入不合法／404 目標不存在／409 衝突（執行中或同名已存在）／413 內容過大／500 內部錯誤（一律 generic 訊息）。
 
 ### 4.4 流程範例
-**流程範例 1（基本對話）**：① `GET /api/state` 選專案 → ② `POST /api/task/new` 建立作業 → ③ 訂閱 `/api/chat/stream?project={專案}&task={作業ID}`，再 `POST /api/chat/send`（`ai: mock`）→ ④ SSE 依序收 `row(user)`→`busy`→`delta`…→`row(assistant)`→`idle` → ⑤ `GET /api/chat/history?project={專案}&task={作業ID}&before=2` 回兩筆且 `.ai/chat/{作業ID}.jsonl` 恰兩行。
+**流程範例 1（基本對話）**：① `GET /api/bootstrap` 選專案 → ② `POST /api/tasks` 建立作業 → ③ `POST /api/chat/send`（`cli: mock`）→ ④ SSE 依序收 `log(user)`→`delta`…→`log(assistant)`→`done` → ⑤ `GET /api/chat/log` 回兩筆且 `.ai/chat/{作業ID}.jsonl` 恰兩行。
 
 **流程範例 2（排隊與停止）**：① 執行中再 `POST /api/chat/send` → 寫入 `{作業ID}.queue.json` 並於 UI 顯示排隊 → ② `POST /api/chat/stop` → 子行程終止、記錄標記停止 → ③ 本輪 `done` 後排隊指示自動出隊執行 → ④ 驗證：JSONL 含停止標記且隊列檔清空。
 
@@ -209,7 +209,7 @@ Roles   { models, roles: { role: { main, backup, job } }, permissions }   // rol
 
 | 檔案 | 內容要求 |
 |---|---|
-| `README.md` | **用途**：是什麼、系統圖、四版本說明、需求、安裝啟動與建置打包指令（本機＋CI）、協定摘要、`config.yaml` 說明、測試指令、授權宣告（GPL-3.0-only） |
+| `README.md` | **用途**：是什麼、系統圖、四版本說明、需求、安裝啟動與建置打包指令（本機＋CI）、協定摘要、`config.yaml` 說明、測試指令、授權宣告（Apache-2.0） |
 | `AGENTS.md` | **撰寫方式**：語言規範、建置測試指令、結構對應、**安全性章節＝第六節全部規則逐條編號**、外部 CLI 經 adapter |
 | `CLAUDE.md` | 僅**引用 `AGENTS.md`**（一行指向＋摘要），不重複內容避免雙真值來源 |
 | `PLAN.md` | **本企劃書全文匯入之定案稿**（更新時同步） |
@@ -218,7 +218,7 @@ Roles   { models, roles: { role: { main, backup, job } }, permissions }   // rol
 
 ## 八、倉庫與部署
 
-- **前置檔案**：`LICENSE` **已在 main**（2026-10-10 經 GitHub API 驗證，見 Gate 0；目前授權依最新裁示改為 GPL-3.0-only）；四件必要文件＋`config.yaml` 範本於 Gate 0 補齊後才寫程式。
+- **前置檔案**：`LICENSE`（Apache-2.0）**已在 main**（2026-10-10 經 GitHub API 驗證，見 Gate 0）；四件必要文件＋`config.yaml` 範本於 Gate 0 補齊後才寫程式。
 - **介紹頁**：無對外介紹頁（見假設 8）。
 - **部署形態**：①本機程序（`npm install → npm run build → npm start`）供網頁版 ②三平台桌面產物（`npm run dist`：dmg／nsis／AppImage）供四版本交付。
 - **建置方式（裁示 2026-10-10：兩者都要）**：①**正式產物**＝GitHub Actions 三平台建置（`.github/workflows/`，macOS／Windows／Linux 矩陣，產未簽名產物）②**dev 建置**＝本機 `npm run dist`（macOS 本機驗證用）；兩者共用同一套 electron-builder 設定。
@@ -247,7 +247,7 @@ Roles   { models, roles: { role: { main, backup, job } }, permissions }   // rol
 
 ### Phase 0 — 前置交付
 倉庫根補齊四件必要文件＋`config.yaml` 範本。
-**Gate 0**：①`LICENSE` 採 GPL-3.0-only 並隨原始碼入庫（初始檔案於 2026-10-10 經 GitHub API 確認在 main；本次授權變更仍須另行提交）②四件必要文件＋`config.yaml` 範本入庫且 `README.md` 載明安全宣告（安全節 2）。
+**Gate 0**：①`LICENSE` 仍為 Apache-2.0 且在 main——**已達成**（2026-10-10 經 GitHub API 驗證）②四件必要文件＋`config.yaml` 範本入庫且 `README.md` 載明安全宣告（安全節 2）。
 
 ### Phase 1 — 核心：台帳層與 API
 `src/ledger/`（frontmatter、原子寫入、CRUD）＋ HTTP 路由（bootstrap／tasks／task-update）。
@@ -267,7 +267,7 @@ Roles   { models, roles: { role: { main, backup, job } }, permissions }   // rol
 
 ### Phase 5 — 安全強化、文件收尾
 限流、輸入驗證、Electron 隔離補強；AGENTS／CLAUDE／PLAN 定稿。
-**Gate 5（交付關）**：①遠端 main 含全部檔案 ②`LICENSE` 為 GPL-3.0-only ③乾淨 clone → `npm ci` → `npm run build` → `npm start` → 走完**流程範例 1–2** ④`npm test` 與 `npm run typecheck` 全過 ⑤安全節 11 條逐條 checklist 全過且日誌抽查無憑證明文 ⑥四版本齊備（三平台產物＋網頁版皆走通流程範例 1–2）。
+**Gate 5（交付關）**：①遠端 main 含全部檔案 ②`LICENSE` 仍為 Apache-2.0 ③乾淨 clone → `npm ci` → `npm run build` → `npm start` → 走完**流程範例 1–2** ④`npm test` 與 `npm run typecheck` 全過 ⑤安全節 11 條逐條 checklist 全過且日誌抽查無憑證明文 ⑥四版本齊備（三平台產物＋網頁版皆走通流程範例 1–2）。
 
 ---
 
@@ -360,7 +360,7 @@ roles:
   審查: { main: [claude, opus, xhigh],  backup: [codex, gpt-6-sol, high], job: 獨立審查 }
   文件: { main: [claude, sonnet, medium], backup: [codex, gpt-6-sol, medium], job: 說明文件 }
 ```
-- 槽位格式 `[cli, model, effort]`；`cli` ∈ `claude|codex|grok|mock|人`。`人` 代表不由 AI 執行。
+- 槽位格式 `[cli, model, effort]`；`cli` ∈ `claude|codex|mock|人`。`人` 代表不由 AI 執行。
 - 啟動參數優先序：單次送出覆寫 > 作業檔 `cli/model/effort` > role 的 `main`。權限旗標只看 `config.yaml` 與設定頁的「完整權限」，roles.yaml 不含權限設定。
 
 ### A.5 CLI adapter 契約（實測 2026-10-10：claude 2.1.294、codex 0.160.1）
@@ -455,11 +455,9 @@ electron 44.7.0、vite 8.3.4、electron-builder 26.15.3、typescript 7.0.2、@ty
 - 維持原設計：合併前自動儲存本體（A.6，預覽已提示 `mainDirty` 且合併前需確認）；自動儲存只排除「新出現的」機密檔（AGENTS §四），已追蹤的機密檔若也排除，合併後移除副本時會遺失其修改。
 
 ### B.6 額度與輸出速度（底部列）
-- 資料來源：Claude 為 stream-json 的 `rate_limit_event`，另在核心啟動時與每 `limits.usagePollSeconds`（預設 60 秒＝1 分鐘）查 `GET https://api.anthropic.com/api/oauth/usage`（非公開 API）。OAuth 憑證只在核心讀取並供用量查詢：各帳號使用對應 CLI 設定目錄的 macOS 專屬鑰匙圈項目或 `.credentials.json`，額外帳號不借用預設帳號憑證。Codex 執行 `codex app-server`（`cli.codex.quotaArgs`），JSON-RPC `initialize` → `account/rateLimits/read`。各帳號隔離，查詢失敗標為 `unavailable`，保留最後一次資料與 `quotaAt`，不把舊本機紀錄當成即時查詢成功；憑證不回 API、不進 DOM 或日誌。
-- 帳號介面：`Settings.accounts` 登錄 Claude／Codex／Grok 額外帳號的 `{id,name,configDir}`，`activeAccounts` 指定使用中 id（缺省 `default`）；按工作區保存。新增只登錄既有已登入的獨立設定資料夾：Claude `CLAUDE_CONFIG_DIR`，Codex `CODEX_HOME`，Grok `GROK_HOME`，不做登入、不複製憑證。`POST /api/accounts/add` 收 `{ai,name,configDir}`，`remove` 收 `{ai,id}`（不可移除預設帳號），`refresh` 主動重查額度；切換以 `POST /api/settings` 的 `activeAccounts`。底部各 AI 只顯示使用中帳號（自訂名稱）；點開原生 dialog 看所有帳號、各窗口使用率、剩餘比例、重置時間、查詢狀態及資料時間。開啟的 dialog 只讀 UI 狀態並跟隨 SSE 更新，不額外輪詢網路；關閉即清除狀態讀取計時器。切換只影響下一次送出，正在執行的回合不變，另一帳號的 session 不可接續。
-- 額度提醒：`src/ui/components/quota-alert.ts` 以 AI＋帳號隔離比較成功回報的滿額狀態（`limited` 或任一未過期窗口 ≥100%）。初次成功回報不通知；剩餘低於 20%／低於 10%／用滿（0%）與用滿後恢復的轉換跳 toast；用滿且恢復時間已知時，另在恢復前 5 分鐘與前 1 分鐘（`quotaCountdowns`，UI 每 15 秒檢查，同一恢復時間每個門檻只提醒一次，錯過 5 分鐘門檻只發 1 分鐘）各提醒一次，背景時另發系統通知（與完成通知共用開關），同時多帳號提示合併顯示。只有新的成功回報才可判定恢復；查詢失敗或重置時間經過本身都不代表恢復。
-- 平均 tok/s（右下角單一數字）：最近實測 CLI 輸出 token 總數除以量測時間區間的聯集，平行區間不重複計時、序列區間不直接相加各自速度；每個量測保留 4 秒。Claude 每則訊息獨立計時（主串流與 `parent_tool_use_id` 子代理不共用時鐘），連續訊息分開保留、不互相覆蓋。Codex／Grok 用完整回合耗時（包括等待與工具）。Gemini 以 `agent_response` 完成步驟的用量快照累計：同一 `step_index` 重播不延長計時、修正值取代舊值，不同步驟才相加；耗時從該次解析開始算起。包含 CLI 回報的思考用量，不使用字元或 `estimated_tokens` 估算，最終 result 用量不再加入速度。不宣稱即時生成速度。缺少有效量測為 `null`（UI「—」），實際零輸出為 0。
-- `src/ai/usage.ts` 的 `UsageBoard` 只存記憶體；額度依帳號及資料時間隔離。`GET /api/state` 帶 `usage`（`{ais, tokensPerSecond}`）；`AiUsage` 帶 `account`、`status`（`ready`／`unavailable`）及可選 `prepaidCents`（API 明確回報的預付美元分餘額），額度或速度改變時全域 SSE 推 `usage`。重置時間已過的窗口在底部顯示「—」等待新資料，詳情保留上次使用率與資料時間。
+- 資料來源：Claude 為 stream-json 的 `rate_limit_event`（回合中，`unifiedWindows` 的 5 小時／7 天使用率），另在核心啟動時與每 2 分鐘讀取 Claude Code 的 OAuth 憑證（macOS 鑰匙圈 `Claude Code-credentials`，其他平台 `{CLAUDE_CONFIG_DIR 或 ~/.claude}/.credentials.json`；使用者 2026-10-11 明確同意，僅用於查額度），`GET https://api.anthropic.com/api/oauth/usage`（`Authorization: Bearer`、`anthropic-beta: oauth-2025-04-20`，非公開 API，逾時 15 秒）取得 `five_hour`／`seven_day`（`utilization` 已是百分比）。token 過期不重新整理（CLI 執行時會更新）、憑證不寫日誌；失敗只記警告，額度仍靠回合中事件。Codex 核心啟動時與之後每 2 分鐘執行 `codex app-server`（`cli.codex.quotaArgs`），以 JSON-RPC `initialize` → `account/rateLimits/read` 取得帳號即時額度（與 CLI 同一份後端資料），逾時 15 秒；失敗退回讀 `$CODEX_HOME/sessions/YYYY/MM/DD/rollout-*.jsonl` 尾端最後一筆 `rate_limits`（可能過時），回合結束後也讀該 thread 的 rollout。
+- 即時 tok/s（右下角單一數字）：所有執行中對話合計、最近 4 秒內每秒輸出的 token 數，每秒重算、閒置歸零。Claude 串流中逐段計入：文字、可見思考、工具參數依字元估算（中日韓字 1 token／字，其餘 4 字元／token）；不公開的思考 `thinking_delta.thinking` 為空，改用 CLI 附的 `estimated_tokens`（每段增量，加總與實際 `thinking_tokens` 相符）；每則訊息結束時以 `message_delta.usage.output_tokens` 補差額，差額攤回整則訊息的時間，不在結尾擠成尖峰。Codex `exec --json` 不串流、回合結束才給 usage，無法即時計入。
+- `src/ai/usage.ts` 的 `UsageBoard` 只存記憶體；額度依資料時間只前進不倒退。`GET /api/state` 帶 `usage`（`{ais, tokensPerSecond}`），額度變更或 tok/s 改變時全域 SSE 推 `usage`。重置時間已過的窗口在 UI 顯示為「—」，等下一次回報。
 
 ### B.7 驗證、合併安全與對話工具（使用者裁示「自行補足 ADE 欠缺功能」，2026-10-11）
 - 驗證指令：`PROJECT.md` frontmatter `verify`（單行、≤500 字、無換行／NUL，空字串＝未設定）。`POST /api/task/verify` 在作業工作副本（沒有副本的直接作業用主資料夾）以平台 shell 執行，環境與 CLI 子行程相同的白名單，輸出只留尾段（`limits.verifyOutputBytes`），逾時（`limits.verifySeconds`）終止整個行程樹。指令**只來自台帳**，請求不能帶指令；操作紀錄只記 ok／exit code／耗時，輸出不進日誌；AI 執行中、同作業已有驗證、或同時數超過 `limits.concurrentRuns` 回 409；關閉核心時一併終止。驗證結果不擋合併，由人判斷。
@@ -471,30 +469,3 @@ electron 44.7.0、vite 8.3.4、electron-builder 26.15.3、typescript 7.0.2、@ty
 - 對話匯出：`GET /api/chat/export` 回 Markdown 附件（含時間、模型／思考、用量、錯誤／停止註記；圖片只列檔名；工作區根目錄以 `[工作區]` 取代；工具呼叫需 `tools=1`）。
 - 穩定性：回合收尾時「清除 `meta.running`」與「寫入結果列」各自嘗試，單一寫檔失敗不再留下假的「已中斷」；閒置作業的 slot／lock 表項回收；限流器過期 key 定期清除；未被引用且超過 24 小時的暫存上傳（`Projects/{專案}/.ai/uploads/`）啟動時與每小時清除，作業附件不動。
 - 介面：差異依檔案分段、可收合、逐檔 +/−；訊息複製；失敗或停止的回覆可「重試」（沿用原 AI／模型／思考強度與圖片）；佇列第一項失敗時標示「暫停」，其後項目等人處理（刻意不自動跳過）。
-- 工具呼叫群組：新訊息與歷史紀錄的群組一律預設收合，不再讀舊 `yumeewade.tools` 全域展開偏好，也移除設定頁開關；使用者可點標題手動展開，已展開的群組追加工具列時不自動收合。
-- 輸入區：閒置時不顯示「送出」按鈕，保留 ⌘/Ctrl+Enter（或設定的 Enter）送出；執行中指示操作、AI 問題回答按鈕不移除。
-
-### B.8 CLI 原生命令／自訂指令（2026-10-11）
-- `GET /api/chat/commands?project=&task=&ai=claude|codex|grok|gemini` 回 `{commands: SlashCommand[]}`，共享型別 `{name:string, description:string, argumentHint?:string}`；名稱不含 `/`。清單由 CLI 層依目前帳號及作業工作目錄探索，不是 App 快捷操作。`task` 可省略，專案快速開始時以已存在專案的主資料夾探索；提供作業 ID 時仍驗證作業存在。Grok headless 沒有可執行的原生命令協定，回空清單並拒絕未知命令。
-- Claude 以 SDK 初始化協定探索實際 CLI 內建命令、skills、使用者／專案自訂命令、plugin／MCP 命令與別名，不發送使用者提示進行探索；保留 `/compact`、`/clear`（及 reset／new 別名）、`/context`、`/usage`（及 cost／stats 別名）、`/rename` 及可執行提示命令。排除只能改變單一 CLI 程序狀態的 model／effort／fast／focus／color／advisor／autocompact／output-style／config／settings／mcp／reload-plugins／reload-skills／goal／loop／proactive 控制，未知或被排除命令回 `cli_unsupported`。斜線命令原文交給 CLI，App 背景以 `--append-system-prompt` 附加，不破壞命令起首；`/clear` 後保留 CLI 最新回報的 session id。
-- Codex 現行 `exec` adapter 只支援帳號 `CODEX_HOME/prompts/*.md` 的 `/prompts:名稱` 自訂提示（只讀頂層普通 Markdown 檔，不讀 symlink／子資料夾），依 CLI 語意展開 `$1`–`$9`、`$ARGUMENTS`、`$NAME`、`$$` 與引號；缺必要參數、引號格式錯誤或展開後超出指示上限即拒絕。不自行建立專案 `.codex/prompts` 慣例；TUI 專用及未知命令回 `cli_unsupported`，不當普通文字交給模型、不宣稱執行成功。
-- Gemini（Antigravity）以設定 `cli.gemini.commandsArgs`（預設 `-p /help --output-format json`）探索 CLI 原生命令與別名；僅接受清單中不帶參數的唯讀報告。以 `cli.gemini.slashArgs`（預設 `--output-format json --print`）加命令獨立執行，不附加對談前言、resume、模型或權限旗標；結果須同時有成功 JSON 報告與 exit 0，容許報告沒有 conversation id，但一般對談仍要求有效 id。`/usage`／`/quota` 回報的實際額度同步更新底部列。獨立命令無論成功或失敗都不更動模型 session、模型綁定、帳號綁定或已讀位置；未知命令與帶參數控制回 `slash_unsupported`，不當一般提示送入模型。
-- UI 在對談及專案快速開始草稿最開頭的 `/名稱` token 顯示補全，以名稱前綴篩選；↑/↓ 選擇、Enter／Tab 或滑鼠填入 `/名稱 `，保留後面的參數、換行與 `@檔案`。CLI 說明及參數提示原文顯示，不經翻譯。
-- 選擇不直接執行，仍走原本的送出路徑。沒有實際候選時不攔截 Enter；⌘/Ctrl+Enter 仍送出，Shift+Enter 仍換行，IME 選字不選取或送出。Esc 關閉選單。載入、沒有可用命令、查詢失敗及無匹配各自有七語提示，不補造內建命令。
-- 切換 AI 或帳號設定時清除探索快取；分頁離開時解除事件監聽並使舊請求結果失效，不把舊帳號或已離開分頁的結果顯示出來。
-
-### B.9 Grok CLI 與真實額度 API（2026-10-11）
-- 第三節的 provider 契約擴充至 `grok`；`config.cli.grok`／設定、角色、模型選擇與帳號介面一併支援。已核對 Grok CLI 1.0.46 的旗標及官方原始碼；對話用原生 `--output-format streaming-json`，不用會把缺失用量補零的相容格式。新回合 `--session-id`，續聊 `--resume`。文字走 stdin 的 `--prompt-file /dev/stdin`；圖片／Windows 走權限受限的暫存 ACP JSON，結束後刪除。沒有 `--add-dir`，附加目錄以提示提供並受 CLI 權限策略限制。
-- 預設完整權限旗標 `--always-approve`，關閉時 `--permission-mode dontAsk`；皆由設定檔提供。只把文字事件視為回答，工具獨立；只有 `end_turn` 與 exit 0 同時成立才成功。截斷、拒絕、非零退出及串流不完整 fail-closed，不自動重試。不完整／缺失的 usage 不產生虛構 token 或速度。
-- 模型以目前帳號執行 `grok models`，僅用同帳號 `models_cache.json` 補入匹配模型的能力；沒有虛構 fallback，跨帳號不共用舊目錄資料。切換 AI 不繼承另一 provider 的模型／思考強度，`model: ""`／`effort: ""` 是明確清空覆寫，不等於省略。
-- 額度不由 CLI 文字或固定值估算：`GET https://cli-chat-proxy.grok.com/v1/billing?format=credits`，使用官方 `X-XAI-Token-Auth: xai-grok-cli`、`x-userid` 與第一方 Bearer token。憑證從目前帳號 `auth.json` 的官方 issuer/client scope 唯讀載入；檢查到期與模式，不寫入、刷新或記錄憑證。額外帳號固定其 `GROK_HOME`、`GROK_AUTH_PATH`、leader socket，禁止回退預設憑證。API-key-only 不支援此帳號 billing 查詢。
-- 使用 API 明確的 `creditUsagePercent` 與 `currentPeriod`，相容舊版明確的 `used/monthlyLimit`；展示剩餘百分比、重置時間、預付餘額及有上限的 on-demand 使用率。缺失／無效資料、HTTP 失敗、重新導向皆不當作成功或零用量。請求與讀取回應有逾時及大小限制。沿用 B.6 的五分鐘查詢、狀態及通知規則；方案額度滿仍會提醒，不表示預付／額外付費餘額必然耗盡。
-
-### B.10 App 本機憑證儲存（使用者裁示 2026-10-11）
-- 第一個（`default`）及所有新增帳號的憑證統一保存於 App 私有資料目錄的 `credentials.sqlite`，使用 Node 24 內建 `node:sqlite`，不增加執行期套件。這是原「不引入資料庫／不保存憑證」規則的明確例外；專案、作業與對話台帳仍維持原格式。
-- SQLite 只保存經作業系統安全儲存加密的憑證，記錄以 AI 與來源設定目錄隔離，密文內容亦綁定同一身分。桌面版由 Electron 主程序提供 `safeStorage`，網頁核心透過同身分的本機 Electron 輔助程序使用相同保護；只有程序間私有通道，不增加 renderer／preload 或 HTTP 憑證介面。安全儲存不可用、Linux `basic_text`、解密失敗均拒絕使用，不降級為明文。
-- 初次匯入保留原 CLI 的檔案與鑰匙圈，不登出、不刪除、不覆寫原登入資料；後續查額度與對話以 SQLite 保存的憑證為準。CLI 必要的執行期憑證傳輸須限權限、限生命週期；不得把憑證放入 argv、日誌、設定 API 或 DOM。
-- 新增帳號一律走 OAuth：UI 只填 AI 與名稱，不需指定資料夾；核心在 App 資料夾下 `cli-accounts/profiles/{ai}/{uuid}`（0700）建立獨立設定資料夾，以 `cli.*.loginArgs` 執行該 CLI 自己的 OAuth 登入（CLI 自行開啟瀏覽器，最長 5 分鐘），成功後才匯入憑證庫並登錄帳號。不再有「預設帳號」卡片，也不讀取 CLI 的預設登入；切換帳號時把該帳號的憑證複寫進憑證庫的 App 內部預設槽（不碰 ~/.claude、~/.codex、~/.grok 與 Keychain），對話一律使用預設槽，額度仍以各帳號自己的憑證查詢；預設槽使用中不可切換。失敗不登錄並清掉本次建立的空資料夾。（HTTP 仍接受 `configDir` 以匯入既有資料夾。）登入子行程環境沿用白名單並移除既有認證變數，憑證不經 argv／日誌／HTTP。
-- Gemini（`agy`）帳號：無頭模式在非終端機下拒絕登入，故為半手動——`POST /api/accounts/prepare {ai}` 建立 0700 的獨立 HOME 並回傳 CLI 指令，使用者在終端機執行 `HOME=<資料夾> agy` 完成登入，`/api/accounts/add {ai,name,configDir}` 匯入 `<HOME>/.gemini/antigravity-cli/antigravity-oauth-token`。對話時以 `HOME`／`USERPROFILE` 指向執行用資料夾還原憑證，結束後寫回刷新值並刪除檔案。憑證庫 `provider` CHECK 加入 gemini，舊庫開啟時於交易內重建並先備份為 `credentials.sqlite.pre-gemini`。
-- 憑證庫不隨工作區切換搬移；工作區仍保存帳號顯示名稱與作用中選擇。測試必須注入臨時資料目錄與測試加密器，不存取真實使用者登入。
-

@@ -13,14 +13,8 @@ export const PHASE_STATES = ['未開始', '進行中', '完成'] as const;
 export type PhaseState = (typeof PHASE_STATES)[number];
 
 /** 能實際對話的 AI（mock 僅測試用，UI 不列出）。 */
-export const AI_NAMES = ['claude', 'codex', 'grok', 'gemini', 'mock'] as const;
+export const AI_NAMES = ['claude', 'codex', 'mock'] as const;
 export type AiName = (typeof AI_NAMES)[number];
-
-export interface SlashCommand {
-  name: string;
-  description: string;
-  argumentHint?: string;
-}
 
 /** roles.yaml 槽位裡代表「人」的值。 */
 export const HUMAN = '人';
@@ -192,7 +186,7 @@ export interface AiInfo {
   /** `--version` 的版本號；取不到為空字串。 */
   version: string;
   models: ModelInfo[];
-  /** 模型清單來源：cli-cache／cli／builtin／unavailable（查詢失敗且沒有清單）。 */
+  /** 模型清單來源：cli-cache／cli／builtin。 */
   source: string;
   refreshedAt: string;
   /** 目前是否以「跳過權限確認」啟動。 */
@@ -209,48 +203,20 @@ export interface QuotaWindow {
   resetsAt: string | null;
 }
 
-/** 帳號持有的「額度重置券」；只收後端明確回報的欄位，不含不透明 ID。 */
-export interface ResetCredit {
-  title: string | null;
-  /** 到期時間（ISO）；後端回報不會到期為 null。 */
-  expiresAt: string | null;
-}
-
-export interface ResetCredits {
-  /** 後端回報的可用張數；明細可能被後端截斷，張數不一定等於 credits 長度。 */
-  availableCount: number;
-  credits: ResetCredit[];
-}
-
 /** 各 AI 帳號的額度；只在記憶體，核心重啟後等下一次回報。 */
 export interface AiUsage {
   ai: string;
-  /** default 代表 CLI 目前的預設設定目錄。 */
-  account: string;
-  /** 查詢失敗仍保留上次數值，但不能當成目前可用額度。 */
-  status: 'ready' | 'unavailable';
   windows: QuotaWindow[];
   /** CLI 回報目前已達上限。 */
   limited: boolean;
   /** 額度資料取得時間（ISO）；尚無資料為 null。 */
   quotaAt: string | null;
-  /** API 明確回報的預付餘額（USD cents）；不由百分比推估。 */
-  prepaidCents?: number;
-  /** 後端明確回報的重置券（目前只有 Codex）；沒有回報為 undefined。 */
-  resetCredits?: ResetCredits;
 }
 
 export interface UsageState {
   ais: AiUsage[];
-  /** 最近量測的輸出速率（各訊息／回合／步驟快照的加權平均）；尚無有效量測時為 null。 */
-  tokensPerSecond: number | null;
-}
-
-/** 額外帳戶以已登入的獨立 CLI 設定目錄隔離，不複製或保存憑證。 */
-export interface CliAccount {
-  id: string;
-  name: string;
-  configDir: string;
+  /** 所有執行中對話合計、最近幾秒內每秒輸出的 token 數；閒置為 0。 */
+  tokensPerSecond: number;
 }
 
 export interface Settings {
@@ -262,9 +228,6 @@ export interface Settings {
   modelOrder: Partial<Record<string, string[]>>;
   /** 各 AI 是否跳過權限確認（預設依 config.yaml 的 cli.*.dangerous）。 */
   fullAccess: Partial<Record<string, boolean>>;
-  accounts: Partial<Record<string, CliAccount[]>>;
-  /** 每種 AI 各一個作用中帳戶，未設定時為 default。 */
-  activeAccounts: Partial<Record<string, string>>;
 }
 
 export type SettingsPatch = Partial<Settings>;
@@ -272,7 +235,7 @@ export type SettingsPatch = Partial<Settings>;
 // ---- 角色 ----
 
 export interface RoleSlot {
-  /** claude／codex／grok／人 */
+  /** claude／codex／人 */
   cli: string;
   model: string;
   effort: string;
