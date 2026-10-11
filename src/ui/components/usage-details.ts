@@ -1,7 +1,7 @@
 import type { AiUsage, AppState, Settings, UsageState } from '../../shared/types.ts';
 import { api, request } from '../api.ts';
 import { getLocale, t } from '../i18n/index.ts';
-import { aiLabel, extraUsageLabel, localTime, prepaidLabel, quotaLabel } from './display.ts';
+import { aiLabel, extraUsageLabel, localDateTime, localTime, prepaidLabel, quotaLabel } from './display.ts';
 import { button, confirmModal, el, field, input, row, run } from './dom.ts';
 
 function accountUsage(usage: AiUsage | undefined): HTMLElement {
@@ -81,12 +81,12 @@ export function openUsageDetails(getState: () => AppState, getUsage: () => Usage
   function render(): void {
     const state = getState(); const usage = getUsage();
     const expired = usage.ais.map(entry => entry.windows.map(window => !!window.resetsAt && Date.parse(window.resetsAt) <= Date.now()));
-    const snapshot = JSON.stringify([state.settings.accounts, state.settings.activeAccounts, usage.ais, getLocale(), expired]);
+    const snapshot = JSON.stringify([state.settings.accounts, state.settings.activeAccounts, usage.ais, usage.codexReset, getLocale(), expired]);
     if (snapshot === previous) return; previous = snapshot;
     // Preserve keyboard focus when a quota update replaces the account cards.
     const focused = accounts.contains(document.activeElement) ? (document.activeElement as HTMLElement).dataset['accountAction'] : undefined;
     const sections = ['claude', 'codex', 'grok', 'gemini'].map(ai => {
-      const section = el('section', 'usage-provider'); section.append(el('h3', '', aiLabel(ai)));
+      const section = el('section', 'usage-provider'); const title = el('h3', '', aiLabel(ai)); if (ai === 'codex' && usage.codexReset) title.append(el('span', 'usage-reset', t('usage.codexReset', { at: localDateTime(usage.codexReset) }))); section.append(title);
       const profiles = state.settings.accounts[ai] ?? [];
       for (const profile of profiles) {
         const card = el('section', 'account-card'); const active = (state.settings.activeAccounts[ai] ?? 'default') === profile.id;

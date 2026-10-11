@@ -41,6 +41,13 @@ export function quotaLabel(label: string): string {
     default: return label.replace(/ · Weekly Limit Remaining$/, '');
   }
 }
+/** 含年月日的本地時間（YYYY-MM-DD HH:mm）。 */
+export function localDateTime(value: string): string {
+  const date = new Date(value); if (Number.isNaN(date.getTime())) return value;
+  const pad = (n: number) => String(n).padStart(2, '0');
+  return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())} ${pad(date.getHours())}:${pad(date.getMinutes())}`;
+}
+
 export function localTime(value: string): string {
   if (!value) return '—';
   const date = new Date(value); if (Number.isNaN(date.getTime())) return value;

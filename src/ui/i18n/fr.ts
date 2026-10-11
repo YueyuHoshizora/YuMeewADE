@@ -11,6 +11,8 @@ export const fr: Record<MessageKey, string> = {
   'usage.accountNotice': 'Le pied de page affiche seulement le compte actif de chaque IA. Un changement ne concerne que les prochaines instructions, jamais les tâches en cours. Les quotas pris en charge sont consultés toutes les 5 minutes par défaut, avec des alertes à leur épuisement et à leur rétablissement. Une requête échouée conserve les dernières données ; ce quota n’est pas en temps réel.',
   'usage.refresh': 'Actualiser le quota maintenant', 'usage.ready': 'Requête réussie', 'usage.unavailable': 'Requête indisponible', 'usage.noData': 'Pas encore de données de quota ; actualiser manuellement ou attendre la prochaine mise à jour',
   'usage.prepaidBalance': 'Solde prépayé {balance}',
+  'usage.codexReset': 'Réinitialisation prévue le {at}',
+  'usage.codexResetNotice': 'Codex : réinitialisation prévue le {at}',
   'usage.extraTitle': 'Utilisation supplémentaire', 'usage.extraUnlimited': 'illimitée', 'usage.extraBalance': 'solde {amount}',
   'usage.resetCredits': '{count} crédit(s) de réinitialisation', 'usage.resetCreditDefault': 'Crédit de réinitialisation', 'usage.resetCreditExpires': '{title} · expire le {expires}', 'usage.resetCreditNoExpiry': '{title} · sans expiration',
   'usage.weeklyCredits': 'Crédits hebdomadaires', 'usage.monthlyCredits': 'Crédits mensuels', 'usage.credits': 'Crédits', 'usage.onDemand': 'À la demande', 'usage.remaining': '{percent}% restants',

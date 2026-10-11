@@ -11,6 +11,8 @@ export const de: Record<MessageKey, string> = {
   'usage.accountNotice': 'Die Fußzeile zeigt nur das aktive Konto jeder KI. Ein Wechsel gilt erst für künftige Anweisungen, nicht für laufende Aufgaben. Unterstützte Kontingente werden standardmäßig alle 5 Minuten abgefragt; bei Erschöpfung und Erholung gibt es Hinweise. Fehlgeschlagene Abfragen behalten die letzten Daten; dies ist kein Echtzeitkontingent.',
   'usage.refresh': 'Kontingent jetzt abfragen', 'usage.ready': 'Abfrage erfolgreich', 'usage.unavailable': 'Abfrage nicht verfügbar', 'usage.noData': 'Noch keine Kontingentdaten; manuell abfragen oder auf die nächste Aktualisierung warten',
   'usage.prepaidBalance': 'Prepaid-Guthaben {balance}',
+  'usage.codexReset': 'Voraussichtlicher Reset: {at}',
+  'usage.codexResetNotice': 'Codex: voraussichtlicher Reset {at}',
   'usage.extraTitle': 'Zusatznutzung', 'usage.extraUnlimited': 'unbegrenzt', 'usage.extraBalance': 'Guthaben {amount}',
   'usage.resetCredits': '{count} Zurücksetzungs-Gutschein(e)', 'usage.resetCreditDefault': 'Zurücksetzungs-Gutschein', 'usage.resetCreditExpires': '{title} · läuft ab am {expires}', 'usage.resetCreditNoExpiry': '{title} · läuft nicht ab',
   'usage.weeklyCredits': 'Wochenkontingent', 'usage.monthlyCredits': 'Monatskontingent', 'usage.credits': 'Kontingent', 'usage.onDemand': 'Nach Verbrauch', 'usage.remaining': '{percent}% verbleibend',

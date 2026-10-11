@@ -24,6 +24,8 @@ export class UsageBoard {
   private rate: number | null = null;
   private timer: NodeJS.Timeout | null = null;
   private pollTimer: NodeJS.Timeout | null = null;
+  private resetTimer: NodeJS.Timeout | null = null;
+  private codexReset: string | undefined;
   private readonly queries = new Map<string, Promise<void>>();
   private targets: Set<string> | null = null;
   private closed = false;
@@ -34,7 +36,7 @@ export class UsageBoard {
   }
 
   snapshot(): UsageState {
-    return { ais: [...this.items.values()].sort((a, b) => a.ai.localeCompare(b.ai)), tokensPerSecond: this.rate };
+    return { ais: [...this.items.values()].sort((a, b) => a.ai.localeCompare(b.ai)), tokensPerSecond: this.rate, ...(this.codexReset ? { codexReset: this.codexReset } : {}) };
   }
 
   record(ai: string, ev: UsageEvent, account = 'default'): void {
@@ -87,11 +89,23 @@ export class UsageBoard {
     this.rate = null;
     clearTimeout(this.pollTimer ?? undefined);
     this.pollTimer = null;
+    clearTimeout(this.resetTimer ?? undefined);
+    this.resetTimer = null;
   }
 
   private stopRate(): void {
     clearInterval(this.timer ?? undefined);
     this.timer = null;
+  }
+
+  /** 定時取得 Codex 重置排程；變動才推送。 */
+  async pollCodexReset(fetchReset: () => Promise<string | null>, intervalMs: number): Promise<void> {
+    if (this.closed) return;
+    const next = (await fetchReset()) ?? undefined;
+    if (this.closed) return;
+    if (next !== this.codexReset) { this.codexReset = next; this.onChange(this.snapshot()); }
+    this.resetTimer = setTimeout(() => { void this.pollCodexReset(fetchReset, intervalMs); }, intervalMs);
+    this.resetTimer.unref();
   }
 
   /** 首次立即查詢；後續查詢完成後再計時，慢查詢不會堆疊。 */

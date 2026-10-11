@@ -5,6 +5,7 @@
 ## [Unreleased]
 
 ### 新增
+- Codex 文字右邊顯示全域重置排程（取自 codex-resets.com `data.scheduled_reset.scheduled_for`，轉成本地時間；啟動時抓一次、之後每小時一次，查不到或沒有排程就不顯示；抓到新的排程時跳出系統通知）。
 - 帳號詳情顯示重置券：張數與各券到期日。Codex 取自 app-server `rateLimitResetCredits`（只列可用券）；Claude 取自 `/api/oauth/usage?cedar_ember=1` 的 `cedar_ember.grants`（需帶 `claude-cli/<版本>` User-Agent，版本取自本機 `claude --version`，否則伺服器回「來源不符」而沒有資料）。
 - 帳號詳情顯示額外使用額度餘額（超出訂閱額度後的付費用量；三家統一為美元餘額，沒有時 $0.00）：Claude 取自用量端點 `extra_usage`（月上限－已用）、Codex 取自 app-server 的 `credits`（餘額／無上限）、Grok 取自帳單的 `onDemandCap`－`onDemandUsed`。
 

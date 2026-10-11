@@ -11,6 +11,8 @@ export const en: Record<MessageKey, string> = {
   'usage.accountNotice': 'The footer shows only each AI’s active account. Switching affects future instructions only, never running tasks. Supported quotas are queried every 5 minutes by default, with alerts when exhausted or recovered. Failed queries retain the last data; this is not live quota.',
   'usage.refresh': 'Refresh quota now', 'usage.ready': 'Query succeeded', 'usage.unavailable': 'Query unavailable', 'usage.noData': 'No quota data yet; refresh manually or wait for the next update',
   'usage.prepaidBalance': 'Prepaid balance {balance}',
+  'usage.codexReset': 'Expected reset at {at}',
+  'usage.codexResetNotice': 'Codex expected reset at {at}',
   'usage.extraTitle': 'Extra usage', 'usage.extraUnlimited': 'unlimited', 'usage.extraBalance': 'balance {amount}',
   'usage.resetCredits': '{count} reset credit(s)', 'usage.resetCreditDefault': 'Reset credit', 'usage.resetCreditExpires': '{title} · expires {expires}', 'usage.resetCreditNoExpiry': '{title} · does not expire',
   'usage.weeklyCredits': 'Weekly credits', 'usage.monthlyCredits': 'Monthly credits', 'usage.credits': 'Credits', 'usage.onDemand': 'On demand', 'usage.remaining': '{percent}% remaining',

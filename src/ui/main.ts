@@ -2,7 +2,7 @@ import type { AppState, UsageState } from '../shared/types.ts';
 import { api } from './api.ts';
 import { getLocale, t } from './i18n/index.ts';
 import { button, el, link, readLocal, run, showError, taskHash, type View, type ViewContext } from './components/dom.ts';
-import { aiLabel, localTime, quotaLabel } from './components/display.ts';
+import { aiLabel, localDateTime, localTime, quotaLabel } from './components/display.ts';
 import { quotaAlerts, quotaCountdowns, type QuotaAlert } from './components/quota-alert.ts';
 import { needsReply, tree } from './components/tree.ts';
 import { newProjectView, projectView } from './views/projects.ts';
@@ -49,7 +49,18 @@ function deliverQuota(alerts: QuotaAlert[]): void {
     } catch { /* 系統通知不可用時不影響額度更新。 */ }
   }
 }
-function announceQuota(next: UsageState): void { deliverQuota(quotaAlerts(usage, next)); }
+function announceQuota(next: UsageState): void { deliverQuota(quotaAlerts(usage, next)); announceCodexReset(next); }
+let notifiedReset: string | undefined;
+/** 抓到（新的）Codex 重置排程就通知一次；同一個排程不重複打擾。 */
+function announceCodexReset(next: UsageState): void {
+  if (!next.codexReset || next.codexReset === notifiedReset) return;
+  notifiedReset = next.codexReset;
+  if (!readLocal('yumeewade.notifications', true) || !('Notification' in window) || Notification.permission !== 'granted') return;
+  try {
+    const notice = new Notification(t('usage.alertTitle'), { body: t('usage.codexResetNotice', { at: localDateTime(next.codexReset) }), tag: `codex-reset-${next.codexReset}` });
+    notice.onclick = () => { window.yumeewade?.focus?.(); window.focus(); notice.close(); };
+  } catch { /* 系統通知不可用時不影響狀態更新。 */ }
+}
 
 function drawShell(): void {
   if (!state) return;

@@ -257,6 +257,8 @@ export interface UsageState {
   ais: AiUsage[];
   /** 最近量測的輸出速率（各訊息／回合／步驟快照的加權平均）；尚無有效量測時為 null。 */
   tokensPerSecond: number | null;
+  /** Codex 下一次全域重置的排程時間（ISO）；沒有排程或查不到時省略。 */
+  codexReset?: string;
 }
 
 /** 額外帳戶以已登入的獨立 CLI 設定目錄隔離，不複製或保存憑證。 */

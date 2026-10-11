@@ -10,6 +10,8 @@ export const zhTW = {
   'usage.accountNotice': '底部只顯示各 AI 的使用中帳號。切換只影響下一次送出的指示，不會改變執行中的作業。支援查詢的額度預設每 5 分鐘更新，用盡與恢復時提醒；查詢失敗保留上次資料，並非即時額度。',
   'usage.refresh': '立即查詢額度', 'usage.ready': '查詢成功', 'usage.unavailable': '目前無法查詢', 'usage.noData': '尚無額度資料；可手動查詢或等待下次更新',
   'usage.prepaidBalance': '預付餘額 {balance}',
+  'usage.codexReset': '預計重置於 {at}',
+  'usage.codexResetNotice': 'Codex 預計重置於 {at}',
   'usage.extraTitle': '額外使用額度', 'usage.extraUnlimited': '無上限', 'usage.extraBalance': '餘額 {amount}',
   'usage.resetCredits': '重置券 {count} 張', 'usage.resetCreditDefault': '重置券', 'usage.resetCreditExpires': '{title} · {expires} 到期', 'usage.resetCreditNoExpiry': '{title} · 不會到期',
   'usage.weeklyCredits': '每週額度', 'usage.monthlyCredits': '每月額度', 'usage.credits': '額度', 'usage.onDemand': '隨用隨付', 'usage.remaining': '剩餘 {percent}%',

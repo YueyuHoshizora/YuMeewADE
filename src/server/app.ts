@@ -26,6 +26,7 @@ import type { Config } from '../shared/config.ts';
 import { AppError } from '../shared/errors.ts';
 import { log } from '../shared/log.ts';
 import type { AppState, ChatEvent, Roles, UsageState } from '../shared/types.ts';
+import { fetchCodexReset } from '../ai/codex-reset.ts';
 import { buildState, type StateSnapshot } from '../state/state.ts';
 
 const pkg = createRequire(import.meta.url)('../../package.json') as { version: string };
@@ -161,6 +162,7 @@ export class App {
     this.watcher = new LedgerWatcher(this.ws, (project, task) => this.changed(project, task));
     await this.watcher.start();
     // 帳戶查詢不擋啟動；每輪重新讀設定，新增／移除的帳戶即時生效。
+    void this.usage.pollCodexReset(fetchCodexReset, 60 * 60 * 1000);
     void this.usage.poll(this.providers, this.config.limits.usagePollSeconds * 1000, async () => (await this.settings.get()).accounts);
   }
 

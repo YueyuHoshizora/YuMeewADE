@@ -1,6 +1,6 @@
 import type { AiUsage, AppState, QuotaWindow, UsageState } from '../../shared/types.ts';
 import { t } from '../i18n/index.ts';
-import { aiLabel, localTime, prepaidLabel, quotaLabel } from './display.ts';
+import { aiLabel, localDateTime, localTime, prepaidLabel, quotaLabel } from './display.ts';
 import { button, el } from './dom.ts';
 
 /** 已用比例到這裡開始提醒／警告。 */
@@ -29,9 +29,10 @@ function quotaWindow(window: QuotaWindow, now: number): HTMLElement {
   return node;
 }
 
-function usageItem(ai: string, name: string | undefined, usage: AiUsage | undefined, now: number, onDetails?: (ai: string) => void): HTMLElement {
+function usageItem(ai: string, name: string | undefined, usage: AiUsage | undefined, now: number, onDetails?: (ai: string) => void, codexReset?: string): HTMLElement {
   const item = onDetails ? button('', () => onDetails(ai), 'usage-item usage-action') : el('div', 'usage-item');
   item.append(el('span', 'usage-ai', aiLabel(ai)));
+  if (ai === 'codex' && codexReset) { const reset = el('span', 'usage-reset', t('usage.codexReset', { at: localDateTime(codexReset) })); item.append(reset); }
   if (name) item.append(el('span', 'usage-account', name));
   if (onDetails) item.setAttribute('aria-label', t('usage.openDetails', { ai: aiLabel(ai) }));
   if (usage?.status === 'unavailable') item.append(el('span', 'usage-unavailable', t('usage.unavailable')));
@@ -58,6 +59,6 @@ export function usageBar(state: AppState, usage: UsageState, now = Date.now(), o
   return [...names.map(ai => {
     const account = state.settings.activeAccounts[ai] ?? 'default';
     const name = state.settings.accounts[ai]?.find(entry => entry.id === account)?.name;
-    return usageItem(ai, name, usage.ais.find(entry => entry.ai === ai && entry.account === account), now, onDetails);
+    return usageItem(ai, name, usage.ais.find(entry => entry.ai === ai && entry.account === account), now, onDetails, usage.codexReset);
   }), speed];
 }

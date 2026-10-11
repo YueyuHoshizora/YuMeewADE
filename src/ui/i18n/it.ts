@@ -11,6 +11,8 @@ export const it: Record<MessageKey, string> = {
   'usage.accountNotice': 'Il piè di pagina mostra solo l’account attivo di ogni IA. Il cambio riguarda solo le istruzioni future, mai le attività in corso. Le quote supportate vengono interrogate ogni 5 minuti per impostazione predefinita, con avvisi quando si esauriscono o si ripristinano. Le richieste fallite conservano gli ultimi dati; non è una quota in tempo reale.',
   'usage.refresh': 'Aggiorna quota ora', 'usage.ready': 'Richiesta riuscita', 'usage.unavailable': 'Richiesta non disponibile', 'usage.noData': 'Nessun dato sulla quota; aggiorna manualmente o attendi il prossimo aggiornamento',
   'usage.prepaidBalance': 'Saldo prepagato {balance}',
+  'usage.codexReset': 'Reset previsto il {at}',
+  'usage.codexResetNotice': 'Codex: reset previsto il {at}',
   'usage.extraTitle': 'Utilizzo extra', 'usage.extraUnlimited': 'illimitato', 'usage.extraBalance': 'saldo {amount}',
   'usage.resetCredits': '{count} credito/i di azzeramento', 'usage.resetCreditDefault': 'Credito di azzeramento', 'usage.resetCreditExpires': '{title} · scade il {expires}', 'usage.resetCreditNoExpiry': '{title} · non scade',
   'usage.weeklyCredits': 'Crediti settimanali', 'usage.monthlyCredits': 'Crediti mensili', 'usage.credits': 'Crediti', 'usage.onDemand': 'A consumo', 'usage.remaining': '{percent}% rimanente',

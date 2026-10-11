@@ -265,7 +265,7 @@ body { height: 100dvh; display: grid; grid-template-rows: 64px minmax(0, 1fr) au
 /* 底部額度列：固定在外殼最下排，不隨畫面捲動。 */
 .app-footer { display: flex; align-items: center; gap: 18px; min-height: 30px; padding: 4px 24px; border-top: 1px solid var(--border); background: var(--c-141723); color: var(--muted); font-size: 12px; line-height: 1.4; overflow-x: auto; white-space: nowrap; font-variant-numeric: tabular-nums; }
 .app-footer:empty { display: none; }
-.usage-item { display: flex; align-items: center; gap: 8px; }
+.usage-item { display: flex; flex-wrap: nowrap; align-items: center; gap: 8px; }
 .usage-ai { color: var(--c-e7eaf4); font-weight: 600; }
 .usage-quota { display: flex; align-items: center; gap: 10px; }
 .usage-window { display: inline-flex; align-items: center; gap: 5px; }
@@ -279,6 +279,7 @@ body { height: 100dvh; display: grid; grid-template-rows: 64px minmax(0, 1fr) au
 .usage-speed.running { color: var(--accent); }
 .usage-action { padding: 2px 5px; font: inherit; color: inherit; background: transparent; border-color: transparent; flex: 0 0 auto; }
 .usage-action:hover { border-color: var(--border); }
+.usage-reset { color: #facc15; font-weight: 700; white-space: nowrap; margin-left: 8px; }
 .usage-account { max-width: 140px; overflow: hidden; text-overflow: ellipsis; }
 .usage-unavailable { color: var(--yellow); }
 .usage-details { width: min(760px, calc(100vw - 32px)); }
