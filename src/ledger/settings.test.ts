@@ -124,3 +124,32 @@ test('OAuth add without a folder logs in inside an app-generated isolated direct
   assert.notEqual(second.configDir, first.configDir);
   await assert.rejects(store.addAccount('codex', 'No login', undefined, false), { detail: 'field_type' });
 }));
+
+test('first account is selected per service; later additions preserve the selection', () => withTmpWorkspace(async (ws, dir) => {
+  const slots: Record<string, string> = {};
+  const store = new SettingsStore(ws, DEFAULT_CONFIG, undefined, undefined, undefined, async (ai, directory) => { slots[ai] = directory; });
+  for (const ai of ['claude', 'codex', 'grok', 'gemini']) {
+    const firstDir = path.join(dir, ai, 'first');
+    const secondDir = path.join(dir, ai, 'second');
+    await fs.mkdir(firstDir, { recursive: true });
+    await fs.mkdir(secondDir);
+    const first = await store.addAccount(ai, 'First', firstDir);
+    const selected = first.accounts[ai]![0]!.id;
+    assert.equal(first.activeAccounts[ai], selected);
+    assert.equal(slots[ai], firstDir);
+    const second = await store.addAccount(ai, 'Second', secondDir);
+    assert.equal(second.activeAccounts[ai], selected);
+    assert.equal(slots[ai], firstDir);
+    assert.equal((await new SettingsStore(ws, DEFAULT_CONFIG).get()).activeAccounts[ai], selected);
+  }
+}));
+
+test('failed activation of the first account never saves a selected but unusable account', () => withTmpWorkspace(async (ws, dir) => {
+  const store = new SettingsStore(ws, DEFAULT_CONFIG, undefined, undefined, undefined, async () => {
+    throw new AppError('unavailable', 'credentials_unavailable');
+  });
+  await assert.rejects(store.addAccount('gemini', 'First', dir), { detail: 'credentials_unavailable' });
+  const saved = await store.get();
+  assert.deepEqual(saved.accounts, {});
+  assert.deepEqual(saved.activeAccounts, {});
+}));

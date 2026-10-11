@@ -437,6 +437,7 @@ test('profile switches isolate sessions and failed switches retain the previous 
   await fs.mkdir(configDir);
   const added = await s.settings.addAccount('codex', 'Other', configDir);
   const account = added.accounts.codex![0]!;
+  await s.settings.update({ activeAccounts: { codex: 'default' } });
   await s.send('default first'); await s.runner.whenIdle();
   const original = await s.store.readMeta('P', s.task.id);
   await s.settings.update({ activeAccounts: { codex: account.id } });
@@ -470,6 +471,7 @@ test('changing active profile during a run only affects the next send', () => wi
   const account = (await s.settings.addAccount('claude', 'Other', configDir)).accounts.claude![0]!;
   assert.equal(account.configDir, configDir);
   await assert.rejects(s.settings.addAccount('claude', 'Duplicate target', target), { code: 'conflict' });
+  await s.settings.update({ activeAccounts: { claude: 'default' } });
   await s.send('old run [slow]', { ai: 'claude' });
   await s.settings.update({ activeAccounts: { claude: account.id } });
   await s.runner.whenIdle();

@@ -130,7 +130,12 @@ export class SettingsStore {
         await assertNew(accounts);
         await this.importCredentials?.(ai, expanded);
         // Claude's Keychain identity uses the configured path, not its realpath.
-        saved.accounts = { ...saved.accounts, [ai]: [...accounts, { id: randomUUID(), name: name.trim(), configDir: expanded }] };
+        const account = { id: randomUUID(), name: name.trim(), configDir: expanded };
+        if (!accounts.length) {
+          await this.activateCredentials?.(ai, expanded);
+          saved.activeAccounts = { ...saved.activeAccounts, [ai]: account.id };
+        }
+        saved.accounts = { ...saved.accounts, [ai]: [...accounts, account] };
         await writeJson(this.file, saved);
         return saved;
       });
