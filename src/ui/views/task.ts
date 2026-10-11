@@ -10,6 +10,7 @@ import { aiPicker } from '../components/picker.ts';
 import { copyText, markdown } from '../components/markdown.ts';
 import { MarkdownStream } from '../components/markdown-stream.ts';
 import { HistoryWindow } from '../components/history.ts';
+import { TranscriptWindow, type WindowRow } from '../components/windowing.ts';
 import {
   area, button, confirmModal, disclosure, el, field, iconButton, input, link, modal,
   projectHash, readLocal, row, run, select, statusRegion, storeLocal, taskHash, toast,
@@ -57,6 +58,7 @@ export function taskView(
       if (history.start === before) return;
     }
     if (!alive || revision !== history.revision) return;
+    virtual.reveal(unitKey(focusIndex));
     const target = transcriptRows.querySelector<HTMLElement>(`[data-index="${focusIndex}"]`);
     if (!target) return;
     target.closest('details')?.setAttribute('open', '');
@@ -183,6 +185,9 @@ export function taskView(
   const announcer = statusRegion();
   node.append(announcer);
   const transcriptRows = el('div', 'transcript-rows');
+  const virtualHost = el('div', 'transcript-window');
+  transcriptRows.append(virtualHost);
+  const virtual = new TranscriptWindow(transcript, virtualHost, () => following);
   const earlier = button(t('chat.earlier'), () => loadEarlier(), 'load-earlier');
   earlier.hidden = true;
   async function loadEarlier(): Promise<void> {
@@ -197,20 +202,8 @@ export function taskView(
           query('/api/chat/history', { project: project.id, task: task.id, before: String(before) }),
         );
         if (!alive || !history.prepend(page, before, revision)) return;
-        const top = transcript.scrollTop;
-        const height = transcript.scrollHeight;
-        const savedGroup = toolGroup;
-        const savedCount = toolCount;
-        toolGroup = null;
-        const prepend = el('div');
-        for (const [offset, entry] of page.rows.entries()) {
-          appendRow(entry, page.start + offset, prepend);
-        }
-        transcriptRows.prepend(...Array.from(prepend.childNodes));
-        toolGroup = savedGroup;
-        toolCount = savedCount;
+        virtual.prepend(windowRows(page.rows, page.start));
         earlier.hidden = history.start === 0;
-        transcript.scrollTop = top + transcript.scrollHeight - height;
       } finally {
         loadingHistory = null;
         earlier.disabled = false;
@@ -223,6 +216,7 @@ export function taskView(
     () => {
       following = true;
       transcript.scrollTop = transcript.scrollHeight;
+      virtual.refresh();
       latest.hidden = true;
     },
     'latest');
@@ -370,6 +364,7 @@ export function taskView(
   let toolCount = 0;
   function follow(): void {
     if (following) transcript.scrollTop = transcript.scrollHeight;
+    virtual.refresh();
     latest.hidden = following;
   }
   function removeLive(): void {
@@ -404,7 +399,7 @@ export function taskView(
     follow();
   }
   function appendRow(entry: ChatRow, index: number, target = transcriptRows): void {
-    const before = target === transcriptRows ? live : null;
+    const before = null;
     if (entry.role === 'event' && entry.tool) {
       if (!toolGroup) {
         toolCount = 0;
@@ -528,14 +523,55 @@ export function taskView(
     }, 'copy-message'));
     target.insertBefore(item, before);
   }
+  let lastToolUnit: { key: number; entries: ChatRow[] } | null = null;
+  const toolKeys = new Map<number, number>();
+  function unitKey(index: number): number { return toolKeys.get(index) ?? index; }
+  function windowRow(entries: ChatRow[], key: number): WindowRow {
+    return { key, render: () => {
+      const container = el('div', 'transcript-window-row');
+      container.style.display = 'flow-root';
+      toolGroup = null;
+      for (const [offset, entry] of entries.entries()) appendRow(entry, key + offset, container);
+      toolGroup = null;
+      return container;
+    } };
+  }
+  function windowRows(entries: ChatRow[], start: number): WindowRow[] {
+    const result: WindowRow[] = [];
+    let group: { key: number; entries: ChatRow[] } | null = null;
+    for (const [offset, entry] of entries.entries()) {
+      const index = start + offset;
+      if (entry.role === 'event' && entry.tool) {
+        // Bound expanded tool groups as well as regular cards.
+        if (!group || group.entries.length >= 24) {
+          group = { key: index, entries: [] };
+          result.push(windowRow(group.entries, group.key));
+        }
+        group.entries.push(entry);
+        toolKeys.set(index, group.key);
+      } else {
+        group = null;
+        result.push(windowRow([entry], index));
+      }
+    }
+    if (start + entries.length === history.start + rows.length) lastToolUnit = group;
+    return result;
+  }
+  function appendWindowRow(entry: ChatRow, index: number): void {
+    if (entry.role === 'event' && entry.tool && lastToolUnit && lastToolUnit.entries.length < 24) {
+      lastToolUnit.entries.push(entry);
+      toolKeys.set(index, lastToolUnit.key);
+      virtual.replace(windowRow(lastToolUnit.entries, lastToolUnit.key));
+    } else {
+      const units = windowRows([entry], index);
+      virtual.append(units[0]!);
+    }
+  }
   function renderTranscript(): void {
     const top = transcript.scrollTop;
     removeLive();
-    toolGroup = null;
-    transcriptRows.replaceChildren();
-    for (const [offset, entry] of rows.entries()) {
-      appendRow(entry, history.start + offset);
-    }
+    toolKeys.clear();
+    virtual.reset(windowRows(rows, history.start));
     addLive();
     renderQuestion();
     if (!following) transcript.scrollTop = top;
@@ -957,7 +993,7 @@ export function taskView(
           partial = '';
           removeLive();
         }
-        appendRow(event.data, history.start + rows.length - 1);
+        appendWindowRow(event.data, history.start + rows.length - 1);
         renderQuestion();
         follow();
         break;
@@ -998,6 +1034,7 @@ export function taskView(
       alive = false;
       source.close();
       removeLive();
+      virtual.dispose();
       window.clearInterval(timer);
       cancelAnimationFrame(resizeFrame);
       upload.dispose();

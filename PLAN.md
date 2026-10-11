@@ -524,3 +524,4 @@ electron 44.7.0、vite 8.3.4、electron-builder 26.15.3、typescript 7.0.2、@ty
 ### B.12 IDE 缺口補齊（使用者裁示 2026-10-12：「全部都做」）
 - 前端編輯器改用 CodeMirror 6（`devDependencies` 確切版本，Vite 打包；使用者核准）。其他新增功能逐項記於本節。
 - 「開啟專案」資料夾選擇器比對已封存專案（主資料夾或同名）並先提議還原；`/api/archive/list` 的專案項目附 `body`；還原時先前失敗留下的空台帳資料夾不算衝突。
+- 長對話視窗化：Fenwick 高度索引與 600px overscan，只掛載附近列並保留高度／工具展開狀態；工具事件最多 24 列一組，展開仍保持有界 DOM。SSE delta 保留 MarkdownStream 增量更新，row 僅新增列或更新最後工具組；prepend 維持絕對列索引與閱讀錨點，搜尋命中先 reveal，再高亮。保留底部跟隨、問題／選項、附件、usage、copy、retry、rollback／fork／turn diff 與鍵盤導覽。瀏覽器尋找僅搜尋掛載內容，完整搜尋使用 App 搜尋或匯出。
