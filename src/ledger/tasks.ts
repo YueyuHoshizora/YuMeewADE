@@ -92,11 +92,16 @@ export class TaskLedger {
     });
   }
 
-  async update(project: string, id: string, patch: TaskPatch & { workdir?: string; mergeExcluded?: boolean }): Promise<Task> {
+  async update(project: string, id: string, patch: TaskPatch & { workdir?: string; mergeExcluded?: boolean }, tagChange?: { tag: string; add: boolean }): Promise<Task> {
     return withFileLocks([this.ws.projectFile(project), this.ws.taskFile(project, id)], async () => {
       const fm = parseFrontmatter(await this.readRaw(project, id));
       const values: Record<string, YamlValue> = {};
       Object.assign(values, taskMetadata(patch));
+      if (tagChange) {
+        if (!validTag(tagChange.tag)) throw new AppError('bad_request', 'field_type', { field: 'tag' });
+        const tags = Array.isArray(fm.data['tags']) ? fm.data['tags'].filter(validTag) : [];
+        Object.assign(values, taskMetadata({ tags: tagChange.add ? [...new Set([...tags, tagChange.tag])] : tags.filter(tag => tag !== tagChange.tag) }));
+      }
       for (const k of STR_FIELDS) {
         const v = patch[k]; if (v === undefined) continue;
         if (typeof v !== 'string' || v.length > 2000) throw new AppError('bad_request', 'field_type', { field: k });

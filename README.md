@@ -24,6 +24,7 @@
 - **作業範本**：專案頁可將作業標題／步驟／第一則指示存為專案 `.ai/templates/*.md` 或工作區 `templates/*.md`，從範本建立新作業；指示只放入草稿，送出前可修改，刪除範本需要確認。API：`GET /api/task/templates`；`POST /api/task/template/{save,create,delete}`。
 - **跨專案總覽**：側邊欄／命令面板開啟 `#/overview`，彙整作業狀態、逾期、今日至七天後到期、等待回覆／確認、執行中、未讀與專案進度／目前階段；可依標籤篩選並連到作業或專案。日期依本機日曆，封存不計。
 - **作業看板**：專案頁切換清單／五狀態看板；卡片含 AI、期限／標籤、執行中／未讀圓點，拖曳或鍵盤開啟「移動至…」改狀態，標為完成沿用人工核可。兩種檢視共用更新／期限／標題／狀態排序與標籤／狀態／AI／逾期／文字篩選，依專案記憶於本機瀏覽器。
+- **作業批次操作**：專案頁選取模式（最多 200 筆、組內全選）可修改狀態／階段、增刪標籤、設定或清除期限；逐筆顯示失敗，成功標為完成亦代表人工確認。封存沿用逐筆確認及副本保存流程。
 - **左側樹狀清單**：專案底下列出作業，子作業以 `↳` 縮排，分支作業標 `⑂`。圓點顏色：紅＝AI 執行中、黃＝等你回覆、藍＝等你確認完成、紫＝完成、淺綠＝處理過、灰＝未開始。未讀結果標「未讀」。右鍵選單（⋯）可以改名、新增子作業／分支、封存，專案還能釘選、調整順序（或直接拖曳）、新增子專案。上方搜尋框（`/` 或 Ctrl/⌘+K）可以篩選專案與作業。
 - **交給你嚕**：標題列按鈕列出「等待回覆」與「確認完成」的作業數。點開後可以直接標為完成，或選擇繼續進行。
 - **執行中面板**：畫面最下方的狀態列在有 AI 執行時顯示紅色「執行中 N」；點開列出每個執行中的作業（AI、模型、已執行多久），可以直接跳到該作業、逐一停止或「全部停止」（與作業內的停止相同，會清空該作業的排隊）。
@@ -188,6 +189,7 @@ HTTP JSON 加 SSE，桌面版與網頁版完全相同。型別定義在 [`src/sh
 | `POST /api/phase/next`、`/api/phase/continue` | 階段 |
 | `POST /api/order`、`/api/pin` | 專案排序與釘選 |
 | `POST /api/task/new`、`/api/task/update`、`/api/task/step`、`/api/task/memo`、`/api/task/completion`、`/api/task/archive`、`/api/task/read` | 作業 |
+| `POST /api/task/bulk` | `{project, tasks: string[] (1–200、不重複), action: {kind: state/phase/due/addTag/removeTag, value} 或 {kind: archive, confirm: true}}`；回傳 `results: [{task, ok, error?, detail?}]`，封存不強制刪副本 |
 | `POST /api/start` | 快速開始（建作業＋送出） |
 | `POST /api/chat/send` | 送出 `{project, task, text, ai?, model?, effort?, mode?, answer?, images?, fromQueue?}`；執行中必須帶 `mode`：`redo`／`amend`／`queue` |
 | `GET /api/chat/commands?project=&task=&ai=claude\|codex\|grok` | 目前帳號及作業可用的 CLI 指令 `{commands: [{name, description, argumentHint?}]}`，名稱不含開頭 `/`；Grok 回空清單，不自行補出內建指令 |

@@ -20,6 +20,8 @@ import { metadataBadge, metadataFields } from '../components/task-metadata.ts';
 import { taskTemplates } from '../components/task-templates.ts';
 import { memoryPanel } from '../components/memory.ts';
 import { taskBoard } from '../components/task-board.ts';
+import { TASK_STATES, type BulkTaskAction, type BulkTaskResult } from '../../shared/types.ts';
+import type { MessageKey } from '../i18n/zh-TW.ts';
 
 async function startWithBudget(context: ViewContext, input: StartInput): Promise<void> {
   const { task } = await request<{ task: Task }>('/api/start/prepare', input);
@@ -165,9 +167,78 @@ export function detailedTaskForm(context: ViewContext, project: ProjectView, par
 export function projectView(context: ViewContext, project: ProjectView, params: URLSearchParams): View {
   const node = el('div', 'page project-page'); const overview = el('div', 'project-overview');
   let activity = JSON.stringify([context.state.running, context.state.unread]);
+  let selecting = false, bulkBusy = false;
+  const selected = new Set<string>();
+  const bulkResults = el('div'); bulkResults.setAttribute('aria-live', 'polite');
+  const count = el('span');
+  function updateCount(): void { count.textContent = t('bulk.count', { count: selected.size }); }
+  function bulkToolbar(): HTMLElement {
+    const mode = button(t(selecting ? 'bulk.cancel' : 'bulk.select'), () => { selecting = !selecting; selected.clear(); renderOverview(); });
+    mode.disabled = bulkBusy;
+    if (!selecting) return row(mode, bulkResults);
+    const kind = select(['state', 'phase', 'addTag', 'removeTag', 'due', 'archive'].map(value => ({ value, label: t(`bulk.${value}` as MessageKey) })));
+    const value = el('div');
+    let readValue: () => string = () => '';
+    function changeAction(): void {
+      const control = kind.value === 'state' ? select(TASK_STATES.map(state => ({ value: state, label: t(`state.${state}`) })))
+        : kind.value === 'phase' ? select([{ value: '', label: t('common.none') }, ...project.phases.map(phase => ({ value: phase.name, label: phase.name }))])
+        : input();
+      if (control instanceof HTMLInputElement) { control.type = kind.value === 'due' ? 'date' : 'text'; control.maxLength = 60; }
+      control.setAttribute('aria-label', t(`bulk.${kind.value}` as MessageKey));
+      readValue = () => control.value;
+      value.replaceChildren(...(kind.value === 'archive' ? [] : [control]));
+    }
+    kind.onchange = changeAction; changeAction(); updateCount();
+    const apply = button(t('bulk.apply'), async () => {
+      if (bulkBusy || !selected.size) return;
+      bulkBusy = true; mode.disabled = true; kind.disabled = true;
+      const ids = [...selected]; bulkResults.replaceChildren();
+      try {
+        let results: BulkTaskResult[];
+        if (kind.value === 'archive') {
+          results = [];
+          for (const task of ids) {
+            try {
+              const title = project.tasks.find(item => item.id === task)?.title ?? task;
+              if (await archiveFlow('/api/task/archive', { project: project.id, task }, title, 'archive_has_worktree')) results.push({ task, ok: true });
+            } catch (error) {
+              if (!(error instanceof ApiFailure)) throw error;
+              results.push({ task, ok: false, error: error.body.error, ...(error.body.detail ? { detail: error.body.detail } : {}) });
+            }
+          }
+        } else {
+          const action = { kind: kind.value, value: readValue() } as BulkTaskAction;
+          results = (await request<{ results: BulkTaskResult[] }>('/api/task/bulk', { project: project.id, tasks: ids, action })).results;
+        }
+        for (const result of results) {
+          if (result.ok) selected.delete(result.task);
+          else bulkResults.append(el('p', 'error', `${project.tasks.find(task => task.id === result.task)?.title ?? result.task}: ${t((result.detail ? `detail.${result.detail}` : `err.${result.error}`) as MessageKey, { field: kind.value })}`));
+        }
+        bulkResults.prepend(el('p', '', t('bulk.result', { ok: results.filter(result => result.ok).length, failed: results.filter(result => !result.ok).length })));
+        await context.refresh();
+      } finally { bulkBusy = false; renderOverview(); }
+    });
+    apply.disabled = bulkBusy;
+    return row(mode, count, kind, value, apply, bulkResults);
+  }
   function tasksList(tasks: typeof project.tasks): HTMLElement {
     const list = el('div', 'task-list');
-    for (const task of tasks) list.append(row(link(task.title, taskHash(project.id, task.id)), el('span', 'state-chip', t(`state.${task.state}`)), metadataBadge(task)));
+    if (selecting && tasks.length) list.append(button(t('bulk.all'), () => {
+      if (bulkBusy) return;
+      if (tasks.every(task => selected.has(task.id))) for (const task of tasks) selected.delete(task.id);
+      else for (const task of tasks) { if (selected.size >= 200) break; selected.add(task.id); }
+      renderOverview();
+    }));
+    for (const task of tasks) {
+      const item = row(link(task.title, taskHash(project.id, task.id)), el('span', 'state-chip', t(`state.${task.state}`)), metadataBadge(task));
+      if (selecting) {
+        const check = input(); check.type = 'checkbox'; check.checked = selected.has(task.id); check.disabled = bulkBusy;
+        check.setAttribute('aria-label', t('bulk.task', { title: task.title }));
+        check.onchange = () => { if (check.checked && selected.size < 200) selected.add(task.id); else { selected.delete(task.id); check.checked = false; } updateCount(); };
+        item.prepend(check);
+      }
+      list.append(item);
+    }
     if (!tasks.length) list.append(el('p', 'muted', t('common.empty')));
     return list;
   }
@@ -236,6 +307,16 @@ export function projectView(context: ViewContext, project: ProjectView, params: 
       sections.append(disclosure(t('project.completedTasks'), tasksList(tasks.filter(task => task.state === '完成'))));
       return sections;
     }));
+    for (const id of selected) if (!project.tasks.some(task => task.id === id)) selected.delete(id);
+    overview.append(bulkToolbar());
+    const active = project.tasks.filter(task => task.state !== '完成');
+    overview.append(card(t('project.activeTasks'), tasksList(active.filter(task => !project.currentPhase || task.phase === project.currentPhase))));
+    const other = active.filter(task => !!project.currentPhase && task.phase !== project.currentPhase);
+    if (other.length) {
+      const sections = Array.from(new Set(other.map(task => task.phase))).map(phase => disclosure(phase || t('common.none'), tasksList(other.filter(task => task.phase === phase))));
+      overview.append(disclosure(t('project.otherTasks'), ...sections));
+    }
+    overview.append(disclosure(t('project.completedTasks'), tasksList(project.tasks.filter(task => task.state === '完成'))));
     for (const detail of overview.querySelectorAll('details')) detail.open = opened.has(detail.querySelector('summary')?.textContent);
   }
   renderOverview(); node.append(overview);

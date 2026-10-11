@@ -18,6 +18,12 @@ export type ProjectStatus = (typeof PROJECT_STATUSES)[number];
 export const TASK_STATES = ['未開始', '進行中', '等待回覆', '暫停', '完成'] as const;
 export type TaskState = (typeof TASK_STATES)[number];
 
+export type BulkTaskAction =
+  | { kind: 'state'; value: TaskState }
+  | { kind: 'phase' | 'due' | 'addTag' | 'removeTag'; value: string }
+  | { kind: 'archive'; confirm: true };
+export type BulkTaskResult = { task: string; ok: true } | { task: string; ok: false; error: string; detail?: string };
+
 export const PHASE_STATES = ['未開始', '進行中', '完成'] as const;
 export type PhaseState = (typeof PHASE_STATES)[number];
 

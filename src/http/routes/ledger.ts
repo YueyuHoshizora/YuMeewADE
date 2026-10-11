@@ -7,6 +7,10 @@ import { phaseKey, stepsHash } from '../../ledger/completion.ts';
 import { phaseTasks } from '../../state/state.ts';
 import { Router, reqString } from '../router.ts';
 import { TaskTemplates } from '../../ledger/task-templates.ts';
+import { TASK_STATES, type BulkTaskAction, type BulkTaskResult } from '../../shared/types.ts';
+import { validDue, validTag } from '../../shared/task-metadata.ts';
+import { isValidTaskId } from '../../shared/names.ts';
+import { log } from '../../shared/log.ts';
 
 function object(value: unknown): Record<string, unknown> {
   if (!value || typeof value !== 'object' || Array.isArray(value)) throw new AppError('bad_request', 'patch_not_object');
@@ -159,6 +163,51 @@ export function registerLedgerRoutes(router: Router, app: App): void {
     await changed('task.update', project, task);
     return result;
   });
+  router.post('/api/task/bulk', async ({ body }) => {
+    const project = reqString(body, 'project', 120);
+    await app.projects.get(project);
+    const tasks = strings(body.tasks);
+    if (!tasks.length || tasks.length > 200 || new Set(tasks).size !== tasks.length) throw new AppError('bad_request');
+    for (const task of tasks) if (!isValidTaskId(task)) throw new AppError('bad_request', 'invalid_task_id');
+    const action = object(body.action);
+    const kind = action.kind;
+    if (Object.keys(action).some(key => key !== 'kind' && key !== (kind === 'archive' ? 'confirm' : 'value'))) throw new AppError('bad_request');
+    if (kind === 'state') {
+      if (!TASK_STATES.some(state => state === action.value)) throw new AppError('bad_request', 'invalid_state');
+    } else if (kind === 'phase') {
+      if (typeof action.value !== 'string' || action.value.length > 2000) throw new AppError('bad_request', 'field_type', { field: 'phase' });
+    } else if (kind === 'due') {
+      if (!validDue(action.value)) throw new AppError('bad_request', 'field_type', { field: 'due' });
+    } else if (kind === 'addTag' || kind === 'removeTag') {
+      if (!validTag(action.value)) throw new AppError('bad_request', 'field_type', { field: 'tag' });
+    } else if (kind === 'archive') {
+      if (action.confirm !== true) throw new AppError('bad_request');
+    } else throw new AppError('bad_request');
+    const validated = action as unknown as BulkTaskAction;
+    const results: BulkTaskResult[] = [];
+    for (const task of tasks) {
+      try {
+        if (validated.kind === 'archive') await archiveTask({ project, task });
+        else {
+          const patch: TaskPatch = validated.kind === 'state' ? { state: validated.value }
+            : validated.kind === 'phase' ? { phase: validated.value }
+            : validated.kind === 'due' ? { due: validated.value } : {};
+          await app.tasks.update(project, task, patch, validated.kind === 'addTag' || validated.kind === 'removeTag' ? { tag: validated.value, add: validated.kind === 'addTag' } : undefined);
+          if (patch.state === '完成') await app.completion.approve(project, task);
+          else if (patch.state !== undefined) await app.completion.revoke(project, task);
+          await changed('task.update', project, task);
+        }
+        results.push({ task, ok: true });
+      } catch (error) {
+        if (error instanceof AppError) results.push({ task, ok: false, error: error.code, ...(error.detail ? { detail: error.detail } : {}) });
+        else {
+          log.error('作業批次操作失敗', error);
+          results.push({ task, ok: false, error: 'internal' });
+        }
+      }
+    }
+    return { results };
+  });
   router.post('/api/task/step', async ({ body }) => {
     const { project, task } = ids(body);
     const count = Number(body.add !== undefined) + Number(body.remove !== undefined) + Number(body.index !== undefined);
@@ -190,7 +239,7 @@ export function registerLedgerRoutes(router: Router, app: App): void {
     await changed(`task.${String(body.action)}`, project, task);
     return result;
   });
-  router.post('/api/task/archive', async ({ body }) => {
+  async function archiveTask(body: Record<string, unknown>): Promise<{ archived: true }> {
     const { project, task } = ids(body);
     await app.tasks.get(project, task);
     if (app.taskBusy(project, task)) throw new AppError('conflict', 'archive_while_running');
@@ -205,7 +254,8 @@ export function registerLedgerRoutes(router: Router, app: App): void {
     app.runner.markRead(project, task);
     await changed('task.archive', project, task);
     return { archived: true };
-  });
+  }
+  router.post('/api/task/archive', async ({ body }) => archiveTask(body));
   router.post('/api/task/read', async ({ body }) => {
     const { project, task } = ids(body);
     await app.tasks.get(project, task);

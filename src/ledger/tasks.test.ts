@@ -25,3 +25,21 @@ test('人工檔案錯誤 metadata 忽略', () => withTmpWorkspace(async ws => {
   const read = await ledger.get('P', task.id);
   assert.equal(read.due, ''); assert.deepEqual(read.tags, ['good']);
 }));
+
+test('標籤原子增刪、冪等與上限', () => withTmpWorkspace(async ws => {
+  await new ProjectLedger(ws).create({ name: 'P' });
+  const ledger = new TaskLedger(ws);
+  const task = await ledger.create('P', { title: 'T' });
+  await Promise.all(['a', 'b'].map(tag => ledger.update('P', task.id, {}, { tag, add: true })));
+  assert.deepEqual((await ledger.get('P', task.id)).tags?.sort(), ['a', 'b']);
+  await ledger.update('P', task.id, {}, { tag: 'a', add: true });
+  await ledger.update('P', task.id, {}, { tag: 'a', add: false });
+  await ledger.update('P', task.id, {}, { tag: 'a', add: false });
+  assert.deepEqual((await ledger.get('P', task.id)).tags, ['b']);
+  await assert.rejects(ledger.update('P', task.id, {}, { tag: ' bad', add: true }));
+  const full = Array.from({ length: 32 }, (_, i) => `tag${i}`);
+  await ledger.update('P', task.id, { tags: full });
+  await ledger.update('P', task.id, {}, { tag: 'tag0', add: true });
+  await assert.rejects(ledger.update('P', task.id, {}, { tag: 'overflow', add: true }));
+  assert.deepEqual((await ledger.get('P', task.id)).tags, full);
+}));
