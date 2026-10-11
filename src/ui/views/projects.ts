@@ -1,5 +1,5 @@
 import { type NewTaskInput, type ProjectView, type SlashCommand, type StartInput, type Task } from '../../shared/types.ts';
-import { api, query, request } from '../api.ts';
+import { ApiFailure, api, query, request } from '../api.ts';
 import { t } from '../i18n/index.ts';
 import { attachments } from '../components/attachments.ts';
 import { aiPicker } from '../components/picker.ts';
@@ -30,6 +30,24 @@ async function startWithBudget(context: ViewContext, input: StartInput): Promise
 
 declare global { interface Window { yumeewade?: { desktop: true; platform: string; pickFolder: () => Promise<string | null>; setBadge: (count: number) => void; focus: () => void }; } }
 
+export function openProjectView(context: ViewContext): View {
+  const node = el('div', 'page'); const search = input('', t('project.searchExisting'));
+  search.type = 'search'; search.setAttribute('aria-label', t('project.searchExisting'));
+  const projects = el('div', 'task-list');
+  function render(): void {
+    const term = search.value.trim().toLocaleLowerCase();
+    const matches = context.state.projects.filter(project => [project.name, project.id, project.bodyPath].some(value => value.toLocaleLowerCase().includes(term)));
+    projects.replaceChildren(...matches.map(project => card(project.name,
+      el('p', 'muted', project.bodyPath),
+      row(el('span', 'state-chip', t(`state.${project.status}`)), link(t('project.openNamed', { name: project.name }), projectHash(project.id), 'primary')),
+    )));
+    if (!matches.length) projects.append(el('p', 'muted', t('project.noExisting')), link(t('nav.settings'), '#/settings'));
+  }
+  search.oninput = render; render();
+  node.append(el('h1', '', t('project.openExisting')), el('p', 'muted', t('project.existingHint')), search, projects, link(t('project.new'), '#/new'));
+  return { node, update: state => { context.state = state; render(); } };
+}
+
 export function newProjectView(context: ViewContext, params: URLSearchParams): View {
   const node = el('div', 'page'); const name = input(); name.required = true; name.maxLength = 60;
   const first = area(); first.maxLength = context.state.limits.promptChars; const description = area(); description.maxLength = 400;
@@ -40,16 +58,31 @@ export function newProjectView(context: ViewContext, params: URLSearchParams): V
   const relations = el('div', 'check-grid'); for (const p of context.state.projects) { const check = input(); check.type = 'checkbox'; check.onchange = () => { const at = related.indexOf(p.id); if (check.checked && at < 0) related.push(p.id); else if (!check.checked && at >= 0) related.splice(at, 1); }; relations.append(field(p.name, check)); }
   const details = disclosure(t('common.details'), field(t('project.body'), folder), field(t('project.parent'), parent), field(t('project.related'), relations)); details.open = !!params.get('parent');
   const form = el('form', 'form'); const submit = el('button', 'primary', t('project.create')); submit.type = 'submit';
-  form.append(field(t('project.name'), name), field(t('project.firstTask'), first), field(t('project.description'), description), field(t('project.phases'), phases), details, submit);
+  const existing = el('div'); existing.setAttribute('aria-live', 'polite');
+  function showExisting(): boolean {
+    const value = name.value.trim().toLowerCase();
+    const project = value ? context.state.projects.find(project => project.id.toLowerCase() === value || project.name.toLowerCase() === value) : undefined;
+    existing.replaceChildren();
+    if (!project) return false;
+    existing.append(el('p', '', t('detail.project_exists')), el('p', 'muted', t('project.existsHint')), link(t('project.openNamed', { name: project.name }), projectHash(project.id), 'primary'));
+    return true;
+  }
+  name.oninput = () => { showExisting(); };
+  form.append(field(t('project.name'), name), existing, field(t('project.firstTask'), first), field(t('project.description'), description), field(t('project.phases'), phases), details, submit);
   form.onsubmit = event => { event.preventDefault(); void run(async () => {
     submit.disabled = true;
     try { const project = await api.createProject({ name: name.value.trim(), description: description.value.trim(), phases: lines(phases.value), body: body.value.trim(), parent: parent.value, related });
       // 建立台帳成功後立即離開此表單；即使第一輪失敗，也不能重複建立專案。
       await context.refresh(); location.hash = projectHash(project.id);
       if (first.value.trim()) await startWithBudget(context, { project: project.id, text: first.value.trim(), ...context.state.settings.initial });
+    } catch (error) {
+      if (!(error instanceof ApiFailure) || error.body.detail !== 'project_exists') throw error;
+      await context.refresh();
+      if (!showExisting()) throw error;
     } finally { submit.disabled = false; }
   }); };
-  node.append(el('h1', '', t('project.new')), form); return { node };
+  node.append(row(el('h1', '', t('project.new')), button(t('project.openExisting'), () => { location.hash = '#/open'; })), form);
+  return { node, update: state => { context.state = state; showExisting(); } };
 }
 
 export function detailedTaskForm(context: ViewContext, project: ProjectView, params: URLSearchParams): HTMLElement {
