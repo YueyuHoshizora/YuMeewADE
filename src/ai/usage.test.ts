@@ -26,6 +26,18 @@ test('額度只前進不倒退，每次變更都推送完整快照', () => {
   });
 });
 
+test('回合中的額度事件不帶重置券時保留帳號查詢的重置券，新查詢則取代', () => {
+  const board = new UsageBoard(() => {});
+  try {
+    const credits = { availableCount: 1, credits: [{ title: 'Full reset', expiresAt: '2026-11-01T00:00:00.000Z' }] };
+    board.record('codex', { ...quota('2026-10-10T10:00:00Z', 40), resetCredits: credits });
+    board.record('codex', quota('2026-10-10T10:05:00Z', 50));
+    assert.deepEqual(board.snapshot().ais[0]?.resetCredits, credits);
+    board.record('codex', { ...quota('2026-10-10T10:10:00Z', 50), resetCredits: { availableCount: 0, credits: [] } });
+    assert.deepEqual(board.snapshot().ais[0]?.resetCredits, { availableCount: 0, credits: [] });
+  } finally { board.close(); }
+});
+
 test('實測冷啟動不除固定四秒；並行區間相加、累計回報取代，閒置／close 清空', () => {
   let clock = 1000;
   const pushed: UsageState[] = [];

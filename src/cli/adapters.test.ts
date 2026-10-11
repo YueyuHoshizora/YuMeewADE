@@ -402,6 +402,28 @@ test('Codex app-server 額度回應轉成窗口（5h／7d、重置時間、達�
   assert.equal(codexAppServerQuota({}, 'T'), null);
 });
 
+test('Codex 重置券：只收可用券、依到期日排序，null 到期代表不會到期，格式錯誤整體忽略', () => {
+  const snapshot = { primary: { usedPercent: 100, windowDurationMins: 10080, resetsAt: 1791948586 }, rateLimitReachedType: 'rate_limit_reached' };
+  const credit = (status: string, expiresAt: number | null, title: string | null = 'Full reset') => ({ id: 'opaque-id', resetType: 'codexRateLimits', status, grantedAt: 1, expiresAt, title, description: 'x' });
+  const quota = codexAppServerQuota({
+    rateLimits: snapshot,
+    rateLimitResetCredits: { availableCount: 3, credits: [credit('available', 1794007502), credit('redeemed', 1792000000), credit('available', 1792700953), credit('available', null, null)] },
+  }, 'T');
+  assert.deepEqual(quota?.resetCredits, {
+    availableCount: 3,
+    credits: [
+      { title: 'Full reset', expiresAt: new Date(1792700953_000).toISOString() },
+      { title: 'Full reset', expiresAt: new Date(1794007502_000).toISOString() },
+      { title: null, expiresAt: null },
+    ],
+  });
+  // 只有張數沒有明細（背景輪詢）：張數照帶，明細為空。
+  assert.deepEqual(codexAppServerQuota({ rateLimits: snapshot, rateLimitResetCredits: { availableCount: 2, credits: null } }, 'T')?.resetCredits, { availableCount: 2, credits: [] });
+  for (const bad of [null, 'x', { availableCount: -1 }, { availableCount: 1.5 }, { credits: [] }]) {
+    assert.equal(codexAppServerQuota({ rateLimits: snapshot, rateLimitResetCredits: bad }, 'T')?.resetCredits, undefined);
+  }
+});
+
 test('即時額度查詢：走 initialize → rateLimits/read 取得回應，錯誤或逾時都 reject', async () => {
   const dir = await fs.mkdtemp(path.join(os.tmpdir(), 'codex-quota-'));
   try {

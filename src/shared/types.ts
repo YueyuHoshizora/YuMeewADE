@@ -209,6 +209,19 @@ export interface QuotaWindow {
   resetsAt: string | null;
 }
 
+/** 帳號持有的「額度重置券」；只收後端明確回報的欄位，不含不透明 ID。 */
+export interface ResetCredit {
+  title: string | null;
+  /** 到期時間（ISO）；後端回報不會到期為 null。 */
+  expiresAt: string | null;
+}
+
+export interface ResetCredits {
+  /** 後端回報的可用張數；明細可能被後端截斷，張數不一定等於 credits 長度。 */
+  availableCount: number;
+  credits: ResetCredit[];
+}
+
 /** 各 AI 帳號的額度；只在記憶體，核心重啟後等下一次回報。 */
 export interface AiUsage {
   ai: string;
@@ -223,6 +236,8 @@ export interface AiUsage {
   quotaAt: string | null;
   /** API 明確回報的預付餘額（USD cents）；不由百分比推估。 */
   prepaidCents?: number;
+  /** 後端明確回報的重置券（目前只有 Codex）；沒有回報為 undefined。 */
+  resetCredits?: ResetCredits;
 }
 
 export interface UsageState {

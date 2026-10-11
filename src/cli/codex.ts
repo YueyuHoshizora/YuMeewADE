@@ -5,7 +5,7 @@ import { promises as fs } from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import type { CliCommandConfig } from '../shared/config.ts';
-import type { QuotaWindow } from '../shared/types.ts';
+import type { QuotaWindow, ResetCredit, ResetCredits } from '../shared/types.ts';
 import { findExecutable, minimalEnv, runLineProcess, terminateTree } from './process.ts';
 import type { CliEvent, CliProvider, CliRun, SendOptions } from './provider.ts';
 import { codexPrompts, expandCodexPrompt, slashName } from './commands.ts';
@@ -50,7 +50,29 @@ export function codexQuota(limits: unknown, at: string): QuotaEvent | null {
   return windows.length || limited ? { type: 'quota', windows, limited, at } : null;
 }
 
-/** app-server `account/rateLimits/read` 的回應（camelCase、同一份後端即時資料）→ 額度窗口；沿用 rollout 的解析。 */
+/** app-server `rateLimitResetCredits`：只收仍可用（available）的券，到期時間為 Unix 秒；格式不符的整體忽略。 */
+export function codexResetCredits(value: unknown): ResetCredits | undefined {
+  if (!value || typeof value !== 'object') return undefined;
+  const summary = value as Record<string, unknown>;
+  const count = summary['availableCount'];
+  if (typeof count !== 'number' || !Number.isSafeInteger(count) || count < 0) return undefined;
+  const rows = Array.isArray(summary['credits']) ? summary['credits'] : [];
+  const credits: ResetCredit[] = [];
+  for (const row of rows) {
+    if (!row || typeof row !== 'object') continue;
+    const credit = row as Record<string, unknown>;
+    if (credit['status'] !== 'available') continue;
+    const expires = credit['expiresAt'];
+    credits.push({
+      title: typeof credit['title'] === 'string' && credit['title'] ? credit['title'].slice(0, 80) : null,
+      expiresAt: typeof expires === 'number' && Number.isFinite(expires) && expires > 0 ? new Date(expires * 1000).toISOString() : null,
+    });
+  }
+  credits.sort((a, b) => (a.expiresAt ?? '9').localeCompare(b.expiresAt ?? '9'));
+  return { availableCount: count, credits };
+}
+
+/** app-server `account/rateLimits/read` 的回應（camelCase、同一份後端即時資料）→ 額度窗口與重置券；窗口沿用 rollout 的解析。 */
 export function codexAppServerQuota(result: unknown, at: string): QuotaEvent | null {
   if (!result || typeof result !== 'object') return null;
   const r = result as Record<string, unknown>;
@@ -65,7 +87,9 @@ export function codexAppServerQuota(result: unknown, at: string): QuotaEvent | n
     const v = w as Record<string, unknown>;
     snake[key] = { used_percent: v['usedPercent'], window_minutes: v['windowDurationMins'], resets_at: v['resetsAt'] };
   }
-  return codexQuota(snake, at);
+  const quota = codexQuota(snake, at);
+  const resetCredits = codexResetCredits(r['rateLimitResetCredits']);
+  return quota && resetCredits ? { ...quota, resetCredits } : quota;
 }
 
 /** 即時額度查詢逾時；app-server 要連後端，網路差時不能卡住啟動或重新整理。 */
