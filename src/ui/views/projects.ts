@@ -16,6 +16,7 @@ import { confirmUsageRound } from '../components/usage-history.ts';
 import { attachComposeInsert } from '../components/mention.ts';
 import { onboardingBanner } from '../components/onboarding.ts';
 import { githubIssuesButton } from '../components/github-issues.ts';
+import { metadataBadge, metadataFields } from '../components/task-metadata.ts';
 
 async function startWithBudget(context: ViewContext, input: StartInput): Promise<void> {
   const { task } = await request<{ task: Task }>('/api/start/prepare', input);
@@ -137,9 +138,10 @@ export function detailedTaskForm(context: ViewContext, project: ProjectView, par
   const parent = select(options, params.get('parent') ?? ''); const source = select(options, params.get('derived') ?? '');
   const kind = select([{ value: 'main', label: t('task.main') }, { value: 'derived', label: t('task.derived') }], params.has('derived') ? 'derived' : 'main');
   const workspace = select([{ value: 'isolated', label: t('task.isolated') }, { value: 'direct', label: t('task.direct') }], 'isolated'); const steps = area();
+  const metadata = metadataFields();
   const form = el('form', 'form'); const submit = el('button', 'primary', t('task.create')); submit.type = 'submit';
   const grid = el('div', 'form-grid'); grid.append(field(t('task.role'), role), field(t('task.phase'), phase), field(t('task.parent'), parent), field(t('task.kind'), kind), field(t('task.source'), source), field(t('task.workspace'), workspace));
-  form.append(field(t('common.title'), title), grid, field(t('task.stepsInput'), steps), submit);
+  form.append(field(t('common.title'), title), grid, metadata.node, field(t('task.stepsInput'), steps), submit);
   form.onsubmit = event => { event.preventDefault(); void run(async () => {
     submit.disabled = true;
     try {
@@ -149,6 +151,7 @@ export function detailedTaskForm(context: ViewContext, project: ProjectView, par
         derivedFrom: kind.value === 'derived' ? source.value : '',
         workspace: workspace.value === 'direct' ? 'direct' : 'isolated',
         steps: lines(steps.value),
+        ...metadata.value(),
       };
       const task = await api.createTask(project.id, input); await context.refresh(); location.hash = taskHash(project.id, task.id);
     } finally { submit.disabled = false; }
@@ -160,7 +163,7 @@ export function projectView(context: ViewContext, project: ProjectView, params: 
   const node = el('div', 'page project-page'); const overview = el('div', 'project-overview');
   function tasksList(tasks: typeof project.tasks): HTMLElement {
     const list = el('div', 'task-list');
-    for (const task of tasks) list.append(row(link(task.title, taskHash(project.id, task.id)), el('span', 'state-chip', t(`state.${task.state}`))));
+    for (const task of tasks) list.append(row(link(task.title, taskHash(project.id, task.id)), el('span', 'state-chip', t(`state.${task.state}`)), metadataBadge(task)));
     if (!tasks.length) list.append(el('p', 'muted', t('common.empty')));
     return list;
   }

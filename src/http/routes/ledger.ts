@@ -119,7 +119,7 @@ export function registerLedgerRoutes(router: Router, app: App): void {
   router.post('/api/task/update', async ({ body }) => {
     const { project, task } = ids(body);
     const patch = object(body.patch) as TaskPatch;
-    const fields = ['title', 'state', 'phase', 'role', 'parent', 'cli', 'model', 'effort', 'question'];
+    const fields = ['title', 'state', 'phase', 'role', 'parent', 'cli', 'model', 'effort', 'question', 'due', 'tags'];
     if (Object.keys(patch).some((key) => !fields.includes(key))) throw new AppError('bad_request');
     if (patch.role && !(await app.roles()).roles[patch.role]) throw new AppError('bad_request', 'role_missing');
     const result = await app.tasks.update(project, task, patch);

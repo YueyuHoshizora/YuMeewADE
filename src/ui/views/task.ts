@@ -1,3 +1,4 @@
+import { metadataEditor } from '../components/task-metadata.ts';
 import type {
   AppState, Busy, ChatEvent, ChatHistory, ChatRow, ProjectView,
   QueueItem, SendMode, SlashCommand, Task, TaskView, VerifyResult, VerifyStatus,
@@ -932,7 +933,7 @@ export function taskView(
         await context.refresh();
       });
     footer.title = task.memo;
-    footer.replaceChildren(row(state, phase, detail, memo, leaveMemo));
+    footer.replaceChildren(row(state, phase, detail, memo, leaveMemo), metadataEditor(project.id, task, () => context.refresh()));
   }
   const composerControls = row(pick.node, upload.node, snippetsButton(draft), contextButton(project.id, task.id, () => pick.value()));
   void run(async () => {

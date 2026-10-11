@@ -184,6 +184,8 @@ Roles   { models, roles: { role: { main, backup, job } }, permissions }   // rol
 
 - GitHub issue 連結：作業 frontmatter 可選 `issue: <正整數>` 與 `issueUrl: <https URL>`；舊檔省略仍有效。`PROJECT.md` 的 `issues: [{text, level}]` 是人工維護的本地風險／待辦，不是 GitHub issues；專案畫面顯示它，遠端 issue 清單獨立且只在手動操作時取得。從 issue 建作業只預填標題及第一則指示，不自動執行 AI。
 - Task 狀態機：未開始 → 進行中 → 等待回覆 → 暫停 → 完成（狀態值入檔，UI 下拉選單同源）。
+- Task frontmatter 新增 `due: YYYY-MM-DD`（空字串表示無期限）與 `tags: [字串]`（最多 32 個、每個最多 60 字；讀取忽略不合法值）。期限使用當地日曆日，不含時區；完成作業不標逾期。
+- 作業範本保存於專案 `.ai/templates/*.md` 或工作區 `templates/*.md`；frontmatter 為 `title`、`instruction`，正文 `## 步驟` 使用勾選清單。由範本建立只複製標題、步驟與第一則指示，不複製完成狀態或對話。
 - 併發保證：單一後端程序為唯一寫者；檔案寫入採「寫暫存檔後原子搬移」；JSONL 只追加不改寫。
 - 持久化：全部落地為檔案；重啟後對話、隊列、worktree 狀態皆可還原（與範圍外一致：無 DB）。
 - user ChatRow 可附 `mentions: [{token,path,start?,end?,status}]`；status＝resolved／not-found／truncated／excluded／binary。只存解析狀態，不存檔案內容；原始指示 text 不變。
@@ -541,3 +543,4 @@ electron 44.7.0、vite 8.3.4、electron-builder 26.15.3、typescript 7.0.2、@ty
 - 命令面板：⌘/Ctrl+Shift+P，穩定排序的模糊篩選、原生 modal dialog／combobox／listbox、鍵盤選取；依路由列出檔案／Git／執行操作，支援所有專案作業、語言、外觀、封存清單與確認後停止全部 AI。
 - 前往檔案：專案／作業 ⌘/Ctrl+P 使用 `/api/task/files`，150ms debounce、過期查詢與選取失效處理；`path:line` 支援 1 起算正整數行號，以 `yumeewade:open-file` 事件傳給編輯器。
 - 快捷鍵說明：非輸入狀態 `?`／⌘/Ctrl+/ 開啟可存取原生 dialog；七語系列出現有全域、面板、編輯器儲存、樹狀清除、slash／mention 建議、composer IME／Enter 規則與終端轉送操作，不搶原有快捷鍵。
+- 作業期限／標籤：frontmatter 読寫驗證、舊檔錯值忽略、詳細新增／作業頁編輯、樹狀／專案清單顯示未完成逾期。

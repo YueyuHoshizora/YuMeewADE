@@ -23,6 +23,7 @@ import * as coreLog from './core-log.ts';
 import * as github from './github.ts';
 import * as palette from './palette.ts';
 import * as paletteHelp from './palette-help.ts';
+import * as tasks from './tasks.ts';
 
 export const featureZhTW = {
   ...archive.featureZhTW,
@@ -50,6 +51,7 @@ export const featureZhTW = {
   ...github.featureZhTW,
   ...palette.featureZhTW,
   ...paletteHelp.featureZhTW,
+  ...tasks.featureZhTW,
 };
 export const featureZhCN = {
   ...archive.featureZhCN,
@@ -77,6 +79,7 @@ export const featureZhCN = {
   ...github.featureZhCN,
   ...palette.featureZhCN,
   ...paletteHelp.featureZhCN,
+  ...tasks.featureZhCN,
 };
 export const featureEn = {
   ...archive.featureEn,
@@ -104,6 +107,7 @@ export const featureEn = {
   ...github.featureEn,
   ...palette.featureEn,
   ...paletteHelp.featureEn,
+  ...tasks.featureEn,
 };
 export const featureJa = {
   ...archive.featureJa,
@@ -131,6 +135,7 @@ export const featureJa = {
   ...github.featureJa,
   ...palette.featureJa,
   ...paletteHelp.featureJa,
+  ...tasks.featureJa,
 };
 export const featureDe = {
   ...archive.featureDe,
@@ -158,6 +163,7 @@ export const featureDe = {
   ...github.featureDe,
   ...palette.featureDe,
   ...paletteHelp.featureDe,
+  ...tasks.featureDe,
 };
 export const featureFr = {
   ...archive.featureFr,
@@ -185,6 +191,7 @@ export const featureFr = {
   ...github.featureFr,
   ...palette.featureFr,
   ...paletteHelp.featureFr,
+  ...tasks.featureFr,
 };
 export const featureIt = {
   ...archive.featureIt,
@@ -212,4 +219,5 @@ export const featureIt = {
   ...github.featureIt,
   ...palette.featureIt,
   ...paletteHelp.featureIt,
+  ...tasks.featureIt,
 };

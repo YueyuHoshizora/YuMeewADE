@@ -3,6 +3,7 @@ import { request } from '../api.ts';
 import { t } from '../i18n/index.ts';
 import { archiveFlow, button, confirmModal, disclosure, el, input, link, projectHash, renameModal, run, taskHash, type ViewContext } from './dom.ts';
 import { filterTree } from './tree-filter.ts';
+import { metadataBadge } from './task-metadata.ts';
 
 const collapsed = new Set<string>(); const seenAttention = new Set<string>();
 let searchText = '';
@@ -78,6 +79,7 @@ export function tree(context: ViewContext): HTMLElement {
     const key = `${p.id}/${task.id}`; const attention = attentionKeys.has(key);
     const line = el('div', 'tree-row');
     const title = link(`${task.parent ? '↳ ' : ''}${task.title}`, taskHash(p.id, task.id), 'tree-title');
+    title.append(metadataBadge(task));
     if (location.hash === title.hash) line.classList.add('selected');
     line.append(toggle(key, !!children.length, attention), el('span', `dot ${taskTone(state, p.id, task)}`), title, menu([
       { label: t('common.rename'), action: async () => { const title = await renameModal(task.title); if (title) { await request('/api/task/update', { project: p.id, task: task.id, patch: { title } }); await refresh(); } } },

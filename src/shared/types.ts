@@ -138,6 +138,8 @@ export interface Task {
   next: string;
   issue?: number;
   issueUrl?: string;
+  due?: string;
+  tags?: string[];
 }
 
 export interface NewTaskInput {
@@ -154,9 +156,11 @@ export interface NewTaskInput {
   effort?: string;
   issue?: number;
   issueUrl?: string;
+  due?: string;
+  tags?: string[];
 }
 
-export type TaskPatch = Partial<Pick<Task, 'title' | 'state' | 'phase' | 'role' | 'parent' | 'cli' | 'model' | 'effort' | 'question'>>;
+export type TaskPatch = Partial<Pick<Task, 'title' | 'state' | 'phase' | 'role' | 'parent' | 'cli' | 'model' | 'effort' | 'question' | 'due' | 'tags'>>;
 
 /** /api/state 裡的作業：台帳＋計算欄位。 */
 export interface TaskView extends Task {

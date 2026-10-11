@@ -8,6 +8,7 @@ import { log } from '../shared/log.ts';
 import { nextTaskId } from '../shared/names.ts';
 import { TASK_STATES, TASK_KINDS, WORKSPACE_MODES, type NewTaskInput, type Step, type Task, type TaskPatch, type TaskState } from '../shared/types.ts';
 import type { YamlValue } from '../shared/yaml.ts';
+import { validDue, validTag, taskMetadata } from '../shared/task-metadata.ts';
 import { TEMPLATES_DIR, type Workspace } from './workspace.ts';
 
 export function nowMinute(now = new Date()): string {
@@ -50,7 +51,9 @@ export class TaskLedger {
     const s = (k: string) => data[k] == null ? '' : String(data[k]);
     const memo = section(body, 'memo'), next = section(body, 'next');
     const content = (part: BodySection) => part.start < 0 ? [] : part.rows.slice(part.start + 1, part.end).filter(row => row.trim() && !/^\s*<!--/.test(row));
-    return { id, title: s('title') || id, state: TASK_STATES.includes(s('state') as TaskState) ? s('state') as TaskState : '未開始', phase: s('phase'), role: s('role'), parent: s('parent'), kind: s('kind') === 'derived' ? 'derived' : 'main', derivedFrom: s('derivedFrom'), workspace: s('workspace') === 'direct' ? 'direct' : 'isolated', cli: s('cli') || s('owner'), model: s('model'), effort: s('effort'), question: s('question'), workdir: s('workdir'), mergeExcluded: data['mergeExcluded'] === true, updated: s('updated'), steps: parseSteps(body), memo: content(memo).at(-1) ?? '', next: content(next)[0] ?? '', ...(typeof data['issue'] === 'number' && Number.isSafeInteger(data['issue']) && data['issue'] > 0 ? { issue: data['issue'], issueUrl: /^https:\/\/[^\s]+$/.test(s('issueUrl')) ? s('issueUrl') : '' } : {}) };
+    const due = typeof data['due'] === 'string' && validDue(data['due']) ? data['due'] : '';
+    const tags = Array.isArray(data['tags']) ? [...new Set(data['tags'].filter(validTag))].slice(0, 32) : [];
+    return { id, due, tags, title: s('title') || id, state: TASK_STATES.includes(s('state') as TaskState) ? s('state') as TaskState : '未開始', phase: s('phase'), role: s('role'), parent: s('parent'), kind: s('kind') === 'derived' ? 'derived' : 'main', derivedFrom: s('derivedFrom'), workspace: s('workspace') === 'direct' ? 'direct' : 'isolated', cli: s('cli') || s('owner'), model: s('model'), effort: s('effort'), question: s('question'), workdir: s('workdir'), mergeExcluded: data['mergeExcluded'] === true, updated: s('updated'), steps: parseSteps(body), memo: content(memo).at(-1) ?? '', next: content(next)[0] ?? '', ...(typeof data['issue'] === 'number' && Number.isSafeInteger(data['issue']) && data['issue'] > 0 ? { issue: data['issue'], issueUrl: /^https:\/\/[^\s]+$/.test(s('issueUrl')) ? s('issueUrl') : '' } : {}) };
   }
 
   async readRaw(project: string, id: string): Promise<string> {
@@ -62,6 +65,7 @@ export class TaskLedger {
     if (typeof input.title !== 'string' || !input.title.trim()) throw new AppError('bad_request', 'title_required');
     if (input.kind !== undefined && !TASK_KINDS.includes(input.kind) || input.workspace !== undefined && !WORKSPACE_MODES.includes(input.workspace)) throw new AppError('bad_request', 'field_type');
     if (input.steps !== undefined && (!Array.isArray(input.steps) || input.steps.some(s => typeof s !== 'string'))) throw new AppError('bad_request', 'field_type', { field: 'steps' });
+    const metadata = taskMetadata(input);
     for (const key of ['role','phase','parent','derivedFrom','cli','model','effort'] as const) if (input[key] !== undefined && (typeof input[key] !== 'string' || input[key]!.length > 2000)) throw new AppError('bad_request', 'field_type', { field: key });
     if (input.issue !== undefined && (!Number.isSafeInteger(input.issue) || input.issue <= 0) || input.issueUrl !== undefined && (typeof input.issueUrl !== 'string' || input.issueUrl.length > 2000 || !/^https:\/\/[^\s]+$/.test(input.issueUrl))) throw new AppError('bad_request', 'field_type', { field: 'issue' });
     if (input.parent) await this.get(project, input.parent);
@@ -78,7 +82,7 @@ export class TaskLedger {
         catch (err) { if ((err as NodeJS.ErrnoException).code !== 'EEXIST') throw err; names.push(id); }
       }
       const fm = parseFrontmatter(await fs.readFile(path.join(TEMPLATES_DIR, 'task.md'), 'utf8'));
-      const values: Record<string, YamlValue> = { id, title: input.title.trim(), state: '未開始', phase: input.phase ?? '', role: input.role ?? '', parent: input.parent ?? '', kind: input.kind ?? 'main', derivedFrom: input.derivedFrom ?? '', workspace: input.workspace ?? 'isolated', cli: input.cli ?? '', model: input.model ?? '', effort: input.effort ?? '', question: '', workdir: '', mergeExcluded: false, updated: nowMinute() };
+      const values: Record<string, YamlValue> = { id, title: input.title.trim(), state: '未開始', phase: input.phase ?? '', role: input.role ?? '', parent: input.parent ?? '', kind: input.kind ?? 'main', derivedFrom: input.derivedFrom ?? '', workspace: input.workspace ?? 'isolated', cli: input.cli ?? '', model: input.model ?? '', effort: input.effort ?? '', question: '', workdir: '', mergeExcluded: false, updated: nowMinute(), due: '', tags: [], ...metadata };
       if (input.issue !== undefined) { values['issue'] = input.issue; values['issueUrl'] = input.issueUrl ?? ''; }
       const steps = (input.steps ?? []).map(s => s.replace(/[\r\n]+/g, ' ').trim()).filter(Boolean);
       const part = section(fm.body, 'steps');
@@ -92,6 +96,7 @@ export class TaskLedger {
     return withFileLocks([this.ws.projectFile(project), this.ws.taskFile(project, id)], async () => {
       const fm = parseFrontmatter(await this.readRaw(project, id));
       const values: Record<string, YamlValue> = {};
+      Object.assign(values, taskMetadata(patch));
       for (const k of STR_FIELDS) {
         const v = patch[k]; if (v === undefined) continue;
         if (typeof v !== 'string' || v.length > 2000) throw new AppError('bad_request', 'field_type', { field: k });
