@@ -243,6 +243,8 @@ HTTP JSON と SSE を使い、デスクトップ版と Web 版で完全に共通
 4. 実行中に「③ 終了後に続ける」で2つ目の指示を送ります。キューに表示され、最初の指示が終了すると自動で開始します。
 5. ウィンドウを閉じた後、タスクマネージャー／`ps` に `yumeewade-core` が残っていないことを確認します。
 
+- エディターの LSP 診断は未保存内容を 400ms debounce で同期し、マーカー、gutter、hover メッセージとファイル別件数を表示します。タブを閉じると didClose を送信。`POST /api/editor/language`（`action: diagnostics`／`close`）、ネイティブ TypeScript LSP と `YUMEEWADE_LSP_COMMANDS` を利用し、サーバー不在時は静かに無効化します。
+
 ## テスト
 
 ```bash

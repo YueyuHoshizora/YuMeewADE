@@ -1,4 +1,4 @@
-import type { EditorDocument, EditorAction, EditorActionResult, EditorChange, EditorMutation, EditorSearchResult, EditorProblem, EditorRecovery, TaskContext } from '../../shared/types.ts';
+import type { EditorDiagnostic, EditorDocument, EditorAction, EditorActionResult, EditorChange, EditorMutation, EditorSearchResult, EditorProblem, EditorRecovery, TaskContext } from '../../shared/types.ts';
 import { query, request } from '../api.ts';
 import { t } from '../i18n/index.ts';
 import { el, input, area, button, row, confirmModal, run } from './dom.ts';
@@ -28,6 +28,45 @@ export function openFileBrowser(project: string, task: string): void {
   const filter = input('', t('files.search')); const sourceSearch = input('', t('ew.search')); const replacement = input('', t('ew.replacement'));
   const dirty = (buffer: EditorRecovery) => buffer.text !== buffer.document.text;
   let persistenceTimer: number | undefined;
+  const live = new Map<string, { timer?: number; flight?: Promise<void>; disabled: boolean; text?: string; diagnostics: EditorDiagnostic[] }>();
+  let disposed = false;
+  function renderDiagnostics(path: string): void {
+    const items = live.get(path)?.diagnostics ?? [];
+    for (const view of views) if (view.path === path) {
+      const doc = view.content.view.state.doc;
+      const offset = (line: number, character: number) => { const row = doc.line(Math.min(doc.lines, line + 1)); return row.from + Math.min(row.length, character); };
+      view.content.diagnostics(items.map(item => {
+        const from = offset(item.line, item.character);
+        return { from, to: Math.max(from, item.endLine === undefined ? Math.min(doc.length, from + 1) : offset(item.endLine, item.endCharacter ?? item.character)), severity: item.severity === 1 ? 'error' : item.severity === 2 ? 'warning' : 'info', message: item.message };
+      }));
+    }
+  }
+  function scheduleDiagnostics(path: string): void {
+    const buffer = buffers.get(path);
+    if (disposed || !buffer?.document.languageAvailable || buffer.document.binary || buffer.document.truncated) return;
+    let state = live.get(path);
+    if (!state) { state = { disabled: false, diagnostics: [] }; live.set(path, state); }
+    if (state.disabled || state.text === buffer.text) return;
+    window.clearTimeout(state.timer);
+    state.timer = window.setTimeout(() => {
+      if (state.flight) return;
+      const text = buffers.get(path)?.text; if (text === undefined || disposed) return;
+      if (new TextEncoder().encode(JSON.stringify(text)).byteLength > 2_097_152 - 8192 || text.includes('\0')) { state.diagnostics = []; renderDiagnostics(path); refreshTabs(); return; }
+      state.text = text;
+      state.flight = (async () => {
+        try {
+          const result = await request<EditorActionResult>('/api/editor/language', { ...ids, path, text, line: 0, character: 0, action: 'diagnostics' });
+          if (!disposed && live.get(path) === state && buffers.get(path)?.text === text) { state.diagnostics = result.diagnostics; renderDiagnostics(path); refreshTabs(); }
+        } catch { state.disabled = true; state.diagnostics = []; if (!disposed) { renderDiagnostics(path); refreshTabs(); } }
+        finally { delete state.flight; if (live.get(path) === state) scheduleDiagnostics(path); }
+      })();
+    }, 400);
+  }
+  async function closeDiagnostics(path: string): Promise<void> {
+    const state = live.get(path); if (!state) return;
+    live.delete(path); window.clearTimeout(state.timer); await state.flight;
+    await request('/api/editor/language', { ...ids, path, action: 'close' }).catch(() => undefined);
+  }
   function schedulePersist(): void {
     if (!persistenceEnabled) return;
     window.clearTimeout(persistenceTimer); persistenceTimer = window.setTimeout(persist, 200);
@@ -53,11 +92,12 @@ export function openFileBrowser(project: string, task: string): void {
   function capture(index: number): void { const view = views[index]!; const buffer = view.path ? buffers.get(view.path) : undefined; if (buffer && !isImage(buffer.document.path)) { buffer.text = view.content.value; buffer.start = view.content.selectionStart; buffer.end = view.content.selectionEnd; buffer.top = view.content.scrollTop; buffer.left = view.content.scrollLeft; } }
   function refreshTabs(): void {
     for (const view of views) view.tabs.replaceChildren(...[...buffers].map(([path, buffer]) => row(
-      button(`${path}${dirty(buffer) ? ' *' : ''}`, () => activate(path, views.indexOf(view))),
+      button(`${path}${dirty(buffer) ? ' *' : ''} · ${t('editor.diagnostics')}: ${live.get(path)?.diagnostics.length ?? 0}`, () => activate(path, views.indexOf(view))),
       button(t('common.close'), async () => {
         views.forEach((_, index) => capture(index));
         if (dirty(buffer) && !(await confirmModal(t('editor.dirty'), path, t('editor.discard')))) return;
         buffers.delete(path);
+        await closeDiagnostics(path);
         for (const item of views) { item.content.forget(path); if (item.path === path) { item.path = undefined; item.content.value = ''; item.content.readOnly = true; item.preview.clear(); } }
         persist(); refreshTabs();
       })
@@ -72,6 +112,7 @@ export function openFileBrowser(project: string, task: string): void {
     } else view.content.revealLine(line + 1, character);
     if (!isImage(path)) view.content.focus(); focused = index; refreshTabs();
     capture(index); schedulePersist();
+    if (!isImage(path)) { renderDiagnostics(path); scheduleDiagnostics(path); }
     if (view.content.readOnly && !isImage(path)) output.replaceChildren(el('p', 'warning', buffer.document.binary ? t('files.binary') : buffer.document.truncated ? t('files.truncated') : t('detail.editor_readonly')));
   }
   let openSerial = 0;
@@ -110,6 +151,7 @@ export function openFileBrowser(project: string, task: string): void {
       }
       views[index]!.preview.update(content.value);
       schedulePersist(); refreshTabs();
+      if (path) { const state = live.get(path); if (state) state.diagnostics = []; renderDiagnostics(path); refreshTabs(); scheduleDiagnostics(path); }
     };
     content.onscroll = () => { capture(index); schedulePersist(); };
     content.onselect = () => { capture(index); schedulePersist(); };
@@ -190,6 +232,7 @@ export function openFileBrowser(project: string, task: string): void {
       catch { mutation.revision = (await request<{ revision: string }>(query('/api/editor/folder', { ...ids, path }))).revision; }
       if (!(await confirmModal(`${t('ew.confirm')} ${path}`, path, t(`ew.${action}`)))) return;
     }
+    if (action === 'delete' || action === 'rename') for (const key of buffers.keys()) if (key === path || key.startsWith(`${path}/`)) await closeDiagnostics(key);
     await request('/api/editor/mutate', { ...ids, ...mutation });
     if (action === 'delete' || action === 'rename') {
       for (const key of buffers.keys()) if (key === path || key.startsWith(`${path}/`)) { buffers.delete(key); views.forEach(view => view.content.forget(key)); }
@@ -259,7 +302,7 @@ export function openFileBrowser(project: string, task: string): void {
   filter.oninput = () => void run(load);
   const unload = (event: BeforeUnloadEvent) => { views.forEach((_, index) => capture(index)); persist(); if ([...buffers.values()].some(dirty)) { event.preventDefault(); event.returnValue = ''; } };
   window.addEventListener('beforeunload', unload); const navigate = () => void run(close); window.addEventListener('hashchange', navigate);
-  dialog.addEventListener('cancel', event => { event.preventDefault(); void run(close); }); dialog.addEventListener('close', () => { browsers.delete(key); window.clearTimeout(persistenceTimer); views.forEach(view => { view.content.destroy(); view.preview.destroy(); }); window.removeEventListener('beforeunload', unload); window.removeEventListener('hashchange', navigate); dialog.remove(); }, { once: true });
+  dialog.addEventListener('cancel', event => { event.preventDefault(); void run(close); }); dialog.addEventListener('close', () => { disposed = true; for (const path of live.keys()) void closeDiagnostics(path); browsers.delete(key); window.clearTimeout(persistenceTimer); views.forEach(view => { view.content.destroy(); view.preview.destroy(); }); window.removeEventListener('beforeunload', unload); window.removeEventListener('hashchange', navigate); dialog.remove(); }, { once: true });
   dialog.append(row(el('h2', '', t('files.title')), button(t('common.close'), close)), actions, row(pathInput, destination, ...(['createFile', 'createFolder', 'rename', 'delete'] as const).map(action => button(t(`ew.${action}`), () => mutate(action)))), row(sourceSearch, replacement, button(t('ew.search'), () => search(false)), button(t('ew.replacePreview'), () => search(true))), filter, results, panes, output);
   document.body.append(dialog);
   const ready = (async () => {

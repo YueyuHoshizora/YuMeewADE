@@ -249,6 +249,8 @@ HTTP JSON 加 SSE，桌面版與網頁版完全相同。型別定義在 [`src/sh
 5. 關閉視窗後，工作管理員／`ps` 看不到殘留的 `yumeewade-core`，也看不到 AI CLI 與它開出來的子行程。
 6. 用 npm 安裝的 `codex`／`claude`（`.cmd` 版，Windows）可以正常執行。
 
+- 編輯器即時 LSP 診斷：未儲存內容以 400ms debounce 同步，顯示錯誤標記、gutter、hover 與每檔問題數；關閉分頁送出 didClose。沿用 `POST /api/editor/language`（`action: diagnostics`／`close`）、原生 TypeScript LSP 與 `YUMEEWADE_LSP_COMMANDS`；缺少 server 時靜默停用。
+
 ## 測試
 
 ```bash

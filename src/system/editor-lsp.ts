@@ -11,7 +11,11 @@ export class LanguageClient {
   private dead = false;
   private readonly onDeath: () => void;
   readonly diagnostics = new Map<string, unknown[]>();
+  private diagnosticVersions = new Map<string, number>();
+  private diagnosticWaiters = new Map<string, () => void>();
+  private opened = new Set<string>();
   readonly ready: Promise<unknown>;
+  get alive(): boolean { return !this.dead; }
   constructor(command: string[], root: string, onDeath: () => void = () => undefined) {
     this.onDeath = onDeath;
     if (!command[0]) throw new AppError('unavailable');
@@ -44,14 +48,37 @@ export class LanguageClient {
       clearTimeout(pending.timer); this.pending.delete(message.id);
       if (message.error) pending.reject(new AppError('unavailable')); else pending.resolve(message.result);
     } else if (message.method === 'textDocument/publishDiagnostics') {
-      const params = message.params as { uri: string; diagnostics: unknown[] };
-      if (typeof params.uri !== 'string' || !Array.isArray(params.diagnostics) || params.diagnostics.length > 1000 || (!this.diagnostics.has(params.uri) && this.diagnostics.size >= 1000)) { this.dispose(); return; }
+      const params = message.params as { uri: string; diagnostics: unknown[]; version?: number } | undefined;
+      if (!params || typeof params.uri !== 'string' || !Array.isArray(params.diagnostics) || params.diagnostics.length > 1000 || (!this.diagnostics.has(params.uri) && this.diagnostics.size >= 1000)) { this.dispose(); return; }
+      if (typeof params.version === 'number' && params.version < (this.diagnosticVersions.get(params.uri) ?? 0)) return;
       this.diagnostics.set(params.uri, params.diagnostics);
+      this.diagnosticWaiters.get(params.uri)?.();
     } else if (message.id !== undefined) {
       // 不允許 server 改檔或執行 command；唯有設定查詢提供空設定。
       const params = message.params as { items?: unknown[] } | undefined;
       this.send({ jsonrpc: '2.0', id: message.id, result: message.method === 'workspace/configuration' ? (params?.items ?? []).map(() => ({})) : null });
     }
+  }
+  openDocument(uri: string, languageId: string, version: number, text: string): void {
+    this.diagnostics.delete(uri); this.diagnosticVersions.set(uri, version);
+    const opening = !this.opened.has(uri); this.opened.add(uri);
+    this.notify(opening ? 'textDocument/didOpen' : 'textDocument/didChange', opening
+      ? { textDocument: { uri, languageId, version, text } }
+      : { textDocument: { uri, version }, contentChanges: [{ text }] });
+  }
+  closeDocument(uri: string): void {
+    if (this.opened.delete(uri)) this.notify('textDocument/didClose', { textDocument: { uri } });
+    this.diagnostics.delete(uri);
+    this.diagnosticWaiters.get(uri)?.();
+  }
+  async publishedDiagnostics(uri: string): Promise<unknown[]> {
+    if (this.diagnostics.has(uri)) return this.diagnostics.get(uri)!;
+    await new Promise<void>(resolve => {
+      const finish = () => { clearTimeout(timer); this.diagnosticWaiters.delete(uri); resolve(); };
+      const timer = setTimeout(finish, 800);
+      this.diagnosticWaiters.set(uri, finish);
+    });
+    return this.diagnostics.get(uri) ?? [];
   }
   private send(message: unknown): void { const body = Buffer.from(JSON.stringify(message)); this.child.stdin.write(`Content-Length: ${body.length}\r\n\r\n`); this.child.stdin.write(body); }
   notify(method: string, params: unknown): void {
@@ -73,6 +100,9 @@ export class LanguageClient {
     this.dead = true;
     for (const pending of this.pending.values()) { clearTimeout(pending.timer); pending.reject(new AppError('unavailable')); }
     this.pending.clear(); this.diagnostics.clear();
+    this.diagnosticVersions.clear();
+    this.opened.clear();
+    for (const finish of this.diagnosticWaiters.values()) finish();
     this.onDeath();
   }
   dispose(): void { this.fail(); this.child.kill(); }

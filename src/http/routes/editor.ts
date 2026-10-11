@@ -24,6 +24,10 @@ export function registerEditorRoutes(router: Router, app: App): void {
   });
   router.post('/api/editor/language', async ({ body }) => {
     const action = body.action;
+    if (action === 'close') {
+      await app.editor.close(reqString(body, 'project', 120), body.task === undefined ? '' : reqString(body, 'task', 120), reqString(body, 'path', 1000));
+      return { ok: true };
+    }
     if (typeof action !== 'string' || !['definition', 'references', 'diagnostics', 'completion', 'hover', 'rename', 'format', 'codeActions'].includes(action)) throw new AppError('bad_request');
     if (action === 'rename' && (typeof body.newName !== 'string' || !body.newName || body.newName.length > 200)) throw new AppError('bad_request');
     if (typeof body.text !== 'string' || !Number.isSafeInteger(body.line) || !Number.isSafeInteger(body.character) || (body.line as number) < 0 || (body.character as number) < 0) throw new AppError('bad_request');

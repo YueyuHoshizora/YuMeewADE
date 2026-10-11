@@ -130,11 +130,21 @@ export class EditorService {
     });
     });
   }
+  async close(project: string, task: string, relative: string): Promise<void> {
+    const { root, file } = await this.target(project, task, relative);
+    await withFileLocks([file], async () => {
+      const document = await this.document(file, relative);
+      const key = `${root}\0${document.language}`; const uri = pathToFileURL(file).href;
+      const versionKey = `${key}\0${uri}`;
+      if (this.versions.has(versionKey)) this.clients.get(key)?.closeDocument(uri);
+      // Keep the bounded version counter until server eviction so late publications cannot match a reopened buffer.
+    });
+  }
   async language(project: string, task: string, relative: string, text: string, line: number, character: number, action: EditorAction, newName?: string): Promise<EditorActionResult> {
     const { root, file } = await this.target(project, task, relative);
     return withFileLocks([file], async () => {
     const document = await this.document(file, relative);
-    if (document.binary || document.truncated || Buffer.byteLength(text) > this.MAX) throw new AppError('bad_request', 'editor_readonly');
+    if (document.binary || document.truncated || Buffer.byteLength(text) > this.MAX || Buffer.byteLength(JSON.stringify(text)) > this.bodyBytes - 8192 || text.includes('\0')) throw new AppError('bad_request', 'editor_readonly');
     const command = this.commands[document.language];
     if (!command) throw new AppError('unavailable', 'editor_language_unavailable');
     const key = `${root}\0${document.language}`;
@@ -149,8 +159,7 @@ export class EditorService {
     const versionKey = `${key}\0${uri}`;
     if (!this.versions.has(versionKey) && this.versions.size >= 2000) throw new AppError('too_large');
     const version = (this.versions.get(versionKey) ?? 0) + 1; this.versions.set(versionKey, version);
-    if (version === 1) client.notify('textDocument/didOpen', { textDocument: { uri, languageId: document.language, version, text } });
-    else client.notify('textDocument/didChange', { textDocument: { uri, version }, contentChanges: [{ text }] });
+    client.openDocument(uri, document.language, version, text);
     const locations: EditorLocation[] = []; const diagnostics: EditorDiagnostic[] = [];
     if (action === 'completion' || action === 'hover' || action === 'rename' || action === 'format' || action === 'codeActions') {
       const method = action === 'format' ? 'formatting' : action === 'codeActions' ? 'codeAction' : action;
@@ -195,8 +204,14 @@ export class EditorService {
     if (action === 'diagnostics') {
       let items: unknown[];
       try { const result = await client.request('textDocument/diagnostic', { textDocument: { uri } }) as { items?: unknown[] }; items = result.items ?? []; }
-      catch { items = client.diagnostics.get(uri) ?? []; if (!client.diagnostics.has(uri)) throw new AppError('unavailable', 'editor_language_unavailable'); }
-      for (const value of items) { const item = value as { range: { start: { line: number; character: number } }; message: string; severity?: number }; diagnostics.push({ line: item.range.start.line, character: item.range.start.character, message: item.message, severity: item.severity ?? 1 }); }
+      catch (error) { if (!client.alive) throw error; items = await client.publishedDiagnostics(uri); }
+      if (!Array.isArray(items) || items.length > 1000) throw new AppError('too_large');
+      for (const value of items) {
+        const item = value as { range?: { start?: { line: number; character: number }; end?: { line: number; character: number } }; message?: string; severity?: number };
+        const start = item?.range?.start; const end = item?.range?.end;
+        if (!start || !Number.isSafeInteger(start.line) || !Number.isSafeInteger(start.character) || start.line < 0 || start.character < 0 || typeof item.message !== 'string') continue;
+        diagnostics.push({ line: start.line, character: start.character, ...(end && Number.isSafeInteger(end.line) && Number.isSafeInteger(end.character) && end.line >= 0 && end.character >= 0 ? { endLine: end.line, endCharacter: end.character } : {}), message: item.message.slice(0, 4000), severity: item.severity ?? 1 });
+      }
     } else {
       const result = await client.request(`textDocument/${action}`, { textDocument: { uri }, position: { line, character }, ...(action === 'references' ? { context: { includeDeclaration: true } } : {}) });
       const allowed = new Set(await this.files(root));

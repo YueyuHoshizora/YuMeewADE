@@ -243,6 +243,8 @@ Error responses use `{error, message, detail?, field?}`: `detail` is a translata
 4. While running, send a second instruction using “③ Continue after this.” It appears in the queue and starts automatically after the first finishes.
 5. After closing the window, no `yumeewade-core` process remains in Task Manager / `ps`.
 
+- Live editor LSP diagnostics sync unsaved buffers with a 400ms debounce, showing markers, gutter, hover messages and per-file counts. Closing tabs sends didClose. Uses `POST /api/editor/language` (`action: diagnostics` / `close`), native TypeScript LSP and `YUMEEWADE_LSP_COMMANDS`; missing servers quietly disable diagnostics.
+
 ## Tests
 
 ```bash

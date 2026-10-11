@@ -699,7 +699,7 @@ export interface VerificationStepResult extends Omit<VerifyResult, 'steps' | 'dr
 export interface GitDiffContents { before: string; after: string; truncated: boolean; binary: boolean }
 export interface EditorDocument extends FileView { revision: string; language: string; languageAvailable: boolean; readonly: boolean }
 export interface EditorLocation { path: string; line: number; character: number }
-export interface EditorDiagnostic { line: number; character: number; message: string; severity: number }
+export interface EditorDiagnostic { line: number; character: number; endLine?: number; endCharacter?: number; message: string; severity: number }
 export interface EditorLanguageResult { locations: EditorLocation[]; diagnostics: EditorDiagnostic[] }
 export interface ExecutionRequest { command: string; args?: string[]; kind?: 'command' | 'preview' | 'debug'; cwd?: string; env?: Record<string, string> }
 export interface ExecutionOutput { sequence: number; stream: 'stdout' | 'stderr'; text: string }

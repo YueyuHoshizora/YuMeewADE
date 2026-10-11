@@ -564,3 +564,4 @@ electron 44.7.0、vite 8.3.4、electron-builder 26.15.3、typescript 7.0.2、@ty
 - 跨專案總覽 `#/overview`：僅從 `/api/state` 前端彙整狀態總數、逾期、今日至七個日曆日後（含端點）的未完成期限、等待回覆／確認、執行中、未讀，以及 done/total／目前階段。重用 attention 回答判斷，封存台帳不在 state 因而不計；標籤套用所有清單、總數與進度，提供作業／專案連結、側邊欄與命令面板入口。
 - 作業看板：專案頁清單／五狀態 kanban 切換，拖曳與鍵盤「移動至…」共用 `/api/task/update` 完成核可／重開撤銷語義；卡片顯示 AI、期限標籤、執行中／未讀。兩種檢視共用四種排序與標籤／狀態／AI／逾期／文字篩選，驗證本機儲存值、依專案保存，純函式測試涵蓋組合條件及穩定排序。
 - 作業批次操作：專案頁選取模式／組內全選（200 筆上限），狀態／階段／標籤增刪／期限設定清除。POST `/api/task/bulk` 先驗證整批輸入、逐筆回報結果；完成同單筆路由寫人工核准，標籤讀改寫在台帳鎖內。UI 封存重用單筆 archiveFlow 的確認／保存副本規則；批次封存端點保守拒絕帶副本或執行中的作業。
+- 即時 LSP 診斷：CodeMirror 未儲存 buffer 400ms debounce、每檔單一在途請求、有界內容／結果；didOpen／遞增版本 didChange、publishDiagnostics 版本快取與 pull fallback、關閉 didClose，gutter／hover／每檔問題數，缺少 server 不重試洗版。
