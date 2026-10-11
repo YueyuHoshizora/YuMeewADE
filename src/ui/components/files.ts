@@ -430,6 +430,7 @@ export function openFileBrowser(project: string, task: string, workspace = activ
       await pin(buffer.document.path, buffer.text.slice(0, buffer.start).split('\n').length, buffer.text.slice(0, buffer.end).split('\n').length, buffer.document.revision);
     })] : []));
   actions.append(send);
+  actions.append(button(t('editorUI.outline'), () => language('documentSymbols')), button(t('editorUI.symbols'), () => language('workspaceSymbols')));
   filter.oninput = () => void run(load);
   const unload = (event: BeforeUnloadEvent) => { views.forEach((_, index) => capture(index)); persist(); if (editReserved || [...buffers.values()].some(dirty)) { event.preventDefault(); event.returnValue = ''; } };
   window.addEventListener('beforeunload', unload);
