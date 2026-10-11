@@ -226,9 +226,13 @@ export interface ResetCredits {
  * 額外使用額度（超出訂閱額度後的付費用量）的「餘額」；三家統一為餘額，單位為 currency 的最小單位（USD 為 cents）。
  * 後端沒回報、方案沒有這項或沒開啟時為 0。
  */
+/** ExtraUsage.currency 的特例：以「點數」計（Codex），balance 是點數本身而非貨幣最小單位。 */
+export const CREDITS_UNIT = 'credits';
+
 export interface ExtraUsage {
   /** 無上限（Codex credits.unlimited）。 */
   unlimited: boolean;
+  /** ISO 4217 幣別；Codex 的點數用 CREDITS_UNIT。 */
   currency: string;
   balance: number;
 }

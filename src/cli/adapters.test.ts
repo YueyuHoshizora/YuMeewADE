@@ -541,12 +541,12 @@ test('Claude extra_usage：餘額＝月上限－已用，缺幣別預設 USD，�
   for (const bad of [{ extra_usage: { monthly_limit: 1 } }, { extra_usage: 5 }, null]) assert.equal(claudeExtraUsage(bad), undefined);
 });
 
-test('Codex credits：balance 是美元的十進位字串（換算成 cents），沒有數字的餘額視為 0', () => {
-  assert.deepEqual(codexExtraUsage({ hasCredits: true, unlimited: false, balance: '12.5' }), { unlimited: false, currency: 'USD', balance: 1250 });
+test('Codex credits：balance 是點數的十進位字串（單位 credits，不換算），沒有數字的餘額視為 0', () => {
+  assert.deepEqual(codexExtraUsage({ hasCredits: true, unlimited: false, balance: '12.5' }), { unlimited: false, currency: 'credits', balance: 12.5 });
   assert.equal(codexExtraUsage({ hasCredits: false, unlimited: false, balance: '0' })?.balance, 0);
   assert.equal(codexExtraUsage({ hasCredits: true, unlimited: true, balance: null })?.balance, 0);
   assert.equal(codexExtraUsage({ hasCredits: true, unlimited: false, balance: 'abc' })?.balance, 0);
   for (const bad of [null, 'x', { hasCredits: true }, { unlimited: false }]) assert.equal(codexExtraUsage(bad), undefined);
   const quota = codexAppServerQuota({ rateLimits: { primary: { usedPercent: 10, windowDurationMins: 300, resetsAt: 1791948586 }, credits: { hasCredits: true, unlimited: false, balance: '3' } } }, 'T');
-  assert.equal(quota?.extraUsage?.balance, 300);
+  assert.equal(quota?.extraUsage?.balance, 3);
 });

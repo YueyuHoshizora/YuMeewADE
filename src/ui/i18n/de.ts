@@ -23,7 +23,7 @@ export const de: Record<MessageKey, string> = {
   'update.notice': 'YuMeewADE v{version} ist verfügbar',
   'usage.codexReset': 'Voraussichtlicher Reset: {at}',
   'usage.codexResetNotice': 'Codex: voraussichtlicher Reset {at}',
-  'usage.extraTitle': 'Zusatznutzung', 'usage.extraUnlimited': 'unbegrenzt', 'usage.extraBalance': 'Guthaben {amount}',
+  'usage.extraTitle': 'Zusatznutzung', 'usage.extraUnlimited': 'unbegrenzt', 'usage.extraBalance': 'Guthaben {amount}', 'usage.extraCredits': '{amount} Credits',
   'usage.resetCredits': '{count} Zurücksetzungs-Gutschein(e)', 'usage.resetCreditDefault': 'Zurücksetzungs-Gutschein', 'usage.resetCreditExpires': '{title} · läuft ab am {expires}', 'usage.resetCreditNoExpiry': '{title} · läuft nicht ab',
   'usage.weeklyCredits': 'Wochenkontingent', 'usage.monthlyCredits': 'Monatskontingent', 'usage.credits': 'Kontingent', 'usage.onDemand': 'Nach Verbrauch', 'usage.remaining': '{percent}% verbleibend',
   'usage.averageSpeed': '{speed} Ø tok/s', 'usage.measuredSpeed': 'Tatsächliche zuletzt von der CLI gemeldete Ausgabetokens geteilt durch die vereinigten gemessenen Zeitintervalle; Messungen bleiben 4 Sekunden erhalten. — bedeutet keine Messung, keine Live-Generierungsgeschwindigkeit. Claude misst jede Nachricht getrennt, auch verschachtelte Subagenten, und behält aufeinanderfolgende Nachrichten. Codex/Grok nutzen den ganzen Durchlauf einschließlich Wartezeiten und Werkzeugen. Gemini summiert abgeschlossene Schritt-Snapshots: eine Wiederholung zählt nicht doppelt, eine Korrektur ersetzt den vorherigen Wert. Gemeldete Denktokens sind enthalten, ohne Schätzungen.',

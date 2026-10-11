@@ -22,7 +22,7 @@ export const zhTW = {
   'update.notice': 'YuMeewADE v{version} 已發行，可以更新',
   'usage.codexReset': '預計重置於 {at}',
   'usage.codexResetNotice': 'Codex 預計重置於 {at}',
-  'usage.extraTitle': '額外使用額度', 'usage.extraUnlimited': '無上限', 'usage.extraBalance': '餘額 {amount}',
+  'usage.extraTitle': '額外使用額度', 'usage.extraUnlimited': '無上限', 'usage.extraBalance': '餘額 {amount}', 'usage.extraCredits': '{amount} 點',
   'usage.resetCredits': '重置券 {count} 張', 'usage.resetCreditDefault': '重置券', 'usage.resetCreditExpires': '{title} · {expires} 到期', 'usage.resetCreditNoExpiry': '{title} · 不會到期',
   'usage.weeklyCredits': '每週額度', 'usage.monthlyCredits': '每月額度', 'usage.credits': '額度', 'usage.onDemand': '隨用隨付', 'usage.remaining': '剩餘 {percent}%',
   'usage.averageSpeed': '{speed} 平均 tok/s', 'usage.measuredSpeed': '最近 CLI 回報的實際輸出 token 總數除以量測時間區間的聯集，量測保留 4 秒；沒有量測時顯示 —，不是即時生成速度。Claude 每則訊息（含子代理）各自計時，連續訊息分開保留；Codex／Grok 採完整回合（含等待與工具）；Gemini 以完成步驟快照累計，同一步驟重播不重複計算、修正值取代舊值。包含 CLI 回報的思考用量，不做估算。',
