@@ -2,6 +2,12 @@
 
 本專案的版本紀錄。版本號採 [Semantic Versioning](https://semver.org/lang/zh-TW/)。
 
+## [Unreleased]
+
+### 修正
+
+- 專案列「⋯」選單展開位置錯誤（跑到右側），改為貼在該列下方。
+
 ## [1.0.0] - 2026-10-11
 
 第一個正式版本。核心流程對齊參考專案 [kieiken/project-hub](https://github.com/kieiken/project-hub)（MIT）的使用方式，畫面與視覺自行設計。
