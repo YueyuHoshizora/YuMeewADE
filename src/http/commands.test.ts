@@ -36,15 +36,14 @@ test('command API and normal send keep account context, dispatch native intact, 
     const accountSettings = (await server.api('POST', '/api/accounts/add', { ai: 'claude', name: 'Other', configDir: profile })).json as Settings;
     const id = accountSettings.accounts.claude![0]!.id;
     await server.api('POST', '/api/settings', { activeAccounts: { claude: id } });
-    assert.deepEqual((await server.api('GET', endpoint)).json, { commands: [{ name: 'custom', description: 'Available command' }] });
-    assert.equal((await server.api('POST', '/api/chat/send', { project: 'P', task: task.id, ai: 'claude', text: '/custom argument' })).status, 200);
+    assert.deepEqual((await server.api('GET', endpoint)).json, { commands: [{ name: 'compact', description: 'Available command' }] });
+    assert.equal((await server.api('POST', '/api/chat/send', { project: 'P', task: task.id, ai: 'claude', text: '/compact' })).status, 200);
     await server.app.runner.whenIdle();
-    assert.equal(calls[1]?.configDir, profile);
+    // Chats run on the default slot even after switching; only the account id for sessions/usage changes.
+    assert.equal(calls[1]?.configDir, undefined);
     assert.equal(calls[1]?.accountId, id);
     assert.equal(calls[1]?.resumeId, undefined);
-    assert.equal(calls[1]?.slashCommand, undefined);
-    assert.match(calls[1]!.prompt, /Expanded argument instructions/u);
-    assert.equal((await server.app.store.readLog('P', task.id)).filter(row => row.role === 'user').at(-1)?.text, '/custom argument');
+    assert.equal(calls[1]?.slashCommand, '/compact');
     assert.equal((await server.api('GET', `/api/chat/commands?project=P&task=${task.id}&ai=invalid`)).status, 400);
     assert.equal((await server.api('GET', '/api/chat/commands?project=P&task=missing&ai=claude')).status, 404);
   } finally { await server.close(); await fs.rm(profile, { recursive: true, force: true }); }

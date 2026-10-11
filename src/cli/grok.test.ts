@@ -8,7 +8,7 @@ import { minimalEnv, redactArgs } from './process.ts';
 import type { CliEvent } from './provider.ts';
 import type { CliCommandConfig } from '../shared/config.ts';
 
-const cfg: CliCommandConfig = { command: 'unavailable-yumeewade-grok-test', baseArgs: ['--output-format', 'streaming-json'], safeArgs: ['--permission-mode', 'dontAsk'], fullAccessArgs: ['--always-approve'], fullAccess: true, quotaArgs: [] };
+const cfg: CliCommandConfig = { command: 'unavailable-yumeewade-grok-test', baseArgs: ['--output-format', 'streaming-json'], safeArgs: ['--permission-mode', 'dontAsk'], fullAccessArgs: ['--always-approve'], fullAccess: true, quotaArgs: [], loginArgs: ['login', '--oauth'] };
 const end = { type: 'end', stopReason: 'end_turn', sessionId: 'session', requestId: 'request' };
 
 test('native Grok output keeps thoughts/tool output out of answer and reports exact turn usage', () => {

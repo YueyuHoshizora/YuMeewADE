@@ -18,6 +18,8 @@ export interface CliCommandConfig {
   safeArgs: string[];
   /** 查詢帳號額度的子命令（Codex：app-server）；直接使用 API 的 adapter 不需要子命令。 */
   quotaArgs: string[];
+  /** 新增帳號時在獨立設定資料夾內執行的 OAuth 登入子命令（由 CLI 自行開啟瀏覽器）。 */
+  loginArgs: string[];
 }
 
 export interface Config {
@@ -57,6 +59,7 @@ export const DEFAULT_CONFIG: Config = {
       // 只自動接受檔案編輯；執行指令會被拒
       safeArgs: ['--permission-mode', 'acceptEdits'],
       quotaArgs: [],
+      loginArgs: ['auth', 'login'],
     },
     codex: {
       command: 'codex',
@@ -66,6 +69,7 @@ export const DEFAULT_CONFIG: Config = {
       // 工作目錄沙箱內可改檔與執行指令，不詢問
       safeArgs: ['-s', 'workspace-write', '-c', 'approval_policy="never"'],
       quotaArgs: ['app-server'],
+      loginArgs: ['login', '-c', 'cli_auth_credentials_store="file"'],
     },
     grok: {
       command: 'grok',
@@ -75,10 +79,6 @@ export const DEFAULT_CONFIG: Config = {
       // 需要互動核准的操作直接拒絕，不讓無頭回合等待輸入。
       safeArgs: ['--permission-mode', 'dontAsk'],
       quotaArgs: [],
-    },
-    envPassthrough: [],
-  },
-  limits: {
       loginArgs: ['login', '--oauth'],
     },
     // Google 官方後繼：Antigravity CLI（agy）。提示經 stdin 的 stream-json 傳入，沒有 argv 外洩。
@@ -91,6 +91,10 @@ export const DEFAULT_CONFIG: Config = {
       safeArgs: ['--mode', 'accept-edits'],
       quotaArgs: [],
       loginArgs: [],
+    },
+    envPassthrough: [],
+  },
+  limits: {
     bodyBytes: 2_097_152,
     promptChars: 100_000,
     sendPerMinute: 30,
@@ -178,7 +182,7 @@ function cliSection(map: YamlMap, name: 'claude' | 'codex' | 'grok' | 'gemini'):
   const d = DEFAULT_CONFIG.cli[name];
   const where = `cli.${name}`;
   let baseArgs = strList(s, 'baseArgs', d.baseArgs, where);
-  if (name !== 'grok' && JSON.stringify(baseArgs) === LEGACY_BASE_ARGS[name]) baseArgs = d.baseArgs;
+  if ((name === 'claude' || name === 'codex') && JSON.stringify(baseArgs) === LEGACY_BASE_ARGS[name]) baseArgs = d.baseArgs;
   // 0.1 版的 dangerous／dangerousArgs 是自動複製的範本值，不代表使用者選擇，略過
   return {
     command: str(s, 'command', d.command, where),
@@ -187,6 +191,7 @@ function cliSection(map: YamlMap, name: 'claude' | 'codex' | 'grok' | 'gemini'):
     fullAccessArgs: strList(s, 'fullAccessArgs', d.fullAccessArgs, where),
     safeArgs: strList(s, 'safeArgs', d.safeArgs, where),
     quotaArgs: strList(s, 'quotaArgs', d.quotaArgs, where),
+    loginArgs: strList(s, 'loginArgs', d.loginArgs, where),
   };
 }
 
@@ -210,12 +215,12 @@ export function parseConfig(text: string, source: string | null): Config {
       claude: cliSection(cli, 'claude'),
       codex: cliSection(cli, 'codex'),
       grok: cliSection(cli, 'grok'),
+      gemini: cliSection(cli, 'gemini'),
       envPassthrough: strList(cli, 'envPassthrough', d.cli.envPassthrough, 'cli'),
     },
     limits: {
       bodyBytes: int(limits, 'bodyBytes', L.bodyBytes, 'limits'),
       promptChars: int(limits, 'promptChars', L.promptChars, 'limits'),
-      gemini: cliSection(cli, 'gemini'),
       sendPerMinute: int(limits, 'sendPerMinute', L.sendPerMinute, 'limits'),
       concurrentRuns: int(limits, 'concurrentRuns', L.concurrentRuns, 'limits'),
       sseConnections: int(limits, 'sseConnections', L.sseConnections, 'limits'),

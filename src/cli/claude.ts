@@ -214,10 +214,10 @@ export class ClaudeCliProvider implements CliProvider {
   private readonly cfg: CliCommandConfig;
   private readonly env: NodeJS.ProcessEnv;
 
-  constructor(cfg: CliCommandConfig, envPassthrough: string[]) {
+  constructor(cfg: CliCommandConfig, envPassthrough: string[], env?: NodeJS.ProcessEnv) {
     this.cfg = cfg;
     this.dangerous = cfg.fullAccess;
-    this.env = minimalEnv(envPassthrough);
+    this.env = env ?? minimalEnv(envPassthrough);
   }
 
   async available(): Promise<boolean> { return (await findExecutable(this.cfg.command, this.env)) !== null; }

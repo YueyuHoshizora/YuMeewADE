@@ -224,12 +224,13 @@ export interface CommandCapture {
 }
 
 /** 非推論指令（版本、模型目錄、更新）；不使用 shell，不記錄輸出。 */
-export async function captureCommand(opts: { command: string; args: string[]; cwd?: string; env?: NodeJS.ProcessEnv; timeoutMs: number }): Promise<CommandCapture> {
+export async function captureCommand(opts: { command: string; args: string[]; cwd?: string; env?: NodeJS.ProcessEnv; timeoutMs: number; maxOutputBytes?: number }): Promise<CommandCapture> {
   const env = opts.env ?? minimalEnv([]);
   const command = await findExecutable(opts.command, env);
   if (!command) return { ok: false, stdout: '', stderr: '', reason: 'CLI executable not found' };
   const { promise, resolve } = Promise.withResolvers<CommandCapture>();
   let stdout = '';
+  let stdoutBytes = 0;
   let stderr = '';
   let reason: string | undefined;
   let settled = false;
@@ -257,7 +258,8 @@ export async function captureCommand(opts: { command: string; args: string[]; cw
   timer = setTimeout(() => terminate('command timeout'), opts.timeoutMs);
   child.stdout?.setEncoding('utf8');
   child.stdout?.on('data', (chunk: string) => {
-    if (stdout.length + chunk.length > 32 * 1024 * 1024) terminate('command output limit exceeded');
+    stdoutBytes += Buffer.byteLength(chunk);
+    if (stdoutBytes > (opts.maxOutputBytes ?? 32 * 1024 * 1024)) terminate('command output limit exceeded');
     else stdout += chunk;
   });
   child.stderr?.setEncoding('utf8');

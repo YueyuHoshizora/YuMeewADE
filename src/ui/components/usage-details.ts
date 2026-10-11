@@ -10,6 +10,7 @@ function accountUsage(usage: AiUsage | undefined): HTMLElement {
   if (!usage?.quotaAt) { node.append(el('p', 'muted', t('usage.noData'))); return node; }
   node.append(el('p', 'muted', t('usage.quotaAt', { at: localTime(usage.quotaAt) })));
   for (const window of usage.windows) {
+    if (usage.ai === 'grok' && window.label === 'on-demand') continue;
     const expired = !!window.resetsAt && Date.parse(window.resetsAt) <= Date.now();
     const label = quotaLabel(window.label);
     const text = expired ? `${t('usage.windowNoReset', { label, percent: `${Math.round(window.usedPercent)}%` })} · ${t('usage.windowReset', { label, reset: localTime(window.resetsAt!) })}`
@@ -17,7 +18,7 @@ function accountUsage(usage: AiUsage | undefined): HTMLElement {
         : t('usage.windowNoReset', { label, percent: `${Math.round(window.usedPercent)}%` });
     node.append(el('p', expired ? 'muted' : '', expired ? text : `${text} · ${t('usage.remaining', { percent: Math.max(0, Math.round(100 - window.usedPercent)) })}`));
   }
-  if (usage.prepaidCents !== undefined) node.append(el('p', '', prepaidLabel(usage.prepaidCents)));
+  if (usage.ai !== 'grok' && usage.prepaidCents !== undefined) node.append(el('p', '', prepaidLabel(usage.prepaidCents)));
   if (usage.limited) node.append(el('p', 'usage-limited', t('usage.limited')));
   return node;
 }
@@ -30,19 +31,38 @@ export function openUsageDetails(getState: () => AppState, getUsage: () => Usage
   const accounts = el('div', 'usage-accounts');
   const add = el('details', 'disclosure'); add.append(el('summary', '', t('usage.addAccount')));
   const provider = el('select');
-  for (const ai of ['claude', 'codex', 'grok']) { const option = el('option', '', aiLabel(ai)); option.value = ai; provider.append(option); }
-  provider.value = selectedAi === 'codex' || selectedAi === 'grok' ? selectedAi : 'claude';
+  for (const ai of ['claude', 'codex', 'grok', 'gemini']) { const option = el('option', '', aiLabel(ai)); option.value = ai; provider.append(option); }
+  provider.value = selectedAi === 'codex' || selectedAi === 'grok' || selectedAi === 'gemini' ? selectedAi : 'claude';
   const name = input(); name.required = true; name.autocomplete = 'off';
-  const directory = input(); directory.required = true; directory.autocomplete = 'off'; directory.spellcheck = false;
+  // Gemini's CLI only logs in inside a real terminal, so the user runs the shown command and then imports.
+  let prepared: { configDir: string } | null = null;
+  const geminiSteps = el('p', 'muted', t('usage.geminiSteps'));
+  const commandLine = input(); commandLine.readOnly = true; commandLine.spellcheck = false; commandLine.onfocus = () => commandLine.select();
+  const commandField = field(t('usage.terminalCommand'), commandLine);
   const form = el('form', 'form');
   const submit = el('button', 'primary', t('usage.addAccount')); submit.type = 'submit';
-  form.append(field(t('usage.provider'), provider), field(t('common.name'), name), field(t('usage.configDir'), directory), submit);
+  const sync = (): void => {
+    const manual = provider.value === 'gemini';
+    geminiSteps.hidden = !manual; commandField.hidden = !prepared;
+    submit.textContent = manual ? t(prepared ? 'usage.importLogin' : 'usage.prepareLogin') : t('usage.addAccount');
+  };
+  provider.onchange = () => { prepared = null; sync(); };
+  form.append(field(t('usage.provider'), provider), field(t('common.name'), name), geminiSteps, commandField, submit);
+  sync();
   form.onsubmit = event => { event.preventDefault(); void run(async () => {
     submit.disabled = true;
+    const manual = provider.value === 'gemini';
+    if (!manual) submit.textContent = t('usage.loggingIn');
     try {
-      await request<Settings>('/api/accounts/add', { ai: provider.value, name: name.value.trim(), configDir: directory.value.trim() });
-      await refresh(); name.value = ''; directory.value = ''; add.open = false; render();
-    } finally { submit.disabled = false; }
+      if (manual && !prepared) {
+        const next = await request<{ configDir: string; command: string }>('/api/accounts/prepare', { ai: provider.value });
+        prepared = { configDir: next.configDir };
+        commandLine.value = `HOME='${next.configDir.replaceAll("'", "'\\''")}' ${next.command}`;
+        return;
+      }
+      await request<Settings>('/api/accounts/add', manual ? { ai: provider.value, name: name.value.trim(), configDir: prepared!.configDir } : { ai: provider.value, name: name.value.trim(), login: true });
+      await refresh(); name.value = ''; prepared = null; add.open = false; render();
+    } finally { submit.disabled = false; sync(); }
   }); };
   add.append(el('p', 'muted', t('usage.accountHelp')), form);
   const reload = button(t('usage.refresh'), async () => { await request<UsageState>('/api/accounts/refresh', {}); await refresh(); render(); });
@@ -55,9 +75,9 @@ export function openUsageDetails(getState: () => AppState, getUsage: () => Usage
     if (snapshot === previous) return; previous = snapshot;
     // Preserve keyboard focus when a quota update replaces the account cards.
     const focused = accounts.contains(document.activeElement) ? (document.activeElement as HTMLElement).dataset['accountAction'] : undefined;
-    const sections = ['claude', 'codex', 'grok'].map(ai => {
+    const sections = ['claude', 'codex', 'grok', 'gemini'].map(ai => {
       const section = el('section', 'usage-provider'); section.append(el('h3', '', aiLabel(ai)));
-      const profiles = [{ id: 'default', name: t('usage.defaultAccount') }, ...(state.settings.accounts[ai] ?? [])];
+      const profiles = state.settings.accounts[ai] ?? [];
       for (const profile of profiles) {
         const card = el('section', 'account-card'); const active = (state.settings.activeAccounts[ai] ?? 'default') === profile.id;
         const heading = row(el('h4', '', profile.name));

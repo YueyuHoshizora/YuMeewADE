@@ -14,7 +14,7 @@
 | 交付版本 | **四個**：macOS App（`YuMeewADE.app`）、Windows App（`YuMeewADE.exe` 安裝檔）、Linux App（AppImage／deb）、網頁版（瀏覽器開本機服務） |
 | 通訊/介面 | **http://127.0.0.1:4560**（HTTP＋SSE；host／port 值入 `config.yaml`，見 R4） |
 | 本作品倉庫 | https://github.com/YueyuHoshizora/YuMeewADE（main） |
-| 本作品授權 | **Apache-2.0**（裁示確認；以倉庫根 `LICENSE` 為準，實作不得改寫） |
+| 本作品授權 | **GPL-3.0-only**（依使用者最新裁示，取代原 Apache-2.0；以倉庫根 `LICENSE` 為準） |
 | 前置檔案 | `LICENSE` **已在 main**（2026-10-10 經 GitHub API 驗證；`README.md`／`AGENTS.md`／`CLAUDE.md`／`PLAN.md` 四件待補，見 Gate 0） |
 | 消費套件 | **Electron**（MIT，釘選）＋ **Vite**（MIT，dev，釘選）＋ **electron-builder**（MIT，dev，釘選）；lockfile 入庫 |
 | 外部系統 A／B | `claude` CLI／`codex` CLI（另案、使用者本機自裝自登）——契約見第三節，皆以 adapter＋Mock 先行 |
@@ -209,7 +209,7 @@ Roles   { models, roles: { role: { main, backup, job } }, permissions }   // rol
 
 | 檔案 | 內容要求 |
 |---|---|
-| `README.md` | **用途**：是什麼、系統圖、四版本說明、需求、安裝啟動與建置打包指令（本機＋CI）、協定摘要、`config.yaml` 說明、測試指令、授權宣告（Apache-2.0） |
+| `README.md` | **用途**：是什麼、系統圖、四版本說明、需求、安裝啟動與建置打包指令（本機＋CI）、協定摘要、`config.yaml` 說明、測試指令、授權宣告（GPL-3.0-only） |
 | `AGENTS.md` | **撰寫方式**：語言規範、建置測試指令、結構對應、**安全性章節＝第六節全部規則逐條編號**、外部 CLI 經 adapter |
 | `CLAUDE.md` | 僅**引用 `AGENTS.md`**（一行指向＋摘要），不重複內容避免雙真值來源 |
 | `PLAN.md` | **本企劃書全文匯入之定案稿**（更新時同步） |
@@ -218,7 +218,7 @@ Roles   { models, roles: { role: { main, backup, job } }, permissions }   // rol
 
 ## 八、倉庫與部署
 
-- **前置檔案**：`LICENSE`（Apache-2.0）**已在 main**（2026-10-10 經 GitHub API 驗證，見 Gate 0）；四件必要文件＋`config.yaml` 範本於 Gate 0 補齊後才寫程式。
+- **前置檔案**：`LICENSE` **已在 main**（2026-10-10 經 GitHub API 驗證，見 Gate 0；目前授權依最新裁示改為 GPL-3.0-only）；四件必要文件＋`config.yaml` 範本於 Gate 0 補齊後才寫程式。
 - **介紹頁**：無對外介紹頁（見假設 8）。
 - **部署形態**：①本機程序（`npm install → npm run build → npm start`）供網頁版 ②三平台桌面產物（`npm run dist`：dmg／nsis／AppImage）供四版本交付。
 - **建置方式（裁示 2026-10-10：兩者都要）**：①**正式產物**＝GitHub Actions 三平台建置（`.github/workflows/`，macOS／Windows／Linux 矩陣，產未簽名產物）②**dev 建置**＝本機 `npm run dist`（macOS 本機驗證用）；兩者共用同一套 electron-builder 設定。
@@ -247,7 +247,7 @@ Roles   { models, roles: { role: { main, backup, job } }, permissions }   // rol
 
 ### Phase 0 — 前置交付
 倉庫根補齊四件必要文件＋`config.yaml` 範本。
-**Gate 0**：①`LICENSE` 仍為 Apache-2.0 且在 main——**已達成**（2026-10-10 經 GitHub API 驗證）②四件必要文件＋`config.yaml` 範本入庫且 `README.md` 載明安全宣告（安全節 2）。
+**Gate 0**：①`LICENSE` 採 GPL-3.0-only 並隨原始碼入庫（初始檔案於 2026-10-10 經 GitHub API 確認在 main；本次授權變更仍須另行提交）②四件必要文件＋`config.yaml` 範本入庫且 `README.md` 載明安全宣告（安全節 2）。
 
 ### Phase 1 — 核心：台帳層與 API
 `src/ledger/`（frontmatter、原子寫入、CRUD）＋ HTTP 路由（bootstrap／tasks／task-update）。
@@ -267,7 +267,7 @@ Roles   { models, roles: { role: { main, backup, job } }, permissions }   // rol
 
 ### Phase 5 — 安全強化、文件收尾
 限流、輸入驗證、Electron 隔離補強；AGENTS／CLAUDE／PLAN 定稿。
-**Gate 5（交付關）**：①遠端 main 含全部檔案 ②`LICENSE` 仍為 Apache-2.0 ③乾淨 clone → `npm ci` → `npm run build` → `npm start` → 走完**流程範例 1–2** ④`npm test` 與 `npm run typecheck` 全過 ⑤安全節 11 條逐條 checklist 全過且日誌抽查無憑證明文 ⑥四版本齊備（三平台產物＋網頁版皆走通流程範例 1–2）。
+**Gate 5（交付關）**：①遠端 main 含全部檔案 ②`LICENSE` 為 GPL-3.0-only ③乾淨 clone → `npm ci` → `npm run build` → `npm start` → 走完**流程範例 1–2** ④`npm test` 與 `npm run typecheck` 全過 ⑤安全節 11 條逐條 checklist 全過且日誌抽查無憑證明文 ⑥四版本齊備（三平台產物＋網頁版皆走通流程範例 1–2）。
 
 ---
 
@@ -488,4 +488,12 @@ electron 44.7.0、vite 8.3.4、electron-builder 26.15.3、typescript 7.0.2、@ty
 - 模型以目前帳號執行 `grok models`，僅用同帳號 `models_cache.json` 補入匹配模型的能力；沒有虛構 fallback，跨帳號不共用舊目錄資料。切換 AI 不繼承另一 provider 的模型／思考強度，`model: ""`／`effort: ""` 是明確清空覆寫，不等於省略。
 - 額度不由 CLI 文字或固定值估算：`GET https://cli-chat-proxy.grok.com/v1/billing?format=credits`，使用官方 `X-XAI-Token-Auth: xai-grok-cli`、`x-userid` 與第一方 Bearer token。憑證從目前帳號 `auth.json` 的官方 issuer/client scope 唯讀載入；檢查到期與模式，不寫入、刷新或記錄憑證。額外帳號固定其 `GROK_HOME`、`GROK_AUTH_PATH`、leader socket，禁止回退預設憑證。API-key-only 不支援此帳號 billing 查詢。
 - 使用 API 明確的 `creditUsagePercent` 與 `currentPeriod`，相容舊版明確的 `used/monthlyLimit`；展示剩餘百分比、重置時間、預付餘額及有上限的 on-demand 使用率。缺失／無效資料、HTTP 失敗、重新導向皆不當作成功或零用量。請求與讀取回應有逾時及大小限制。沿用 B.6 的五分鐘查詢、狀態及通知規則；方案額度滿仍會提醒，不表示預付／額外付費餘額必然耗盡。
+
+### B.10 App 本機憑證儲存（使用者裁示 2026-10-11）
+- 第一個（`default`）及所有新增帳號的憑證統一保存於 App 私有資料目錄的 `credentials.sqlite`，使用 Node 24 內建 `node:sqlite`，不增加執行期套件。這是原「不引入資料庫／不保存憑證」規則的明確例外；專案、作業與對話台帳仍維持原格式。
+- SQLite 只保存經作業系統安全儲存加密的憑證，記錄以 AI 與來源設定目錄隔離，密文內容亦綁定同一身分。桌面版由 Electron 主程序提供 `safeStorage`，網頁核心透過同身分的本機 Electron 輔助程序使用相同保護；只有程序間私有通道，不增加 renderer／preload 或 HTTP 憑證介面。安全儲存不可用、Linux `basic_text`、解密失敗均拒絕使用，不降級為明文。
+- 初次匯入保留原 CLI 的檔案與鑰匙圈，不登出、不刪除、不覆寫原登入資料；後續查額度與對話以 SQLite 保存的憑證為準。CLI 必要的執行期憑證傳輸須限權限、限生命週期；不得把憑證放入 argv、日誌、設定 API 或 DOM。
+- 新增帳號一律走 OAuth：UI 只填 AI 與名稱，不需指定資料夾；核心在 App 資料夾下 `cli-accounts/profiles/{ai}/{uuid}`（0700）建立獨立設定資料夾，以 `cli.*.loginArgs` 執行該 CLI 自己的 OAuth 登入（CLI 自行開啟瀏覽器，最長 5 分鐘），成功後才匯入憑證庫並登錄帳號。不再有「預設帳號」卡片，也不讀取 CLI 的預設登入；切換帳號時把該帳號的憑證複寫進憑證庫的 App 內部預設槽（不碰 ~/.claude、~/.codex、~/.grok 與 Keychain），對話一律使用預設槽，額度仍以各帳號自己的憑證查詢；預設槽使用中不可切換。失敗不登錄並清掉本次建立的空資料夾。（HTTP 仍接受 `configDir` 以匯入既有資料夾。）登入子行程環境沿用白名單並移除既有認證變數，憑證不經 argv／日誌／HTTP。
+- Gemini（`agy`）帳號：無頭模式在非終端機下拒絕登入，故為半手動——`POST /api/accounts/prepare {ai}` 建立 0700 的獨立 HOME 並回傳 CLI 指令，使用者在終端機執行 `HOME=<資料夾> agy` 完成登入，`/api/accounts/add {ai,name,configDir}` 匯入 `<HOME>/.gemini/antigravity-cli/antigravity-oauth-token`。對話時以 `HOME`／`USERPROFILE` 指向執行用資料夾還原憑證，結束後寫回刷新值並刪除檔案。憑證庫 `provider` CHECK 加入 gemini，舊庫開啟時於交易內重建並先備份為 `credentials.sqlite.pre-gemini`。
+- 憑證庫不隨工作區切換搬移；工作區仍保存帳號顯示名稱與作用中選擇。測試必須注入臨時資料目錄與測試加密器，不存取真實使用者登入。
 

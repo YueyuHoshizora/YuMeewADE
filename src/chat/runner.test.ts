@@ -442,7 +442,7 @@ test('profile switches isolate sessions and failed switches retain the previous 
   await s.settings.update({ activeAccounts: { codex: account.id } });
   await s.send('failed switch [fail]'); await s.runner.whenIdle();
   assert.equal(s.calls[1]!.resumeId, undefined);
-  assert.equal(s.calls[1]!.configDir, configDir);
+  assert.equal(s.calls[1]!.configDir, undefined);
   assert.deepEqual(await s.store.readMeta('P', s.task.id), original);
   await s.settings.update({ activeAccounts: { codex: 'default' } });
   await s.send('default continued'); await s.runner.whenIdle();
@@ -479,7 +479,7 @@ test('changing active profile during a run only affects the next send', () => wi
   assert.equal((await s.store.readMeta('P', s.task.id)).accounts?.claude, 'default');
   await s.send('new run', { ai: 'claude' }); await s.runner.whenIdle();
   assert.equal(s.calls[1]!.accountId, account.id);
-  assert.equal(s.calls[1]!.configDir, configDir);
+  assert.equal(s.calls[1]!.configDir, undefined);
   assert.equal(s.calls[1]!.resumeId, undefined);
   assert.deepEqual(s.usageAccounts, ['default', account.id]);
 }));

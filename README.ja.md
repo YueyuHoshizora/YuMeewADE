@@ -160,4 +160,4 @@ npm test             # node --test；對話流程用 MockCliProvider，不呼叫
 
 ## ライセンス
 
-Apache-2.0。全文は [LICENSE](LICENSE) を参照してください。
+GPL-3.0-only（GNU General Public License 第 3 版）。全文は [LICENSE](LICENSE) を参照してください。

@@ -2,8 +2,9 @@
 import { promises as fs } from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
-import { captureCommand, findExecutable, minimalEnv } from '../cli/process.ts';
+import { captureCommand, findExecutable, minimalEnv, type CommandCapture } from '../cli/process.ts';
 import { grokEnv } from '../cli/grok.ts';
+import type { CredentialAccounts } from '../cli/accounts.ts';
 import type { Workspace } from '../ledger/workspace.ts';
 import type { Config } from '../shared/config.ts';
 import { AppError } from '../shared/errors.ts';
@@ -18,8 +19,8 @@ const BUILTIN: Record<CatalogAi, [string, string][]> = {
   claude: [['claude-opus-5-5', 'Opus 5.5'], ['claude-sonnet-5-5', 'Sonnet 5.5'], ['claude-fable-5-1', 'Fable 5.1'], ['claude-haiku-5-5', 'Haiku 5.5']],
   codex: [['gpt-6.1-sol', 'GPT-6.1-Sol'], ['gpt-6-astra', 'GPT-6-Astra']],
   grok: [],
-};
   gemini: [],
+};
 
 function object(value: unknown): Record<string, unknown> {
   return value !== null && typeof value === 'object' && !Array.isArray(value) ? value as Record<string, unknown> : {};
@@ -74,7 +75,6 @@ export function parseGrokModels(stdout: string, metadata: unknown): ModelInfo[] 
   }
   return models;
 }
-async function json(file: string): Promise<unknown> {
 
 // `agy models` prints a status line then "id<TAB>label" rows; reasoning level is part of the model id.
 export function parseGeminiModels(stdout: string): ModelInfo[] {
@@ -88,6 +88,7 @@ export function parseGeminiModels(stdout: string): ModelInfo[] {
   }
   return models;
 }
+async function json(file: string): Promise<unknown> {
   try { return JSON.parse(await fs.readFile(file, 'utf8')) as unknown; }
   catch (err) {
     if (err instanceof SyntaxError || ['ENOENT', 'ENOTDIR'].includes((err as NodeJS.ErrnoException).code ?? '')) return undefined;
@@ -114,12 +115,14 @@ export class AiCatalog {
   private initialized: Promise<void> | undefined;
   // 將 AI 的更新與原子寫入序列化，避免同時 refresh 遺失另一側清單。
   private writes: Promise<void> = Promise.resolve();
+  private readonly accounts: CredentialAccounts | undefined;
 
-  constructor(deps: { config: Config; ws: Workspace; settings: { get(): Promise<Settings> }; home?: string }) {
+  constructor(deps: { config: Config; ws: Workspace; settings: { get(): Promise<Settings> }; home?: string; accounts?: CredentialAccounts }) {
     this.config = deps.config;
     this.settings = deps.settings;
     this.home = deps.home ?? os.homedir();
     this.file = path.join(deps.ws.internalDir, 'models.json');
+    this.accounts = deps.accounts;
   }
 
   async list(): Promise<AiInfo[]> { return Promise.all(NAMES.map((name) => this.get(name))); }
@@ -144,13 +147,15 @@ export class AiCatalog {
       await this.loadGrok(await this.settings.get(), true);
       return this.get(name);
     }
-    if (name === 'codex') {
-      const result = await captureCommand({ command: this.config.cli[name].command, args: ['debug', 'models'], env: this.env(), timeoutMs: 120_000 });
-      if (!result.ok) throw new AppError('unavailable', 'cli_unavailable', { field: name, cause: result.reason });
     if (name === 'gemini') {
       await this.loadGemini(true);
       return this.get(name);
     }
+    if (name === 'codex') {
+      const query = (env: NodeJS.ProcessEnv) => captureCommand({ command: this.config.cli[name].command, args: ['debug', 'models', '-c', 'cli_auth_credentials_store="file"'], env, timeoutMs: 120_000 });
+      const settings = await this.settings.get();
+      const result = this.accounts ? await this.accounts.withEnv(name, this.configDir(name, settings), query) : await query(this.env());
+      if (!result.ok) throw new AppError('unavailable', 'cli_unavailable', { field: name, cause: result.reason });
       try { models = parseModels(name, JSON.parse(result.stdout)); }
       catch (cause) { throw new AppError('internal', 'bad_json', { cause }); }
       if (!models.length) throw new AppError('internal', 'bad_json');
@@ -178,6 +183,10 @@ export class AiCatalog {
     if (ai !== 'claude' && ai !== 'codex' && ai !== 'grok' && ai !== 'gemini') throw new AppError('bad_request', 'cli_unsupported', { field: ai });
     return ai;
   }
+  private configDir(ai: CatalogAi, settings: Settings): string | undefined {
+    const active = settings.activeAccounts[ai] ?? 'default';
+    return settings.accounts[ai]?.find(account => account.id === active)?.configDir;
+  }
   private env(): NodeJS.ProcessEnv { return { ...minimalEnv(this.config.cli.envPassthrough), HOME: this.home }; }
   private grokHome(settings: Settings): string {
     const active = settings.activeAccounts.grok ?? 'default';
@@ -195,12 +204,29 @@ export class AiCatalog {
   private async loadGrok(settings: Settings, strict: boolean): Promise<void> {
     const env = this.grokEnv(settings);
     const profile = this.grokProfile(settings);
-    const result = await captureCommand({ command: this.config.cli.grok.command, args: ['models'], env, timeoutMs: 120_000 });
-    let models: ModelInfo[] = [];
-    if (result.ok) models = parseGrokModels(result.stdout, await json(path.join(env['GROK_HOME']!, 'models_cache.json')));
+    const query = async (runtimeEnv: NodeJS.ProcessEnv) => {
+      const result = await captureCommand({ command: this.config.cli.grok.command, args: ['models'], env: runtimeEnv, timeoutMs: 120_000 });
+      const models = result.ok ? parseGrokModels(result.stdout, await json(path.join(runtimeEnv['GROK_HOME']!, 'models_cache.json'))) : [];
+      return { result, models };
+    };
+    let result: CommandCapture;
+    let models: ModelInfo[];
+    try {
+      ({ result, models } = this.accounts ? await this.accounts.withEnv('grok', this.configDir('grok', settings), query) : await query(env));
+    } catch {
+      result = { ok: false, stdout: '', stderr: '', reason: 'Account credentials unavailable.' };
+      models = [];
+    }
     if (strict && !result.ok) throw new AppError('unavailable', 'cli_unavailable', { field: 'grok', cause: result.reason });
     if (strict && !models.length) throw new AppError('internal', 'bad_json');
     await this.persist('grok', { models, source: models.length ? 'cli' : 'unavailable', refreshedAt: new Date().toISOString(), profile });
+  }
+  private async loadGemini(strict: boolean): Promise<void> {
+    const result = await captureCommand({ command: this.config.cli.gemini.command, args: ['models'], env: this.env(), timeoutMs: 120_000 });
+    const models = result.ok ? parseGeminiModels(result.stdout) : [];
+    if (strict && !result.ok) throw new AppError('unavailable', 'cli_unavailable', { field: 'gemini', cause: result.reason });
+    if (strict && !models.length) throw new AppError('internal', 'bad_json');
+    await this.persist('gemini', { models, source: models.length ? 'cli' : 'unavailable', refreshedAt: new Date().toISOString() });
   }
   private async status(ai: CatalogAi): Promise<{ available: boolean; version: string }> {
     const command = this.config.cli[ai].command;
@@ -221,13 +247,6 @@ export class AiCatalog {
     }
     const candidates = await Promise.all(files.map(async (file) => {
       try { const stat = await fs.stat(path.join(dir, file)); return { file, mtime: stat.isFile() ? stat.mtimeMs : -1 }; }
-  private async loadGemini(strict: boolean): Promise<void> {
-    const result = await captureCommand({ command: this.config.cli.gemini.command, args: ['models'], env: this.env(), timeoutMs: 120_000 });
-    const models = result.ok ? parseGeminiModels(result.stdout) : [];
-    if (strict && !result.ok) throw new AppError('unavailable', 'cli_unavailable', { field: 'gemini', cause: result.reason });
-    if (strict && !models.length) throw new AppError('internal', 'bad_json');
-    await this.persist('gemini', { models, source: models.length ? 'cli' : 'unavailable', refreshedAt: new Date().toISOString() });
-  }
       catch (err) { if ((err as NodeJS.ErrnoException).code === 'ENOENT') return { file, mtime: -1 }; throw err; }
     }));
     candidates.sort((a, b) => b.mtime - a.mtime || a.file.localeCompare(b.file));
@@ -238,6 +257,12 @@ export class AiCatalog {
     this.initialized ??= (async () => {
       const saved = object(await json(this.file));
       for (const name of NAMES) {
+        if (name === 'gemini') {
+          const existing = savedCache(saved.gemini);
+          if (existing) this.cache.gemini = existing;
+          else { this.cache.gemini = { models: [], source: 'unavailable', refreshedAt: new Date().toISOString() }; await this.loadGemini(false).catch(() => undefined); }
+          continue;
+        }
         if (name === 'grok') {
           this.cache.grok = { models: [], source: 'unavailable', refreshedAt: new Date().toISOString() };
           const existing = savedCache(saved.grok);
@@ -257,12 +282,6 @@ export class AiCatalog {
     })();
     return this.initialized;
   }
-        if (name === 'gemini') {
-          const existing = savedCache(saved.gemini);
-          if (existing) this.cache.gemini = existing;
-          else { this.cache.gemini = { models: [], source: 'unavailable', refreshedAt: new Date().toISOString() }; await this.loadGemini(false).catch(() => undefined); }
-          continue;
-        }
   private persist(name: CatalogAi, value: ModelCache): Promise<void> {
     const write = this.writes.then(async () => {
       this.cache[name] = value;

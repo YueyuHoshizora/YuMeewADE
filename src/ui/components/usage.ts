@@ -39,8 +39,8 @@ function usageItem(ai: string, name: string | undefined, usage: AiUsage | undefi
     const none = el('span', 'usage-none', '—'); none.title = t('usage.noData'); item.append(none);
   } else {
     const quota = el('span', 'usage-quota'); quota.title = t('usage.quotaAt', { at: localTime(usage.quotaAt) });
-    quota.append(...usage.windows.map(window => quotaWindow(window, now)));
-    if (usage.prepaidCents !== undefined) quota.append(el('span', 'usage-prepaid', prepaidLabel(usage.prepaidCents)));
+    quota.append(...usage.windows.filter(window => ai !== 'grok' || window.label !== 'on-demand').map(window => quotaWindow(window, now)));
+    if (ai !== 'grok' && usage.prepaidCents !== undefined) quota.append(el('span', 'usage-prepaid', prepaidLabel(usage.prepaidCents)));
     if (usage.limited) quota.append(el('span', 'usage-limited', t('usage.limited')));
     item.append(quota);
   }

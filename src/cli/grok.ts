@@ -126,10 +126,12 @@ export class GrokCliProvider implements CliProvider {
   readonly dangerous: boolean;
   private readonly cfg: CliCommandConfig;
   private readonly env: NodeJS.ProcessEnv;
-  constructor(cfg: CliCommandConfig, envPassthrough: string[]) {
+  private readonly managed: boolean;
+  constructor(cfg: CliCommandConfig, envPassthrough: string[], env?: NodeJS.ProcessEnv) {
     this.cfg = cfg;
     this.dangerous = cfg.fullAccess;
-    this.env = minimalEnv(envPassthrough);
+    this.env = env ?? minimalEnv(envPassthrough);
+    this.managed = env !== undefined;
   }
   async available(): Promise<boolean> { return (await findExecutable(this.cfg.command, this.env)) !== null; }
   quota(configDir?: string): Promise<Extract<CliEvent, { type: 'quota' }> | null> {
@@ -155,7 +157,7 @@ export class GrokCliProvider implements CliProvider {
         if (stopped) return { ok: false, stopped: true };
         let completed = false;
         let failed = false;
-        run = runLineProcess({ command: this.cfg.command, args: grokArgs(this.cfg, opts, promptFile, randomUUID()), cwd: opts.cwd, env: grokEnv(this.env, opts.configDir), prompt: dir ? '' : prompt, label: 'grok' }, createGrokParser(ev => {
+        run = runLineProcess({ command: this.cfg.command, args: grokArgs(this.cfg, opts, promptFile, randomUUID()), cwd: opts.cwd, env: this.managed ? this.env : grokEnv(this.env, opts.configDir), prompt: dir ? '' : prompt, label: 'grok' }, createGrokParser(ev => {
           if (ev.type === 'result') completed = true;
           if (ev.type === 'error') failed = true;
           onEvent(ev);

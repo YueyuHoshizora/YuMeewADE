@@ -191,14 +191,11 @@ export class ChatRunner extends EventEmitter {
     if (ai !== 'claude' && ai !== 'codex' && ai !== 'grok') throw new AppError('bad_request', 'cli_unsupported');
     const task = await this.deps.tasks.get(p, t);
     const provider = this.deps.providers[ai];
-    const settings = await this.deps.settings.get();
-    const id = settings.activeAccounts[ai] ?? 'default';
-    const account = settings.accounts[ai]?.find(profile => profile.id === id);
-    if (id !== 'default' && !account) throw new AppError('not_found');
+    // Chats always run on the App's default slot; switching an account copies its credentials there.
     if (!provider?.commands || !await provider.available()) return [];
     const cwd = task.workspace !== 'direct' && task.workdir && await pathExists(task.workdir)
       ? task.workdir : await this.deps.worktree.bodyPath(p);
-    return provider.commands(cwd, account?.configDir);
+    return provider.commands(cwd);
   }
 
   send(input: SendInput): Promise<SendResult> {
@@ -240,8 +237,6 @@ export class ChatRunner extends EventEmitter {
     const provider = this.deps.providers[pick.cli];
     if (!provider) throw new AppError('bad_request', 'cli_unsupported');
     const accountId = settings.activeAccounts[pick.cli] ?? 'default';
-    const account = settings.accounts[pick.cli]?.find(profile => profile.id === accountId);
-    if (accountId !== 'default' && !account) throw new AppError('not_found');
     if (!await provider.available()) throw new AppError('bad_request', 'cli_unavailable');
     if (this.shuttingDown) throw new AppError('unavailable');
     // Validate before queuing or interrupting a running turn; never bury control commands in prose.
@@ -255,7 +250,7 @@ export class ChatRunner extends EventEmitter {
       if (!provider.resolveCommand || chosen.answer || (s.busy && chosen.mode !== 'queue')) {
         throw new AppError('bad_request', 'slash_unsupported');
       }
-      command = await provider.resolveCommand(chosen.text, commandCwd, account?.configDir);
+      command = await provider.resolveCommand(chosen.text, commandCwd);
     }
     const item: QueueItem = {
       id: randomUUID(), text: chosen.text, ai: pick.cli,
@@ -289,7 +284,7 @@ export class ChatRunner extends EventEmitter {
     };
     try {
       const cwd = await this.deps.worktree.prepare(p, t);
-      if (command && cwd !== commandCwd) command = await provider.resolveCommand!(chosen.text, cwd, account?.configDir);
+      if (command && cwd !== commandCwd) command = await provider.resolveCommand!(chosen.text, cwd);
       const checkpoint = await this.deps.worktree.checkpoint(p, t);
       const images = await attachImages(this.deps.ws, p, t, chosen.images ?? [], this.deps.limits.imagesPerSend);
       if (this.shuttingDown) throw new AppError('unavailable');
@@ -344,7 +339,7 @@ export class ChatRunner extends EventEmitter {
         ...(command?.native ? { slashCommand: command.text } : {}),
         ...(resumeId ? { resumeId } : {}), model: pick.model, effort: pick.effort,
         fullAccess: settings.fullAccess[item.ai] ?? provider.dangerous,
-        accountId, ...(account ? { configDir: account.configDir } : {}),
+        accountId,
         addDirs: [path.join(this.deps.ws.projectDir(p), '.ai')], images,
       }, checkpoint);
       this.trackQueuedRun(p, t, s);

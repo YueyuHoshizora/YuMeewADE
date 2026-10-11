@@ -25,6 +25,14 @@ export async function readGrokCredentials(configDir?: string, env: NodeJS.Proces
   const authPath = configDir !== undefined ? path.join(configDir, 'auth.json') : env['GROK_AUTH_PATH'] || path.join(home, 'auth.json');
   try {
     const store: unknown = JSON.parse(await fs.readFile(authPath, 'utf8'));
+    return parseGrokCredentials(store, env);
+  } catch {
+    return null;
+  }
+}
+
+export function parseGrokCredentials(store: unknown, env: NodeJS.ProcessEnv = process.env): { token: string; userId: string } | null {
+  try {
     if (!record(store)) return null;
     const oidc = env['GROK_OIDC_ISSUER'] !== undefined && env['GROK_OIDC_CLIENT_ID'] !== undefined;
     const oauth = env['GROK_OAUTH2_ISSUER'] !== undefined && env['GROK_OAUTH2_CLIENT_ID'] !== undefined;

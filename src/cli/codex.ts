@@ -6,7 +6,7 @@ import os from 'node:os';
 import path from 'node:path';
 import type { CliCommandConfig } from '../shared/config.ts';
 import type { QuotaWindow } from '../shared/types.ts';
-import { findExecutable, minimalEnv, runLineProcess } from './process.ts';
+import { findExecutable, minimalEnv, runLineProcess, terminateTree } from './process.ts';
 import type { CliEvent, CliProvider, CliRun, SendOptions } from './provider.ts';
 import { codexPrompts, expandCodexPrompt, slashName } from './commands.ts';
 import { AppError } from '../shared/errors.ts';
@@ -76,7 +76,9 @@ export async function fetchCodexQuota(command: string, args: string[], env: Node
   const exe = await findExecutable(command, env);
   if (!exe) throw new Error('CLI executable not found');
   const { promise, resolve, reject } = Promise.withResolvers<QuotaEvent | null>();
-  const child = spawn(exe, args, { env, stdio: ['pipe', 'pipe', 'ignore'] });
+  const child = spawn(exe, args, { env, stdio: ['pipe', 'pipe', 'ignore'], detached: process.platform !== 'win32' });
+  const closed = Promise.withResolvers<void>();
+  child.once('close', () => closed.resolve());
   const timer = setTimeout(() => reject(new Error('quota query timed out')), timeoutMs);
   let buffer = '';
   child.on('error', reject);
@@ -85,6 +87,7 @@ export async function fetchCodexQuota(command: string, args: string[], env: Node
   child.stdout.setEncoding('utf8');
   child.stdout.on('data', (chunk: string) => {
     buffer += chunk;
+    if (Buffer.byteLength(buffer) > 1024 * 1024) { reject(new Error('quota response too large')); return; }
     for (let nl = buffer.indexOf('\n'); nl >= 0; nl = buffer.indexOf('\n')) {
       const line = buffer.slice(0, nl);
       buffer = buffer.slice(nl + 1);
@@ -102,7 +105,13 @@ export async function fetchCodexQuota(command: string, args: string[], env: Node
   });
   child.stdin.write(`${JSON.stringify({ method: 'initialize', id: 1, params: { clientInfo: { name: 'yumeewade', title: null, version: '1' }, capabilities: null } })}\n`);
   try { return await promise; }
-  finally { clearTimeout(timer); child.kill(); }
+  finally {
+    clearTimeout(timer);
+    const terminated = Promise.withResolvers<void>();
+    const cancel = terminateTree(child, () => terminated.resolve());
+    try { await Promise.race([closed.promise, terminated.promise]); }
+    finally { cancel(); }
+  }
 }
 
 /** rollout 檔尾端最後一筆帶 rate_limits 的事件。 */
@@ -274,10 +283,10 @@ export class CodexCliProvider implements CliProvider {
   private readonly env: NodeJS.ProcessEnv;
   private readonly home: string;
 
-  constructor(cfg: CliCommandConfig, envPassthrough: string[]) {
+  constructor(cfg: CliCommandConfig, envPassthrough: string[], env?: NodeJS.ProcessEnv) {
     this.cfg = cfg;
     this.dangerous = cfg.fullAccess;
-    this.env = minimalEnv(envPassthrough);
+    this.env = env ?? minimalEnv(envPassthrough);
     this.home = this.env['CODEX_HOME'] || path.join(os.homedir(), '.codex');
   }
 

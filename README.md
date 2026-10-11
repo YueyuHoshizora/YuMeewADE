@@ -165,4 +165,4 @@ npm test             # node --test；對話流程用 MockCliProvider，不呼叫
 
 ## 授權
 
-Apache-2.0，全文見 [LICENSE](LICENSE)。
+GPL-3.0-only（GNU General Public License 第 3 版），全文見 [LICENSE](LICENSE)。

@@ -3,6 +3,7 @@ import { promises as fs } from 'node:fs';
 import path from 'node:path';
 import { test } from 'node:test';
 import { DEFAULT_CONFIG } from '../shared/config.ts';
+import { AppError } from '../shared/errors.ts';
 import { withTmpWorkspace } from '../testing/tmp.ts';
 import { SettingsStore } from './settings.ts';
 
@@ -73,4 +74,53 @@ test('a missing registered directory does not prevent adding another profile', (
   await fs.rmdir(original);
   const settings = await store.addAccount('claude', 'Next', next);
   assert.deepEqual(settings.accounts.claude!.map(account => account.configDir), [original, next]);
+}));
+
+test('failed credential import leaves registered accounts and the active selection unchanged', () => withTmpWorkspace(async (ws, dir) => {
+  const store = new SettingsStore(ws, DEFAULT_CONFIG);
+  const existing = (await store.addAccount('codex', 'Existing', dir)).accounts.codex![0]!;
+  await store.update({ activeAccounts: { codex: existing.id } });
+  const file = path.join(ws.internalDir, 'settings.json');
+  const before = await fs.readFile(file, 'utf8');
+  const profile = path.join(dir, 'not-signed-in');
+  await fs.mkdir(profile);
+  const importing = new SettingsStore(ws, DEFAULT_CONFIG, async () => {
+    throw new AppError('unavailable', 'credentials_unavailable');
+  });
+  await assert.rejects(importing.addAccount('codex', 'Unavailable', profile), { detail: 'credentials_unavailable' });
+  assert.equal(await fs.readFile(file, 'utf8'), before);
+  assert.equal((await importing.get()).activeAccounts.codex, existing.id);
+}));
+
+test('OAuth add creates the folder, logs in before importing, and cleans up when login fails', () => withTmpWorkspace(async (ws, dir) => {
+  const order: string[] = [];
+  let failLogin = false;
+  const store = new SettingsStore(ws, DEFAULT_CONFIG, async () => { order.push('import'); }, async (_ai, directory) => {
+    order.push('login');
+    assert.ok((await fs.stat(directory)).isDirectory());
+    if (failLogin) throw new AppError('unavailable', 'login_failed');
+  });
+  const fresh = path.join(dir, 'a', 'fresh');
+  const added = await store.addAccount('grok', 'New', fresh, true);
+  assert.deepEqual(order, ['login', 'import']);
+  assert.equal(added.accounts.grok![0]!.configDir, fresh);
+  await assert.rejects(store.addAccount('grok', 'Again', fresh, true), { code: 'conflict' });
+  assert.deepEqual(order, ['login', 'import']); // duplicate is rejected before the browser opens
+  failLogin = true;
+  const failed = path.join(dir, 'b', 'failed');
+  await assert.rejects(store.addAccount('grok', 'Bad', failed, true), { detail: 'login_failed' });
+  await assert.rejects(fs.stat(failed), { code: 'ENOENT' });
+  assert.equal((await store.get()).accounts.grok!.length, 1);
+  await assert.rejects(new SettingsStore(ws, DEFAULT_CONFIG).addAccount('grok', 'x', path.join(dir, 'c'), true), { detail: 'credentials_unavailable' });
+}));
+
+test('OAuth add without a folder logs in inside an app-generated isolated directory', () => withTmpWorkspace(async (ws, dir) => {
+  let logged = '';
+  const store = new SettingsStore(ws, DEFAULT_CONFIG, undefined, async (_ai, directory) => { logged = directory; }, ai => path.join(dir, 'profiles', ai, `n${Math.random()}`));
+  const first = (await store.addAccount('codex', 'One', undefined, true)).accounts.codex![0]!;
+  assert.equal(first.configDir, logged);
+  assert.ok(first.configDir.startsWith(path.join(dir, 'profiles', 'codex')));
+  const second = (await store.addAccount('codex', 'Two', undefined, true)).accounts.codex![1]!;
+  assert.notEqual(second.configDir, first.configDir);
+  await assert.rejects(store.addAccount('codex', 'No login', undefined, false), { detail: 'field_type' });
 }));

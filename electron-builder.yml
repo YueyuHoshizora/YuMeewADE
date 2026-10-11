@@ -1,7 +1,7 @@
 # electron-builder 設定：本機 npm run dist 與 GitHub Actions 共用。產物未以 Developer ID 簽名、未公證（PLAN.md 假設 7）。
 appId: dev.yueyuhoshizora.yumeewade
 productName: YuMeewADE
-copyright: Copyright © 2026 Yueyu Hoshizora. Apache-2.0.
+copyright: Copyright © 2026 Yueyu Hoshizora. GPL-3.0-only.
 directories:
   output: release
   buildResources: build

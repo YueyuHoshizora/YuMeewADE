@@ -3,13 +3,24 @@ import { writeRoles } from '../../roles/roles.ts';
 import { AppError } from '../../shared/errors.ts';
 import type { RoleInput, SettingsPatch } from '../../shared/types.ts';
 import { reqString, type Router } from '../router.ts';
+function reqLogin(body: Record<string, unknown>): boolean {
+  const login = body['login'];
+  if (login !== undefined && typeof login !== 'boolean') throw new AppError('bad_request', 'field_type', { field: 'login' });
+  return login === true;
+}
+
 export function registerAiRoutes(router: Router, app: App): void {
   const refreshUsage = () => { void app.refreshUsage().catch(() => {}); };
   router.post('/api/accounts/add', async ({ body }) => {
-    const settings = await app.settings.addAccount(reqString(body, 'ai', 20), reqString(body, 'name', 80), reqString(body, 'configDir', 4096));
+    const settings = await app.settings.addAccount(reqString(body, 'ai', 20), reqString(body, 'name', 80), body['configDir'] === undefined ? undefined : reqString(body, 'configDir', 4096), reqLogin(body));
     app.changed();
     refreshUsage();
     return settings;
+  });
+  router.post('/api/accounts/prepare', async ({ body }) => {
+    const ai = reqString(body, 'ai', 20);
+    const configDir = await app.settings.prepareProfile(ai);
+    return { configDir, command: app.config.cli[ai as 'claude' | 'codex' | 'grok' | 'gemini'].command };
   });
   router.post('/api/accounts/remove', async ({ body }) => {
     const settings = await app.settings.removeAccount(reqString(body, 'ai', 20), reqString(body, 'id', 80));

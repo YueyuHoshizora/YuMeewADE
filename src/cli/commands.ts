@@ -14,6 +14,8 @@ export async function claudeCommands(command: string, args: string[], cwd: strin
   if (!executable) throw new AppError('bad_request', 'cli_unavailable');
   const child = spawnCli(executable, args, { cwd, env, stdio: ['pipe', 'pipe', 'ignore'], windowsHide: true, detached: process.platform !== 'win32' });
   const { promise, resolve, reject } = Promise.withResolvers<SlashCommand[]>();
+  const closed = Promise.withResolvers<void>();
+  const terminated = Promise.withResolvers<void>();
   let settled = false;
   let buffer = '';
   let bytes = 0;
@@ -22,12 +24,12 @@ export async function claudeCommands(command: string, args: string[], cwd: strin
     if (settled) return;
     settled = true;
     clearTimeout(timer);
-    cancelStop = terminateTree(child, () => {});
+    cancelStop = terminateTree(child, () => terminated.resolve());
     if (commands) resolve(commands); else reject(new AppError('unavailable'));
   };
   const timer = setTimeout(() => finish(), timeoutMs);
   child.on('error', () => finish());
-  child.on('close', () => { finish(); cancelStop?.(); });
+  child.on('close', () => { closed.resolve(); finish(); cancelStop?.(); });
   child.stdin?.on('error', () => finish());
   child.stdout?.setEncoding('utf8');
   child.stdout?.on('data', (chunk: string) => {
@@ -47,7 +49,11 @@ export async function claudeCommands(command: string, args: string[], cwd: strin
     }
   });
   child.stdin?.write(`${JSON.stringify({ type: 'control_request', request_id: 'commands', request: { subtype: 'initialize' } })}\n`);
-  return promise;
+  try { return await promise; }
+  finally {
+    await Promise.race([closed.promise, terminated.promise]);
+    cancelStop?.();
+  }
 }
 
 // These change only a live CLI process (or need its UI/background lifecycle).

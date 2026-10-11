@@ -4,9 +4,13 @@
 
 ## [Unreleased]
 
+### 變更
+- 依使用者裁示，專案授權改為 GPL-3.0-only；同步 GNU GPL 第 3 版全文、套件與桌面打包中繼資料、三語 README 與專案規範。第三方相依套件保留各自授權。
+
 ### 新增
 - 新增 Google Gemini 支援（以 Google 官方後繼的 Antigravity CLI `agy` 為後端；本機實測 `gemini` CLI 的個人 Google OAuth 已被伺服器端停用）：無頭對話經 stdin 的 stream-json 傳入提示，支援續聊（`--conversation`）、模型清單（`agy models`）、完整權限開關、工具摘要與實測 token 用量；不支援 slash 與圖片內嵌（圖片以檔案路徑交給 agent）。Gemini 帳號：`agy` 只能在終端機（PTY）登入，所以新增時 App 建立獨立 HOME（`POST /api/accounts/prepare`），使用者在終端機執行 `HOME=<資料夾> agy` 登入後按「匯入」；憑證是 `<HOME>/.gemini/antigravity-cli/antigravity-oauth-token`，進加密憑證庫，對話以隔離 HOME 還原、刷新後寫回，切換時複寫預設槽。憑證庫資料表舊版會就地升級（先留 `credentials.sqlite.pre-gemini` 備份）。尚無 Gemini 額度查詢。
 - 額度文字提醒：剩餘低於 20%、低於 10%、用滿；用滿後恢復前 5 分鐘、前 1 分鐘與恢復。額度查詢間隔改為預設每 1 分鐘（`limits.usagePollSeconds: 60`）。
+- 新增帳號改為完全自行 OAuth 登入：只填 AI 與名稱，App 自動建立獨立設定資料夾並執行各 CLI 自己的登入流程（`config.yaml` 的 `cli.*.loginArgs`），成功後才匯入憑證庫；移除預設帳號：不再讀取 CLI 預設登入，切換帳號時將憑證複寫至 App 內部預設槽，對話使用該槽。
 - 新增 Grok CLI 無頭對話、續聊、圖片與停止，接入模型／角色／帳號及完整權限開關。模型來自實際 `grok models`，能力依同帳號快取，不製造備用模型。原生 streaming-json 只接受完整回合及成功退出，工具／思考不混入回答；Grok tok/s 採實際完整回合用量與耗時。切換 AI 不沿用另一 AI 的模型／思考強度，明確清空選擇可交由 CLI 預設。
 - Grok 額度直接查官方 billing API：唯讀載入目前帳號有效的第一方登入，顯示當期已用／剩餘比例、重置時間及 API 明確回報的預付美元餘額／隨用隨付上限。納入五分鐘輪詢與用滿／恢復提醒；未登入、API-key-only、無效資料及 HTTP 失敗不冒充零用量。新增帳號以 `GROK_HOME` 隔離，底部只顯示使用中帳號。Grok headless 尚無可執行 slash 協定，回空清單並拒絕未知命令。
 - 移除作業輸入區閒置時的「送出」按鈕，改以 ⌘/Ctrl+Enter（或設定中的 Enter）送出；執行中指示操作與 AI 問題的回答按鈕保留。

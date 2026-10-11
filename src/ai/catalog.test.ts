@@ -110,7 +110,7 @@ test('CLI version, codex refresh and update use configured executable without ch
   const versionFile = path.join(f.root, 'version');
   const calls = path.join(f.root, 'calls.jsonl');
   await fs.writeFile(versionFile, '0.160.1');
-  await fs.writeFile(command, `#!${process.execPath}\nimport fs from 'node:fs';\nconst args = process.argv.slice(2);\nfs.appendFileSync(${JSON.stringify(calls)}, JSON.stringify(args) + '\\n');\nif (args.join(' ') === '--version') console.log('codex-cli ' + fs.readFileSync(${JSON.stringify(versionFile)}, 'utf8'));\nelse if (args.join(' ') === 'debug models') console.log(${JSON.stringify(JSON.stringify(CODEX_CACHE))});\nelse if (args.join(' ') === 'update') fs.writeFileSync(${JSON.stringify(versionFile)}, '0.161.0');\nelse process.exit(2);\n`, { mode: 0o755 });
+  await fs.writeFile(command, `#!${process.execPath}\nimport fs from 'node:fs';\nconst args = process.argv.slice(2);\nfs.appendFileSync(${JSON.stringify(calls)}, JSON.stringify(args) + '\\n');\nif (args.join(' ') === '--version') console.log('codex-cli ' + fs.readFileSync(${JSON.stringify(versionFile)}, 'utf8'));\nelse if (args.join(' ') === 'debug models -c cli_auth_credentials_store=\"file\"') console.log(${JSON.stringify(JSON.stringify(CODEX_CACHE))});\nelse if (args.join(' ') === 'update') fs.writeFileSync(${JSON.stringify(versionFile)}, '0.161.0');\nelse process.exit(2);\n`, { mode: 0o755 });
   f.config.cli.codex.command = command;
   assert.equal((await f.catalog.get('codex')).version, '0.160.1');
   assert.equal((await f.catalog.get('codex')).available, true);
@@ -119,9 +119,9 @@ test('CLI version, codex refresh and update use configured executable without ch
   assert.equal(refreshed.models[0]!.defaultEffort, 'high');
   assert.deepEqual(await f.catalog.update('codex'), { before: '0.160.1', after: '0.161.0' });
   const argv = (await fs.readFile(calls, 'utf8')).trim().split('\n').map((line) => JSON.parse(line));
-  assert.ok(argv.some((args) => args.join(' ') === 'debug models'));
+  assert.ok(argv.some((args) => args.join(' ') === 'debug models -c cli_auth_credentials_store=\"file\"'));
   assert.ok(argv.some((args) => args.join(' ') === 'update'));
-  assert.ok(argv.every((args) => ['--version', 'debug models', 'update'].includes(args.join(' '))));
+  assert.ok(argv.every((args) => ['--version', 'debug models -c cli_auth_credentials_store=\"file\"', 'update'].includes(args.join(' '))));
   const persisted = JSON.parse(await fs.readFile(path.join(f.ws.internalDir, 'models.json'), 'utf8'));
   assert.equal(persisted.codex.source, 'cli');
 });
