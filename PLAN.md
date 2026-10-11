@@ -549,3 +549,4 @@ electron 44.7.0、vite 8.3.4、electron-builder 26.15.3、typescript 7.0.2、@ty
 - 能力調查：codex 0.162.1 exec 只有單向 JSONL；app-server 的 stdio JSON-RPC 需另外實作 session／turn 與續聊生命週期，不能混入現有 exec parser。保留 sandbox／never 並明示未支援。grok 1.0.46 single ACP updates 是輸出，非 agent stdio 雙向 session API；agy 1.3.3 stream-json help 未提供權限控制回覆協定。兩者保留 safeArgs 並明示未支援，不假造核准。Claude 協定來源：https://github.com/anthropics/claude-agent-sdk-python/blob/main/src/claude_agent_sdk/_internal/query.py。
 - 桌面視窗狀態依視窗 slot 原子保存於 userData/window-state.json；驗證數值與目前顯示器，離屏置中，恢復最大化與全螢幕。
 - 原生選單依 OS locale 提供七語系，自訂動作透過最小 preload 訂閱及 yumeewade:menu 事件交給共用 UI；不暴露任意 IPC 或憑證。
+- 多視窗共用同一 loopback 核心與 sandbox/contextIsolation；IPC 驗證來源視窗及 frame origin，最多 32 視窗，重啟聚焦最近視窗，全部關閉即退出。

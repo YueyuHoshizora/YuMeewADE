@@ -35,6 +35,7 @@ let core: UtilityProcess | null = null;
 let quitting = false;
 let shutdownComplete = false;
 let mainWindow: BrowserWindow | null = null;
+const windowSlots = new Map<BrowserWindow, number>();
 let coreOrigin = '';
 mkdirSync(CONFIG_DIRECTORY, { recursive: true, mode: 0o700 });
 app.setPath('sessionData', CONFIG_DIRECTORY);
@@ -95,7 +96,10 @@ async function startCore(host: string, port: number): Promise<void> {
 }
 
 function createWindow(url: string): BrowserWindow {
-  const slot = BrowserWindow.getAllWindows().length;
+  if (windowSlots.size >= 32 && mainWindow) { focusWindow(); return mainWindow; }
+  const occupied = new Set(windowSlots.values());
+  let slot = 0;
+  while (occupied.has(slot)) slot++;
   const saved = windowStates.get(slot, [screen.getPrimaryDisplay(), ...screen.getAllDisplays().filter(d => d.id !== screen.getPrimaryDisplay().id)].map(d => d.workArea));
   const win = new BrowserWindow({
     ...saved.bounds,
@@ -111,6 +115,7 @@ function createWindow(url: string): BrowserWindow {
       webSecurity: true,
     },
   });
+  windowSlots.set(win, slot);
   if (saved.maximized) win.maximize();
   if (saved.fullscreen) win.setFullScreen(true);
   const saveState = (): void => {
@@ -130,7 +135,11 @@ function createWindow(url: string): BrowserWindow {
   const origin = new URL(url).origin;
   coreOrigin = origin;
   mainWindow = win;
-  win.on('closed', () => { if (mainWindow === win) mainWindow = null; });
+  win.on('focus', () => { mainWindow = win; });
+  win.on('closed', () => {
+    windowSlots.delete(win);
+    if (mainWindow === win) mainWindow = [...windowSlots.keys()].at(-1) ?? null;
+  });
   win.webContents.on('will-navigate', (ev, target) => {
     if (new URL(target).origin !== origin) {
       ev.preventDefault();
@@ -167,17 +176,20 @@ if (primaryInstance) app
   .then(async () => {
     if (artifactSmoke) await fs.writeFile(path.join(artifactSmoke, 'process.json'), JSON.stringify({ pid: process.pid }), { mode: 0o600, flag: 'wx' });
     ipcMain.handle('pick-folder', async (event) => {
-      const win = mainWindow;
-      if (!win || event.sender !== win.webContents || !acceptsFrame(event.senderFrame?.url, coreOrigin)) return null;
+      const win = BrowserWindow.fromWebContents(event.sender);
+      if (!win || !windowSlots.has(win) || !acceptsFrame(event.senderFrame?.url, coreOrigin)) return null;
       const result = await dialog.showOpenDialog(win, { properties: ['openDirectory'] });
       return result.canceled ? null : result.filePaths[0] ?? null;
     });
     ipcMain.on('set-badge', (event, count: unknown) => {
-      if (!mainWindow || event.sender !== mainWindow.webContents || !acceptsFrame(event.senderFrame?.url, coreOrigin) || !validBadgeCount(count)) return;
+      const win = BrowserWindow.fromWebContents(event.sender);
+      if (!win || !windowSlots.has(win) || !acceptsFrame(event.senderFrame?.url, coreOrigin) || !validBadgeCount(count)) return;
       if (process.platform !== 'win32') app.setBadgeCount(count);
     });
     ipcMain.on('focus-window', (event) => {
-      if (!mainWindow || event.sender !== mainWindow.webContents || !acceptsFrame(event.senderFrame?.url, coreOrigin)) return;
+      const win = BrowserWindow.fromWebContents(event.sender);
+      if (!win || !windowSlots.has(win) || !acceptsFrame(event.senderFrame?.url, coreOrigin)) return;
+      mainWindow = win;
       focusWindow();
     });
     await ensureConfigPath();
