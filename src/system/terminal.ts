@@ -31,8 +31,8 @@ export class TerminalService {
     const overrides = executionEnv(request.env); const args = executionArgs(request.args);
     if (request.command !== undefined && (typeof request.command !== 'string' || !request.command || request.command.length > 4096 || /[\0\r\n]/u.test(request.command))) throw new AppError('bad_request');
     if (this.closed || this.active() + this.pending.size >= (this.options.concurrent ?? 4)) throw new AppError('unavailable');
-    if (this.options.isRunning?.(project, task) || this.execution.isRunning(project, task) || this.isRunning(project, task)) throw new AppError('conflict');
-    const key = JSON.stringify([project, task]); this.pending.set(key, { project, task });
+    if (this.options.isRunning?.(project, task) || this.execution.isRunning(project, task)) throw new AppError('conflict');
+    const key = randomUUID(); this.pending.set(key, { project, task });
     try {
       await this.options.beforeStart?.(project, task);
       const cwd = await this.execution.cwd(project, task, request.cwd);

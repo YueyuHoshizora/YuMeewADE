@@ -4,7 +4,8 @@ import { t } from '../i18n/index.ts';
 import { button, el, field, input, row, run } from './dom.ts';
 import { TerminalScreen } from './terminal-screen.ts';
 
-export function embeddedTerminal(project: string, task: string): { node: HTMLElement; dispose: () => void } {
+interface TerminalPanel { node: HTMLElement; dispose: () => void; launch: () => Promise<void>; stop: () => Promise<void>; running: () => boolean }
+function terminalSession(project: string, task: string): TerminalPanel {
   const node = el('section', 'card'); const screen = new TerminalScreen(100, 24, t('tools.terminal'));
   const status = el('p'); const controls = row();
   const columns = input('100'); const lines = input('24');
@@ -35,13 +36,20 @@ export function embeddedTerminal(project: string, task: string): { node: HTMLEle
       status.textContent = `${t(current.status === 'running' ? 'tools.running' : 'tools.closed')}${current.truncated ? ' · ' + t('execution.truncated') : ''}`;
     } finally { if (alive && lease?.session.status === 'running') timer = window.setTimeout(() => { void run(poll); }, 100); }
   }
-  const start = button(t('tools.terminal'), async () => {
+  async function launch(): Promise<void> {
     if (lease?.session.status === 'running') return;
     lease = await request<TerminalLease>('/api/terminal/start', { project, task, cols: screen.cols, rows: screen.rows });
     if (!alive) { await request('/api/terminal/stop', identity()); return; }
     after = 0; screen.write('\x1b[2J\x1b[H'); receiver.focus(); await poll();
-  });
-  controls.append(start, button(t('execution.stop'), async () => { if (lease) { await request('/api/terminal/stop', identity()); lease.session.status = 'stopped'; clearTimeout(timer); status.textContent = t('tools.closed'); } }));
+  }
+  async function stop(): Promise<void> {
+    if (lease?.session.status === 'running') {
+      await request('/api/terminal/stop', identity()); lease.session.status = 'stopped'; clearTimeout(timer); status.textContent = t('tools.closed');
+    }
+  }
+  controls.append(button(t('tools.terminal'), launch), button(t('execution.stop'), async () => {
+    if (lease?.session.status === 'running' && window.confirm(t('terminalTabs.confirmClose'))) await stop();
+  }));
   controls.append(field(t('tools.columns'), columns), field(t('tools.rows'), lines), button(t('tools.resize'), async () => {
     const cols = Number(columns.value); const rows = Number(lines.value);
     if (!Number.isInteger(cols) || !Number.isInteger(rows) || cols < 2 || cols > 300 || rows < 2 || rows > 300) return;
@@ -72,5 +80,44 @@ export function embeddedTerminal(project: string, task: string): { node: HTMLEle
   });
   node.append(el('h3', '', t('tools.terminal')), controls, status, screen.node, receiver); observer.observe(node);
   const dispose = () => { alive = false; clearTimeout(timer); clearTimeout(resizeTimer); observer.disconnect(); inputQueue = ''; if (lease?.session.status === 'running') void request('/api/terminal/stop', identity()).catch(() => undefined); };
-  return { node, dispose };
+  return { node, dispose, launch, stop, running: () => lease?.session.status === 'running' };
+}
+
+export function embeddedTerminal(project: string, task: string) {
+  const node = el('section', 'terminal-tabs');
+  const tabs = row(); tabs.setAttribute('role', 'tablist');
+  const body = el('div');
+  const sessions: { label: string; terminal: TerminalPanel; tab: HTMLButtonElement }[] = [];
+  let selected: typeof sessions[number] | undefined;
+  let serial = 0;
+  function select(entry: typeof sessions[number]): void {
+    selected = entry;
+    for (const item of sessions) {
+      item.terminal.node.hidden = item !== entry;
+      item.tab.setAttribute('aria-selected', String(item === entry));
+    }
+  }
+  async function add(): Promise<void> {
+    const terminal = terminalSession(project, task);
+    const entry: typeof sessions[number] = { label: `${t('tools.terminal')} ${++serial}`, terminal, tab: button('', () => select(entry)) };
+    entry.tab.setAttribute('role', 'tab'); entry.tab.textContent = entry.label;
+    sessions.push(entry); tabs.append(entry.tab); body.append(terminal.node); select(entry);
+    try { await terminal.launch(); }
+    catch (error) { sessions.splice(sessions.indexOf(entry), 1); terminal.dispose(); terminal.node.remove(); entry.tab.remove(); selected = undefined; if (sessions.length) select(sessions.at(-1)!); throw error; }
+  }
+  node.append(row(el('strong', '', `${project} / ${task}`),
+    button(t('terminalTabs.new'), add),
+    button(t('terminalTabs.rename'), () => {
+      if (!selected) return;
+      const label = window.prompt(t('terminalTabs.rename'), selected.label)?.trim();
+      if (label && label.length <= 80) { selected.label = label; selected.tab.textContent = label; }
+    }),
+    button(t('terminalTabs.close'), async () => {
+      const entry = selected; if (!entry) return;
+      if (entry.terminal.running() && !window.confirm(t('terminalTabs.confirmClose'))) return;
+      await entry.terminal.stop(); entry.terminal.dispose(); entry.terminal.node.remove(); entry.tab.remove();
+      sessions.splice(sessions.indexOf(entry), 1); selected = undefined;
+      if (sessions.length) select(sessions.at(-1)!);
+    })), tabs, body);
+  return { node, add, dispose: () => { for (const entry of sessions) entry.terminal.dispose(); } };
 }

@@ -15,6 +15,7 @@ import * as executionTools from './execution-tools.ts';
 import * as usageHistory from './usage-history.ts';
 import * as backup from './backup.ts';
 import * as trustedUpdates from './trusted-updates.ts';
+import * as terminal from './terminal.ts';
 
 export const featureZhTW = {
   ...archive.featureZhTW,
@@ -34,6 +35,7 @@ export const featureZhTW = {
   ...usageHistory.featureZhTW,
   ...backup.featureZhTW,
   ...trustedUpdates.featureZhTW,
+  ...terminal.featureZhTW,
 };
 export const featureZhCN = {
   ...archive.featureZhCN,
@@ -53,6 +55,7 @@ export const featureZhCN = {
   ...usageHistory.featureZhCN,
   ...backup.featureZhCN,
   ...trustedUpdates.featureZhCN,
+  ...terminal.featureZhCN,
 };
 export const featureEn = {
   ...archive.featureEn,
@@ -72,6 +75,7 @@ export const featureEn = {
   ...usageHistory.featureEn,
   ...backup.featureEn,
   ...trustedUpdates.featureEn,
+  ...terminal.featureEn,
 };
 export const featureJa = {
   ...archive.featureJa,
@@ -91,6 +95,7 @@ export const featureJa = {
   ...usageHistory.featureJa,
   ...backup.featureJa,
   ...trustedUpdates.featureJa,
+  ...terminal.featureJa,
 };
 export const featureDe = {
   ...archive.featureDe,
@@ -110,6 +115,7 @@ export const featureDe = {
   ...usageHistory.featureDe,
   ...backup.featureDe,
   ...trustedUpdates.featureDe,
+  ...terminal.featureDe,
 };
 export const featureFr = {
   ...archive.featureFr,
@@ -129,6 +135,7 @@ export const featureFr = {
   ...usageHistory.featureFr,
   ...backup.featureFr,
   ...trustedUpdates.featureFr,
+  ...terminal.featureFr,
 };
 export const featureIt = {
   ...archive.featureIt,
@@ -148,4 +155,5 @@ export const featureIt = {
   ...usageHistory.featureIt,
   ...backup.featureIt,
   ...trustedUpdates.featureIt,
+  ...terminal.featureIt,
 };

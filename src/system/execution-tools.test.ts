@@ -86,14 +86,32 @@ test('native embedded PTY has TTY stdin/stdout, input, resize, output bounds and
   } finally { await terminal.stopAll(); await execution.stopAll(); }
 }));
 
+test('multiple same-task terminals reserve independent capacity and stop independently', () => withTmpWorkspace(async ws => {
+  const { execution, task } = await setup(ws);
+  const terminal = new TerminalService(execution, { concurrent: 2 });
+  try {
+    const leases = await Promise.all([1, 2].map(() => terminal.start('Tools', task.id, { command: process.execPath, args: ['-e', 'console.log("READY");setInterval(()=>{},1000)'] })));
+    assert.equal(terminal.active(), 2);
+    assert.notEqual(leases[0]!.session.id, leases[1]!.session.id);
+    await assert.rejects(terminal.start('Tools', task.id), { status: 503 });
+    const first = leases[0]!; const second = leases[1]!;
+    assert.throws(() => terminal.output('Tools', task.id, second.session.id, first.owner), { status: 403 });
+    await terminal.stop('Tools', task.id, first.session.id, first.owner);
+    assert.equal(terminal.output('Tools', task.id, second.session.id, second.owner).status, 'running');
+    assert.equal(terminal.active(), 1);
+    const third = await terminal.start('Tools', task.id, { command: process.execPath, args: ['-e', 'setInterval(()=>{},1000)'] });
+    assert.equal(third.session.status, 'running');
+  } finally { await terminal.stopAll(); await execution.stopAll(); }
+}));
+
 test('terminal synchronously reserves task and honors trust hook before any PTY launch', () => withTmpWorkspace(async ws => {
   const { execution, task } = await setup(ws); const entered = Promise.withResolvers<void>(); const release = Promise.withResolvers<void>();
-  const terminal = new TerminalService(execution, { beforeStart: async () => { entered.resolve(); await release.promise; throw new AppError('forbidden'); } });
+  const terminal = new TerminalService(execution, { concurrent: 1, beforeStart: async () => { entered.resolve(); await release.promise; throw new AppError('forbidden'); } });
   try {
     const pending = terminal.start('Tools', task.id);
     assert.equal(terminal.isRunning('Tools', task.id), true);
     await entered.promise;
-    await assert.rejects(terminal.start('Tools', task.id), { status: 409 });
+    await assert.rejects(terminal.start('Tools', task.id), { status: 503 });
     release.resolve(); await assert.rejects(pending, { status: 403 });
     assert.equal(terminal.isBusy(), false);
   } finally { release.resolve(); await terminal.stopAll(); await execution.stopAll(); }
