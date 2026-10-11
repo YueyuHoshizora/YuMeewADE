@@ -32,7 +32,7 @@ declare global { interface Window { yumeewade?: { desktop: true; platform: strin
 
 const normalizePath = (value: string): string => { const slashed = value.replace(/\\/g, '/').replace(/\/+$/, ''); return /^[A-Za-z]:/.test(slashed) || slashed.startsWith('//') ? slashed.toLowerCase() : slashed; };
 
-/** 以系統資料夾選擇器開啟既有專案：所選資料夾須是專案的台帳資料夾或主資料夾；網頁版沒有選擇器，改進清單頁。 */
+/** 以系統資料夾選擇器開啟專案：符合台帳資料夾或主資料夾就直接開啟；否則確認後以該資料夾為主資料夾建立專案。網頁版沒有選擇器，改進清單頁。 */
 export async function openProjectFromFolder(context: ViewContext): Promise<void> {
   const pick = window.yumeewade?.pickFolder;
   if (!pick) { location.hash = '#/open'; return; }
@@ -40,8 +40,15 @@ export async function openProjectFromFolder(context: ViewContext): Promise<void>
   if (!value) return;
   const target = normalizePath(value);
   const found = context.state.projects.find(project => normalizePath(project.dir) === target) ?? context.state.projects.find(project => normalizePath(project.bodyPath) === target);
-  if (!found) { toast(t('project.folderNotProject')); return; }
-  location.hash = projectHash(found.id);
+  if (found) { location.hash = projectHash(found.id); return; }
+  const name = value.replace(/[\\/]+$/, '').split(/[\\/]/).at(-1) ?? '';
+  if (!await confirmModal(t('project.adoptTitle'), t('project.adoptMessage', { name }), t('project.adoptAccept'))) return;
+  try {
+    const project = await api.createProject({ name, description: '', phases: lines(t('project.defaultPhases')), body: value, parent: '', related: [] });
+    await context.refresh(); location.hash = projectHash(project.id);
+  } catch (error) {
+    if (error instanceof ApiFailure) toast(error.message); else throw error;
+  }
 }
 
 export function openProjectView(context: ViewContext): View {
