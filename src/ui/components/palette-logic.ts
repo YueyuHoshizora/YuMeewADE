@@ -21,3 +21,8 @@ export function routeScope(hash: string): { project: string; task: string } | un
   } catch { /* Malformed route has no actionable scope. */ }
   return undefined;
 }
+export function fileQuery(value: string): { path: string; line?: number } {
+  const text = value.trim(); const match = /^(.*):([1-9]\d*)$/.exec(text);
+  if (!match || !Number.isSafeInteger(Number(match[2]))) return { path: text };
+  return { path: match[1]!, line: Number(match[2]) };
+}

@@ -1,4 +1,4 @@
-import { request } from '../api.ts';
+import { query, request } from '../api.ts';
 import { LOCALES, localeName, setLocale, t } from '../i18n/index.ts';
 import { getTheme, setTheme } from '../theme.ts';
 import { openProjectFromFolder } from '../views/projects.ts';
@@ -7,11 +7,11 @@ import { button, confirmModal, el, input, projectHash, row, run, taskHash, type 
 import { executionButton } from './execution.ts';
 import { openFileBrowser } from './files.ts';
 import { gitWorkbenchButton } from './git-workbench.ts';
-import { rank, routeScope } from './palette-logic.ts';
+import { fileQuery, rank, routeScope } from './palette-logic.ts';
 
 type Command = { label: string; action: () => unknown };
 let active: HTMLDialogElement | undefined;
-function picker(title: string, source: (query: string) => Promise<Command[]> | Command[]): void {
+function picker(title: string, source: (query: string) => Promise<Command[]> | Command[], delay = 0): void {
   active?.close();
   const dialog = el('dialog', 'modal'); active = dialog;
   dialog.setAttribute('role', 'dialog'); dialog.setAttribute('aria-label', title);
@@ -19,6 +19,7 @@ function picker(title: string, source: (query: string) => Promise<Command[]> | C
   const list = el('div', 'stack'); list.id = 'palette-options'; list.setAttribute('role', 'listbox'); list.setAttribute('aria-label', title); search.setAttribute('aria-controls', list.id);
   list.style.maxHeight = '55vh'; list.style.overflowY = 'auto';
   let results: Command[] = []; let selected = 0; let generation = 0;
+  let debounce: number | undefined;
   const choose = (index: number) => { const entry = results[index]; if (!entry) return; dialog.close(); void run(async () => { await entry.action(); }); };
   function highlight(): void {
     for (const [index, child] of [...list.children].entries()) { child.setAttribute('aria-selected', String(index === selected)); (child as HTMLElement).style.fontWeight = index === selected ? 'bold' : ''; }
@@ -33,14 +34,18 @@ function picker(title: string, source: (query: string) => Promise<Command[]> | C
     if (!results.length) list.append(el('p', 'muted', t('palette.empty')));
     highlight();
   }
-  search.oninput = () => { void run(update); };
+  search.oninput = () => {
+    generation++; results = []; list.replaceChildren(); search.removeAttribute('aria-activedescendant');
+    window.clearTimeout(debounce);
+    if (delay) debounce = window.setTimeout(() => { void run(update); }, delay); else void run(update);
+  };
   dialog.addEventListener('keydown', event => {
     if (event.isComposing) return;
     if (event.key === 'ArrowDown' || event.key === 'ArrowUp') { event.preventDefault(); if (results.length) selected = (selected + (event.key === 'ArrowDown' ? 1 : results.length - 1)) % results.length; highlight(); }
     if (event.key === 'Enter') { event.preventDefault(); choose(selected); }
   });
   dialog.append(row(el('h2', '', title), button(t('common.close'), () => dialog.close())), search, list);
-  dialog.addEventListener('close', () => { generation++; dialog.remove(); if (active === dialog) active = undefined; });
+  dialog.addEventListener('close', () => { generation++; window.clearTimeout(debounce); dialog.remove(); if (active === dialog) active = undefined; });
   document.body.append(dialog); dialog.showModal(); search.focus(); void run(update);
 }
 export function openCommandPalette(context: ViewContext): void {
@@ -71,8 +76,22 @@ export function openCommandPalette(context: ViewContext): void {
   } });
   picker(t('palette.title'), query => rank(commands, query));
 }
+export function openGoToFile(context: ViewContext): boolean {
+  const scope = routeScope(location.hash);
+  const project = context.state.projects.find(project => project.id === scope?.project);
+  if (!scope || !project || (scope.task && !project.tasks.some(task => task.id === scope.task))) return false;
+  picker(t('palette.gotoFile'), async value => {
+    const parsed = fileQuery(value);
+    const found = await request<{ files: string[]; total: number }>(query('/api/task/files', { ...scope, q: parsed.path }));
+    return [
+      ...found.files.map(path => ({ label: path, action: () => window.dispatchEvent(new CustomEvent('yumeewade:open-file', { detail: { ...scope, path, ...(parsed.line ? { line: parsed.line } : {}) } })) })),
+    ];
+  }, 150);
+  return true;
+}
 export function paletteShortcut(event: KeyboardEvent, context: ViewContext): boolean {
   if (event.isComposing || event.keyCode === 229 || event.defaultPrevented) return false;
   if ((event.ctrlKey || event.metaKey) && event.shiftKey && event.key.toLowerCase() === 'p') { event.preventDefault(); openCommandPalette(context); return true; }
+  if ((event.ctrlKey || event.metaKey) && !event.shiftKey && !event.altKey && event.key.toLowerCase() === 'p' && openGoToFile(context)) { event.preventDefault(); return true; }
   return false;
 }
