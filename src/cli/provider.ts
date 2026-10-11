@@ -36,7 +36,7 @@ export type CliEvent =
   | { type: 'asks'; asks: Ask[] }
   /** 帳號額度（CLI 或 API 回報；at＝資料時間 ISO；prepaidCents＝明確回報的預付美元分餘額）。 */
   | { type: 'quota'; windows: QuotaWindow[]; limited: boolean; at: string; prepaidCents?: number }
-  /** CLI 實測輸出用量／耗時；同一 run 的最新訊息或回合取代舊樣本，絕非文字估算或校正增量。 */
+  /** CLI 實測輸出用量／耗時；runId 識別一則訊息或完整回合，同一量測累計值取代舊樣本，不同訊息獨立保留。 */
   | { type: 'tokens'; runId: string; count: number; spanMs: number; at: number }
   /** 內部原因，只進日誌，不對外。 */
   | { type: 'error'; reason: string };

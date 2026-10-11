@@ -95,9 +95,8 @@ export function createClaudeParser(onEvent: (ev: CliEvent) => void, now: () => n
   let sawStream = false;
   let sessionId = '';
   const runId = randomUUID();
-  let generating: number | null = null;
-  let messageUsage: Record<string, unknown> = {};
-  let output = -1;
+  let sampleIndex = 0;
+  const messages = new Map<string, { runId: string; started: number; usage: Record<string, unknown>; output: number }>();
   const tools = new Set<string>();
   const handleTool = (block: Record<string, unknown>) => {
     const name = block['name'];
@@ -141,30 +140,34 @@ export function createClaudeParser(onEvent: (ev: CliEvent) => void, now: () => n
         const ev = obj['event'];
         if (!ev || typeof ev !== 'object') return;
         const e = ev as Record<string, unknown>;
+        // Nested agent streams can interleave with the main stream; each has its own message clock.
+        const key = typeof obj['parent_tool_use_id'] === 'string' ? obj['parent_tool_use_id'] : '';
         if (e['type'] === 'message_start') {
           sawStream = false;
-          generating = now();
-          output = -1;
           const message = e['message'];
           const usage = message && typeof message === 'object' && 'usage' in message ? message.usage : undefined;
-          messageUsage = usage && typeof usage === 'object' ? usage as Record<string, unknown> : {};
+          messages.set(key, {
+            runId: `${runId}:${++sampleIndex}`, started: now(), output: -1,
+            usage: usage && typeof usage === 'object' ? { ...usage as Record<string, unknown> } : {},
+          });
         }
         if (e['type'] === 'message_delta') {
           const value = e['usage'];
-          if (value && typeof value === 'object') messageUsage = { ...messageUsage, ...value };
-          const usage = parseUsage(messageUsage);
+          const sample = messages.get(key);
+          if (sample && value && typeof value === 'object') Object.assign(sample.usage, value);
+          const usage = parseUsage(sample?.usage ?? value);
           if (usage) onEvent({ type: 'usage', usage });
           const exact = value && typeof value === 'object' && 'output_tokens' in value ? value.output_tokens : undefined;
           const at = now();
-          const spanMs = generating === null ? 0 : at - generating;
+          const spanMs = sample ? at - sample.started : 0;
           // output_tokens 是本訊息累計，已包含思考與工具輸入；不另外加 thinking_tokens。
-          if (typeof exact === 'number' && Number.isFinite(exact) && exact >= 0 && exact > output &&
+          if (sample && typeof exact === 'number' && Number.isFinite(exact) && exact >= 0 && exact > sample.output &&
               Number.isFinite(spanMs) && spanMs > 0) {
-            output = exact;
-            onEvent({ type: 'tokens', runId, count: exact, spanMs, at });
+            sample.output = exact;
+            onEvent({ type: 'tokens', runId: sample.runId, count: exact, spanMs, at });
           }
         }
-        if (e['type'] === 'message_stop') generating = null;
+        if (e['type'] === 'message_stop') messages.delete(key);
         if (e['type'] === 'content_block_delta') {
           const delta = e['delta'];
           if (!delta || typeof delta !== 'object') return;
@@ -195,7 +198,7 @@ export function createClaudeParser(onEvent: (ev: CliEvent) => void, now: () => n
         return;
       }
       case 'result': {
-        generating = null;
+        messages.clear();
         const usage = parseUsage(obj['usage']);
         if (usage) onEvent({ type: 'usage', usage });
         const isError = obj['is_error'] === true || (typeof obj['subtype'] === 'string' && obj['subtype'] !== 'success');

@@ -281,7 +281,6 @@ test('claude：只測量實際累計 output_tokens；文字分塊、思考估算
     event({ type: 'message_start' });
     clock = 6000;
     event({ type: 'message_delta', usage: { output_tokens: 20 } });
-    assert.equal(events.filter(ev => ev.type === 'tokens').at(-1)?.runId, tokens[0]?.runId);
     feed({ type: 'result', subtype: 'success', usage: { input_tokens: 1, output_tokens: 220 } });
     event({ type: 'message_delta', usage: { output_tokens: 300 } });
     assert.equal(events.filter(ev => ev.type === 'tokens').length, 3);

@@ -75,31 +75,50 @@ test('先後回合加權平均，並行重疊只除區間聯集；區間中的�
   } finally { board.close(); }
 });
 
-test('parser → UsageBoard：Claude 與 Codex 真實用量隔離，下一則訊息取代舊樣本、不估算部分輸出', () => {
+test('連續 Claude 訊息保留近期樣本，與其他 CLI 加權且不重複計算最終總量', () => {
   let clock = 0;
   const board = new UsageBoard(() => {}, () => clock);
   const claude = createClaudeParser(ev => { if (ev.type === 'tokens') board.record('claude', ev); }, () => clock);
   const codex = createCodexParser(ev => { if (ev.type === 'tokens') board.record('codex', ev); }, () => clock);
+  const event = (type: string, output?: number) => claude({ type: 'stream_event', event: { type, ...(output === undefined ? {} : { usage: { output_tokens: output } }) } });
   try {
-    claude({ type: 'stream_event', event: { type: 'message_start' } });
+    event('message_start');
     codex({ type: 'turn.started' });
-    clock = 1000;
-    claude({ type: 'stream_event', event: { type: 'content_block_delta', delta: { type: 'text_delta', text: 'abcdefgh' } } });
-    assert.equal(board.rateAt(clock), null);
     clock = 2000;
-    claude({ type: 'stream_event', event: { type: 'message_delta', usage: { output_tokens: 100 } } });
+    event('message_delta', 100);
     codex({ type: 'turn.completed', usage: { input_tokens: 5, output_tokens: 40 } });
     assert.equal(board.snapshot().tokensPerSecond, 70);
-    claude({ type: 'stream_event', event: { type: 'message_stop' } });
-    clock = 3000;
-    claude({ type: 'stream_event', event: { type: 'message_start' } });
-    clock = 4000;
-    claude({ type: 'stream_event', event: { type: 'message_delta', usage: { output_tokens: 20 } } });
-    assert.equal(board.snapshot().tokensPerSecond, 20);
-    // 結果中的總量是另一個彙總，不得再加入 message 用量。
+    event('message_stop');
+    clock = 3000; event('message_start');
+    clock = 4000; event('message_delta', 20);
+    // 160 tokens / (2s + 1s), excluding the gap and counting overlap only once.
+    assert.equal(board.snapshot().tokensPerSecond, 53.3);
     claude({ type: 'result', subtype: 'success', usage: { input_tokens: 10, output_tokens: 120 } });
-    assert.equal(board.snapshot().tokensPerSecond, 20);
+    assert.equal(board.snapshot().tokensPerSecond, 53.3);
+    assert.equal(board.rateAt(6000), 20);
     assert.equal(board.rateAt(8000), null);
+  } finally { board.close(); }
+});
+
+test('主訊息與子代理交錯輸出各自計時，結束子訊息不會停止主訊息量測', () => {
+  let clock = 0;
+  const board = new UsageBoard(() => {}, () => clock);
+  const parse = createClaudeParser(ev => { if (ev.type === 'tokens') board.record('claude', ev); }, () => clock);
+  const event = (type: string, output?: number, parent: string | null = null) => parse({ type: 'stream_event', parent_tool_use_id: parent, event: { type, ...(output === undefined ? {} : { usage: { output_tokens: output } }) } });
+  try {
+    event('message_start');
+    clock = 500; event('message_start', undefined, 'agent');
+    clock = 1000; event('message_delta', 100);
+    assert.equal(board.snapshot().tokensPerSecond, 100);
+    clock = 1500; event('message_delta', 50, 'agent');
+    assert.equal(board.snapshot().tokensPerSecond, 100);
+    event('message_stop', undefined, 'agent');
+    clock = 2000; event('message_delta', 200);
+    assert.equal(board.snapshot().tokensPerSecond, 125);
+    event('message_stop');
+    event('message_start', undefined, 'agent');
+    clock = 2500; event('message_delta', 25, 'agent');
+    assert.equal(board.snapshot().tokensPerSecond, 110);
   } finally { board.close(); }
 });
 
