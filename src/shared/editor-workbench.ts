@@ -1,0 +1,10 @@
+import type { EditorDocument, EditorLocation, EditorDiagnostic } from './types.ts';
+export type EditorAction = 'definition' | 'references' | 'diagnostics' | 'completion' | 'hover' | 'rename' | 'format' | 'codeActions';
+export interface EditorChange { path: string; revision: string; text: string }
+export interface EditorSuggestion { label: string; detail?: string; insertText: string; start?: number; end?: number }
+export interface EditorActionResult { locations: EditorLocation[]; diagnostics: EditorDiagnostic[]; hover?: string; suggestions?: EditorSuggestion[]; changes?: EditorChange[]; actions?: { title: string; changes: EditorChange[] }[] }
+export interface EditorSearchHit { path: string; revision: string; line: number; character: number; end: number; preview: string }
+export interface EditorSearchResult { hits: EditorSearchHit[]; scanned: number }
+export interface EditorMutation { action: 'createFile' | 'createFolder' | 'rename' | 'delete'; path: string; destination?: string; revision?: string; confirmation?: string }
+export interface EditorProblem extends EditorDiagnostic { path: string }
+export interface EditorRecovery { document: EditorDocument; text: string; start: number; end: number; top: number; left: number }

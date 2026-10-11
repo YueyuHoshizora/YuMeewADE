@@ -45,6 +45,7 @@ export class LanguageClient {
       if (message.error) pending.reject(new AppError('unavailable')); else pending.resolve(message.result);
     } else if (message.method === 'textDocument/publishDiagnostics') {
       const params = message.params as { uri: string; diagnostics: unknown[] };
+      if (typeof params.uri !== 'string' || !Array.isArray(params.diagnostics) || params.diagnostics.length > 1000 || (!this.diagnostics.has(params.uri) && this.diagnostics.size >= 1000)) { this.dispose(); return; }
       this.diagnostics.set(params.uri, params.diagnostics);
     } else if (message.id !== undefined) {
       // 不允許 server 改檔或執行 command；唯有設定查詢提供空設定。
@@ -60,6 +61,7 @@ export class LanguageClient {
   request(method: string, params: unknown): Promise<unknown> {
     const id = ++this.serial;
     if (this.dead) return Promise.reject(new AppError('unavailable'));
+    if (this.pending.size >= 128) return Promise.reject(new AppError('unavailable'));
     const { promise, resolve, reject } = Promise.withResolvers<unknown>();
     const timer = setTimeout(() => { this.pending.delete(id); reject(new AppError('unavailable')); }, 15000);
     this.pending.set(id, { resolve, reject, timer });

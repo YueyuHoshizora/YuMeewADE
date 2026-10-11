@@ -35,6 +35,89 @@ test('editor atomic save, stale revisions, readonly and symlink boundaries', () 
   editor.dispose();
 }));
 
+test('editor CRUD, folder revisions and preview-bound multidocument replacement', () => withTmpWorkspace(async ws => {
+  const projects = new ProjectLedger(ws); const tasks = new TaskLedger(ws); await projects.create({ name: 'P' });
+  const editor = new EditorService(new WorktreeService({ ws, projects, tasks, diffBytes: 100000 }), tasks, {});
+  const root = ws.projectDir('P');
+  try {
+    await editor.mutate('P', '', { action: 'createFolder', path: 'src' });
+    const scope = await editor.scope('P', '', ws.root);
+    assert.match(scope.scope, /^[a-f0-9]{64}$/u);
+    assert.deepEqual(await editor.scope('P', '', ws.root), scope);
+    assert.notEqual((await editor.scope('P', '', path.join(root, 'src'))).scope, scope.scope, 'same project IDs and body must not share recovery across workspace roots');
+    for (const name of ['a.txt', 'b.txt']) {
+      await editor.mutate('P', '', { action: 'createFile', path: `src/${name}` });
+      const document = await editor.read('P', '', `src/${name}`);
+      await editor.save('P', '', document.path, 'one needle two needle', document.revision);
+    }
+    const found = await editor.search('P', '', 'needle');
+    assert.equal(found.hits.length, 4); assert.deepEqual(new Set(found.hits.map(hit => hit.path)), new Set(['src/a.txt', 'src/b.txt']));
+    const documents = await Promise.all(['src/a.txt', 'src/b.txt'].map(file => editor.read('P', '', file)));
+    const changes = documents.map(document => ({ path: document.path, revision: document.revision, text: document.text.replaceAll('needle', 'replacement') }));
+    await fs.writeFile(path.join(root, 'src/b.txt'), 'outside change');
+    await assert.rejects(editor.apply('P', '', changes), (error: unknown) => error instanceof AppError && error.detail === 'editor_conflict');
+    assert.equal(await fs.readFile(path.join(root, 'src/a.txt'), 'utf8'), 'one needle two needle');
+    changes[1] = { ...changes[1]!, revision: (await editor.read('P', '', 'src/b.txt')).revision };
+    await editor.apply('P', '', changes);
+    for (const file of ['a.txt', 'b.txt']) assert.equal(await fs.readFile(path.join(root, 'src', file), 'utf8'), 'one replacement two replacement');
+    const revision = await editor.folderRevision('P', '', 'src');
+    await assert.rejects(editor.mutate('P', '', { action: 'delete', path: 'src', revision: revision.revision }));
+    await editor.mutate('P', '', { action: 'rename', path: 'src', destination: 'renamed', confirmation: 'src', revision: revision.revision });
+    assert.equal(await fs.readFile(path.join(root, 'renamed/a.txt'), 'utf8'), 'one replacement two replacement');
+    const stale = await editor.folderRevision('P', '', 'renamed');
+    await fs.writeFile(path.join(root, 'renamed/a.txt'), 'changed');
+    await assert.rejects(editor.mutate('P', '', { action: 'delete', path: 'renamed', confirmation: 'renamed', revision: stale.revision }));
+    await fs.writeFile(path.join(root, 'renamed/.env'), 'secret');
+    await assert.rejects(editor.folderRevision('P', '', 'renamed'));
+    await assert.rejects(editor.mutate('P', '', { action: 'createFile', path: '.env' }));
+    await fs.symlink(path.join(root, 'renamed'), path.join(root, 'link'));
+    await assert.rejects(editor.mutate('P', '', { action: 'createFile', path: 'link/new.txt' }));
+    await fs.rm(path.join(root, 'renamed/.env'));
+    await editor.mutate('P', '', { action: 'delete', path: 'renamed', confirmation: 'renamed', revision: (await editor.folderRevision('P', '', 'renamed')).revision });
+    await assert.rejects(fs.stat(path.join(root, 'renamed')));
+  } finally { editor.dispose(); }
+}));
+
+test('editor LSP exposes completion hover formatting rename actions and project diagnostics', () => withTmpWorkspace(async ws => {
+  const projects = new ProjectLedger(ws); const tasks = new TaskLedger(ws); await projects.create({ name: 'P' });
+  for (const name of ['a.ts', 'b.ts']) await fs.writeFile(path.join(ws.projectDir('P'), name), 'old');
+  const script = String.raw`
+    let buffer = Buffer.alloc(0);
+    const send = message => { const body = JSON.stringify({jsonrpc:'2.0', ...message}); process.stdout.write('Content-Length: '+Buffer.byteLength(body)+'\r\n\r\n'+body); };
+    const edits = [{range:{start:{line:0,character:0},end:{line:0,character:3}},newText:'new'}];
+    process.stdin.on('data', chunk => { buffer = Buffer.concat([buffer,chunk]); for (;;) {
+      const end = buffer.indexOf('\r\n\r\n'); if (end < 0) return;
+      const size = Number(/Content-Length:\s*(\d+)/i.exec(buffer.subarray(0,end).toString())[1]);
+      if (buffer.length < end+4+size) return;
+      const message = JSON.parse(buffer.subarray(end+4,end+4+size).toString()); buffer=buffer.subarray(end+4+size);
+      if (!message.id) continue;
+      const uri = message.params.textDocument?.uri;
+      let result = null;
+      if (message.method==='initialize') result={capabilities:{}};
+      else if (message.method==='textDocument/completion') result=[{label:'new',insertText:'new'}];
+      else if (message.method==='textDocument/hover') result={contents:{kind:'markdown',value:'symbol information'}};
+      else if (message.method==='textDocument/formatting') result=edits;
+      else if (message.method==='textDocument/rename') result={changes:{[uri]:edits,[uri.replace(/a\.ts$/,'b.ts')]:edits}};
+      else if (message.method==='textDocument/codeAction') result=[{title:'Fix',edit:{changes:{[uri]:edits}}}];
+      else if (message.method==='textDocument/diagnostic') result={items:[{range:{start:{line:0,character:0}},message:'problem',severity:2}]};
+      send({id:message.id,result});
+    }});
+  `;
+  const editor = new EditorService(new WorktreeService({ ws, projects, tasks, diffBytes: 100000 }), tasks, { typescript: [process.execPath, '-e', script] });
+  try {
+    assert.equal((await editor.language('P', '', 'a.ts', 'old', 0, 0, 'completion')).suggestions?.[0]?.insertText, 'new');
+    assert.equal((await editor.language('P', '', 'a.ts', 'old', 0, 0, 'hover')).hover, 'symbol information');
+    assert.equal((await editor.language('P', '', 'a.ts', 'old', 0, 0, 'format')).changes?.[0]?.text, 'new');
+    assert.equal((await editor.language('P', '', 'a.ts', 'old', 0, 0, 'codeActions')).actions?.[0]?.changes[0]?.text, 'new');
+    assert.equal((await editor.problems('P', '')).length, 2);
+    await assert.rejects(editor.language('P', '', 'a.ts', 'unsaved', 0, 0, 'rename', 'new'));
+    const rename = await editor.language('P', '', 'a.ts', 'old', 0, 0, 'rename', 'new');
+    assert.equal(rename.changes?.length, 2);
+    await editor.apply('P', '', rename.changes!);
+    for (const name of ['a.ts', 'b.ts']) assert.equal(await fs.readFile(path.join(ws.projectDir('P'), name), 'utf8'), 'new');
+  } finally { editor.dispose(); }
+}));
+
 test('editor save waits for the main repository mutation lock before resolving a task target', t => withTmpWorkspace(async ws => {
   const projects = new ProjectLedger(ws); const tasks = new TaskLedger(ws);
   await projects.create({ name: 'P' });

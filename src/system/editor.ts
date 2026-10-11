@@ -6,10 +6,11 @@ import { createRequire } from 'node:module';
 import type { WorktreeService } from '../git/worktree.ts';
 import { gitOk, isLocalSecret } from '../git/git.ts';
 import type { TaskLedger } from '../ledger/tasks.ts';
-import type { EditorDocument, EditorLanguageResult, EditorLocation, EditorDiagnostic } from '../shared/types.ts';
+import type { EditorDocument, EditorLocation, EditorDiagnostic } from '../shared/types.ts';
 import { AppError } from '../shared/errors.ts';
 import { isInside, pathExists, withFileLocks } from '../shared/fsx.ts';
 import { LanguageClient } from './editor-lsp.ts';
+import type { EditorAction, EditorActionResult, EditorChange, EditorMutation, EditorSearchResult, EditorProblem } from '../shared/editor-workbench.ts';
 
 const MAX = 512 * 1024;
 const LANGUAGE: Record<string, string> = { ts: 'typescript', tsx: 'typescriptreact', js: 'javascript', jsx: 'javascriptreact', json: 'json', py: 'python', rs: 'rust', go: 'go', css: 'css', html: 'html' };
@@ -48,13 +49,18 @@ export class EditorService {
     if (!record.workdir || !(await pathExists(path.join(record.workdir, '.git')))) return { root: await fs.realpath(repo), readonly: true };
     return { root: await fs.realpath(record.workdir), readonly: false };
   }
+  async scope(project: string, task: string, workspace: string): Promise<{ scope: string }> {
+    const { root } = await this.root(project, task);
+    const body = await fs.realpath(await this.worktree.bodyPath(project));
+    return { scope: createHash('sha256').update(JSON.stringify([await fs.realpath(workspace), body, root, project, task])).digest('hex') };
+  }
   private async files(root: string): Promise<string[]> {
     return (await gitOk(root, ['ls-files', '--cached', '--others', '--exclude-standard', '-z'])).split('\0').filter(file => !!file && !isLocalSecret(file));
   }
-  private async target(project: string, task: string, relative: string): Promise<{ root: string; file: string; readonly: boolean }> {
-    if (!relative || relative.includes('\\') || relative.split('/').some(part => !part || part === '..' || part === '.' || part === '.git' || part === '.ai') || path.isAbsolute(relative)) throw new AppError('not_found', 'file_missing');
+  private async target(project: string, task: string, relative: string, listed = true): Promise<{ root: string; file: string; readonly: boolean }> {
+    if (!relative || relative.length > 1000 || relative.includes('\\') || relative.split('/').some(part => !part || part === '..' || part === '.' || part === '.git' || part === '.ai' || isLocalSecret(part)) || path.isAbsolute(relative)) throw new AppError('not_found', 'file_missing');
     const { root, readonly } = await this.root(project, task);
-    if (!(await this.files(root)).includes(relative)) throw new AppError('not_found', 'file_missing');
+    if (listed && !(await this.files(root)).includes(relative)) throw new AppError('not_found', 'file_missing');
     let file = root;
     for (const part of relative.split('/')) { file = path.join(file, part); if ((await fs.lstat(file)).isSymbolicLink()) throw new AppError('not_found', 'file_missing'); }
     if (!isInside(root, await fs.realpath(file))) throw new AppError('not_found', 'file_missing');
@@ -100,7 +106,7 @@ export class EditorService {
     });
     });
   }
-  async language(project: string, task: string, relative: string, text: string, line: number, character: number, action: 'definition' | 'references' | 'diagnostics'): Promise<EditorLanguageResult> {
+  async language(project: string, task: string, relative: string, text: string, line: number, character: number, action: EditorAction, newName?: string): Promise<EditorActionResult> {
     const { root, file } = await this.target(project, task, relative);
     return withFileLocks([file], async () => {
     const document = await this.document(file, relative);
@@ -110,16 +116,58 @@ export class EditorService {
     const key = `${root}\0${document.language}`;
     let client = this.clients.get(key);
     if (!client) {
+      if (this.clients.size >= 16) throw new AppError('unavailable');
       const created: LanguageClient = new LanguageClient(command, root, () => this.evictClient(key, created));
       client = created; this.clients.set(key, client);
     }
     try { await client.ready; } catch (error) { client.dispose(); this.evictClient(key, client); throw error; }
     const uri = pathToFileURL(file).href;
     const versionKey = `${key}\0${uri}`;
+    if (!this.versions.has(versionKey) && this.versions.size >= 2000) throw new AppError('too_large');
     const version = (this.versions.get(versionKey) ?? 0) + 1; this.versions.set(versionKey, version);
     if (version === 1) client.notify('textDocument/didOpen', { textDocument: { uri, languageId: document.language, version, text } });
     else client.notify('textDocument/didChange', { textDocument: { uri, version }, contentChanges: [{ text }] });
     const locations: EditorLocation[] = []; const diagnostics: EditorDiagnostic[] = [];
+    if (action === 'completion' || action === 'hover' || action === 'rename' || action === 'format' || action === 'codeActions') {
+      const method = action === 'format' ? 'formatting' : action === 'codeActions' ? 'codeAction' : action;
+      const result = await client.request(`textDocument/${method}`, { textDocument: { uri }, position: { line, character }, ...(action === 'rename' ? { newName } : {}), ...(action === 'format' ? { options: { tabSize: 2, insertSpaces: true } } : {}), ...(action === 'codeActions' ? { range: { start: { line, character }, end: { line, character } }, context: { diagnostics: [] } } : {}) });
+      if (action === 'hover') {
+        const value = result as { contents?: unknown } | null;
+        const contents = value?.contents;
+        const stringify = (item: unknown): string => typeof item === 'string' ? item : item && typeof item === 'object' && 'value' in item && typeof item.value === 'string' ? item.value : '';
+        const hover = Array.isArray(contents) ? contents.map(stringify).join('\n') : stringify(contents);
+        if (hover.length > 100000) throw new AppError('too_large');
+        return { locations, diagnostics, hover };
+      }
+      if (action === 'completion') {
+        const items = Array.isArray(result) ? result : (result as { items?: unknown[] } | null)?.items ?? [];
+        if (items.length > 200) throw new AppError('too_large');
+        return { locations, diagnostics, suggestions: items.map(value => {
+          const item = value as { label: string; detail?: string; insertText?: string; insertTextFormat?: number; textEdit?: { newText: string; range?: { start: { line: number; character: number }; end: { line: number; character: number } }; replace?: { start: { line: number; character: number }; end: { line: number; character: number } } } };
+          if (typeof item.label !== 'string' || item.label.length > 1000 || (item.detail?.length ?? 0) > 2000) throw new AppError('bad_request');
+          const range = item.textEdit?.range ?? item.textEdit?.replace;
+          const offset = (position: { line: number; character: number }): number => {
+            const lines = text.split('\n');
+            if (!Number.isSafeInteger(position.line) || !Number.isSafeInteger(position.character) || position.line < 0 || position.line >= lines.length || position.character < 0 || position.character > lines[position.line]!.length) throw new AppError('bad_request');
+            return lines.slice(0, position.line).reduce((sum, line) => sum + line.length + 1, 0) + position.character;
+          };
+          const insertText = item.insertTextFormat === 2 ? item.label : item.textEdit?.newText ?? item.insertText ?? item.label;
+          if (typeof insertText !== 'string' || insertText.length > MAX) throw new AppError('bad_request');
+          return { label: item.label, ...(typeof item.detail === 'string' ? { detail: item.detail } : {}), insertText, ...(range ? { start: offset(range.start), end: offset(range.end) } : {}) };
+        }) };
+      }
+      if (text !== document.text) throw new AppError('conflict', 'editor_conflict');
+      if (action === 'codeActions') {
+        if (Array.isArray(result) && result.length > 50) throw new AppError('too_large');
+        const actions = [];
+        for (const item of (Array.isArray(result) ? result : []).slice(0, 50)) {
+          const value = item as { title?: string; edit?: unknown };
+          if (typeof value.title === 'string' && value.edit) actions.push({ title: value.title, changes: await this.workspaceChanges(project, task, root, value.edit) });
+        }
+        return { locations, diagnostics, actions };
+      }
+      return { locations, diagnostics, changes: await this.workspaceChanges(project, task, root, action === 'format' ? { changes: { [uri]: result } } : result) };
+    }
     if (action === 'diagnostics') {
       let items: unknown[];
       try { const result = await client.request('textDocument/diagnostic', { textDocument: { uri } }) as { items?: unknown[] }; items = result.items ?? []; }
@@ -135,6 +183,173 @@ export class EditorService {
     }
     return { locations, diagnostics };
     });
+  }
+  private async workspaceChanges(project: string, task: string, root: string, value: unknown): Promise<EditorChange[]> {
+    if (!value || typeof value !== 'object') return [];
+    const edit = value as { changes?: Record<string, unknown[]>; documentChanges?: { textDocument?: { uri: string }; edits?: unknown[] }[] };
+    const entries = Object.entries(edit.changes ?? {});
+    for (const change of edit.documentChanges ?? []) {
+      if (!change.textDocument || !Array.isArray(change.edits)) throw new AppError('bad_request');
+      entries.push([change.textDocument.uri, change.edits]);
+    }
+    if (entries.length > 50) throw new AppError('too_large');
+    const output: EditorChange[] = []; const seen = new Set<string>();
+    for (const [uri, edits] of entries) {
+      const relative = path.relative(root, fileURLToPath(uri)).split(path.sep).join('/');
+      if (seen.has(relative)) throw new AppError('bad_request'); seen.add(relative);
+      const document = await this.read(project, task, relative);
+      if (document.binary || document.truncated || document.readonly || !Array.isArray(edits) || edits.length > 10000) throw new AppError('bad_request', 'editor_readonly');
+      const lines = document.text.split('\n');
+      const offset = (position: { line: number; character: number }): number => {
+        if (!Number.isSafeInteger(position.line) || !Number.isSafeInteger(position.character) || position.line < 0 || position.line >= lines.length || position.character < 0 || position.character > lines[position.line]!.length) throw new AppError('bad_request');
+        return lines.slice(0, position.line).reduce((n, line) => n + line.length + 1, 0) + position.character;
+      };
+      const ranges = edits.map(item => { const edit = item as { range: { start: { line: number; character: number }; end: { line: number; character: number } }; newText: string }; if (typeof edit.newText !== 'string') throw new AppError('bad_request'); return { start: offset(edit.range.start), end: offset(edit.range.end), text: edit.newText }; }).sort((a, b) => b.start - a.start);
+      let text = document.text; let boundary = text.length;
+      for (const range of ranges) { if (range.end < range.start || range.end > boundary) throw new AppError('bad_request'); text = text.slice(0, range.start) + range.text + text.slice(range.end); boundary = range.start; }
+      if (Buffer.byteLength(text) > MAX || text.includes('\0')) throw new AppError('too_large');
+      output.push({ path: relative, revision: document.revision, text });
+    }
+    return output;
+  }
+  async apply(project: string, task: string, changes: EditorChange[]): Promise<EditorDocument[]> {
+    if (!changes.length || changes.length > 50 || new Set(changes.map(change => change.path)).size !== changes.length) throw new AppError('bad_request');
+    const repo = await fs.realpath(await this.worktree.bodyPath(project));
+    return withFileLocks([repo], async () => {
+      const targets = await Promise.all(changes.map(change => this.target(project, task, change.path)));
+      return withFileLocks(targets.map(target => target.file), async () => {
+        const staged: { tmp: string; file: string; backup: string }[] = [];
+        let committed = 0;
+        try {
+          for (let index = 0; index < changes.length; index++) {
+            const change = changes[index]!; const target = targets[index]!;
+            const current = await this.document(target.file, change.path);
+            if (target.readonly || current.binary || current.truncated) throw new AppError('bad_request', 'editor_readonly');
+            if (current.revision !== change.revision) throw new AppError('conflict', 'editor_conflict');
+            if (Buffer.byteLength(change.text) > MAX || change.text.includes('\0')) throw new AppError('too_large');
+            const tmp = path.join(path.dirname(target.file), `.editor-${randomUUID()}.tmp`);
+            const backup = `${tmp}.backup`;
+            staged.push({ tmp, file: target.file, backup });
+            await fs.copyFile(target.file, backup, constants.COPYFILE_EXCL);
+            const handle = await fs.open(tmp, 'wx', (await fs.stat(target.file)).mode & 0o777);
+            try { await handle.writeFile(change.text); await handle.sync(); } finally { await handle.close(); }
+          }
+          for (let index = 0; index < changes.length; index++) {
+            const change = changes[index]!;
+            await this.target(project, task, change.path);
+            if ((await this.document(targets[index]!.file, change.path)).revision !== change.revision) throw new AppError('conflict', 'editor_conflict');
+          }
+          for (const stage of staged) { await fs.rename(stage.tmp, stage.file); committed++; }
+          return await Promise.all(changes.map((change, index) => this.document(targets[index]!.file, change.path)));
+        } catch (error) {
+          for (let index = committed - 1; index >= 0; index--) await fs.rename(staged[index]!.backup, staged[index]!.file);
+          throw error;
+        } finally { for (const stage of staged) { await fs.rm(stage.tmp, { force: true }); await fs.rm(stage.backup, { force: true }); } }
+      });
+    });
+  }
+  async search(project: string, task: string, needle: string): Promise<EditorSearchResult> {
+    if (!needle || needle.length > 1000) throw new AppError('bad_request');
+    const { root } = await this.root(project, task);
+    const files = await this.files(root);
+    if (files.length > 10000) throw new AppError('too_large');
+    const hits: EditorSearchResult['hits'] = []; let scanned = 0; let bytes = 0;
+    for (const relative of files) {
+      let document: EditorDocument;
+      try { document = await this.read(project, task, relative); } catch { continue; }
+      if (document.binary || document.truncated) continue;
+      bytes += document.size; if (bytes > 32 * 1024 * 1024) throw new AppError('too_large');
+      scanned++;
+      let offset = 0;
+      while ((offset = document.text.indexOf(needle, offset)) >= 0) {
+        const before = document.text.slice(0, offset).split('\n'); const line = before.length - 1; const character = before.at(-1)!.length;
+        hits.push({ path: relative, revision: document.revision, line, character, end: offset + needle.length, preview: document.text.split('\n')[line]!.slice(0, 500) });
+        if (hits.length > 1000) throw new AppError('too_large');
+        offset += needle.length;
+      }
+    }
+    return { hits, scanned };
+  }
+  async folderRevision(project: string, task: string, relative: string): Promise<{ revision: string }> {
+    const target = await this.target(project, task, relative, false); const hash = createHash('sha256'); const allowed = new Set(await this.files(target.root)); let count = 0;
+    const walk = async (directory: string, prefix: string): Promise<void> => {
+      const stat = await fs.lstat(directory); if (!stat.isDirectory() || stat.isSymbolicLink()) throw new AppError('bad_request');
+      hash.update(`${prefix}:${stat.dev}:${stat.ino}:${stat.mtimeMs}:${stat.ctimeMs}\0`);
+      for (const entry of (await fs.readdir(directory, { withFileTypes: true })).sort((a, b) => a.name.localeCompare(b.name))) {
+        if (++count > 1000 || entry.isSymbolicLink() || isLocalSecret(entry.name) || entry.name === '.git' || entry.name === '.ai') throw new AppError('bad_request');
+        const child = `${prefix}/${entry.name}`; const file = path.join(directory, entry.name);
+        if (entry.isDirectory()) await walk(file, child);
+        else { if (!allowed.has(child)) throw new AppError('bad_request'); const document = await this.document(file, child); hash.update(`${child}:${document.revision}\0`); }
+      }
+    };
+    await walk(target.file, relative); return { revision: hash.digest('hex') };
+  }
+  async mutate(project: string, task: string, mutation: EditorMutation): Promise<void> {
+    const repo = await fs.realpath(await this.worktree.bodyPath(project));
+    await withFileLocks([repo], async () => {
+      const { root, readonly } = await this.root(project, task); if (readonly) throw new AppError('bad_request', 'editor_readonly');
+      const creation = mutation.action === 'createFile' || mutation.action === 'createFolder';
+      const validateNew = async (relative: string): Promise<string> => {
+        if (!relative || relative.length > 1000 || path.isAbsolute(relative) || relative.includes('\\') || relative.split('/').some(part => !part || part === '.' || part === '..' || part === '.git' || part === '.ai' || isLocalSecret(part))) throw new AppError('bad_request');
+        const parent = path.posix.dirname(relative);
+        if (parent !== '.') await this.target(project, task, parent, false);
+        const file = path.join(root, relative);
+        if (await pathExists(file)) throw new AppError('conflict', 'editor_conflict');
+        return file;
+      };
+      if (creation) {
+        const file = await validateNew(mutation.path);
+        if (mutation.action === 'createFolder') await fs.mkdir(file); else { const handle = await fs.open(file, 'wx'); await handle.close(); }
+        return;
+      }
+      if (mutation.confirmation !== mutation.path) throw new AppError('bad_request');
+      const target = await this.target(project, task, mutation.path, false);
+      const stat = await fs.lstat(target.file);
+      if (stat.isDirectory()) {
+        if ((await this.folderRevision(project, task, mutation.path)).revision !== mutation.revision) throw new AppError('conflict', 'editor_conflict');
+      } else {
+        await this.target(project, task, mutation.path);
+        if ((await this.document(target.file, mutation.path)).revision !== mutation.revision) throw new AppError('conflict', 'editor_conflict');
+      }
+      if (mutation.action === 'rename') await fs.rename(target.file, await validateNew(mutation.destination ?? ''));
+      else if (mutation.action === 'delete') {
+        if (stat.isDirectory()) {
+          const staged = path.join(root, `.editor-delete-${randomUUID()}`);
+          await fs.rename(target.file, staged);
+          try { await fs.rm(staged, { recursive: true }); } catch (error) { await fs.rename(staged, target.file); throw error; }
+        } else await fs.unlink(target.file);
+      }
+      else throw new AppError('bad_request');
+    });
+  }
+  async problems(project: string, task: string): Promise<EditorProblem[]> {
+    const { root } = await this.root(project, task); const output: EditorProblem[] = [];
+    const paths = (await this.files(root)).filter(relative => !!this.commands[LANGUAGE[path.extname(relative).slice(1)] ?? 'plaintext']);
+    if (paths.length > 1000) throw new AppError('too_large');
+    const checked = new Set<string>(); let bytes = 0;
+    for (const relative of paths) {
+      const document = await this.read(project, task, relative);
+      if (document.binary || document.truncated) throw new AppError('bad_request', 'editor_readonly');
+      bytes += document.size; if (bytes > 32 * 1024 * 1024) throw new AppError('too_large');
+      const result = await this.language(project, task, relative, document.text, 0, 0, 'diagnostics');
+      checked.add(relative);
+      for (const diagnostic of result.diagnostics) { output.push({ path: relative, ...diagnostic }); if (output.length > 1000) throw new AppError('too_large'); }
+    }
+    for (const [key, client] of this.clients) {
+      if (!key.startsWith(`${root}\0`)) continue;
+      for (const [uri, items] of client.diagnostics) {
+        let relative: string;
+        try { relative = path.relative(root, fileURLToPath(uri)).split(path.sep).join('/'); await this.target(project, task, relative); } catch { continue; }
+        if (checked.has(relative)) continue;
+        for (const value of items) {
+          const item = value as { range?: { start?: { line: number; character: number } }; message?: string; severity?: number };
+          if (!item.range?.start || typeof item.message !== 'string') continue;
+          output.push({ path: relative, line: item.range.start.line, character: item.range.start.character, message: item.message.slice(0, 4000), severity: item.severity ?? 1 });
+          if (output.length > 1000) throw new AppError('too_large');
+        }
+      }
+    }
+    return output;
   }
   private evictClient(key: string, client: LanguageClient): void {
     if (this.clients.get(key) !== client) return;
