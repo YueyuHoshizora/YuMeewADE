@@ -74,6 +74,7 @@ Claude／Codex のモデル一覧・推論強度は CLI キャッシュから取
   復元形式 v3 は未変更タブを含む全開文書のメタデータ、両ペインのパス、フォーカス、ペイン別カーソル選択／スクロールも保持します。rename／format／code actions の workspace edits は保存済み snapshot が必要です。dirty 文書を先に保存しなければ `editor_conflict` を返します。
   隔離コピーの作成前や削除後はメインフォルダーを読み取り専用で閲覧・言語ナビゲーションできますが、そのタスクからメインへの保存は拒否します。
   CodeMirror 6 は行番号、折りたたみ、Alt／Optionクリックの複数カーソル、矩形選択、undo／redo、括弧対応と正規表現／大小文字／単語検索を提供します。テーマは App に追従し、LSP 補完はエディター内に表示します。上限は `limits.bodyBytes` からリクエスト分を除いたサイズ（最大8 MiB）で、超過や JSON エスケープ後に保存できない文書は読み取り専用です。
+- **ファイルプレビュー**：Markdown は編集／プレビュー／分割を切り替え、未保存のテキストを180msのデバウンスで表示します（HTMLは解析しません）。png／jpg／jpeg／gif／webp／svg は画像として寸法とバイト数、画面に合わせる／100%を表示。画像APIは20 MiB上限、既存の範囲・機密・symlink検証を使用し、SVGは `<img>` のみで表示、nosniffとスクリプト禁止のsandbox CSPを付けます。
 - **本機実行**：名前付き command／args／kind／cwd／env 設定を永続化し、有界 stdout／stderr、終了コードとプロセスツリー停止を提供します。内蔵端末は実際の `node-pty`、ANSI 表示、入力／resize／stop、POST body のみの owner capability、切断5分後の回収に対応します。システム端末連携も残し、その出力／ライフサイクルは App 管理外です。プレビューは明示 port 付き loopback HTTP(S) のみ。内蔵 Node Inspector は App 自身が起動した loopback debug プロセスだけに接続し、breakpoint、stack、variables、pause／resume／step と有界リクエストを提供します。任意の遠隔 DAP や無制限 evaluate ではなく、ブラウザー DevTools／外部 IDE 連携も利用できます。
   - 実行上限：command／debug は 10 分、preview は 24 時間、出力末尾は最大 256 KiB／1024 イベント。同時数は `limits.concurrentRuns`。AI の `limits.runSeconds` とは別で、システム端末は管理対象外です。
 - **統合設定**：`config.yaml` の `execution.ide`／`terminal`／`browser` は `{command, args}`、argv 内で `{cwd}`／`{url}`／`{command}` を置換します。IDE フォルダーには `{cwd}`、IDE debug には `{url}` が必要。カスタム端末には `{cwd}`、コマンド指定時には `{command}` も必要です。外部ツールは自分でインストールし、指示は自分の権限で実行します。
@@ -202,7 +203,7 @@ HTTP JSON と SSE を使い、デスクトップ版と Web 版で完全に共通
 | 機能 | ルート |
 |---|---|
 | アーカイブ | `GET /api/archive/list`、`/api/archive/preview`；`POST /api/archive/restore` |
-| エディター | `GET /api/editor/file`；`POST /api/editor/save`（revision）、`/api/editor/language`（definition／references／diagnostics） |
+| エディター | `GET /api/editor/file`、`/api/editor/image`（画像、20 MiB）；`POST /api/editor/save`（revision）、`/api/editor/language`（definition／references／diagnostics） |
 | 実行／統合 | `POST /api/execution/{start,stop,preview,ide,terminal,debug}`；`GET /api/execution/{list,output}` |
 | Git | `GET /api/git/{status,pr-status}`；`POST /api/git/{stage,unstage,resolve,commit,fetch,branch,push,pr}` |
 | Git 履歴 | `GET /api/git/{history,commit-detail,blame}` |

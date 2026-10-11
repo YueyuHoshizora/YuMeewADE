@@ -3,10 +3,11 @@ import { query, request } from '../api.ts';
 import { t } from '../i18n/index.ts';
 import { el, input, area, button, row, confirmModal, run } from './dom.ts';
 import { EditorContent } from './editor-engine.ts';
+import { FilePreview, isImage } from './file-preview.ts';
 
 export function openFileBrowser(project: string, task: string): void {
   const ids: Record<string, string> = { project, ...(task ? { task } : {}) }; let storageKey = ''; let persistenceEnabled = false;
-  const buffers = new Map<string, EditorRecovery>(); const views: { path: string | undefined; content: EditorContent; tabs: HTMLDivElement; node: HTMLDivElement }[] = [];
+  const buffers = new Map<string, EditorRecovery>(); const views: { path: string | undefined; content: EditorContent; preview: FilePreview; tabs: HTMLDivElement; node: HTMLDivElement }[] = [];
   const dialog = el('dialog', 'modal'); const results = el('div'); const output = el('div'); const panes = el('div'); panes.style.display = 'flex'; panes.style.gap = '1rem'; let focused = 0;
   const filter = input('', t('files.search')); const sourceSearch = input('', t('ew.search')); const replacement = input('', t('ew.replacement'));
   const dirty = (buffer: EditorRecovery) => buffer.text !== buffer.document.text;
@@ -33,7 +34,7 @@ export function openFileBrowser(project: string, task: string): void {
       localStorage.setItem(storageKey, data);
     } catch { output.replaceChildren(el('p', 'warning', t('ew.recoveryLimit'))); }
   }
-  function capture(index: number): void { const view = views[index]!; const buffer = view.path ? buffers.get(view.path) : undefined; if (buffer) { buffer.text = view.content.value; buffer.start = view.content.selectionStart; buffer.end = view.content.selectionEnd; buffer.top = view.content.scrollTop; buffer.left = view.content.scrollLeft; } }
+  function capture(index: number): void { const view = views[index]!; const buffer = view.path ? buffers.get(view.path) : undefined; if (buffer && !isImage(buffer.document.path)) { buffer.text = view.content.value; buffer.start = view.content.selectionStart; buffer.end = view.content.selectionEnd; buffer.top = view.content.scrollTop; buffer.left = view.content.scrollLeft; } }
   function refreshTabs(): void {
     for (const view of views) view.tabs.replaceChildren(...[...buffers].map(([path, buffer]) => row(
       button(`${path}${dirty(buffer) ? ' *' : ''}`, () => activate(path, views.indexOf(view))),
@@ -41,19 +42,20 @@ export function openFileBrowser(project: string, task: string): void {
         views.forEach((_, index) => capture(index));
         if (dirty(buffer) && !(await confirmModal(t('editor.dirty'), path, t('editor.discard')))) return;
         buffers.delete(path);
-        for (const item of views) { item.content.forget(path); if (item.path === path) { item.path = undefined; item.content.value = ''; item.content.readOnly = true; } }
+        for (const item of views) { item.content.forget(path); if (item.path === path) { item.path = undefined; item.content.value = ''; item.content.readOnly = true; item.preview.clear(); } }
         persist(); refreshTabs();
       })
     )));
   }
   function activate(path: string, index = focused, line?: number, character = 0): void {
     capture(index); const buffer = buffers.get(path); if (!buffer) return;
-    const view = views[index]!; view.path = path; view.content.open(path, buffer.text); view.content.readOnly = buffer.document.readonly || buffer.document.binary || buffer.document.truncated;
+    const view = views[index]!; view.path = path; view.content.open(path, buffer.text); view.content.readOnly = isImage(path) || buffer.document.readonly || buffer.document.binary || buffer.document.truncated;
+    view.preview.open(path, buffer.text, buffer.document.size);
     const offset = line === undefined ? buffer.start : buffer.text.split('\n').slice(0, line).reduce((sum, text) => sum + text.length + 1, 0) + character;
     view.content.setSelectionRange(offset, line === undefined ? buffer.end : offset); view.content.scrollTop = line === undefined ? buffer.top : line * 20; view.content.scrollLeft = buffer.left;
-    view.content.focus(); focused = index; refreshTabs();
+    if (!isImage(path)) view.content.focus(); focused = index; refreshTabs();
     capture(index); schedulePersist();
-    if (view.content.readOnly) output.replaceChildren(el('p', 'warning', buffer.document.binary ? t('files.binary') : buffer.document.truncated ? t('files.truncated') : t('detail.editor_readonly')));
+    if (view.content.readOnly && !isImage(path)) output.replaceChildren(el('p', 'warning', buffer.document.binary ? t('files.binary') : buffer.document.truncated ? t('files.truncated') : t('detail.editor_readonly')));
   }
   let openSerial = 0;
   async function show(path: string, line?: number, character = 0): Promise<void> {
@@ -68,7 +70,7 @@ export function openFileBrowser(project: string, task: string): void {
   }
   function pane(): void {
     const index = views.length; const code = el('div', 'editor-code'); const content = new EditorContent(code, t('editor.content'));
-    const tabs = el('div'); const node = el('div'); node.style.minWidth = '0'; node.style.flex = '1'; node.append(tabs, code); views.push({ path: undefined, content, tabs, node }); panes.append(node);
+    const tabs = el('div'); const node = el('div'); const body = el('div'); const preview = new FilePreview(code, ids); body.append(code, preview.node); node.style.minWidth = '0'; node.style.flex = '1'; node.append(tabs, body); views.push({ path: undefined, content, preview, tabs, node }); panes.append(node);
     schedulePersist();
     content.complete = async context => {
       const path = views[index]!.path; const buffer = path ? buffers.get(path) : undefined;
@@ -87,7 +89,9 @@ export function openFileBrowser(project: string, task: string): void {
       for (let other = 0; other < views.length; other++) if (other !== index && views[other]!.path === path && path) {
         const sibling = views[other]!; const start = sibling.content.selectionStart; const end = sibling.content.selectionEnd; const top = sibling.content.scrollTop; const left = sibling.content.scrollLeft;
         sibling.content.value = content.value; sibling.content.setSelectionRange(start, end); sibling.content.scrollTop = top; sibling.content.scrollLeft = left;
+        sibling.preview.update(content.value);
       }
+      views[index]!.preview.update(content.value);
       schedulePersist(); refreshTabs();
     };
     content.onscroll = () => { capture(index); schedulePersist(); };
@@ -161,7 +165,7 @@ export function openFileBrowser(project: string, task: string): void {
     await request('/api/editor/mutate', { ...ids, ...mutation });
     if (action === 'delete' || action === 'rename') {
       for (const key of buffers.keys()) if (key === path || key.startsWith(`${path}/`)) { buffers.delete(key); views.forEach(view => view.content.forget(key)); }
-      for (const view of views) if (view.path && (view.path === path || view.path.startsWith(`${path}/`))) { view.path = undefined; view.content.value = ''; view.content.readOnly = true; }
+      for (const view of views) if (view.path && (view.path === path || view.path.startsWith(`${path}/`))) { view.path = undefined; view.content.value = ''; view.content.readOnly = true; view.preview.clear(); }
       persist(); refreshTabs();
     }
     await load();
@@ -224,7 +228,7 @@ export function openFileBrowser(project: string, task: string): void {
   filter.oninput = () => void run(load);
   const unload = (event: BeforeUnloadEvent) => { views.forEach((_, index) => capture(index)); persist(); if ([...buffers.values()].some(dirty)) { event.preventDefault(); event.returnValue = ''; } };
   window.addEventListener('beforeunload', unload); const navigate = () => void run(close); window.addEventListener('hashchange', navigate);
-  dialog.addEventListener('cancel', event => { event.preventDefault(); void run(close); }); dialog.addEventListener('close', () => { window.clearTimeout(persistenceTimer); views.forEach(view => view.content.destroy()); window.removeEventListener('beforeunload', unload); window.removeEventListener('hashchange', navigate); dialog.remove(); }, { once: true });
+  dialog.addEventListener('cancel', event => { event.preventDefault(); void run(close); }); dialog.addEventListener('close', () => { window.clearTimeout(persistenceTimer); views.forEach(view => { view.content.destroy(); view.preview.destroy(); }); window.removeEventListener('beforeunload', unload); window.removeEventListener('hashchange', navigate); dialog.remove(); }, { once: true });
   dialog.append(row(el('h2', '', t('files.title')), button(t('common.close'), close)), actions, row(pathInput, destination, ...(['createFile', 'createFolder', 'rename', 'delete'] as const).map(action => button(t(`ew.${action}`), () => mutate(action)))), row(sourceSearch, replacement, button(t('ew.search'), () => search(false)), button(t('ew.replacePreview'), () => search(true))), filter, results, panes, output);
   document.body.append(dialog);
   void run(async () => {

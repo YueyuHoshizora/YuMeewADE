@@ -5,6 +5,15 @@ import type { EditorAction, EditorChange, EditorMutation } from '../../shared/ed
 export function registerEditorRoutes(router: Router, app: App): void {
   router.get('/api/editor/scope', async ({ query }) => app.editor.scope(reqString(query, 'project', 120), query.has('task') ? reqString(query, 'task', 120) : '', app.ws.root));
   router.get('/api/editor/file', async ({ query }) => app.editor.read(reqString(query, 'project', 120), query.has('task') ? reqString(query, 'task', 120) : '', reqString(query, 'path', 1000)));
+  router.get('/api/editor/image', async ({ query, res }) => {
+    const image = await app.editor.image(reqString(query, 'project', 120), query.has('task') ? reqString(query, 'task', 120) : '', reqString(query, 'path', 1000));
+    res.writeHead(200, {
+      'Content-Type': image.contentType, 'Content-Length': image.bytes.length,
+      'Cache-Control': 'no-store', 'X-Content-Type-Options': 'nosniff',
+      'Content-Security-Policy': "default-src 'none'; script-src 'none'; sandbox",
+    });
+    res.end(image.bytes);
+  });
   router.post('/api/editor/save', async ({ body }) => {
     const project = reqString(body, 'project', 120); const task = body.task === undefined ? '' : reqString(body, 'task', 120);
     if (app.taskBusy(project, task || undefined)) throw new AppError('conflict', 'editor_running');

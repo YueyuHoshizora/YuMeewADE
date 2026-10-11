@@ -85,6 +85,27 @@ export class EditorService {
     } finally { await handle.close(); }
   }
   async read(project: string, task: string, relative: string): Promise<EditorDocument> { const { file, readonly } = await this.target(project, task, relative); return this.document(file, relative, readonly); }
+  async image(project: string, task: string, relative: string): Promise<{ bytes: Buffer; contentType: string }> {
+    const { file } = await this.target(project, task, relative);
+    const contentType = ({ '.png': 'image/png', '.jpg': 'image/jpeg', '.jpeg': 'image/jpeg', '.gif': 'image/gif', '.webp': 'image/webp', '.svg': 'image/svg+xml' } as Record<string, string>)[path.extname(relative).toLowerCase()];
+    if (!contentType) throw new AppError('bad_request');
+    const handle = await fs.open(file, constants.O_RDONLY | constants.O_NOFOLLOW);
+    try {
+      const stat = await handle.stat();
+      if (!stat.isFile()) throw new AppError('not_found', 'file_missing');
+      const limit = 20 * 1024 * 1024;
+      if (stat.size > limit) throw new AppError('too_large');
+      const bytes = Buffer.alloc(stat.size);
+      let offset = 0;
+      while (offset < bytes.length) {
+        const { bytesRead } = await handle.read(bytes, offset, bytes.length - offset, offset);
+        if (!bytesRead) break;
+        offset += bytesRead;
+      }
+      if ((await handle.stat()).size > limit) throw new AppError('too_large');
+      return { bytes: bytes.subarray(0, offset), contentType };
+    } finally { await handle.close(); }
+  }
   async save(project: string, task: string, relative: string, text: string, revision: string): Promise<EditorDocument> {
     if (Buffer.byteLength(text) > this.MAX || Buffer.byteLength(JSON.stringify(text)) > this.bodyBytes - 8192 || text.includes('\0')) throw new AppError('too_large');
     // Worktree mutations lock the canonical main repository, including task copies.
