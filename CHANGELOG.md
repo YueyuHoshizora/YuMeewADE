@@ -2,7 +2,7 @@
 
 本專案的版本紀錄。版本號採 [Semantic Versioning](https://semver.org/lang/zh-TW/)。
 
-## [Unreleased]
+## [1.0.1] - 2026-10-11
 
 ### 新增
 
