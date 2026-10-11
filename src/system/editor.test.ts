@@ -25,7 +25,10 @@ test('editor atomic save, stale revisions, readonly and symlink boundaries', () 
   await fs.writeFile(path.join(root, 'binary.dat'), Buffer.from([0, 1, 2]));
   const binary = await editor.read('P', '', 'binary.dat'); assert.equal(binary.binary, true);
   await assert.rejects(editor.save('P', '', 'binary.dat', 'x', binary.revision));
-  await fs.writeFile(path.join(root, 'large.txt'), 'x'.repeat(512 * 1024 + 1));
+  await fs.writeFile(path.join(root, 'medium.ts'), 'x'.repeat(512 * 1024 + 1));
+  const medium = await editor.read('P', '', 'medium.ts'); assert.equal(medium.truncated, false);
+  await editor.save('P', '', 'medium.ts', medium.text, medium.revision);
+  await fs.writeFile(path.join(root, 'large.txt'), 'x'.repeat(2_097_152));
   const large = await editor.read('P', '', 'large.txt'); assert.equal(large.truncated, true);
   await assert.rejects(editor.save('P', '', 'large.txt', 'x', large.revision));
   await fs.symlink(file, path.join(root, 'link.txt'));
@@ -33,6 +36,20 @@ test('editor atomic save, stale revisions, readonly and symlink boundaries', () 
   await assert.rejects(editor.read('P', '', '../edit.txt'));
   await fs.writeFile(path.join(root, '.env'), 'SECRET=private'); await assert.rejects(editor.read('P', '', '.env'));
   editor.dispose();
+}));
+
+test('editor budget accounts for JSON escaping and maps language IDs', () => withTmpWorkspace(async ws => {
+  const projects = new ProjectLedger(ws); const tasks = new TaskLedger(ws); await projects.create({ name: 'P' });
+  const editor = new EditorService(new WorktreeService({ ws, projects, tasks, diffBytes: 100000 }), tasks, {}, 20000);
+  try {
+    await fs.writeFile(path.join(ws.projectDir('P'), 'control.txt'), '\u0001'.repeat(3000));
+    const control = await editor.read('P', '', 'control.txt'); assert.equal(control.readonly, true);
+    await assert.rejects(editor.save('P', '', control.path, control.text, control.revision));
+    for (const [name, language] of Object.entries({ 'a.mjs': 'javascript', 'a.kt': 'kotlin', 'a.yml': 'yaml', Dockerfile: 'dockerfile', 'a.sh': 'shellscript', 'a.vue': 'html' })) {
+      await fs.writeFile(path.join(ws.projectDir('P'), name), 'sample');
+      assert.equal((await editor.read('P', '', name)).language, language);
+    }
+  } finally { editor.dispose(); }
 }));
 
 test('editor CRUD, folder revisions and preview-bound multidocument replacement', () => withTmpWorkspace(async ws => {

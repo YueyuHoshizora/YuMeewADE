@@ -59,6 +59,7 @@ Claude／Codex 模型清單直接讀 CLI 自己的快取（`~/.codex/models_cach
 - **編輯工作台**：最多 50 個文件、雙分割檢視、語法上色與 revision 檢查的原子儲存；外部改動需明確採用新基底，執行中禁止儲存。未儲存文字、游標／捲動位置依工作區／主資料夾／作業根隔離復原，總量上限 4 MiB。檔案／資料夾建立、重新命名、刪除、有界 literal 搜尋及先預覽再套用的取代均驗證範圍與 revision。原生 stdio LSP 提供定義、引用、補全、hover、rename、格式化、code actions 與專案 Problems；來源行段／搜尋命中可釘選到背景。已安裝 TypeScript 7 `tsc --lsp -stdio` 用於 TS／JS；缺少 server 明確不可用。`YUMEEWADE_LSP_COMMANDS` 為 languageId → 可信任本機 argv 陣列 JSON，例如 `{"python":["pylsp"]}`，不透過 shell。
   復原格式 v3 也保存所有已開啟文件（含未修改分頁）的中繼資料、兩個面板路徑、焦點面板與各面板游標選取／捲動位置。rename／format／code actions 的 workspace edits 必須基於已儲存快照；先儲存 dirty 文件，否則回 `editor_conflict`。
   尚未建立或已清除隔離副本時，可唯讀瀏覽主資料夾及使用語言導覽，但不能從該作業儲存到主資料夾。
+  CodeMirror 6 提供行號、摺疊、多游標（Alt／Option 點選）、矩形選取、undo／redo、括號匹配與 regex／大小寫／整字搜尋面板。主題跟隨 App，LSP 補全直接出現在編輯器。文件上限依 `limits.bodyBytes` 扣除請求開銷（最高 8 MiB），JSON 跳脫後無法儲存或更大的文件維持唯讀。
 - **本機執行**：持久化具名 command／args／kind／cwd／env 設定，提供有限 stdout／stderr、結束碼及行程樹停止。內嵌終端使用真正 `node-pty`、ANSI 畫面、輸入／resize／stop、只放 POST body 的 owner capability，失聯 5 分鐘回收。系統終端整合仍保留，其輸出／生命週期不由 App 管理。預覽限明確 port 的 loopback HTTP(S)。內嵌 Node Inspector 僅附加 App 自己啟動的 loopback debug 行程，提供 breakpoint、stack、variables、pause／resume／step 與有界請求；不是任意遠端 DAP 或無限制 evaluate。仍可使用瀏覽器 DevTools／外部 IDE。
   - 執行上限：command／debug 10 分鐘，preview 24 小時，輸出尾段最多 256 KiB／1024 筆事件；同時執行數使用 `limits.concurrentRuns`。這些執行期限不是 AI 的 `limits.runSeconds`，系統終端不受此管理。
 - **整合設定**：`config.yaml` 的 `execution.ide`／`terminal`／`browser` 各為 `{command, args}`；argv 支援 `{cwd}`、`{url}`、`{command}` 替換。IDE 開資料夾需要 `{cwd}`，IDE debug 需要 `{url}`；自訂 terminal 需要 `{cwd}`，帶指令時也需 `{command}`。外部工具需自行安裝，指令以你的權限執行。

@@ -12,16 +12,19 @@ import { isInside, pathExists, withFileLocks } from '../shared/fsx.ts';
 import { LanguageClient } from './editor-lsp.ts';
 import type { EditorAction, EditorActionResult, EditorChange, EditorMutation, EditorSearchResult, EditorProblem } from '../shared/editor-workbench.ts';
 
-const MAX = 512 * 1024;
-const LANGUAGE: Record<string, string> = { ts: 'typescript', tsx: 'typescriptreact', js: 'javascript', jsx: 'javascriptreact', json: 'json', py: 'python', rs: 'rust', go: 'go', css: 'css', html: 'html' };
+const LANGUAGE: Record<string, string> = { ts: 'typescript', tsx: 'typescriptreact', js: 'javascript', jsx: 'javascriptreact', mjs: 'javascript', cjs: 'javascript', json: 'json', py: 'python', rs: 'rust', go: 'go', css: 'css', scss: 'scss', html: 'html', vue: 'html', md: 'markdown', c: 'c', h: 'c', cpp: 'cpp', hpp: 'cpp', java: 'java', kt: 'kotlin', php: 'php', sql: 'sql', xml: 'xml', svg: 'xml', yaml: 'yaml', yml: 'yaml', toml: 'toml', sh: 'shellscript', bash: 'shellscript', zsh: 'shellscript', rb: 'ruby', swift: 'swift', lua: 'lua', ini: 'ini' };
 export class EditorService {
   private clients = new Map<string, LanguageClient>();
   private versions = new Map<string, number>();
   readonly commands: Record<string, string[]>;
+  private readonly MAX: number;
+  private readonly bodyBytes: number;
   private readonly worktree: WorktreeService;
   private readonly tasks: TaskLedger;
-  constructor(worktree: WorktreeService, tasks: TaskLedger, commands?: Record<string, string[]>) {
+  constructor(worktree: WorktreeService, tasks: TaskLedger, commands?: Record<string, string[]>, bodyBytes = 2_097_152) {
     this.worktree = worktree; this.tasks = tasks;
+    this.bodyBytes = bodyBytes;
+    this.MAX = Math.max(0, Math.min(8 * 1024 * 1024, bodyBytes - 8192));
     this.commands = commands ?? this.environmentCommands();
   }
   private environmentCommands(): Record<string, string[]> {
@@ -71,19 +74,19 @@ export class EditorService {
     try {
       const stat = await handle.stat();
       if (!stat.isFile()) throw new AppError('not_found', 'file_missing');
-      const bytes = Buffer.alloc(Math.min(stat.size, MAX));
+      const bytes = Buffer.alloc(Math.min(stat.size, this.MAX));
       const { bytesRead } = await handle.read(bytes, 0, bytes.length, 0);
       const body = bytes.subarray(0, bytesRead);
       let text = ''; let binary = body.includes(0);
       try { text = new TextDecoder('utf-8', { fatal: true }).decode(body); } catch { binary = true; }
       const revision = createHash('sha256').update(body).update(`${stat.dev}:${stat.ino}:${stat.size}:${stat.mtimeMs}:${stat.ctimeMs}`).digest('hex');
-      const language = LANGUAGE[path.extname(relative).slice(1)] ?? 'plaintext';
-      return { path: relative, text: binary ? '' : text, size: stat.size, binary, truncated: stat.size > MAX, revision, language, languageAvailable: !!this.commands[language], readonly };
+      const language = LANGUAGE[path.extname(relative).slice(1).toLowerCase()] ?? (/dockerfile$/i.test(relative) ? 'dockerfile' : 'plaintext');
+      return { path: relative, text: binary ? '' : text, size: stat.size, binary, truncated: stat.size > this.MAX, revision, language, languageAvailable: !!this.commands[language], readonly: readonly || Buffer.byteLength(JSON.stringify(text)) > this.bodyBytes - 8192 };
     } finally { await handle.close(); }
   }
   async read(project: string, task: string, relative: string): Promise<EditorDocument> { const { file, readonly } = await this.target(project, task, relative); return this.document(file, relative, readonly); }
   async save(project: string, task: string, relative: string, text: string, revision: string): Promise<EditorDocument> {
-    if (Buffer.byteLength(text) > MAX || text.includes('\0')) throw new AppError('too_large');
+    if (Buffer.byteLength(text) > this.MAX || Buffer.byteLength(JSON.stringify(text)) > this.bodyBytes - 8192 || text.includes('\0')) throw new AppError('too_large');
     // Worktree mutations lock the canonical main repository, including task copies.
     const repo = await fs.realpath(await this.worktree.bodyPath(project));
     return withFileLocks([repo], async () => {
@@ -110,7 +113,7 @@ export class EditorService {
     const { root, file } = await this.target(project, task, relative);
     return withFileLocks([file], async () => {
     const document = await this.document(file, relative);
-    if (document.binary || document.truncated || Buffer.byteLength(text) > MAX) throw new AppError('bad_request', 'editor_readonly');
+    if (document.binary || document.truncated || Buffer.byteLength(text) > this.MAX) throw new AppError('bad_request', 'editor_readonly');
     const command = this.commands[document.language];
     if (!command) throw new AppError('unavailable', 'editor_language_unavailable');
     const key = `${root}\0${document.language}`;
@@ -152,7 +155,7 @@ export class EditorService {
             return lines.slice(0, position.line).reduce((sum, line) => sum + line.length + 1, 0) + position.character;
           };
           const insertText = item.insertTextFormat === 2 ? item.label : item.textEdit?.newText ?? item.insertText ?? item.label;
-          if (typeof insertText !== 'string' || insertText.length > MAX) throw new AppError('bad_request');
+          if (typeof insertText !== 'string' || insertText.length > this.MAX) throw new AppError('bad_request');
           return { label: item.label, ...(typeof item.detail === 'string' ? { detail: item.detail } : {}), insertText, ...(range ? { start: offset(range.start), end: offset(range.end) } : {}) };
         }) };
       }
@@ -207,7 +210,7 @@ export class EditorService {
       const ranges = edits.map(item => { const edit = item as { range: { start: { line: number; character: number }; end: { line: number; character: number } }; newText: string }; if (typeof edit.newText !== 'string') throw new AppError('bad_request'); return { start: offset(edit.range.start), end: offset(edit.range.end), text: edit.newText }; }).sort((a, b) => b.start - a.start);
       let text = document.text; let boundary = text.length;
       for (const range of ranges) { if (range.end < range.start || range.end > boundary) throw new AppError('bad_request'); text = text.slice(0, range.start) + range.text + text.slice(range.end); boundary = range.start; }
-      if (Buffer.byteLength(text) > MAX || text.includes('\0')) throw new AppError('too_large');
+      if (Buffer.byteLength(text) > this.MAX || text.includes('\0')) throw new AppError('too_large');
       output.push({ path: relative, revision: document.revision, text });
     }
     return output;
@@ -226,7 +229,7 @@ export class EditorService {
             const current = await this.document(target.file, change.path);
             if (target.readonly || current.binary || current.truncated) throw new AppError('bad_request', 'editor_readonly');
             if (current.revision !== change.revision) throw new AppError('conflict', 'editor_conflict');
-            if (Buffer.byteLength(change.text) > MAX || change.text.includes('\0')) throw new AppError('too_large');
+            if (Buffer.byteLength(change.text) > this.MAX || change.text.includes('\0')) throw new AppError('too_large');
             const tmp = path.join(path.dirname(target.file), `.editor-${randomUUID()}.tmp`);
             const backup = `${tmp}.backup`;
             staged.push({ tmp, file: target.file, backup });

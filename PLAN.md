@@ -529,3 +529,4 @@ electron 44.7.0、vite 8.3.4、electron-builder 26.15.3、typescript 7.0.2、@ty
 - 底部 dock 終端機：外殼層保留各專案／作業的分頁與 owner，切換畫面與隱藏不 dispose、心跳持續；執行對話框開啟 dock，標題列與 Ctrl/⌘+` 切換，拖曳／鍵盤調整高度，localStorage 記憶尺寸與顯示狀態。
 - Git 工作台增加有界分頁圖形歷史、檔案歷史、提交詳情與 blame；所有新 Git 路由沿用專案信任閘門。
 - Stash 建立／套用／pop／確認刪除；cherry-pick 衝突自動回滾，非互動 rebase dirty 拒絕及三方解決後 continue／abort。
+- CodeMirror 6 工作台取代 textarea／正規式上色，保留 v3 復原、雙面板、revision 原子儲存及既有檔案／LSP 操作；新增行號、摺疊、多游標／矩形選取、undo／redo、括號匹配及內建搜尋面板，涵蓋主要語言。文件上限依 HTTP body 預算（最高 8 MiB）及 JSON 跳脫成本判斷，無法安全儲存者唯讀。

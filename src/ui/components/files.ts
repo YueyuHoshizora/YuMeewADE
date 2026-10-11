@@ -2,11 +2,11 @@ import type { EditorDocument, EditorAction, EditorActionResult, EditorChange, Ed
 import { query, request } from '../api.ts';
 import { t } from '../i18n/index.ts';
 import { el, input, area, button, row, confirmModal, run } from './dom.ts';
-import { highlightCode } from './editor-syntax.ts';
+import { EditorContent } from './editor-engine.ts';
 
 export function openFileBrowser(project: string, task: string): void {
-  const ids = { project, task }; let storageKey = ''; let persistenceEnabled = false;
-  const buffers = new Map<string, EditorRecovery>(); const views: { path: string | undefined; content: HTMLTextAreaElement; syntax: HTMLDivElement; tabs: HTMLDivElement; node: HTMLDivElement }[] = [];
+  const ids: Record<string, string> = { project, ...(task ? { task } : {}) }; let storageKey = ''; let persistenceEnabled = false;
+  const buffers = new Map<string, EditorRecovery>(); const views: { path: string | undefined; content: EditorContent; tabs: HTMLDivElement; node: HTMLDivElement }[] = [];
   const dialog = el('dialog', 'modal'); const results = el('div'); const output = el('div'); const panes = el('div'); panes.style.display = 'flex'; panes.style.gap = '1rem'; let focused = 0;
   const filter = input('', t('files.search')); const sourceSearch = input('', t('ew.search')); const replacement = input('', t('ew.replacement'));
   const dirty = (buffer: EditorRecovery) => buffer.text !== buffer.document.text;
@@ -41,15 +41,14 @@ export function openFileBrowser(project: string, task: string): void {
         views.forEach((_, index) => capture(index));
         if (dirty(buffer) && !(await confirmModal(t('editor.dirty'), path, t('editor.discard')))) return;
         buffers.delete(path);
-        for (const item of views) if (item.path === path) { item.path = undefined; item.content.value = ''; item.content.readOnly = true; item.syntax.replaceChildren(); }
+        for (const item of views) { item.content.forget(path); if (item.path === path) { item.path = undefined; item.content.value = ''; item.content.readOnly = true; } }
         persist(); refreshTabs();
       })
     )));
   }
   function activate(path: string, index = focused, line?: number, character = 0): void {
     capture(index); const buffer = buffers.get(path); if (!buffer) return;
-    const view = views[index]!; view.path = path; view.content.value = buffer.text; view.content.readOnly = buffer.document.readonly || buffer.document.binary || buffer.document.truncated;
-    view.syntax.replaceChildren(highlightCode(buffer.text, buffer.document.language));
+    const view = views[index]!; view.path = path; view.content.open(path, buffer.text); view.content.readOnly = buffer.document.readonly || buffer.document.binary || buffer.document.truncated;
     const offset = line === undefined ? buffer.start : buffer.text.split('\n').slice(0, line).reduce((sum, text) => sum + text.length + 1, 0) + character;
     view.content.setSelectionRange(offset, line === undefined ? buffer.end : offset); view.content.scrollTop = line === undefined ? buffer.top : line * 20; view.content.scrollLeft = buffer.left;
     view.content.focus(); focused = index; refreshTabs();
@@ -68,19 +67,30 @@ export function openFileBrowser(project: string, task: string): void {
     if (serial === openSerial && dialog.isConnected) activate(path, index, line, character);
   }
   function pane(): void {
-    const index = views.length; const content = area(); content.rows = 24; content.wrap = 'off'; content.spellcheck = false; content.className = 'editor-input'; content.setAttribute('aria-label', t('editor.content')); content.readOnly = true;
-    const syntax = el('div', 'editor-syntax'); syntax.setAttribute('aria-hidden', 'true'); const code = el('div', 'editor-code'); code.append(syntax, content); const tabs = el('div'); const node = el('div'); node.style.minWidth = '0'; node.style.flex = '1'; node.append(tabs, code); views.push({ path: undefined, content, syntax, tabs, node }); panes.append(node);
+    const index = views.length; const code = el('div', 'editor-code'); const content = new EditorContent(code, t('editor.content'));
+    const tabs = el('div'); const node = el('div'); node.style.minWidth = '0'; node.style.flex = '1'; node.append(tabs, code); views.push({ path: undefined, content, tabs, node }); panes.append(node);
     schedulePersist();
+    content.complete = async context => {
+      const path = views[index]!.path; const buffer = path ? buffers.get(path) : undefined;
+      if (!buffer?.document.languageAvailable || content.readOnly) return null;
+      const word = context.matchBefore(/[\w$]+/); if (!context.explicit && !word) return null;
+      const line = context.state.doc.lineAt(context.pos);
+      try {
+        const result = await request<EditorActionResult>('/api/editor/language', { ...ids, path, text: context.state.doc.toString(), line: line.number - 1, character: context.pos - line.from, action: 'completion' });
+        if (context.aborted || content.value !== context.state.doc.toString()) return null;
+        return { from: word?.from ?? context.pos, options: (result.suggestions ?? []).map(item => ({ label: item.label, ...(item.detail ? { detail: item.detail } : {}), apply: (view, _completion, from, to) => view.dispatch({ changes: { from: item.start ?? from, to: item.end ?? to, insert: item.insertText } }) })) };
+      } catch { return null; }
+    };
     content.onfocus = () => { focused = index; schedulePersist(); };
     content.oninput = () => {
       capture(index); const path = views[index]!.path;
       for (let other = 0; other < views.length; other++) if (other !== index && views[other]!.path === path && path) {
         const sibling = views[other]!; const start = sibling.content.selectionStart; const end = sibling.content.selectionEnd; const top = sibling.content.scrollTop; const left = sibling.content.scrollLeft;
-        sibling.content.value = content.value; sibling.content.setSelectionRange(start, end); sibling.content.scrollTop = top; sibling.content.scrollLeft = left; sibling.syntax.replaceChildren(highlightCode(content.value, buffers.get(path)!.document.language));
+        sibling.content.value = content.value; sibling.content.setSelectionRange(start, end); sibling.content.scrollTop = top; sibling.content.scrollLeft = left;
       }
-      syntax.replaceChildren(highlightCode(content.value, path ? buffers.get(path)!.document.language : 'plaintext')); schedulePersist(); refreshTabs();
+      schedulePersist(); refreshTabs();
     };
-    content.onscroll = () => { syntax.scrollTop = content.scrollTop; syntax.scrollLeft = content.scrollLeft; capture(index); schedulePersist(); };
+    content.onscroll = () => { capture(index); schedulePersist(); };
     content.onselect = () => { capture(index); schedulePersist(); };
     content.onkeydown = event => { if ((event.ctrlKey || event.metaKey) && event.key === 's') { event.preventDefault(); void run(save); } };
   }
@@ -150,8 +160,8 @@ export function openFileBrowser(project: string, task: string): void {
     }
     await request('/api/editor/mutate', { ...ids, ...mutation });
     if (action === 'delete' || action === 'rename') {
-      for (const key of buffers.keys()) if (key === path || key.startsWith(`${path}/`)) buffers.delete(key);
-      for (const view of views) if (view.path && (view.path === path || view.path.startsWith(`${path}/`))) { view.path = undefined; view.content.value = ''; view.content.readOnly = true; view.syntax.replaceChildren(); }
+      for (const key of buffers.keys()) if (key === path || key.startsWith(`${path}/`)) { buffers.delete(key); views.forEach(view => view.content.forget(key)); }
+      for (const view of views) if (view.path && (view.path === path || view.path.startsWith(`${path}/`))) { view.path = undefined; view.content.value = ''; view.content.readOnly = true; }
       persist(); refreshTabs();
     }
     await load();
@@ -166,7 +176,7 @@ export function openFileBrowser(project: string, task: string): void {
     const values = Array.isArray(parsed) ? parsed : session?.version === 3 ? session.buffers : undefined;
     if (!Array.isArray(values) || values.length > 50 || new TextEncoder().encode(raw).byteLength > 4 * 1024 * 1024) { output.append(el('p', 'warning', t('ew.recoveryLimit'))); return; }
     if (values.some(value => value && typeof value === 'object' && !('clean' in value && value.clean === true)) && !(await confirmModal(t('ew.recover'), t('ew.recover'), t('ew.recover')))) { dialog.close(); return; }
-    for (const value of values) { if (!value || typeof value !== 'object') continue; const candidate = value as Partial<EditorRecovery> & { clean?: boolean }; if (!candidate.document || typeof candidate.document.path !== 'string' || typeof candidate.document.revision !== 'string' || typeof candidate.text !== 'string' || candidate.text.length > 524288) continue;
+    for (const value of values) { if (!value || typeof value !== 'object') continue; const candidate = value as Partial<EditorRecovery> & { clean?: boolean }; if (!candidate.document || typeof candidate.document.path !== 'string' || typeof candidate.document.revision !== 'string' || typeof candidate.text !== 'string' || candidate.text.length > 4 * 1024 * 1024) continue;
       const original = candidate.document;
       if (typeof original.text !== 'string') continue;
       const recovered: EditorRecovery = { document: original, text: candidate.text, start: Number.isSafeInteger(candidate.start) ? candidate.start! : 0, end: Number.isSafeInteger(candidate.end) ? candidate.end! : 0, top: typeof candidate.top === 'number' ? candidate.top : 0, left: typeof candidate.left === 'number' ? candidate.left : 0 };
@@ -214,7 +224,7 @@ export function openFileBrowser(project: string, task: string): void {
   filter.oninput = () => void run(load);
   const unload = (event: BeforeUnloadEvent) => { views.forEach((_, index) => capture(index)); persist(); if ([...buffers.values()].some(dirty)) { event.preventDefault(); event.returnValue = ''; } };
   window.addEventListener('beforeunload', unload); const navigate = () => void run(close); window.addEventListener('hashchange', navigate);
-  dialog.addEventListener('cancel', event => { event.preventDefault(); void run(close); }); dialog.addEventListener('close', () => { window.clearTimeout(persistenceTimer); window.removeEventListener('beforeunload', unload); window.removeEventListener('hashchange', navigate); dialog.remove(); }, { once: true });
+  dialog.addEventListener('cancel', event => { event.preventDefault(); void run(close); }); dialog.addEventListener('close', () => { window.clearTimeout(persistenceTimer); views.forEach(view => view.content.destroy()); window.removeEventListener('beforeunload', unload); window.removeEventListener('hashchange', navigate); dialog.remove(); }, { once: true });
   dialog.append(row(el('h2', '', t('files.title')), button(t('common.close'), close)), actions, row(pathInput, destination, ...(['createFile', 'createFolder', 'rename', 'delete'] as const).map(action => button(t(`ew.${action}`), () => mutate(action)))), row(sourceSearch, replacement, button(t('ew.search'), () => search(false)), button(t('ew.replacePreview'), () => search(true))), filter, results, panes, output);
   document.body.append(dialog);
   void run(async () => {

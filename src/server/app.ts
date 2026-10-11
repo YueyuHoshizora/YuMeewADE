@@ -145,7 +145,7 @@ export class App {
       isRunning: (project, task) => this.runner.isRunning(project, task) || this.execution.isRunning(project, task) || this.terminal.isRunning(project, task) || this.review.isBusy(project, task),
       beforeRun: project => this.trust.assertExecutable(project) });
     this.archive = new ArchiveService(this.ws, this.projects, this.tasks, this.worktree, project => this.trust.assertExecutable(project));
-    this.editor = new EditorService(this.worktree, this.tasks);
+    this.editor = new EditorService(this.worktree, this.tasks, undefined, config.limits.bodyBytes);
     this.execution = new ExecutionService({ ws: this.ws, projects: this.projects, tasks: this.tasks, concurrent: config.limits.concurrentRuns,
       envPassthrough: config.cli.envPassthrough,
       beforeStart: project => this.trust.assertExecutable(project),
