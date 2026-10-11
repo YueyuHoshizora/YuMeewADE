@@ -1,6 +1,8 @@
+import { featureDe } from './features/index.ts';
 import type { MessageKey } from './zh-TW.ts';
 
 export const de: Record<MessageKey, string> = {
+  ...featureDe,
   'slash.title': 'Native / eigene CLI-Befehle', 'slash.loading': 'CLI-Befehle werden geladen…', 'slash.error': 'CLI-Befehle konnten nicht geladen werden; keine Vorschläge verfügbar.',
   'slash.empty': 'Für diese KI, dieses Konto und dieses Projekt sind in diesem Modus keine CLI-Befehle verfügbar.', 'slash.noMatch': 'Keine passenden CLI-Befehle.', 'slash.keys': '↑ ↓ auswählen · Enter / Tab einfügen · Esc schließen; zum Ausführen separat senden.',
   'usage.details': 'Konten und Kontingentdetails', 'usage.openDetails': 'Konten und Kontingentdetails für {ai} öffnen',
@@ -90,7 +92,6 @@ export const de: Record<MessageKey, string> = {
   'common.saved': 'Gespeichert',
   'common.confirmArchive': '„{name}“ archivieren? Die Daten werden ins Archiv verschoben, nicht gelöscht.',
   'common.forceArchive': 'Erzwungen archivieren',
-  'common.confirmForceArchive': '„{name}“ hat noch eine nicht gemergte Arbeitskopie. Erzwungenes Archivieren entfernt die Kopie ohne Merge; die Änderungen werden zuvor als Commit auf dem Aufgaben-Branch (ym/…) gesichert. Trotzdem erzwingen?',
   'common.title': 'Titel',
   'common.name': 'Name',
   'common.details': 'Details (optional)',

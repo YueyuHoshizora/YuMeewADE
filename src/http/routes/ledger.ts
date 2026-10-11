@@ -63,13 +63,15 @@ export function registerLedgerRoutes(router: Router, app: App): void {
     const project = reqString(body, 'project', 120);
     const force = body.force === true;
     await app.projects.get(project);
-    if (app.runner.running().some((run) => run.project === project)) throw new AppError('conflict', 'archive_project_running');
+    if (app.taskBusy(project)) throw new AppError('conflict', 'archive_project_running');
     for (const task of await app.tasks.list(project)) {
       if (!(await app.worktree.exists(project, task.id))) continue;
       if (!force) throw new AppError('conflict', 'archive_project_has_worktrees');
+      const preview = await app.archive.preview(project, task.id);
+      if (preview.unavailable.length) throw new AppError('conflict', 'archive_cannot_preserve');
       await app.worktree.abandon(project, task.id);
     }
-    if (!force) try {
+    try {
       const copies = await fs.readdir(path.join(app.ws.workDir, project), { withFileTypes: true });
       if (copies.some((entry) => entry.isDirectory() || entry.isSymbolicLink())) throw new AppError('conflict', 'archive_project_has_worktrees');
     } catch (error) {
@@ -162,9 +164,11 @@ export function registerLedgerRoutes(router: Router, app: App): void {
   router.post('/api/task/archive', async ({ body }) => {
     const { project, task } = ids(body);
     await app.tasks.get(project, task);
-    if (app.runner.isRunning(project, task)) throw new AppError('conflict', 'archive_while_running');
+    if (app.taskBusy(project, task)) throw new AppError('conflict', 'archive_while_running');
     if (await app.worktree.exists(project, task)) {
       if (body.force !== true) throw new AppError('conflict', 'archive_has_worktree');
+      const preview = await app.archive.preview(project, task);
+      if (preview.unavailable.length) throw new AppError('conflict', 'archive_cannot_preserve');
       await app.worktree.abandon(project, task);
     }
     await app.tasks.archive(project, task);

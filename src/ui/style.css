@@ -456,3 +456,14 @@ body { height: 100dvh; display: grid; grid-template-rows: 64px minmax(0, 1fr) au
 .reset-credits > summary { cursor: pointer; }
 .reset-credits[open] > summary { margin-bottom: 8px; }
 .reset-credits > p { margin: 4px 0; }
+.editor-code { position: relative; margin-top: 8px; background: var(--panel); border-radius: 8px; overflow: hidden; }
+.editor-input, .editor-highlight { font: 13px/20px ui-monospace, SFMono-Regular, Menlo, monospace; tab-size: 2; padding: 10px; margin: 0; white-space: pre; }
+.editor-code .editor-input { display: block; position: relative; width: 100%; height: min(480px, 52dvh); resize: vertical; background: transparent; color: transparent; caret-color: var(--accent); border: 1px solid var(--border); }
+.editor-input::selection { background: color-mix(in srgb, var(--accent) 30%, transparent); }
+.editor-syntax { position: absolute; inset: 1px; overflow: hidden; pointer-events: none; }
+.editor-highlight { min-height: 100%; width: max-content; min-width: 100%; }
+.syntax-comment { color: var(--muted); }
+.syntax-string { color: var(--green); }
+.syntax-number { color: var(--yellow); }
+.syntax-keyword { color: var(--accent); }
+.readonly-review { display: inline-flex; align-items: center; flex-wrap: wrap; gap: 6px; }

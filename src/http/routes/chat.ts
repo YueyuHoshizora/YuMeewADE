@@ -8,6 +8,7 @@ import { isRepo } from '../../git/git.ts';
 import { IMAGE_TYPES, saveUpload, uploadPath } from '../../chat/attachments.ts';
 import { formatTranscript } from '../../chat/export.ts';
 import { taskKey } from '../sse.ts';
+import { addDraftImage, draftScope } from '../../chat/drafts.ts';
 import { optString, reqString, type Router } from '../router.ts';
 function images(body: Record<string, unknown>, max: number): string[] | undefined {
   if (body['images'] === undefined) return undefined;
@@ -82,7 +83,12 @@ export function registerChatRoutes(router: Router, app: App): void {
   });
   router.postRaw('/api/upload', app.config.limits.uploadBytes, async ({ query, raw }) => {
     const p = reqString(query, 'project', 100); await app.projects.get(p);
-    return saveUpload(app.ws, p, reqString(query, 'name', 255), raw);
+    const scope = draftScope(query.get('scope') ?? 'quickstart');
+    if (scope !== 'quickstart') await app.tasks.get(p, scope);
+    const image = await saveUpload(app.ws, p, reqString(query, 'name', 255), raw);
+    try { await addDraftImage(app.ws, p, scope, image, app.config.limits.imagesPerSend); }
+    catch (error) { await fs.unlink(uploadPath(app.ws, p, image.id)); throw error; }
+    return image;
   });
   router.get('/api/upload', async ({ query, res }) => {
     const p = reqString(query, 'project', 100); await app.projects.get(p); const id = reqString(query, 'id', 100);

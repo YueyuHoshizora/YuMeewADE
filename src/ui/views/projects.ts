@@ -1,4 +1,4 @@
-import { AUTO_FIX_MAX, type NewTaskInput, type ProjectView, type SlashCommand } from '../../shared/types.ts';
+import { type NewTaskInput, type ProjectView, type SlashCommand } from '../../shared/types.ts';
 import { api, query, request } from '../api.ts';
 import { t } from '../i18n/index.ts';
 import { attachments } from '../components/attachments.ts';
@@ -8,6 +8,9 @@ import { archiveFlow, area, button, card, confirmModal, disclosure, el, field, i
 import { localTime } from '../components/display.ts';
 import { shouldSend } from '../components/composer.ts';
 import { attachSlashCommands } from '../components/slash-menu.ts';
+import { verificationConfigButton } from '../components/verification-config.ts';
+import { archiveButton } from '../components/archive.ts';
+import { gitWorkbenchButton } from '../components/git-workbench.ts';
 
 declare global { interface Window { yumeewade?: { desktop: true; platform: string; pickFolder: () => Promise<string | null>; setBadge: (count: number) => void; focus: () => void }; } }
 
@@ -81,23 +84,11 @@ export function projectView(context: ViewContext, project: ProjectView, params: 
       button(t('common.archive'), async () => {
         if (await archiveFlow('/api/project/archive', { project: project.id }, project.name, 'archive_project_has_worktrees')) { await context.refresh(); location.hash = '#/turn'; }
       }, 'danger'),
+      archiveButton(context, project.id),
+      gitWorkbenchButton(context, project.id),
+      verificationConfigButton(context, project.id),
     );
     overview.append(header, actions, disclosure(t('project.notes'), markdown(project.description + '\n\n' + project.notes)));
-    const verify = input(project.verify);
-    verify.maxLength = 500;
-    const verifyHint = el('p', 'muted', t('project.verifyHint'));
-    verifyHint.id = 'project-verify-hint';
-    verify.setAttribute('aria-describedby', verifyHint.id);
-    const autoFix = select(Array.from({ length: AUTO_FIX_MAX + 1 }, (_, n) => ({ value: String(n), label: n ? t('project.autoFixTimes', { n }) : t('project.autoFixOff') })), String(project.autoFix));
-    const autoFixHint = el('p', 'muted', t('project.autoFixHint'));
-    autoFixHint.id = 'project-autofix-hint';
-    autoFix.setAttribute('aria-describedby', autoFixHint.id);
-    overview.append(disclosure(t('project.verify'), field(t('project.verify'), verify), verifyHint, field(t('project.autoFix'), autoFix), autoFixHint,
-      button(t('common.save'), async () => {
-        await request('/api/project/update', { project: project.id, patch: { verify: verify.value.trim(), autoFix: Number(autoFix.value) } });
-        await context.refresh();
-        toast(t('common.saved'));
-      })));
     const rules = area('', t('project.rulesPlaceholder'));
     rules.rows = 12;
     rules.maxLength = 20000;
@@ -147,7 +138,7 @@ export function projectView(context: ViewContext, project: ProjectView, params: 
     query('/api/chat/commands', { project: project.id, ai: pick.value().ai }),
   )).commands);
   const start = button(t('project.start'), async () => { await upload.ready(); if (!draft.value.trim() && !upload.ids().length) return;
-    const result = await api.start({ project: project.id, text: draft.value.trim(), ...pick.value(), images: upload.ids() }); storeLocal(draftKey, ''); upload.clear(); draft.value = ''; await context.refresh(); location.hash = taskHash(project.id, result.task.id);
+    const result = await api.start({ project: project.id, text: draft.value.trim(), ...pick.value(), images: upload.ids() }); storeLocal(draftKey, ''); await upload.clear(); draft.value = ''; await context.refresh(); location.hash = taskHash(project.id, result.task.id);
   }, 'primary');
   draft.onkeydown = e => { if (shouldSend(e, readLocal('yumeewade.enterToSend', false))) { e.preventDefault(); start.click(); } };
   node.append(card(t('project.quick'), slashCommands.node, draft, upload.node, row(pick.node, start)), detailedTaskForm(context, project, params));

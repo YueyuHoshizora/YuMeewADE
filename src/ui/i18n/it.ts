@@ -1,6 +1,8 @@
+import { featureIt } from './features/index.ts';
 import type { MessageKey } from './zh-TW.ts';
 
 export const it: Record<MessageKey, string> = {
+  ...featureIt,
   'slash.title': 'Comandi CLI nativi / personalizzati', 'slash.loading': 'Caricamento dei comandi CLI…', 'slash.error': 'Impossibile caricare i comandi CLI; nessun suggerimento disponibile.',
   'slash.empty': 'Nessun comando CLI disponibile in questa modalità per questa IA, questo account e questo progetto.', 'slash.noMatch': 'Nessun comando CLI corrispondente.', 'slash.keys': '↑ ↓ scegli · Invio / Tab inserisci · Esc chiudi; invia separatamente per eseguire.',
   'usage.details': 'Account e dettagli della quota', 'usage.openDetails': 'Apri account e dettagli della quota di {ai}',
@@ -90,7 +92,6 @@ export const it: Record<MessageKey, string> = {
   'common.saved': 'Salvato',
   'common.confirmArchive': 'Archiviare «{name}»? I dati saranno spostati nell’archivio, non eliminati.',
   'common.forceArchive': 'Forza archiviazione',
-  'common.confirmForceArchive': '«{name}» ha ancora una copia di lavoro non unita. Forzare l’archiviazione rimuove la copia senza unirla; le modifiche vengono prima salvate come commit sul branch dell’attività (ym/…). Forzare comunque?',
   'common.title': 'Titolo',
   'common.name': 'Nome',
   'common.details': 'Dettagli (facoltativi)',

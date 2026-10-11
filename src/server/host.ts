@@ -60,7 +60,7 @@ export class CoreHost {
     const root = path.resolve(expanded);
     const old = this.current;
     if (root === old.ws.root) return root;
-    if (this.relocating || old.runner.running().length) throw new AppError('conflict', 'relocate_busy');
+    if (this.relocating || old.isBusy() || old.mutations.busy) throw new AppError('conflict', 'relocate_busy');
     this.relocating = true;
     try {
       const stat = await fs.stat(root).catch((err: NodeJS.ErrnoException) => { if (err.code === 'ENOENT') return null; throw err; });

@@ -8,8 +8,11 @@ export function registerGitRoutes(router: Router, app: App): void {
   router.post('/api/task/merge', async ({ body }) => {
     const project = reqString(body, 'project', 120);
     const task = reqString(body, 'task', 120);
-    if (app.runner.isRunning(project, task)) throw new AppError('conflict', 'merge_while_running');
-    const result = await app.worktree.merge(project, task);
+    if (app.taskBusy(project, task)) throw new AppError('conflict', 'merge_while_running');
+    const result = await app.worktree.merge(project, task, async () => {
+      if (app.taskBusy(project, task)) throw new AppError('conflict', 'merge_while_running');
+      await app.verify.requireCurrentPass(project, task);
+    });
     app.changed(project, task);
     return result;
   });
@@ -17,7 +20,7 @@ export function registerGitRoutes(router: Router, app: App): void {
   router.post('/api/task/unmerge', async ({ body }) => {
     const project = reqString(body, 'project', 120);
     const task = reqString(body, 'task', 120);
-    if (app.runner.isRunning(project, task)) throw new AppError('conflict', 'merge_while_running');
+    if (app.taskBusy(project, task)) throw new AppError('conflict', 'merge_while_running');
     const result = await app.worktree.unmerge(project, task);
     app.changed(project, task);
     return result;
@@ -34,7 +37,7 @@ export function registerGitRoutes(router: Router, app: App): void {
   router.post('/api/task/revert-file', async ({ body }) => {
     const project = reqString(body, 'project', 120);
     const task = reqString(body, 'task', 120);
-    if (app.runner.isRunning(project, task)) throw new AppError('conflict', 'rollback_while_running');
+    if (app.taskBusy(project, task)) throw new AppError('conflict', 'rollback_while_running');
     await app.worktree.revertFile(project, task, reqString(body, 'path', 1000));
     await app.oplog.record({ action: 'task.revert-file', project, task });
     app.verify.invalidate(project, task);
@@ -44,6 +47,7 @@ export function registerGitRoutes(router: Router, app: App): void {
   router.post('/api/task/merge-exclusion', async ({ body }) => {
     const project = reqString(body, 'project', 120);
     const task = reqString(body, 'task', 120);
+    if (app.taskBusy(project, task)) throw new AppError('conflict', 'merge_while_running');
     if (typeof body.excluded !== 'boolean') throw new AppError('bad_request');
     const result = await app.worktree.exclusion(project, task, body.excluded);
     await app.oplog.record({ action: 'task.merge-exclusion', project, task, excluded: body.excluded });
@@ -53,7 +57,7 @@ export function registerGitRoutes(router: Router, app: App): void {
   router.post('/api/task/copyclear', async ({ body }) => {
     const project = reqString(body, 'project', 120);
     const task = reqString(body, 'task', 120);
-    if (app.runner.isRunning(project, task)) throw new AppError('conflict', 'remove_while_running');
+    if (app.taskBusy(project, task)) throw new AppError('conflict', 'remove_while_running');
     const result = await app.worktree.copyclear(project, task);
     await app.oplog.record({ action: 'task.copyclear', project, task });
     app.changed(project, task);

@@ -1,6 +1,8 @@
+import { featureZhCN } from './features/index.ts';
 import type { MessageKey } from './zh-TW.ts';
 
 export const zhCN: Record<MessageKey, string> = {
+  ...featureZhCN,
   'slash.title': 'CLI 原生命令／自定义指令', 'slash.loading': '正在读取 CLI 指令…', 'slash.error': '无法读取 CLI 指令；未提供建议。',
   'slash.empty': '此 AI／账号／项目没有可用于当前模式的 CLI 指令。', 'slash.noMatch': '没有匹配的 CLI 指令。', 'slash.keys': '↑ ↓ 选择 · Enter / Tab 填入 · Esc 关闭；填入后仍需发送。',
   'usage.details': '账号与额度详情', 'usage.openDetails': '打开 {ai} 账号与额度详情',
@@ -90,7 +92,6 @@ export const zhCN: Record<MessageKey, string> = {
   'common.saved': '已保存',
   'common.confirmArchive': '确定归档“{name}”？数据会移至归档区，不会删除。',
   'common.forceArchive': '强制归档',
-  'common.confirmForceArchive': '“{name}”还有尚未合并的工作副本。强制归档会移除副本、不合并进主文件夹；副本内的更改会先保存为任务分支（ym/…）上的 commit 保留。确定要强制归档？',
   'common.title': '标题',
   'common.name': '名称',
   'common.details': '详细设置（选填）',

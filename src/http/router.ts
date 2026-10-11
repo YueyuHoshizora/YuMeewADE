@@ -87,9 +87,14 @@ const EMPTY: Buffer = Buffer.alloc(0);
 export class Router {
   private readonly routes: Record<string, { handler: Handler; rawLimit?: number }> = {};
   private readonly opts: RouterOptions;
+  private mutationGuard?: (path: string, work: () => Promise<unknown>) => Promise<unknown>;
 
   constructor(opts: RouterOptions) {
     this.opts = opts;
+  }
+
+  setMutationGuard(guard: (path: string, work: () => Promise<unknown>) => Promise<unknown>): void {
+    this.mutationGuard = guard;
   }
 
   get(path: string, handler: Handler): void {
@@ -119,7 +124,8 @@ export class Router {
         if (route.rawLimit !== undefined) raw = await readRawBody(req, route.rawLimit);
         else body = await readJsonBody(req, this.opts.bodyBytes);
       }
-      const result = await route.handler({ req, res, query: url.searchParams, body, raw, ip: req.socket.remoteAddress ?? '' });
+      const invoke = async () => route.handler({ req, res, query: url.searchParams, body, raw, ip: req.socket.remoteAddress ?? '' });
+      const result = req.method === 'POST' && this.mutationGuard ? await this.mutationGuard(url.pathname, invoke) : await invoke();
       if (result !== undefined && !res.headersSent) sendJson(res, 200, result);
     } catch (err) {
       if (err instanceof AppError && err.code === 'too_large' && !res.headersSent) {

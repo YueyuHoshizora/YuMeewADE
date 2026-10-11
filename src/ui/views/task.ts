@@ -24,6 +24,12 @@ import { openFileBrowser } from '../components/files.ts';
 import { attachMention } from '../components/mention.ts';
 import { snippetsButton } from '../components/snippet-menu.ts';
 import { attachSlashCommands } from '../components/slash-menu.ts';
+import { contextButton } from '../components/context.ts';
+import { reviewButton } from '../components/review-button.ts';
+import { reviewDrafts } from '../components/review-drafts.ts';
+import { executionButton } from '../components/execution.ts';
+import { gitWorkbenchButton } from '../components/git-workbench.ts';
+import { workflowButton } from '../components/workflows.ts';
 
 export function taskView(
   context: ViewContext,
@@ -84,13 +90,15 @@ export function taskView(
       const result = await request<VerifyResult>('/api/task/verify', { project: project.id, task: task.id });
       if (!alive) return;
       modal(t('verify.run'),
-        el('strong', result.ok ? 'verify-pass' : 'error-mark', t(result.ok ? 'verify.pass' : 'verify.fail')),
+        el('strong', result.ok && !result.drifted ? 'verify-pass' : 'error-mark', t(result.ok && !result.drifted ? 'verify.pass' : 'verify.fail')),
         el('p', '', t('verify.result', { code: result.exitCode ?? t('common.none'), seconds: (result.ms / 1000).toFixed(1) })),
         ...(result.timedOut ? [el('p', 'warning', t('verify.timedOut'))] : []),
         ...(result.truncated ? [el('p', 'warning', t('verify.truncated'))] : []),
         el('pre', 'verify-output', result.output),
+        ...(result.drifted ? [el('p', 'warning', t('verification.hint'))] : []),
+        ...verificationSteps(result),
         ...(result.ok ? [] : [sendFix(result)]));
-      void renderWork();
+      await run(renderWork);
     } finally {
       verifying = false;
       updateHeaderActions();
@@ -105,8 +113,21 @@ export function taskView(
     }), 'primary');
     return fix;
   }
+  function hasVerification(): boolean {
+    return !!project.verify?.trim() || !!project.checks?.length;
+  }
+  function verificationSteps(result: Pick<VerifyResult, 'steps'>): HTMLElement[] {
+    return (result.steps ?? []).map(step => disclosure(
+      `${step.name} · ${t(step.ok ? 'verify.pass' : 'verify.fail')}`,
+      el('code', '', step.command),
+      el('p', '', t('verify.result', { code: step.exitCode ?? t('common.none'), seconds: (step.ms / 1000).toFixed(1) })),
+      ...(step.timedOut ? [el('p', 'warning', t('verify.timedOut'))] : []),
+      ...(step.truncated ? [el('p', 'warning', t('verify.truncated'))] : []),
+      el('pre', 'verify-output', step.output),
+    ));
+  }
   function updateHeaderActions(): void {
-    verifyButton.hidden = !project.verify?.trim() || !!busy;
+    verifyButton.hidden = !hasVerification() || !!busy;
     verifyButton.disabled = verifying;
     verifyButton.textContent = t(verifying ? 'verify.running' : 'verify.run');
     verifyButton.setAttribute('aria-busy', String(verifying));
@@ -147,6 +168,9 @@ export function taskView(
       exportLink,
       verifyButton,
       button(t('files.open'), () => openFileBrowser(project.id, task.id)),
+      executionButton(context, project.id, task.id),
+      gitWorkbenchButton(context, project.id, task.id),
+      workflowButton(context, project.id, task.id),
       gitToggle
     ));
   const transcript = el('div', 'transcript');
@@ -226,11 +250,13 @@ export function taskView(
   const initialPick = readLocal(
     pickKey,
     { ai: task.cli || context.state.settings.initial.ai, model: task.model || context.state.settings.initial.model, effort: task.effort || context.state.settings.initial.effort });
+  let reviewControl: HTMLElement | undefined;
   const pick = aiPicker(context.state, initialPick, value => {
     storeLocal(pickKey, value);
     slashCommands.refresh();
+    reviewControl?.dispatchEvent(new Event('review-pick-change'));
   }, false, true);
-  const upload = attachments(project.id, context.state.limits, draft);
+  const upload = attachments(project.id, context.state.limits, draft, task.id);
   const actions = el('div', 'send-actions');
   const running = el('p', 'running-line');
   async function send(mode?: SendMode, text = draft.value.trim(), answer = false, retry?: Extract<ChatRow, { role: 'user' }>): Promise<void> {
@@ -248,7 +274,7 @@ export function taskView(
       draft.value = '';
       resizeDraft();
       storeLocal(draftKey, '');
-      upload.clear();
+      await upload.clear();
     }
     await context.refresh();
   }
@@ -574,28 +600,37 @@ export function taskView(
   async function openDiff(focusPath = '', load: () => Promise<{ diff: string; truncated: boolean }> = () => api.diff(project.id, task.id)): Promise<void> {
     const diff = await load();
     const viewer = el('div', 'diff-viewer');
+    const savedReviews = await reviewDrafts(project.id, task.id, diff.diff);
+    if (!alive) return;
+    if (savedReviews.stale.length) viewer.append(el('p', 'warning', t('context.stale', { n: savedReviews.stale.length })));
     if (diff.truncated) viewer.append(el('p', 'warning diff-warning', t('copy.truncated')));
     const files = parseDiff(diff.diff);
     if (!files.length) viewer.append(el('p', 'muted', t('copy.noChanges')));
     const comments = new Map<DiffLine, ReviewItem>();
     const reviewSend = button('', () => run(async () => {
-      reviewSend.closest('dialog')?.close();
+      await savedReviews.ready();
       await send(busy ? 'queue' : undefined, buildReviewPrompt(t('review.prompt'), [...comments.values()]));
+      await savedReviews.clear();
+      reviewSend.closest('dialog')?.close();
     }), 'primary');
     const reviewBar = el('div', 'review-bar');
     reviewBar.hidden = true;
     reviewBar.append(reviewSend);
     function attachReview(row: HTMLElement, path: string, line: DiffLine): void {
       const where = line.newLine === undefined ? t('review.removedAt', { path, line: line.oldLine ?? 0 }) : `${path}:${line.newLine}`;
+      const saved = savedReviews.get(path, line);
+      if (saved) comments.set(line, { where, code: saved.code, comment: saved.comment });
       let box: HTMLTextAreaElement | undefined;
       const open = () => {
         if (!box) {
           const input = el('textarea', 'review-input');
           input.placeholder = t('review.placeholder');
           input.rows = 2;
+          input.value = saved?.comment ?? '';
           input.addEventListener('input', () => {
             if (input.value.trim()) comments.set(line, { where, code: line.text.slice(1).trim(), comment: input.value });
             else comments.delete(line);
+            void run(() => savedReviews.set(path, line, input.value));
             row.classList.toggle('reviewed', comments.has(line));
             reviewBar.hidden = comments.size === 0;
             reviewSend.textContent = t('review.send', { n: comments.size });
@@ -610,6 +645,10 @@ export function taskView(
       row.title = t('review.add');
       row.addEventListener('click', open);
       row.addEventListener('keydown', event => { if (event.key === 'Enter') open(); });
+      if (saved) open();
+      row.classList.toggle('reviewed', comments.has(line));
+      reviewBar.hidden = comments.size === 0;
+      reviewSend.textContent = t('review.send', { n: comments.size });
     }
     let focused: HTMLElement | null = null;
     for (const [index, file] of files.entries()) {
@@ -621,8 +660,8 @@ export function taskView(
       const content = el('pre', 'diff-lines');
       for (const line of file.lines) {
         const row = el('span', `diff-line diff-${line.kind}`, line.text);
-        if (line.oldLine !== undefined || line.newLine !== undefined) attachReview(row, file.path, line);
         content.append(row);
+        if (line.oldLine !== undefined || line.newLine !== undefined) attachReview(row, file.path, line);
       }
       section.append(content);
       viewer.append(section);
@@ -713,17 +752,22 @@ export function taskView(
       button(t('copy.diff'), () => openDiff()));
     const preview = await api.preview(project.id, task.id);
     if (!alive || serial !== previewSerial || !preview) return;
-    if (mergeButton) mergeButton.disabled = preview.files === 0;
-    const verified = project.verify?.trim() && preview.files > 0
+    const verified = hasVerification() || project.requireVerification
       ? await request<VerifyStatus | null>(query('/api/task/verify', { project: project.id, task: task.id })) : undefined;
     if (!alive || serial !== previewSerial) return;
+    const currentPass = !!verified?.ok && !verified.drifted;
+    if (mergeButton) {
+      mergeButton.disabled = preview.files === 0 || !!project.requireVerification && !currentPass;
+      mergeButton.title = project.requireVerification && !currentPass ? t('detail.verification_required') : '';
+    }
+    if (project.requireVerification && !currentPass) info.append(el('p', 'warning', t('detail.verification_required')));
     const reviewer = context.state.ais.find(a => a.name !== 'mock' && a.available && a.name !== task.cli);
     if (reviewer && preview.files > 0) {
-      actions.append(button(t('git.review', { ai: aiLabel(reviewer.name) }), async () => {
-        if (busy) return toast(t('git.reviewBusy'));
-        await api.send({ project: project.id, task: task.id, text: t('git.reviewPrompt', { target: preview.target }), ai: reviewer.name });
-        await context.refresh();
-      }));
+      const review = await reviewButton(project.id, task.id,
+        () => ({ ai: reviewer.name, text: t('git.reviewPrompt', { target: preview.target }) }),
+        () => { if (alive) void run(() => context.refresh()); });
+      if (!alive || serial !== previewSerial) return;
+      actions.append(review);
     }
     setGitBadge(preview.files, preview.conflict);
     info.append(
@@ -734,8 +778,10 @@ export function taskView(
         : t('copy.stats', { files: preview.files, added: preview.added, removed: preview.removed })));
     if (verified !== undefined) {
       info.append(verified
-        ? el('p', verified.ok ? 'verify-pass' : 'error-mark', t(verified.ok ? 'git.verifyPass' : 'git.verifyFail', { time: localTime(verified.at) }))
+        ? el('p', verified.ok && !verified.drifted ? 'verify-pass' : 'error-mark', t(verified.ok && !verified.drifted ? 'git.verifyPass' : 'git.verifyFail', { time: localTime(verified.at) }))
         : el('p', 'muted', t('git.verifyNone')));
+      if (verified?.drifted) info.append(el('p', 'warning', t('verification.hint')));
+      if (verified) info.append(...verificationSteps(verified));
     }
     if (preview.paths.length) {
       const list = el('ul', 'git-files');
@@ -836,7 +882,16 @@ export function taskView(
     footer.title = task.memo;
     footer.replaceChildren(row(state, phase, detail, memo, leaveMemo));
   }
-  const composerControls = row(pick.node, upload.node, snippetsButton(draft));
+  const composerControls = row(pick.node, upload.node, snippetsButton(draft), contextButton(project.id, task.id, () => pick.value()));
+  void run(async () => {
+    const control = await reviewButton(project.id, task.id,
+      () => ({ ...pick.value(), text: draft.value.trim() || t('readonlyReview.prompt') }),
+      () => { if (alive) void run(() => context.refresh()); });
+    if (!alive) return;
+    reviewControl = control;
+    composerControls.append(control);
+    control.dispatchEvent(new Event('review-pick-change'));
+  });
   composerControls.classList.add('composer-controls');
   const mentions = attachMention(draft, async q => (await request<{ files: string[] }>(query('/api/task/files', { project: project.id, task: task.id, q }))).files);
   const slashCommands = attachSlashCommands(draft, () => {
@@ -950,8 +1005,10 @@ export function taskView(
       }
       const workChanged = JSON.stringify([
         task.copy, task.copyMissing, task.mergeExcluded, task.workdir, task.updated,
+        project.verify, project.checks, project.requireVerification,
       ]) !== JSON.stringify([
         nextTask.copy, nextTask.copyMissing, nextTask.mergeExcluded, nextTask.workdir, nextTask.updated,
+        nextProject.verify, nextProject.checks, nextProject.requireVerification,
       ]);
       const footerChanged = JSON.stringify([
         task.state, task.phase, task.steps, task.memo,
@@ -962,6 +1019,7 @@ export function taskView(
       task = nextTask;
       slashCommands.refresh();
       stateChip.textContent = t(`state.${task.state}`);
+      reviewControl?.dispatchEvent(new Event('review-pick-change'));
       if (document.activeElement !== title) title.value = task.title;
       renderQuestion();
       updateHeaderActions();

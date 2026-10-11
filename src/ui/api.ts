@@ -29,8 +29,8 @@ export const api = {
   refreshAi: (ai: string) => request<AiInfo>('/api/ai/refresh', { ai }),
   updateAi: (ai: string) => request<{ before: string; after: string; info: AiInfo }>('/api/ai/update', { ai }),
   log: () => request<OpLogEntry[]>('/api/log?n=100'),
-  async upload(project: string, file: File): Promise<UploadResult> {
-    const res = await fetch(query('/api/upload', { project, name: file.name }), { method: 'POST', body: file });
+  async upload(project: string, file: File, scope = 'quickstart'): Promise<UploadResult> {
+    const res = await fetch(query('/api/upload', { project, name: file.name, scope }), { method: 'POST', body: file });
     const data = await res.json() as UploadResult;
     if (!res.ok) throw new ApiFailure(res.status, data as unknown as ApiError);
     return data;

@@ -16,9 +16,11 @@ import { usageBar } from './components/usage.ts';
 import { runningChip } from './components/running.ts';
 import { openUpdateDialog, updateChip, visibleUpdate } from './components/update.ts';
 import { openUsageDetails } from './components/usage-details.ts';
+import { showInitialCare } from './components/care.ts';
 
 const header = document.getElementById('header')!; const sidebar = document.getElementById('sidebar')!; const main = document.getElementById('main')!; const footer = document.getElementById('footer')!;
 let state: AppState | null = null; let usage: UsageState = { ais: [], tokensPerSecond: null }; let view: View | null = null; let route = ''; let viewTarget = ''; let refreshJob: Promise<void> | null = null; let refreshAgain = false; let debounce: number | undefined;
+let initialCareShown = false;
 function notify(previous: AppState | null, next: AppState): void {
   const items = attention(next); window.yumeewade?.setBadge?.(items.length);
   if (!previous || !readLocal('yumeewade.notifications', true) || !('Notification' in window) || Notification.permission !== 'granted' || (!document.hidden && document.hasFocus())) return;
@@ -121,6 +123,7 @@ function refresh(): Promise<void> {
       do {
         refreshAgain = false; const next = await api.state(); notify(state, next); announceQuota(next.usage); announceUpdate(next); state = next; usage = next.usage; drawShell();
         navigate(); view?.update?.(state);
+        if (!initialCareShown) { initialCareShown = true; showInitialCare({ state, refresh }); }
       } while (refreshAgain);
     } catch (error) {
       showError(error); if (!view) main.replaceChildren(button(t('common.loading'), refresh, 'retry'));

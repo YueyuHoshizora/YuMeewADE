@@ -1,6 +1,8 @@
+import { featureFr } from './features/index.ts';
 import type { MessageKey } from './zh-TW.ts';
 
 export const fr: Record<MessageKey, string> = {
+  ...featureFr,
   'slash.title': 'Commandes CLI natives / personnalisées', 'slash.loading': 'Chargement des commandes CLI…', 'slash.error': 'Impossible de charger les commandes CLI ; aucune suggestion disponible.',
   'slash.empty': 'Aucune commande CLI disponible dans ce mode pour cette IA, ce compte et ce projet.', 'slash.noMatch': 'Aucune commande CLI correspondante.', 'slash.keys': '↑ ↓ choisir · Entrée / Tab insérer · Échap fermer ; envoyer séparément pour exécuter.',
   'usage.details': 'Comptes et détails du quota', 'usage.openDetails': 'Ouvrir les comptes et détails du quota de {ai}',
@@ -90,7 +92,6 @@ export const fr: Record<MessageKey, string> = {
   'common.saved': 'Enregistré',
   'common.confirmArchive': 'Archiver « {name} » ? Les données seront déplacées dans les archives, sans être supprimées.',
   'common.forceArchive': 'Forcer l’archivage',
-  'common.confirmForceArchive': '« {name} » a encore une copie de travail non fusionnée. Forcer l’archivage supprime la copie sans la fusionner ; ses modifications sont d’abord enregistrées dans un commit sur la branche de la tâche (ym/…). Forcer quand même ?',
   'common.title': 'Titre',
   'common.name': 'Nom',
   'common.details': 'Détails (facultatif)',

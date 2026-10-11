@@ -1,6 +1,8 @@
+import { featureEn } from './features/index.ts';
 import type { MessageKey } from './zh-TW.ts';
 
 export const en: Record<MessageKey, string> = {
+  ...featureEn,
   'slash.title': 'Native / custom CLI commands', 'slash.loading': 'Loading CLI commands…', 'slash.error': 'Could not load CLI commands; no suggestions available.',
   'slash.empty': 'No CLI commands are available in this mode for this AI, account and project.', 'slash.noMatch': 'No matching CLI commands.', 'slash.keys': '↑ ↓ choose · Enter / Tab insert · Esc close; send separately to execute.',
   'usage.details': 'Accounts and quota details', 'usage.openDetails': 'Open {ai} accounts and quota details',
@@ -90,7 +92,6 @@ export const en: Record<MessageKey, string> = {
   'common.saved': 'Saved',
   'common.confirmArchive': 'Archive “{name}”? Data will move to the archive, not be deleted.',
   'common.forceArchive': 'Force archive',
-  'common.confirmForceArchive': '“{name}” still has an unmerged working copy. Force archive removes the copy without merging it; its changes are first saved as a commit on the task branch (ym/…). Force archive anyway?',
   'common.title': 'Title',
   'common.name': 'Name',
   'common.details': 'Details (optional)',

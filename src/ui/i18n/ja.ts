@@ -1,6 +1,8 @@
+import { featureJa } from './features/index.ts';
 import type { MessageKey } from './zh-TW.ts';
 
 export const ja: Record<MessageKey, string> = {
+  ...featureJa,
   'slash.title': 'CLI 標準／カスタムコマンド', 'slash.loading': 'CLI コマンドを読み込み中…', 'slash.error': 'CLI コマンドを読み込めません。候補は表示できません。',
   'slash.empty': 'この AI・アカウント・プロジェクトでは、現在のモードで使える CLI コマンドがありません。', 'slash.noMatch': '一致する CLI コマンドがありません。', 'slash.keys': '↑ ↓ 選択 · Enter / Tab 挿入 · Esc 閉じる；実行には送信が必要です。',
   'usage.details': 'アカウントと利用枠の詳細', 'usage.openDetails': '{ai} のアカウントと利用枠の詳細を開く',
@@ -90,7 +92,6 @@ export const ja: Record<MessageKey, string> = {
   'common.saved': '保存しました',
   'common.confirmArchive': '「{name}」をアーカイブしますか？データはアーカイブへ移動し、削除されません。',
   'common.forceArchive': '強制アーカイブ',
-  'common.confirmForceArchive': '「{name}」にはマージされていない作業コピーがあります。強制アーカイブはマージせずにコピーを削除します。変更は先にタスクブランチ（ym/…）のコミットとして保存されます。強制アーカイブしますか？',
   'common.title': 'タイトル',
   'common.name': '名前',
   'common.details': '詳細設定（任意）',
