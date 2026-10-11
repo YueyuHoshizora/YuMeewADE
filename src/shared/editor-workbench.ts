@@ -8,3 +8,6 @@ export interface EditorSearchResult { hits: EditorSearchHit[]; scanned: number }
 export interface EditorMutation { action: 'createFile' | 'createFolder' | 'rename' | 'delete'; path: string; destination?: string; revision?: string; confirmation?: string }
 export interface EditorProblem extends EditorDiagnostic { path: string }
 export interface EditorRecovery { document: EditorDocument; text: string; start: number; end: number; top: number; left: number }
+export interface EditorRevisionCheck { path: string; revision: string }
+export interface EditorRevisionResult { changes: { path: string; status: 'changed' | 'unchanged' | 'missing'; revision?: string }[] }
+export interface EditorMergeResult { text: string; revision: string; conflicts: boolean }

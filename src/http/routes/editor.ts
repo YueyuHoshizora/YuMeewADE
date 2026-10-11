@@ -4,6 +4,14 @@ import { Router, reqString } from '../router.ts';
 import type { EditorAction, EditorChange, EditorMutation } from '../../shared/editor-workbench.ts';
 export function registerEditorRoutes(router: Router, app: App): void {
   router.get('/api/editor/scope', async ({ query }) => app.editor.scope(reqString(query, 'project', 120), query.has('task') ? reqString(query, 'task', 120) : '', app.ws.root));
+  router.post('/api/editor/revisions', async ({ body }) => {
+    if (!Array.isArray(body.documents) || body.documents.length > 50 || !body.documents.every(item => item && typeof item === 'object' && typeof item.path === 'string' && item.path.length <= 1000 && typeof item.revision === 'string' && item.revision.length <= 100)) throw new AppError('bad_request');
+    return app.editor.revisions(reqString(body, 'project', 120), body.task === undefined ? '' : reqString(body, 'task', 120), body.documents as { path: string; revision: string }[]);
+  });
+  router.post('/api/editor/merge', async ({ body }) => {
+    if (typeof body.base !== 'string' || typeof body.local !== 'string') throw new AppError('bad_request');
+    return app.editor.merge(reqString(body, 'project', 120), body.task === undefined ? '' : reqString(body, 'task', 120), reqString(body, 'path', 1000), body.base, body.local, reqString(body, 'revision', 100));
+  });
   router.get('/api/editor/file', async ({ query }) => app.editor.read(reqString(query, 'project', 120), query.has('task') ? reqString(query, 'task', 120) : '', reqString(query, 'path', 1000)));
   router.get('/api/editor/image', async ({ query, res }) => {
     const image = await app.editor.image(reqString(query, 'project', 120), query.has('task') ? reqString(query, 'task', 120) : '', reqString(query, 'path', 1000));

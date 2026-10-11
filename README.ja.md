@@ -79,7 +79,7 @@ Claude／Codex のモデル一覧・推論強度は CLI キャッシュから取
 - **アーカイブ復元**：プロジェクト／タスクへの影響をプレビューしてからアーカイブ・復元できます。強制アーカイブはブランチと元の作業コピーの復元スナップショットを保持し、未追跡・ignored・秘密ファイルと削除状態も保存します。復元は worktree を再作成し、既存の保存先を上書きしません。`.yumeewade/recovery/` は非公開資料であり、公開 Git バックアップや外部メインフォルダー全体のバックアップではありません。
   復元が成功した世代は保持領域へ移し、後のアーカイブには再適用しません。元のデータは残し、後からマージした内容を上書きしません。
   checkout を伴う復元は保存済み信頼と現在の root を満たす必要があり、拒否時は台帳復元をロールバックします。アーカイブ済みプロジェクトを自動で信頼しません。checkout のない直接タスクの台帳復元は利用できます。
-- **編集ワークベンチ**：最大50文書、2分割表示、構文色分けと revision 検証付き原子的保存。外部変更には明示的な基底更新が必要で、実行中は保存を拒否します。未保存テキスト、カーソル／スクロール位置を workspace／メイン／タスク root ごとに分離し、合計4 MiB以内で復元します。ファイル／フォルダー作成・名前変更・削除、有界 literal 検索、プレビュー後の置換は範囲と revision を検証します。ネイティブ stdio LSP は定義、参照、補完、hover、rename、整形、code actions、プロジェクト Problems に対応し、行範囲／検索結果を背景へ固定できます。インストール済み TypeScript 7 `tsc --lsp -stdio` を TS／JS に使用し、不在は利用不可と表示します。`YUMEEWADE_LSP_COMMANDS` は languageId → 信頼するローカル argv 配列の JSON（例 `{"python":["pylsp"]}`）で、shell は使いません。
+- **編集ワークベンチ**：最大50文書、2分割表示、構文色分けと revision 検証付き原子的保存。外部変更は clean buffer のみ自動更新し、dirty buffer は基底／ローカル／外部比較と明示的な3方向マージを提供します。実行中は保存を拒否します。未保存テキスト、カーソル／スクロール位置を workspace／メイン／タスク root ごとに分離し、合計4 MiB以内で復元します。ファイル／フォルダー作成・名前変更・削除、有界 literal 検索、プレビュー後の置換は範囲と revision を検証します。ネイティブ stdio LSP は定義、参照、補完、hover、rename、整形、code actions、プロジェクト Problems に対応し、行範囲／検索結果を背景へ固定できます。インストール済み TypeScript 7 `tsc --lsp -stdio` を TS／JS に使用し、不在は利用不可と表示します。`YUMEEWADE_LSP_COMMANDS` は languageId → 信頼するローカル argv 配列の JSON（例 `{"python":["pylsp"]}`）で、shell は使いません。
   復元形式 v3 は未変更タブを含む全開文書のメタデータ、両ペインのパス、フォーカス、ペイン別カーソル選択／スクロールも保持します。rename／format／code actions の workspace edits は保存済み snapshot が必要です。dirty 文書を先に保存しなければ `editor_conflict` を返します。
   隔離コピーの作成前や削除後はメインフォルダーを読み取り専用で閲覧・言語ナビゲーションできますが、そのタスクからメインへの保存は拒否します。
   CodeMirror 6 は行番号、折りたたみ、Alt／Optionクリックの複数カーソル、矩形選択、undo／redo、括弧対応と正規表現／大小文字／単語検索を提供します。テーマは App に追従し、LSP 補完はエディター内に表示します。上限は `limits.bodyBytes` からリクエスト分を除いたサイズ（最大8 MiB）で、超過や JSON エスケープ後に保存できない文書は読み取り専用です。
@@ -220,6 +220,7 @@ HTTP JSON と SSE を使い、デスクトップ版と Web 版で完全に共通
 |---|---|
 | アーカイブ | `GET /api/archive/list`、`/api/archive/preview`；`POST /api/archive/restore` |
 | エディター | `GET /api/editor/file`、`/api/editor/image`（画像、20 MiB）；`POST /api/editor/save`（revision）、`/api/editor/language`（definition／references／diagnostics） |
+| 編集同期 | `POST /api/editor/{revisions,merge}` |
 | 実行／統合 | `POST /api/execution/{start,stop,preview,ide,terminal,debug}`；`GET /api/execution/{list,output}` |
 | Git | `GET /api/git/{status,pr-status}`；`POST /api/git/{stage,unstage,resolve,commit,fetch,branch,push,pr}` |
 | Git 履歴 | `GET /api/git/{history,commit-detail,blame}` |

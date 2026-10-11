@@ -504,3 +504,6 @@ body.terminal-dock-open { grid-template-rows: 64px minmax(0, 1fr) var(--terminal
 .workbench-bottom .workspace { flex-wrap: wrap; }
 .workbench-bottom .workspace > #main { height: 50%; }
 .workbench-bottom .editor-workbench-host { height: 50%; }
+.editor-conflict { border: 1px solid var(--yellow); padding: 10px; }
+.editor-comparison { display: flex; gap: 8px; }
+.editor-comparison textarea { width: 33%; min-height: 160px; }

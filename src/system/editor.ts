@@ -1,16 +1,17 @@
 import { promises as fs, constants } from 'node:fs';
 import path from 'node:path';
+import os from 'node:os';
 import { createHash, randomUUID } from 'node:crypto';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import { createRequire } from 'node:module';
 import type { WorktreeService } from '../git/worktree.ts';
-import { gitOk, isLocalSecret } from '../git/git.ts';
+import { git, gitOk, isLocalSecret } from '../git/git.ts';
 import type { TaskLedger } from '../ledger/tasks.ts';
 import type { EditorDocument, EditorLocation, EditorDiagnostic } from '../shared/types.ts';
 import { AppError } from '../shared/errors.ts';
 import { isInside, pathExists, withFileLocks } from '../shared/fsx.ts';
 import { LanguageClient } from './editor-lsp.ts';
-import type { EditorAction, EditorActionResult, EditorChange, EditorMutation, EditorSearchResult, EditorProblem } from '../shared/editor-workbench.ts';
+import type { EditorAction, EditorActionResult, EditorChange, EditorMutation, EditorSearchResult, EditorProblem, EditorRevisionResult, EditorMergeResult } from '../shared/editor-workbench.ts';
 
 const LANGUAGE: Record<string, string> = { ts: 'typescript', tsx: 'typescriptreact', js: 'javascript', jsx: 'javascriptreact', mjs: 'javascript', cjs: 'javascript', json: 'json', py: 'python', rs: 'rust', go: 'go', css: 'css', scss: 'scss', html: 'html', vue: 'html', md: 'markdown', c: 'c', h: 'c', cpp: 'cpp', hpp: 'cpp', java: 'java', kt: 'kotlin', php: 'php', sql: 'sql', xml: 'xml', svg: 'xml', yaml: 'yaml', yml: 'yaml', toml: 'toml', sh: 'shellscript', bash: 'shellscript', zsh: 'shellscript', rb: 'ruby', swift: 'swift', lua: 'lua', ini: 'ini' };
 export class EditorService {
@@ -86,6 +87,34 @@ export class EditorService {
     } finally { await handle.close(); }
   }
   async read(project: string, task: string, relative: string): Promise<EditorDocument> { const { file, readonly } = await this.target(project, task, relative); return this.document(file, relative, readonly); }
+  async revisions(project: string, task: string, documents: { path: string; revision: string }[]): Promise<EditorRevisionResult> {
+    if (documents.length > 50 || new Set(documents.map(item => item.path)).size !== documents.length) throw new AppError('bad_request');
+    const changes: EditorRevisionResult['changes'] = [];
+    for (const item of documents) {
+      try {
+        const document = await this.read(project, task, item.path);
+        changes.push({ path: item.path, status: document.revision === item.revision ? 'unchanged' : 'changed', revision: document.revision });
+      } catch (error) {
+        if ((error instanceof AppError && error.code === 'not_found') || (error as NodeJS.ErrnoException).code === 'ENOENT') changes.push({ path: item.path, status: 'missing' });
+        else throw error;
+      }
+    }
+    return { changes };
+  }
+  async merge(project: string, task: string, relative: string, base: string, local: string, revision: string): Promise<EditorMergeResult> {
+    for (const text of [base, local]) if (typeof text !== 'string' || Buffer.byteLength(text) > this.MAX || text.includes('\0')) throw new AppError('too_large');
+    const remote = await this.read(project, task, relative);
+    if (remote.binary || remote.truncated || remote.readonly) throw new AppError('bad_request', 'editor_readonly');
+    if (remote.revision !== revision) throw new AppError('conflict', 'editor_conflict');
+    const directory = await fs.mkdtemp(path.join(os.tmpdir(), 'yumeewade-merge-'));
+    try {
+      await Promise.all([['local', local], ['base', base], ['remote', remote.text]].map(([name, text]) => fs.writeFile(path.join(directory, name!), text!, { mode: 0o600 })));
+      const result = await git(directory, ['merge-file', '-p', '-L', 'local', '-L', 'base', '-L', 'remote', 'local', 'base', 'remote'], { maxBytes: this.MAX, timeoutMs: 15000 });
+      if (result.truncated || result.code < 0 || result.code > 127) throw new AppError('unavailable');
+      if (Buffer.byteLength(JSON.stringify(result.stdout)) > this.bodyBytes - 8192) throw new AppError('too_large');
+      return { text: result.stdout, revision, conflicts: result.code !== 0 };
+    } finally { await fs.rm(directory, { recursive: true, force: true }); }
+  }
   async image(project: string, task: string, relative: string): Promise<{ bytes: Buffer; contentType: string }> {
     const { file } = await this.target(project, task, relative);
     const contentType = ({ '.png': 'image/png', '.jpg': 'image/jpeg', '.jpeg': 'image/jpeg', '.gif': 'image/gif', '.webp': 'image/webp', '.svg': 'image/svg+xml' } as Record<string, string>)[path.extname(relative).toLowerCase()];

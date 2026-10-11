@@ -84,7 +84,7 @@ Claude／Codex 模型清單直接讀 CLI 自己的快取（`~/.codex/models_cach
 - **封存恢復**：先預覽影響，再封存／還原專案或作業。強制封存保留分支及原工作副本恢復快照，含未追蹤、ignored、機密檔與刪除狀態；還原重建 worktree，拒絕覆蓋現有目的地。`.yumeewade/recovery/` 為私有資料，不是可公開的 Git 備份，也不是外部主資料夾的完整備份。
   成功還原後，該代快照移入保留區，不再套用到日後的封存；原始資料仍保留，不會覆蓋後續已合併的內容。
   還原涉及 checkout 仍須符合原保存信任及目前 root，拒絕則回滾，不自動信任封存專案；不涉及 checkout 的直接作業台帳還原仍可使用。
-- **編輯工作台**：最多 50 個文件、雙分割檢視、語法上色與 revision 檢查的原子儲存；外部改動需明確採用新基底，執行中禁止儲存。未儲存文字、游標／捲動位置依工作區／主資料夾／作業根隔離復原，總量上限 4 MiB。檔案／資料夾建立、重新命名、刪除、有界 literal 搜尋及先預覽再套用的取代均驗證範圍與 revision。原生 stdio LSP 提供定義、引用、補全、hover、rename、格式化、code actions 與專案 Problems；來源行段／搜尋命中可釘選到背景。已安裝 TypeScript 7 `tsc --lsp -stdio` 用於 TS／JS；缺少 server 明確不可用。`YUMEEWADE_LSP_COMMANDS` 為 languageId → 可信任本機 argv 陣列 JSON，例如 `{"python":["pylsp"]}`，不透過 shell。
+- **編輯工作台**：最多 50 個文件、雙分割檢視、語法上色與 revision 檢查的原子儲存；外部 clean 文件自動刷新，dirty 文件保留原基底／本機／外部比較與明確三方合併，執行中禁止儲存。未儲存文字、游標／捲動位置依工作區／主資料夾／作業根隔離復原，總量上限 4 MiB。檔案／資料夾建立、重新命名、刪除、有界 literal 搜尋及先預覽再套用的取代均驗證範圍與 revision。原生 stdio LSP 提供定義、引用、補全、hover、rename、格式化、code actions 與專案 Problems；來源行段／搜尋命中可釘選到背景。已安裝 TypeScript 7 `tsc --lsp -stdio` 用於 TS／JS；缺少 server 明確不可用。`YUMEEWADE_LSP_COMMANDS` 為 languageId → 可信任本機 argv 陣列 JSON，例如 `{"python":["pylsp"]}`，不透過 shell。
   復原格式 v3 也保存所有已開啟文件（含未修改分頁）的中繼資料、兩個面板路徑、焦點面板與各面板游標選取／捲動位置。rename／format／code actions 的 workspace edits 必須基於已儲存快照；先儲存 dirty 文件，否則回 `editor_conflict`。
   尚未建立或已清除隔離副本時，可唯讀瀏覽主資料夾及使用語言導覽，但不能從該作業儲存到主資料夾。
   CodeMirror 6 提供行號、摺疊、多游標（Alt／Option 點選）、矩形選取、undo／redo、括號匹配與 regex／大小寫／整字搜尋面板。主題跟隨 App，LSP 補全直接出現在編輯器。文件上限依 `limits.bodyBytes` 扣除請求開銷（最高 8 MiB），JSON 跳脫後無法儲存或更大的文件維持唯讀。
@@ -226,6 +226,7 @@ HTTP JSON 加 SSE，桌面版與網頁版完全相同。型別定義在 [`src/sh
 |---|---|
 | 封存 | `GET /api/archive/list`、`/api/archive/preview`；`POST /api/archive/restore` |
 | 編輯器 | `GET /api/editor/file`、`/api/editor/image`（圖片，20 MiB）；`POST /api/editor/save`（含 revision）、`/api/editor/language`（definition／references／diagnostics） |
+| 編輯同步 | `POST /api/editor/{revisions,merge}` |
 | 執行／整合 | `POST /api/execution/start`、`/stop`、`/preview`、`/ide`、`/terminal`、`/debug`；`GET /api/execution/list`、`/output`（上述短路徑均接 `/api/execution`） |
 | Git | `GET /api/git/status`、`/api/git/pr-status`；`POST /api/git/{stage,unstage,resolve,commit,fetch,branch,push,pr}` |
 | Git 歷史 | `GET /api/git/{history,commit-detail,blame}` |

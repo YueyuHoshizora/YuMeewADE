@@ -292,3 +292,28 @@ test('Problems preserves dirty snapshots across language clients and close resto
     assert.equal(await fs.readFile(path.join(root, 'a.ts'), 'utf8'), savedTs);
   } finally { editor.dispose(); }
 }));
+
+test('focused revisions and three-way merge preserve disk and reject stale or unsafe paths', () => withTmpWorkspace(async ws => {
+  const projects = new ProjectLedger(ws); const tasks = new TaskLedger(ws); await projects.create({ name: 'P' });
+  const editor = new EditorService(new WorktreeService({ ws, projects, tasks, diffBytes: 100000 }), tasks, {});
+  const file = path.join(ws.projectDir('P'), 'a.txt');
+  try {
+    await fs.writeFile(file, 'one\ntwo\nthree\n');
+    const base = await editor.read('P', '', 'a.txt');
+    assert.equal((await editor.revisions('P', '', [{ path: 'a.txt', revision: base.revision }])).changes[0]?.status, 'unchanged');
+    await fs.writeFile(file, 'one\ntwo\nremote\n');
+    const remote = await editor.read('P', '', 'a.txt');
+    assert.equal((await editor.revisions('P', '', [{ path: 'a.txt', revision: base.revision }])).changes[0]?.status, 'changed');
+    const merged = await editor.merge('P', '', 'a.txt', base.text, 'local\ntwo\nthree\n', remote.revision);
+    assert.equal(merged.text, 'local\ntwo\nremote\n'); assert.equal(merged.conflicts, false);
+    const conflict = await editor.merge('P', '', 'a.txt', base.text, 'one\ntwo\nlocal\n', remote.revision);
+    assert.equal(conflict.conflicts, true); assert.match(conflict.text, /<<<<<<< local/u);
+    assert.equal(await fs.readFile(file, 'utf8'), remote.text);
+    await assert.rejects(editor.merge('P', '', 'a.txt', base.text, 'local', base.revision));
+    await fs.symlink(file, path.join(ws.projectDir('P'), 'link.txt'));
+    assert.equal((await editor.revisions('P', '', [{ path: 'link.txt', revision: '' }, { path: '.env', revision: '' }])).changes.every(item => item.status === 'missing'), true);
+    await fs.unlink(file);
+    assert.equal((await editor.revisions('P', '', [{ path: 'a.txt', revision: remote.revision }])).changes[0]?.status, 'missing');
+    await assert.rejects(editor.revisions('P', '', Array.from({ length: 51 }, (_, i) => ({ path: `${i}.txt`, revision: '' }))));
+  } finally { editor.dispose(); }
+}));

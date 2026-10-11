@@ -56,6 +56,53 @@ export function openFileBrowser(project: string, task: string, workspace = activ
   const buffers = new Map<string, EditorRecovery>(); const views: { path: string | undefined; content: EditorContent; preview: FilePreview; tabs: HTMLDivElement; node: HTMLDivElement }[] = [];
   const dialog = el('section', 'editor-workbench'); const results = el('div', 'editor-file-tree'); const output = el('div', 'editor-problems'); const panes = el('div', 'editor-panes'); let focused = 0;
   const filter = input('', t('files.search')); const sourceSearch = input('', t('ew.search')); const replacement = input('', t('ew.replacement'));
+  const conflicts = new Map<string, EditorDocument>();
+  const unresolved = new Set<string>();
+  const conflictHost = el('div');
+  function refreshConflict(path: string): void {
+    const buffer = buffers.get(path); const remote = conflicts.get(path);
+    if (!buffer || !remote) return;
+    const compare = el('div', 'editor-comparison');
+    for (const [label, text] of [[t('editorUI.base'), buffer.document.text], [t('editorUI.local'), buffer.text], [t('editorUI.remote'), remote.text]]) { const preview = area(text); preview.readOnly = true; preview.setAttribute('aria-label', label!); compare.append(preview); }
+    const banner = el('div', 'editor-conflict');
+    const adopt = (document: EditorDocument, text: string) => {
+      views.forEach((_, index) => capture(index)); buffer.document = document; buffer.text = text;
+      conflicts.delete(path); for (const view of views) if (view.path === path) { view.content.value = text; view.preview.update(text); }
+      banner.remove(); persist(); refreshTabs();
+    };
+    banner.append(el('p', 'warning', `${path}: ${t('editorUI.external')}`), compare,
+      button(t('editorUI.adopt'), async () => { if (!await confirmModal(t('editorUI.adopt'), t('editor.dirty'), t('editorUI.adopt'))) return; const latest = await request<EditorDocument>(query('/api/editor/file', { ...ids, path })); adopt(latest, latest.text); unresolved.delete(path); }),
+      button(t('editorUI.keep'), async () => { if (!await confirmModal(t('editorUI.keep'), t('editorUI.unresolved'), t('editorUI.keep'))) return; const latest = await request<EditorDocument>(query('/api/editor/file', { ...ids, path })); capture(focused); adopt(latest, buffer.text); unresolved.delete(path); }),
+      button(t('editorUI.merge'), async () => {
+        views.forEach((_, index) => capture(index)); const local = buffer.text; const base = buffer.document.text;
+        const result = await request<{ text: string; revision: string; conflicts: boolean }>('/api/editor/merge', { ...ids, path, base, local, revision: remote.revision });
+        views.forEach((_, index) => capture(index)); if (buffer.text !== local || buffer.document.text !== base) throw new Error(t('detail.editor_conflict'));
+        adopt({ ...remote, revision: result.revision }, result.text);
+        if (result.conflicts) { unresolved.add(path); const resolve = el('div', 'editor-conflict'); resolve.append(el('p', 'warning', t('editorUI.unresolved')), button(t('ew.apply'), async () => { if (!await confirmModal(t('ew.apply'), t('editorUI.unresolved'), t('ew.apply'))) return; unresolved.delete(path); resolve.remove(); })); conflictHost.append(resolve); }
+      }));
+    conflictHost.replaceChildren(banner);
+  }
+  let syncing = false;
+  async function synchronize(): Promise<void> {
+    if (syncing || disposed || !persistenceEnabled || dialog.hidden || !buffers.size) return;
+    syncing = true;
+    try {
+      views.forEach((_, index) => capture(index));
+      const result = await request<{ changes: { path: string; status: string }[] }>('/api/editor/revisions', { ...ids, documents: [...buffers.values()].map(buffer => ({ path: buffer.document.path, revision: buffer.document.revision })) });
+      for (const change of result.changes) {
+        if (change.status === 'unchanged') continue;
+        const buffer = buffers.get(change.path); if (!buffer) continue;
+        if (change.status === 'missing') { buffer.document = { ...buffer.document, readonly: true }; for (const view of views) if (view.path === change.path) view.content.readOnly = true; continue; }
+        const remote = await request<EditorDocument>(query('/api/editor/file', { ...ids, path: change.path }));
+        views.forEach((_, index) => capture(index));
+        if (dirty(buffer)) { conflicts.set(change.path, remote); refreshConflict(change.path); }
+        else { buffer.document = remote; buffer.text = remote.text; for (const view of views) if (view.path === change.path) { view.content.value = remote.text; view.preview.update(remote.text); } }
+      }
+      persist(); refreshTabs();
+    } finally { syncing = false; }
+  }
+  const syncTimer = window.setInterval(() => { void run(synchronize); }, 5000);
+  const syncFocus = () => { void run(synchronize); }; window.addEventListener('focus', syncFocus);
   const dirty = (buffer: EditorRecovery) => buffer.text !== buffer.document.text;
   let persistenceTimer: number | undefined;
   const live = new Map<string, { timer?: number; flight?: Promise<void>; disabled: boolean; text?: string; diagnostics: EditorDiagnostic[] }>();
@@ -192,7 +239,11 @@ export function openFileBrowser(project: string, task: string, workspace = activ
     };
   }
   function current(): EditorRecovery | undefined { capture(focused); const path = views[focused]!.path; return path ? buffers.get(path) : undefined; }
-  async function save(): Promise<void> { const buffer = current(); if (!buffer || !dirty(buffer)) return; const text = buffer.text; buffer.document = await request<EditorDocument>('/api/editor/save', { ...ids, path: buffer.document.path, text, revision: buffer.document.revision }); persist(); refreshTabs(); }
+  async function save(): Promise<void> {
+    const buffer = current(); if (!buffer || !dirty(buffer)) return;
+    if (conflicts.has(buffer.document.path) || unresolved.has(buffer.document.path)) throw new Error(t('editorUI.unresolved'));
+    const text = buffer.text; buffer.document = await request<EditorDocument>('/api/editor/save', { ...ids, path: buffer.document.path, text, revision: buffer.document.revision }); persist(); refreshTabs();
+  }
   function sendSelection(): void {
     if (!task) return;
     const view = views[focused]!; if (!view.path) return;
@@ -359,6 +410,7 @@ export function openFileBrowser(project: string, task: string, workspace = activ
     try { if (storageKey) localStorage.setItem(`${storageKey}:layout`, JSON.stringify(layout)); } catch { output.append(el('p', 'warning', t('ew.recoveryLimit'))); }
   }
   dialog.append(row(el('h2', '', t('files.title')), dock, resize), actions, row(pathInput, destination, ...(['createFile', 'createFolder', 'rename', 'delete'] as const).map(action => button(t(`ew.${action}`), () => mutate(action)))), row(sourceSearch, replacement, button(t('ew.search'), () => search(false)), button(t('ew.replacePreview'), () => search(true))), filter);
+  dialog.append(conflictHost);
   const body = el('div', 'editor-workbench-body'); body.append(results, panes); dialog.append(body, output, panelHost);
   (workbenchMount ?? document.body).append(dialog);
   const ready = (async () => {
@@ -372,13 +424,13 @@ export function openFileBrowser(project: string, task: string, workspace = activ
   })().catch(error => { dispose(); browsers.delete(key); throw error; });
   const flush = () => { views.forEach((_, index) => capture(index)); persist(); };
   const dispose = () => {
-    flush(); disposed = true; window.clearTimeout(persistenceTimer);
-    window.removeEventListener('beforeunload', unload);
+    flush(); disposed = true; window.clearInterval(syncTimer); window.clearTimeout(persistenceTimer);
+    window.removeEventListener('focus', syncFocus); window.removeEventListener('beforeunload', unload);
     window.removeEventListener('yumeewade:workbench-panels', mountPanels);
     for (const state of live.values()) window.clearTimeout(state.timer);
     live.clear();
     views.forEach(view => { view.content.destroy(); view.preview.destroy(); }); dialog.remove();
   };
-  browsers.set(key, { dialog, flush, dispose, canDispose: () => ![...buffers.values()].some(dirty), restoreLayout: applyLayout, open: async (path, line) => { await ready; if (dialog.isConnected) await show(path, line === undefined ? undefined : line - 1); } });
+  browsers.set(key, { dialog, flush, dispose, canDispose: () => ![...buffers.values()].some(dirty) && !conflicts.size && !unresolved.size, restoreLayout: applyLayout, open: async (path, line) => { await ready; if (dialog.isConnected) await show(path, line === undefined ? undefined : line - 1); } });
   void run(async () => { await ready; await load(); });
 }
