@@ -20,6 +20,22 @@ export function todayDate(now = new Date()): string {
   return `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`;
 }
 
+// Electron's fs.cp cannot copy an ASAR directory; read each template through its virtual filesystem.
+async function copyProjectTemplate(source: string, destination: string): Promise<void> {
+  for (const entry of await fs.readdir(source, { withFileTypes: true })) {
+    const from = path.join(source, entry.name);
+    const to = path.join(destination, entry.name);
+    if (entry.isDirectory()) {
+      await fs.mkdir(to, { recursive: true });
+      await copyProjectTemplate(from, to);
+    } else if (entry.isSymbolicLink()) {
+      await fs.symlink(await fs.readlink(from), to);
+    } else {
+      await atomicWrite(to, await fs.readFile(from));
+    }
+  }
+}
+
 export class ProjectLedger {
   private readonly ws: Workspace;
   constructor(ws: Workspace) { this.ws = ws; }
@@ -92,7 +108,7 @@ export class ProjectLedger {
       const dir = this.ws.projectDir(input.name);
       if (await pathExists(dir) || (await this.list()).some(p => p.name.toLowerCase() === input.name.toLowerCase())) throw new AppError('conflict', 'project_exists');
       await fs.mkdir(dir, { recursive: false });
-      await fs.cp(path.join(TEMPLATES_DIR, 'project'), dir, { recursive: true, force: false });
+      await copyProjectTemplate(path.join(TEMPLATES_DIR, 'project'), dir);
       await Promise.all(['tasks', 'chat', 'uploads'].map(name => fs.mkdir(path.join(dir, '.ai', name), { recursive: true })));
       const template = parseFrontmatter(await fs.readFile(path.join(TEMPLATES_DIR, 'PROJECT.md'), 'utf8'));
       const values: Record<string, YamlValue> = { name: input.name, status: '進行中', updated: todayDate(), description: input.description ?? '', parent: input.parent ?? '', body: input.body ?? '', verify: input.verify?.trim() || input.checks?.[0]?.command.trim() || '', checks: parseVerificationChecks(input.checks ?? []).map(check => ({ ...check })), requireVerification: input.requireVerification ?? false, phases: patch.phases.map(p => ({ ...p })), related: input.related ?? [], issues: [] };

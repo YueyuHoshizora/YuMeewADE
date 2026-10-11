@@ -6,6 +6,8 @@ import { mkdtemp, mkdir, readdir, readFile, writeFile, rm, chmod, cp } from 'nod
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { pathToFileURL } from 'node:url';
+import { stripVTControlCharacters } from 'node:util';
+import type { Task, TerminalLease, TerminalSession } from '../src/shared/types.ts';
 
 export function artifactKind(name: string, platform: NodeJS.Platform): string | null {
   if (platform === 'darwin') return name.endsWith('.dmg') ? 'dmg' : name.endsWith('.zip') ? 'zip' : null;
@@ -222,7 +224,41 @@ async function smoke(artifact: string, kind: string, expectedVersion: string): P
     }
     const state = await fetch(`${origin}/api/state`, { signal: AbortSignal.timeout(5000) });
     if (!state.ok) throw new Error('Public application state unavailable');
-    console.log(`PASS ${kind} ${path.basename(artifact)} — packaged binary, loopback API ${expectedVersion}, rendered UI/preload, ${assets.length} assets`);
+    const post = async <T>(route: string, body: Record<string, unknown>): Promise<T> => {
+      const response = await fetch(`${origin}${route}`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body), signal: AbortSignal.timeout(10_000) });
+      if (!response.ok) {
+        const message = await response.text();
+        await new Promise<void>(resolve => setTimeout(resolve, 100));
+        const localLog = await readFile(path.join(workspace, '.yumeewade', 'yumeewade.log'), 'utf8').catch(() => '');
+        throw new Error(`Packaged ${route} failed (${response.status}): ${message}\n${logs}\n${localLog.slice(-16000)}`);
+      }
+      return await response.json() as T;
+    };
+    await post('/api/project/new', { name: 'ArtifactPTY' });
+    const task = await post<Task>('/api/task/new', { project: 'ArtifactPTY', title: 'Native terminal smoke', workspace: 'direct' });
+    const ids = { project: 'ArtifactPTY', task: task.id };
+    const lease = await post<TerminalLease>('/api/terminal/start', { ...ids, command: process.execPath,
+      args: ['-e', 'console.log("NATIVE_TTY",process.stdin.isTTY,process.stdout.isTTY);process.stdin.setRawMode(true);process.stdin.resume();process.stdin.on("data",()=>{console.log("NATIVE_INPUT");process.exit(0)})'], cols: 80, rows: 24 });
+    const capability = { ...ids, id: lease.session.id, owner: lease.owner };
+    try {
+      const waitOutput = async (marker: string): Promise<void> => {
+        const deadline = Date.now() + 10_000;
+        while (Date.now() < deadline) {
+          const current = await post<TerminalSession>('/api/terminal/output', capability);
+          if (stripVTControlCharacters(current.output.map(item => item.text).join('')).includes(marker)) return;
+          if (current.status !== 'running') throw new Error(`Packaged PTY exited without ${marker}`);
+          await new Promise<void>(resolve => setTimeout(resolve, 50));
+        }
+        throw new Error(`Packaged PTY did not emit ${marker}`);
+      };
+      await waitOutput('NATIVE_TTY true true');
+      await post('/api/terminal/resize', { ...capability, cols: 92, rows: 31 });
+      await post('/api/terminal/input', { ...capability, text: 'q' });
+      await waitOutput('NATIVE_INPUT');
+    } finally {
+      await post('/api/terminal/stop', capability);
+    }
+    console.log(`PASS ${kind} ${path.basename(artifact)} — packaged binary, loopback API ${expectedVersion}, rendered UI/preload, ${assets.length} assets, native PTY TTY/input/resize`);
   } finally {
     try {
       if (process.platform === 'win32') {
