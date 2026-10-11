@@ -298,6 +298,8 @@ export function projectView(context: ViewContext, project: ProjectView, params: 
       button(t('project.nextPhase'), async () => { await request('/api/phase/next', { project: project.id }); await context.refresh(); }, 'primary'),
       button(t('project.continuePhase'), async () => { await request('/api/phase/continue', { project: project.id }); await context.refresh(); }),
     )));
+    for (const id of selected) if (!project.tasks.some(task => task.id === id)) selected.delete(id);
+    overview.append(bulkToolbar());
     overview.append(taskBoard(context, project, tasks => {
       const sections = el('div');
       const active = tasks.filter(task => task.state !== '完成');
@@ -307,16 +309,6 @@ export function projectView(context: ViewContext, project: ProjectView, params: 
       sections.append(disclosure(t('project.completedTasks'), tasksList(tasks.filter(task => task.state === '完成'))));
       return sections;
     }));
-    for (const id of selected) if (!project.tasks.some(task => task.id === id)) selected.delete(id);
-    overview.append(bulkToolbar());
-    const active = project.tasks.filter(task => task.state !== '完成');
-    overview.append(card(t('project.activeTasks'), tasksList(active.filter(task => !project.currentPhase || task.phase === project.currentPhase))));
-    const other = active.filter(task => !!project.currentPhase && task.phase !== project.currentPhase);
-    if (other.length) {
-      const sections = Array.from(new Set(other.map(task => task.phase))).map(phase => disclosure(phase || t('common.none'), tasksList(other.filter(task => task.phase === phase))));
-      overview.append(disclosure(t('project.otherTasks'), ...sections));
-    }
-    overview.append(disclosure(t('project.completedTasks'), tasksList(project.tasks.filter(task => task.state === '完成'))));
     for (const detail of overview.querySelectorAll('details')) detail.open = opened.has(detail.querySelector('summary')?.textContent);
   }
   renderOverview(); node.append(overview);
