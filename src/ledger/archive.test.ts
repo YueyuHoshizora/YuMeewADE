@@ -1,0 +1,160 @@
+import assert from 'node:assert/strict';
+import { promises as fs } from 'node:fs';
+import path from 'node:path';
+import { test } from 'node:test';
+import { withTmpWorkspace } from '../testing/tmp.ts';
+import { git, gitOk } from '../git/git.ts';
+import { WorktreeService } from '../git/worktree.ts';
+import { RecoveryStore } from '../git/recovery.ts';
+import { ProjectLedger } from './projects.ts';
+import { TaskLedger } from './tasks.ts';
+import { ArchiveService } from './archive.ts';
+import type { Workspace } from './workspace.ts';
+
+function services(ws: Workspace) {
+  const projects = new ProjectLedger(ws), tasks = new TaskLedger(ws);
+  const worktree = new WorktreeService({ ws, projects, tasks, diffBytes: 100_000 });
+  return { projects, tasks, worktree, archive: new ArchiveService(ws, projects, tasks, worktree) };
+}
+
+test('force archive and restore retain fake secrets, ignored files, ordinary changes and conversations', () => withTmpWorkspace(async ws => {
+  const { projects, tasks, worktree, archive } = services(ws);
+  await projects.create({ name: 'P' });
+  const task = await tasks.create('P', { title: '保存資料' });
+  const dir = await worktree.prepare('P', task.id);
+  await fs.writeFile(path.join(dir, '.env.audit'), 'FAKE_ONLY=yes\n');
+  await fs.appendFile(path.join(dir, '.gitignore'), '\nignored.bin\n');
+  await fs.writeFile(path.join(dir, 'ignored.bin'), Buffer.from([0, 1, 2, 255]));
+  await fs.writeFile(path.join(dir, 'ordinary.txt'), 'normal change\n');
+  const chat = '{"role":"user","text":"retained conversation"}\n';
+  await fs.writeFile(ws.chatFile('P', task.id, 'jsonl'), chat);
+  const preview = await archive.preview('P', task.id);
+  assert.ok(preview.git.includes('ordinary.txt'));
+  assert.ok(preview.preserved.includes('.env.audit'));
+  assert.ok(preview.preserved.includes('ignored.bin'));
+  assert.deepEqual(preview.unavailable, []);
+  await worktree.abandon('P', task.id);
+  await assert.rejects(fs.access(dir));
+  assert.notEqual((await git(ws.projectDir('P'), ['show', `ym/${task.id}:.env.audit`])).code, 0);
+  assert.equal(await gitOk(ws.projectDir('P'), ['show', `ym/${task.id}:ordinary.txt`]), 'normal change\n');
+  const recovery = path.join(ws.internalDir, 'recovery');
+  assert.equal((await fs.stat(recovery)).mode & 0o777, 0o700);
+  await tasks.archive('P', task.id);
+  const [entry] = await archive.list('P');
+  assert.ok(entry);
+  await archive.restore(entry.key, 'P');
+  assert.equal((await tasks.get('P', task.id)).workdir, dir);
+  assert.equal(await fs.readFile(path.join(dir, '.env.audit'), 'utf8'), 'FAKE_ONLY=yes\n');
+  assert.deepEqual(await fs.readFile(path.join(dir, 'ignored.bin')), Buffer.from([0, 1, 2, 255]));
+  assert.equal(await fs.readFile(path.join(dir, 'ordinary.txt'), 'utf8'), 'normal change\n');
+  assert.equal(await fs.readFile(ws.chatFile('P', task.id, 'jsonl'), 'utf8'), chat);
+  assert.equal((await gitOk(dir, ['symbolic-ref', '--short', 'HEAD'])).trim(), `ym/${task.id}`);
+  assert.equal(await worktree.prepare('P', task.id), dir);
+}));
+
+test('recovery failure refuses removal and leaves original copy intact', () => withTmpWorkspace(async ws => {
+  const { projects, tasks, worktree } = services(ws);
+  await projects.create({ name: 'P' });
+  const task = await tasks.create('P', { title: '拒絕不安全保存' });
+  const dir = await worktree.prepare('P', task.id);
+  await fs.writeFile(path.join(dir, '.env.audit'), 'FAKE_ONLY=keep\n');
+  await fs.symlink(ws.projectsDir, path.join(ws.internalDir, 'recovery'));
+  await assert.rejects(worktree.abandon('P', task.id));
+  assert.equal(await fs.readFile(path.join(dir, '.env.audit'), 'utf8'), 'FAKE_ONLY=keep\n');
+  assert.equal((await tasks.get('P', task.id)).workdir, dir);
+}));
+
+test('dead git registration leftovers are retained rather than deleted', () => withTmpWorkspace(async ws => {
+  const { projects, tasks, worktree, archive } = services(ws);
+  await projects.create({ name: 'P' });
+  const task = await tasks.create('P', { title: '移除中斷' });
+  const dir = await worktree.prepare('P', task.id);
+  await fs.writeFile(path.join(dir, '.env.audit'), 'FAKE_ONLY=leftover\n');
+  const pointer = await fs.readFile(path.join(dir, '.git'), 'utf8');
+  const registration = pointer.trim().replace(/^gitdir:\s*/, '');
+  await fs.rm(path.resolve(dir, registration), { recursive: true });
+  await worktree.abandon('P', task.id);
+  await tasks.archive('P', task.id);
+  const [entry] = await archive.list('P');
+  await archive.restore(entry!.key, 'P');
+  assert.equal(await fs.readFile(path.join(dir, '.env.audit'), 'utf8'), 'FAKE_ONLY=leftover\n');
+}));
+
+test('corrupt git pointer refuses archive without deleting the copy', () => withTmpWorkspace(async ws => {
+  const { projects, tasks, worktree } = services(ws);
+  await projects.create({ name: 'P' });
+  const task = await tasks.create('P', { title: '壞登記' });
+  const dir = await worktree.prepare('P', task.id);
+  await fs.writeFile(path.join(dir, '.git'), 'corrupt registration\n');
+  await fs.writeFile(path.join(dir, '.env.audit'), 'FAKE_ONLY=keep\n');
+  await assert.rejects(worktree.abandon('P', task.id));
+  assert.equal(await fs.readFile(path.join(dir, '.env.audit'), 'utf8'), 'FAKE_ONLY=keep\n');
+}));
+
+test('project archive/restore never moves external body code and restores task ledger', () => withTmpWorkspace(async ws => {
+  const { projects, tasks, archive } = services(ws);
+  const external = path.join(ws.root, 'external');
+  await fs.mkdir(external);
+  await fs.writeFile(path.join(external, 'code.txt'), 'external code\n');
+  await projects.create({ name: 'P', body: external });
+  const task = await tasks.create('P', { title: '直接作業', workspace: 'direct' });
+  await projects.archive('P');
+  assert.equal(await fs.readFile(path.join(external, 'code.txt'), 'utf8'), 'external code\n');
+  const [entry] = await archive.list();
+  await archive.restore(entry!.key);
+  assert.equal((await projects.get('P')).body, external);
+  assert.equal((await tasks.get('P', task.id)).title, '直接作業');
+}));
+
+test('restore name and destination conflicts never overwrite and temporary leftovers are not archives', () => withTmpWorkspace(async ws => {
+  const { projects, tasks, archive } = services(ws);
+  await projects.create({ name: 'P' });
+  const task = await tasks.create('P', { title: '衝突' });
+  await tasks.archive('P', task.id);
+  const [entry] = await archive.list('P');
+  await fs.writeFile(ws.taskFile('P', task.id), 'existing destination\n');
+  await assert.rejects(archive.restore(entry!.key, 'P'));
+  assert.equal(await fs.readFile(ws.taskFile('P', task.id), 'utf8'), 'existing destination\n');
+  assert.equal((await archive.list('P')).length, 1);
+  await fs.mkdir(path.join(ws.projectDir('P'), '.ai', 'trash', '.leftover.tmp'));
+  await fs.mkdir(path.join(ws.projectDir('P'), '.ai', 'trash', 'invalid-abc'));
+  assert.equal((await archive.list('P')).length, 1);
+  await projects.archive('P');
+  const [projectEntry] = await archive.list();
+  await projects.create({ name: 'P' });
+  await assert.rejects(archive.restore(projectEntry!.key));
+}));
+
+test('recovery ignores incomplete staging names and refuses path escape', () => withTmpWorkspace(async ws => {
+  const store = new RecoveryStore(ws);
+  const root = path.join(ws.internalDir, 'recovery', 'P', '20260101-001');
+  await fs.mkdir(root, { recursive: true });
+  await fs.mkdir(path.join(root, 'partial.tmp'));
+  assert.deepEqual(await store.snapshots('P', '20260101-001'), []);
+  await assert.rejects(store.snapshots('../outside', '20260101-001'));
+}));
+
+test('restored recovery bytes never overlay a later archive after a successful merge', () => withTmpWorkspace(async ws => {
+  const { projects, tasks, worktree, archive } = services(ws);
+  await projects.create({ name: 'P' });
+  const task = await tasks.create('P', { title: 'archive generations' });
+  const copy = await worktree.prepare('P', task.id);
+  await fs.writeFile(path.join(copy, 'value.txt'), 'old recovery A');
+  await worktree.abandon('P', task.id);
+  await tasks.archive('P', task.id);
+  const [first] = await archive.list('P'); assert.ok(first);
+  await archive.restore(first.key, 'P');
+  await fs.writeFile(path.join(copy, 'value.txt'), 'merged B');
+  await fs.writeFile(path.join(copy, 'newer.txt'), 'new path B');
+  assert.equal((await worktree.merge('P', task.id)).merged, true);
+  await tasks.archive('P', task.id);
+  const [second] = await archive.list('P'); assert.ok(second);
+  await archive.restore(second.key, 'P');
+  const fresh = await worktree.prepare('P', task.id);
+  assert.equal(await fs.readFile(path.join(fresh, 'value.txt'), 'utf8'), 'merged B');
+  assert.equal(await fs.readFile(path.join(fresh, 'newer.txt'), 'utf8'), 'new path B');
+  const recovery = path.join(ws.internalDir, 'recovery');
+  const savedFiles = (await fs.readdir(recovery, { recursive: true })).filter(file => file.endsWith('value.txt'));
+  const retained = await Promise.all(savedFiles.map(file => fs.readFile(path.join(recovery, file), 'utf8')));
+  assert.ok(retained.includes('old recovery A'));
+}));

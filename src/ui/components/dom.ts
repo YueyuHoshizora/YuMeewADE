@@ -1,4 +1,4 @@
-import type { AppState } from '../../shared/types.ts';
+import type { AppState, ArchivePreview } from '../../shared/types.ts';
 import { t } from '../i18n/index.ts';
 import type { MessageKey } from '../i18n/zh-TW.ts';
 import { ApiFailure, request } from '../api.ts';
@@ -66,14 +66,23 @@ export function confirmModal(title: string, message: string, acceptLabel = t('co
   document.body.append(dialog); dialog.showModal();
   return promise;
 }
-/** 封存：核心回報還有未合併的工作副本時，再問一次是否強制封存（副本移除、分支保留，不合併）。 */
+/** 封存遇到工作副本時，先列出保存範圍，再確認移入私有恢復區；不合併。 */
 export async function archiveFlow(path: string, ids: Record<string, string>, name: string, worktreeDetail: string): Promise<boolean> {
   if (!(await confirmModal(t('common.archive'), t('common.confirmArchive', { name }), t('common.archive')))) return false;
   try {
     await request(path, ids);
   } catch (error) {
     if (!(error instanceof ApiFailure) || error.body.detail !== worktreeDetail) throw error;
-    if (!(await confirmModal(t('common.forceArchive'), t('common.confirmForceArchive', { name }), t('common.forceArchive')))) return false;
+    const query = new URLSearchParams(ids);
+    const preview = await request<ArchivePreview>(`/api/archive/preview?${query}`);
+    const message = [
+      t('archive.safety', { name }),
+      `${t('archive.git')}\n${preview.git.join('\n') || '—'}`,
+      `${t('archive.preserved')}\n${preview.preserved.join('\n') || '—'}`,
+      `${t('archive.unavailable')}\n${preview.unavailable.join('\n') || '—'}`,
+    ].join('\n\n');
+    if (preview.unavailable.length) { modal(t('common.archive'), el('pre', '', message)); return false; }
+    if (!(await confirmModal(t('common.forceArchive'), message, t('common.forceArchive')))) return false;
     await request(path, { ...ids, force: true });
   }
   return true;

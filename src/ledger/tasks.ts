@@ -3,7 +3,7 @@ import { promises as fs } from 'node:fs';
 import path from 'node:path';
 import { AppError } from '../shared/errors.ts';
 import { parseFrontmatter, patchHeaderLines, serializeFrontmatter } from '../shared/frontmatter.ts';
-import { atomicWrite, pathExists, withFileLocks } from '../shared/fsx.ts';
+import { atomicWrite, isInside, pathExists, withFileLocks } from '../shared/fsx.ts';
 import { log } from '../shared/log.ts';
 import { nextTaskId } from '../shared/names.ts';
 import { TASK_STATES, TASK_KINDS, WORKSPACE_MODES, type NewTaskInput, type Step, type Task, type TaskPatch, type TaskState } from '../shared/types.ts';
@@ -145,15 +145,29 @@ export class TaskLedger {
     const files = [this.ws.projectFile(project), this.ws.taskFile(project, id), ...(['jsonl', 'json', 'queue.json'] as const).map(kind => this.ws.chatFile(project, id, kind))];
     await withFileLocks(files, async () => {
       await this.readRaw(project, id);
-      const trash = path.join(this.ws.projectDir(project), '.ai', 'trash', `${id}-${Date.now().toString(36)}`);
-      await fs.mkdir(trash, { recursive: true });
-      await fs.rename(this.ws.taskFile(project, id), path.join(trash, `${id}.md`));
-      for (const kind of ['jsonl', 'json', 'queue.json'] as const) {
-        const file = this.ws.chatFile(project, id, kind);
-        try { await fs.rename(file, path.join(trash, path.basename(file))); } catch (err) { if ((err as NodeJS.ErrnoException).code !== 'ENOENT') throw err; }
+      const root = path.join(this.ws.projectDir(project), '.ai', 'trash');
+      await fs.mkdir(root, { recursive: true });
+      if ((await fs.lstat(root)).isSymbolicLink() || !isInside(await fs.realpath(this.ws.projectDir(project)), await fs.realpath(root))) throw new AppError('conflict', 'archive_unsafe_path');
+      const trash = path.join(root, `${id}-${Date.now().toString(36)}`);
+      await fs.mkdir(trash);
+      const moved: [string, string][] = [];
+      try {
+        for (const kind of ['jsonl', 'json', 'queue.json'] as const) {
+          const file = this.ws.chatFile(project, id, kind);
+          const target = path.join(trash, path.basename(file));
+          try { await fs.rename(file, target); moved.push([file, target]); } catch (err) { if ((err as NodeJS.ErrnoException).code !== 'ENOENT') throw err; }
+        }
+        const attachments = this.ws.attachmentsDir(project, id);
+        if (await pathExists(attachments)) {
+          const target = path.join(trash, 'attachments');
+          await fs.rename(attachments, target); moved.push([attachments, target]);
+        }
+        await fs.rename(this.ws.taskFile(project, id), path.join(trash, `${id}.md`));
+      } catch (error) {
+        for (const [from, to] of moved.reverse()) await fs.rename(to, from);
+        await fs.rmdir(trash);
+        throw error;
       }
-      const attachments = this.ws.attachmentsDir(project, id);
-      if (await pathExists(attachments)) await fs.rename(attachments, path.join(trash, 'attachments'));
     });
   }
 }

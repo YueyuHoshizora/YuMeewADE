@@ -1,5 +1,6 @@
 // Work/{project}/{task} is a git worktree; only human-triggered merge publishes its changes.
-import { promises as fs } from 'node:fs';
+import { promises as fs, constants } from 'node:fs';
+import { randomUUID } from 'node:crypto';
 import path from 'node:path';
 import type { Workspace } from '../ledger/workspace.ts';
 import type { ProjectLedger } from '../ledger/projects.ts';
@@ -11,6 +12,7 @@ import { isInside, pathExists, withFileLocks } from '../shared/fsx.ts';
 import { log } from '../shared/log.ts';
 import type { FileView, MergePreview, MergeResult, Task, TaskOverlap, TurnChanges } from '../shared/types.ts';
 import { branchExists, commitAll, ensureRepo, git, gitOk, isLocalSecret, isRepo } from './git.ts';
+import { RecoveryStore } from './recovery.ts';
 
 const SHA = /^[0-9a-f]{40}$/;
 const FILE_VIEW_MAX = 256 * 1024;
@@ -262,8 +264,11 @@ export class WorktreeService {
     if (result.code !== 0) throw new AppError('not_found', 'checkpoint_missing');
     return { diff: result.stdout, truncated: result.truncated ?? false };
   }
-  async merge(project: string, task: string): Promise<MergeResult> {
-    return this.mutate(project, () => this.mergeLocked(project, task));
+  async merge(project: string, task: string, beforeMerge?: () => Promise<void>): Promise<MergeResult> {
+    return this.mutate(project, async () => {
+      await beforeMerge?.();
+      return this.mergeLocked(project, task);
+    });
   }
   private async mergeLocked(project: string, task: string): Promise<MergeResult> {
     const { record, repo, dir } = await this.copy(project, task);
@@ -295,7 +300,7 @@ export class WorktreeService {
       }
     }
     const commit = (await gitOk(repo, ['rev-parse', '--short', 'HEAD'])).trim();
-    const status = splitNull(await gitOk(dir, ['status', '--porcelain=v1', '-z', '--untracked-files=all']));
+    const status = splitNull(await gitOk(dir, ['status', '--porcelain=v1', '-z', '--untracked-files=all', '--ignored=matching']));
     const leftover: string[] = [];
     for (let i = 0; i < status.length; i++) {
       const entry = status[i]!;
@@ -345,35 +350,62 @@ export class WorktreeService {
   async exclusion(project: string, task: string, excluded: boolean): Promise<Task> {
     return this.mutate(project, () => this.tasks.update(project, task, { mergeExcluded: excluded }));
   }
-  /** 強制封存前放棄副本：未提交的內容先存成作業分支（ym/…）上的 commit，再移除副本；分支保留，成果仍可取回，不合併進主資料夾。 */
+  /** 封存前提交一般變更；原副本原子移入私有 recovery，git 不保存的資料也不刪除。 */
   async abandon(project: string, task: string): Promise<void> {
     await this.mutate(project, async () => {
       const { record, repo, dir } = await this.copy(project, task);
       // 直接在主資料夾工作的作業，workdir 就是主資料夾本身，絕不能移除。
       if (record.workspace !== 'direct') {
         const target = dir || this.ws.worktreeDir(project, task);
+        if (path.resolve(target) !== this.ws.worktreeDir(project, task)) throw new AppError('conflict', 'archive_unsafe_path');
         if (await pathExists(target)) {
-          if (await deadGitfile(target)) {
-            // 上次移除到一半失敗：git 已丟掉副本登記，只剩殘留檔案（提交早在移除前完成）。
-            await fs.rm(target, { recursive: true, force: true, maxRetries: 3 });
-          } else {
+          if ((await fs.lstat(target)).isSymbolicLink() || (await fs.lstat(path.dirname(target))).isSymbolicLink() || !isInside(await fs.realpath(this.ws.workDir), await fs.realpath(target))) throw new AppError('conflict', 'archive_unsafe_path');
+          const dead = await deadGitfile(target);
+          if (!dead) {
             await this.verifyFamily(repo, target);
-            // 副本的 HEAD 若不在作業分支（被 AI 或人切走），提交會落到別的分支（曾誤提交到 main），一律拒絕。
             const head = await git(target, ['symbolic-ref', '--short', '-q', 'HEAD']);
             if (head.stdout.trim() !== this.branch(task)) throw new AppError('conflict', 'worktree_wrong_branch');
             await commitAll(target, `${record.title}（封存前儲存）`);
-            const removed = await git(repo, ['worktree', 'remove', '--force', target]);
-            if (removed.code !== 0) {
-              // git 刪目錄時偶爾因並行寫入（編輯器、建置程序）報 Directory not empty；登記已移除，改由我們收尾。
-              log.warn('git worktree remove 失敗，改以直接刪除收尾', { project, task, stderr: removed.stderr.slice(0, 500) });
-              await fs.rm(target, { recursive: true, force: true, maxRetries: 3 });
-            }
+          }
+          // Rename retains ignored files, secrets and late writes without following symlinks.
+          // If retention fails the source remains; never fall back to deleting the source.
+          await new RecoveryStore(this.ws).preserve(project, task, target);
+          const removed = await git(repo, ['worktree', 'remove', '--force', target]);
+          if (removed.code !== 0 && !dead) {
+            await gitOk(repo, ['worktree', 'prune', '--expire', 'now']);
           }
         }
-        await git(repo, ['worktree', 'prune']);
+        await gitOk(repo, ['worktree', 'prune', '--expire', 'now']);
       }
       if (record.workdir) await this.tasks.update(project, task, { workdir: '' });
       await new OpLog(this.ws).record({ action: 'abandon', project, task });
+    });
+  }
+  async revive(project: string, task: string): Promise<void> {
+    await this.mutate(project, async () => {
+      const record = await this.tasks.get(project, task);
+      if (record.workspace === 'direct') return;
+      const repo = await this.bodyPath(project), dir = this.ws.worktreeDir(project, task);
+      if (await fs.lstat(dir).catch((error: NodeJS.ErrnoException) => { if (error.code === 'ENOENT') return null; throw error; })) throw new AppError('conflict', 'archive_restore_conflict');
+      const recovery = new RecoveryStore(this.ws);
+      const snapshots = await recovery.snapshots(project, task);
+      if (!snapshots.length && !(await isRepo(repo))) return;
+      const retainedBranch = await branchExists(repo, this.branch(task));
+      if (!retainedBranch && !snapshots.length) return;
+      await fs.mkdir(path.dirname(dir), { recursive: true });
+      await gitOk(repo, ['worktree', 'prune', '--expire', 'now']);
+      await gitOk(repo, retainedBranch
+        ? ['worktree', 'add', '-q', dir, this.branch(task)]
+        : ['worktree', 'add', '-q', '-b', this.branch(task), dir, 'HEAD']);
+      try {
+        await recovery.restoreFreshCheckout(project, task, dir);
+        await this.tasks.update(project, task, { workdir: dir });
+        if (snapshots.length) await recovery.retireRestored(project, task);
+      } catch (error) {
+        // This newly created checkout contains no unique data: the original is still in recovery.
+        await gitOk(repo, ['worktree', 'remove', '--force', dir]);
+        throw error;
+      }
     });
   }
   async copyclear(project: string, task: string): Promise<Task> {
@@ -398,19 +430,48 @@ async function mergeHead(dir: string): Promise<string | null> {
   return result.code === 0 ? result.stdout.trim() : null;
 }
 
-/** Copy untracked local settings without logging their contents or following symlinks. */
+/** Copy untracked local settings without logging contents or following either side's symlinks. */
 export async function copyLocalSecrets(repo: string, dir: string): Promise<string[]> {
   const tracked = new Set(splitNull(await gitOk(repo, ['ls-files', '-z'])));
+  const root = await fs.realpath(dir);
+  if ((await fs.lstat(dir)).isSymbolicLink()) throw new AppError('conflict', 'archive_unsafe_path');
   const copied: string[] = [];
+  async function destinationParent(relative: string): Promise<string> {
+    let current = dir;
+    for (const part of path.dirname(relative).split(path.sep).filter(part => part !== '.')) {
+      current = path.join(current, part);
+      await fs.mkdir(current).catch((error: NodeJS.ErrnoException) => { if (error.code !== 'EEXIST') throw error; });
+      const stat = await fs.lstat(current);
+      if (!stat.isDirectory() || stat.isSymbolicLink() || !isInside(root, await fs.realpath(current))) throw new AppError('conflict', 'archive_unsafe_path');
+    }
+    return current;
+  }
   async function visit(relative: string): Promise<void> {
     for (const entry of await fs.readdir(path.join(repo, relative), { withFileTypes: true })) {
       if (entry.name === '.git' || entry.name === '.ai' || entry.name === 'node_modules') continue;
       const file = path.join(relative, entry.name);
-      if (entry.isDirectory()) await visit(file);
-      else if (entry.isFile() && isLocalSecret(file) && !tracked.has(file)) {
-        await fs.mkdir(path.dirname(path.join(dir, file)), { recursive: true });
-        await fs.copyFile(path.join(repo, file), path.join(dir, file));
-        copied.push(file);
+      const source = path.join(repo, file);
+      const stat = await fs.lstat(source);
+      if (stat.isDirectory()) await visit(file);
+      else if (stat.isFile() && isLocalSecret(file) && !tracked.has(file)) {
+        const parent = await destinationParent(file);
+        const destination = path.join(parent, entry.name);
+        const old = await fs.lstat(destination).catch((error: NodeJS.ErrnoException) => { if (error.code === 'ENOENT') return null; throw error; });
+        if (old) throw new AppError('conflict', old.isSymbolicLink() ? 'archive_unsafe_path' : 'archive_restore_conflict');
+        const temporary = path.join(parent, `.ym-secret-${randomUUID()}`);
+        const input = await fs.open(source, constants.O_RDONLY | constants.O_NOFOLLOW);
+        try {
+          if (!(await input.stat()).isFile()) throw new AppError('conflict', 'archive_unsafe_path');
+          const output = await fs.open(temporary, 'wx', 0o600);
+          try { await output.writeFile(await input.readFile()); } finally { await output.close(); }
+          // Linking a completed regular file is atomic and refuses an existing destination,
+          // including a symlink introduced after the check above.
+          await fs.link(temporary, destination);
+          copied.push(file);
+        } finally {
+          await input.close();
+          await fs.rm(temporary, { force: true });
+        }
       }
     }
   }

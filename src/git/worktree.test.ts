@@ -395,3 +395,120 @@ test('revertFile restores one file to the fork point and only touches files that
     await assert.rejects(wt.revertFile('P', task.id, bad), (e: unknown) => e instanceof AppError && e.detail === 'file_missing', bad);
   }
 }));
+
+test('checkpoint secret copying refuses destination directory and file symlinks', () => withTmpWorkspace(async (ws, tmp) => {
+  const projects = new ProjectLedger(ws);
+  const tasks = new TaskLedger(ws);
+  await projects.create({ name: 'P' });
+  const repo = ws.projectDir('P');
+  const wt = new WorktreeService({ ws, projects, tasks, diffBytes: 100_000 });
+  const original = await tasks.create('P', { title: '不安全檢查點' });
+  const source = await wt.prepare('P', original.id);
+  const outside = path.join(tmp, 'outside');
+  await fs.mkdir(outside);
+  const sentinel = path.join(outside, 'sentinel');
+  await fs.writeFile(sentinel, 'unchanged\n');
+  await fs.symlink(sentinel, path.join(source, '.env.local'));
+  await gitOk(source, ['add', '-f', '.env.local']);
+  await gitOk(source, ['commit', '-q', '-m', 'checkpoint file symlink']);
+  const leafPoint = (await gitOk(source, ['rev-parse', 'HEAD'])).trim();
+  await fs.writeFile(path.join(repo, '.env.local'), 'SECRET=never-outside\n');
+  const leaf = await tasks.create('P', { title: '檔案連結' });
+  await assert.rejects(wt.prepareFrom('P', leaf.id, leafPoint), (error: unknown) => error instanceof AppError && error.detail === 'archive_unsafe_path');
+  assert.equal(await fs.readFile(sentinel, 'utf8'), 'unchanged\n');
+  await fs.rm(path.join(repo, '.env.local'));
+
+  await fs.symlink(outside, path.join(source, 'nested'));
+  await gitOk(source, ['add', 'nested']);
+  await gitOk(source, ['commit', '-q', '-m', 'checkpoint directory symlink']);
+  const parentPoint = (await gitOk(source, ['rev-parse', 'HEAD'])).trim();
+  await fs.mkdir(path.join(repo, 'nested'));
+  await fs.writeFile(path.join(repo, 'nested', '.npmrc'), 'TOKEN=never-outside\n');
+  const parent = await tasks.create('P', { title: '資料夾連結' });
+  await assert.rejects(wt.prepareFrom('P', parent.id, parentPoint), (error: unknown) => error instanceof AppError && error.detail === 'archive_unsafe_path');
+  await assert.rejects(fs.access(path.join(outside, '.npmrc')));
+  assert.equal(await fs.readFile(sentinel, 'utf8'), 'unchanged\n');
+}));
+
+test('merge preserves ignored unique files and local secrets as reported leftovers', () => withTmpWorkspace(async ws => {
+  const projects = new ProjectLedger(ws);
+  const tasks = new TaskLedger(ws);
+  await projects.create({ name: 'P' });
+  const repo = ws.projectDir('P');
+  await fs.writeFile(path.join(repo, '.gitignore'), 'cache/\n.env*\n');
+  await commitAll(repo, 'ignore local files');
+  const task = await tasks.create('P', { title: '保留忽略檔' });
+  const wt = new WorktreeService({ ws, projects, tasks, diffBytes: 100_000 });
+  const dir = await wt.prepare('P', task.id);
+  await fs.mkdir(path.join(dir, 'cache'));
+  await fs.writeFile(path.join(dir, 'cache', 'unique.bin'), 'unique\n');
+  await fs.writeFile(path.join(dir, '.env.local'), 'SECRET=unique\n');
+  await fs.writeFile(path.join(dir, 'feature.txt'), 'published\n');
+  const result = await wt.merge('P', task.id);
+  assert.ok(result.leftover?.some(file => file === 'cache/' || file === 'cache/unique.bin'));
+  assert.ok(result.leftover?.includes('.env.local'));
+  assert.equal((await tasks.get('P', task.id)).workdir, dir);
+  assert.equal(await fs.readFile(path.join(dir, 'cache', 'unique.bin'), 'utf8'), 'unique\n');
+  assert.equal(await fs.readFile(path.join(dir, '.env.local'), 'utf8'), 'SECRET=unique\n');
+  assert.equal(await fs.readFile(path.join(repo, 'feature.txt'), 'utf8'), 'published\n');
+  await assert.rejects(fs.access(path.join(repo, 'cache', 'unique.bin')));
+  await assert.rejects(fs.access(path.join(repo, '.env.local')));
+}));
+
+test('revive overlays dead-registration tracked modifications, late writes and deletions', () => withTmpWorkspace(async ws => {
+  const projects = new ProjectLedger(ws);
+  const tasks = new TaskLedger(ws);
+  await projects.create({ name: 'P' });
+  const repo = ws.projectDir('P');
+  await fs.writeFile(path.join(repo, 'modified.txt'), 'base\n');
+  await fs.writeFile(path.join(repo, 'late.txt'), 'base\n');
+  await fs.writeFile(path.join(repo, 'deleted.txt'), 'base\n');
+  await fs.mkdir(path.join(repo, 'removed'));
+  await fs.writeFile(path.join(repo, 'removed', 'child.txt'), 'base\n');
+  await commitAll(repo, 'tracked recovery baseline');
+  const task = await tasks.create('P', { title: '失效登記' });
+  const wt = new WorktreeService({ ws, projects, tasks, diffBytes: 100_000 });
+  const dir = await wt.prepare('P', task.id);
+  const gitdir = (await gitOk(dir, ['rev-parse', '--absolute-git-dir'])).trim();
+  await fs.writeFile(path.join(dir, 'modified.txt'), 'uncommitted tracked change\n');
+  await fs.rm(path.join(dir, 'deleted.txt'));
+  await fs.rm(path.join(dir, 'removed'), { recursive: true });
+  const late = await fs.open(path.join(dir, 'late.txt'), 'r+');
+  try {
+    await fs.rm(gitdir, { recursive: true });
+    await wt.abandon('P', task.id);
+    await late.truncate(0);
+    await late.writeFile('late tracked write after retention\n');
+  } finally { await late.close(); }
+  await wt.revive('P', task.id);
+  assert.equal((await tasks.get('P', task.id)).workdir, dir);
+  assert.equal(await fs.readFile(path.join(dir, 'modified.txt'), 'utf8'), 'uncommitted tracked change\n');
+  assert.equal(await fs.readFile(path.join(dir, 'late.txt'), 'utf8'), 'late tracked write after retention\n');
+  await assert.rejects(fs.access(path.join(dir, 'deleted.txt')));
+  await assert.rejects(fs.access(path.join(dir, 'removed')));
+  assert.equal(await fs.readFile(path.join(repo, 'modified.txt'), 'utf8'), 'base\n');
+  assert.equal(await fs.readFile(path.join(repo, 'deleted.txt'), 'utf8'), 'base\n');
+  await fs.access(path.join(gitdir, 'HEAD'));
+  assert.equal((await gitOk(dir, ['rev-parse', '--abbrev-ref', 'HEAD'])).trim(), wt.branch(task.id));
+  const status = await gitOk(dir, ['status', '--porcelain']);
+  assert.match(status, /modified\.txt/);
+  assert.match(status, /late\.txt/);
+  assert.match(status, /deleted\.txt/);
+}));
+
+test('revive refuses a preexisting user checkout without overwriting it', () => withTmpWorkspace(async ws => {
+  const projects = new ProjectLedger(ws);
+  const tasks = new TaskLedger(ws);
+  await projects.create({ name: 'P' });
+  const task = await tasks.create('P', { title: '還原衝突' });
+  const wt = new WorktreeService({ ws, projects, tasks, diffBytes: 100_000 });
+  const dir = await wt.prepare('P', task.id);
+  await fs.writeFile(path.join(dir, 'unique.txt'), 'retained\n');
+  await wt.abandon('P', task.id);
+  await gitOk(ws.projectDir('P'), ['worktree', 'add', '-q', dir, wt.branch(task.id)]);
+  await fs.writeFile(path.join(dir, 'unique.txt'), 'user checkout change\n');
+  const registration = await fs.readFile(path.join(dir, '.git'), 'utf8');
+  await assert.rejects(wt.revive('P', task.id), (error: unknown) => error instanceof AppError && error.detail === 'archive_restore_conflict');
+  assert.equal(await fs.readFile(path.join(dir, 'unique.txt'), 'utf8'), 'user checkout change\n');
+  assert.equal(await fs.readFile(path.join(dir, '.git'), 'utf8'), registration);
+}));

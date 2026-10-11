@@ -13,7 +13,7 @@ export interface GitResult {
   truncated?: boolean;
 }
 
-const ENV = minimalEnv([]);
+const ENV = minimalEnv(['SSH_AUTH_SOCK']);
 const IDENTITY = ['-c', 'user.name=YuMeewADE', '-c', 'user.email=yumeewade@localhost'];
 
 
