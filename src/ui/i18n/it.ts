@@ -120,6 +120,7 @@ export const it: Record<MessageKey, string> = {
   'project.existingHint': 'Seleziona un progetto esistente in questo spazio di lavoro per riprendere le attività e le conversazioni originali.',
   'project.searchExisting': 'Cerca nome del progetto o cartella principale…',
   'project.noExisting': 'Nessun progetto corrispondente in questo spazio di lavoro. Per un altro spazio, cambialo nelle impostazioni.',
+  'project.folderNotProject': 'La cartella scelta non è un progetto di questo spazio di lavoro (scegli la cartella del progetto o la sua cartella principale).',
   'project.openNamed': 'Apri «{name}»',
   'project.existsHint': 'Apri il progetto originale senza sovrascrivere dati, applicare questi campi o inviare la prima attività.',
   'project.new': 'Crea un progetto',

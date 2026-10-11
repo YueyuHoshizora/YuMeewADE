@@ -120,6 +120,7 @@ export const en: Record<MessageKey, string> = {
   'project.existingHint': 'Select an existing project in this workspace to continue its original tasks and conversations.',
   'project.searchExisting': 'Search project name or main folder…',
   'project.noExisting': 'No matching projects in this workspace. For projects in another workspace, switch workspace in Settings.',
+  'project.folderNotProject': 'The selected folder is not a project in this workspace (choose a project folder or its main folder).',
   'project.openNamed': 'Open “{name}”',
   'project.existsHint': 'Open the original project without overwriting data, applying these form fields, or sending the first task.',
   'project.new': 'Create project',

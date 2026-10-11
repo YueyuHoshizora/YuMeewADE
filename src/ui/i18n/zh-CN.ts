@@ -120,6 +120,7 @@ export const zhCN: Record<MessageKey, string> = {
   'project.existingHint': '选择当前工作区的现有项目，继续使用原来的任务与对话。',
   'project.searchExisting': '搜索项目名称或主文件夹…',
   'project.noExisting': '当前工作区没有符合条件的项目。若项目在其他工作区，请到设置切换工作区。',
+  'project.folderNotProject': '所选文件夹不是当前工作区中的项目（请选择项目文件夹或其主文件夹）。',
   'project.openNamed': '打开“{name}”',
   'project.existsHint': '可以打开原项目，不会覆盖数据，也不会应用此表单的字段或发送第一个任务。',
   'project.new': '创建新项目',

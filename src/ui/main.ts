@@ -5,7 +5,7 @@ import { button, el, link, readLocal, run, showError, taskHash, toast, type View
 import { aiLabel, localDateTime, localTime, quotaLabel } from './components/display.ts';
 import { quotaAlerts, quotaCountdowns, type QuotaAlert } from './components/quota-alert.ts';
 import { needsReply, tree } from './components/tree.ts';
-import { newProjectView, openProjectView, projectView } from './views/projects.ts';
+import { newProjectView, openProjectFromFolder, openProjectView, projectView } from './views/projects.ts';
 import { taskView } from './views/task.ts';
 import { turnView } from './views/turn.ts';
 import { settingsView } from './views/settings.ts';
@@ -84,7 +84,7 @@ function drawShell(): void {
   const menu = button('☰', () => document.body.classList.toggle('sidebar-open'), 'menu-toggle'); menu.setAttribute('aria-label', t('nav.menu'));
   header.replaceChildren(menu, link(t('app.title'), '#/turn', 'brand'), el('span', 'version', `v${state.version}`), ...(visibleUpdate(state.update) ? [updateChip(state.update!, state.version, drawShell)] : []), el('span', 'spacer'), link(`${t('nav.turn')} · ${t('tree.reply')} ${replies} · ${t('tree.confirm')} ${confirmations}`, '#/turn', 'turn-button'), link(t('nav.settings'), '#/settings', 'settings-button'));
   const searching = document.activeElement instanceof HTMLInputElement && document.activeElement.classList.contains('tree-search'); const top = sidebar.scrollTop;
-  sidebar.replaceChildren(el('div', 'sidebar-heading', t('nav.projects')), tree({ state, refresh }), button(t('project.openExisting'), () => { location.hash = '#/open'; }, 'new-project'), link(t('nav.new'), '#/new', 'new-project'));
+  const shell = { state, refresh }; sidebar.replaceChildren(el('div', 'sidebar-heading', t('nav.projects')), tree(shell), button(t('project.openExisting'), () => openProjectFromFolder(shell), 'new-project'), link(t('nav.new'), '#/new', 'new-project'));
   sidebar.scrollTop = top; if (searching) sidebar.querySelector<HTMLInputElement>('.tree-search')?.focus({ preventScroll: true });
   document.documentElement.lang = getLocale(); drawFooter();
 }

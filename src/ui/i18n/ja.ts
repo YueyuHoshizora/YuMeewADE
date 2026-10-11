@@ -120,6 +120,7 @@ export const ja: Record<MessageKey, string> = {
   'project.existingHint': '現在のワークスペースにある既存のプロジェクトを選び、元のタスクと会話を続けます。',
   'project.searchExisting': 'プロジェクト名またはメインフォルダーを検索…',
   'project.noExisting': 'このワークスペースに一致するプロジェクトはありません。別のワークスペースの場合は設定で切り替えてください。',
+  'project.folderNotProject': '選択したフォルダーは現在のワークスペースのプロジェクトではありません(プロジェクトフォルダーまたはそのメインフォルダーを選んでください)。',
   'project.openNamed': '「{name}」を開く',
   'project.existsHint': '元のプロジェクトを開きます。データを上書きせず、このフォームの内容や最初のタスクは送信しません。',
   'project.new': '新規プロジェクト',

@@ -30,6 +30,20 @@ async function startWithBudget(context: ViewContext, input: StartInput): Promise
 
 declare global { interface Window { yumeewade?: { desktop: true; platform: string; pickFolder: () => Promise<string | null>; setBadge: (count: number) => void; focus: () => void }; } }
 
+const normalizePath = (value: string): string => { const slashed = value.replace(/\\/g, '/').replace(/\/+$/, ''); return /^[A-Za-z]:/.test(slashed) || slashed.startsWith('//') ? slashed.toLowerCase() : slashed; };
+
+/** 以系統資料夾選擇器開啟既有專案：所選資料夾須是專案的台帳資料夾或主資料夾；網頁版沒有選擇器，改進清單頁。 */
+export async function openProjectFromFolder(context: ViewContext): Promise<void> {
+  const pick = window.yumeewade?.pickFolder;
+  if (!pick) { location.hash = '#/open'; return; }
+  const value = await pick();
+  if (!value) return;
+  const target = normalizePath(value);
+  const found = context.state.projects.find(project => normalizePath(project.dir) === target) ?? context.state.projects.find(project => normalizePath(project.bodyPath) === target);
+  if (!found) { toast(t('project.folderNotProject')); return; }
+  location.hash = projectHash(found.id);
+}
+
 export function openProjectView(context: ViewContext): View {
   const node = el('div', 'page'); const search = input('', t('project.searchExisting'));
   search.type = 'search'; search.setAttribute('aria-label', t('project.searchExisting'));
@@ -44,7 +58,7 @@ export function openProjectView(context: ViewContext): View {
     if (!matches.length) projects.append(el('p', 'muted', t('project.noExisting')), link(t('nav.settings'), '#/settings'));
   }
   search.oninput = render; render();
-  node.append(el('h1', '', t('project.openExisting')), el('p', 'muted', t('project.existingHint')), search, projects, link(t('project.new'), '#/new'));
+  node.append(el('h1', '', t('project.openExisting')), el('p', 'muted', t('project.existingHint')), ...(window.yumeewade?.pickFolder ? [button(t('project.pickFolder'), () => openProjectFromFolder(context), 'primary')] : []), search, projects, link(t('project.new'), '#/new'));
   return { node, update: state => { context.state = state; render(); } };
 }
 
@@ -81,7 +95,7 @@ export function newProjectView(context: ViewContext, params: URLSearchParams): V
       if (!showExisting()) throw error;
     } finally { submit.disabled = false; }
   }); };
-  node.append(row(el('h1', '', t('project.new')), button(t('project.openExisting'), () => { location.hash = '#/open'; })), form);
+  node.append(row(el('h1', '', t('project.new')), button(t('project.openExisting'), () => openProjectFromFolder(context))), form);
   return { node, update: state => { context.state = state; showExisting(); } };
 }
 

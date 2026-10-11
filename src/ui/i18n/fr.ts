@@ -120,6 +120,7 @@ export const fr: Record<MessageKey, string> = {
   'project.existingHint': 'Choisissez un projet existant de cet espace de travail pour reprendre ses tâches et conversations.',
   'project.searchExisting': 'Rechercher le nom du projet ou le dossier principal…',
   'project.noExisting': 'Aucun projet correspondant dans cet espace de travail. Pour un autre espace, changez-le dans les paramètres.',
+  'project.folderNotProject': 'Le dossier choisi n’est pas un projet de cet espace de travail (choisissez le dossier du projet ou son dossier principal).',
   'project.openNamed': 'Ouvrir « {name} »',
   'project.existsHint': 'Ouvrez le projet original sans écraser les données, appliquer ce formulaire ni envoyer la première tâche.',
   'project.new': 'Créer un projet',

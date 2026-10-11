@@ -79,6 +79,7 @@ export const zhTW = {
   'project.existingHint': '選擇目前工作區的既有專案，繼續使用原本的作業與對話。',
   'project.searchExisting': '搜尋專案名稱或主資料夾…',
   'project.noExisting': '目前工作區沒有符合條件的專案。若專案在其他工作區，請到設定切換工作區。',
+  'project.folderNotProject': '所選資料夾不是目前工作區中的專案（請選專案資料夾或其主資料夾）。',
   'project.openNamed': '開啟「{name}」',
   'project.existsHint': '可開啟原專案，不會覆蓋資料，也不會套用此表單的欄位或送出第一個作業。',
   'project.new': '建立新專案', 'project.name': '專案名稱', 'project.firstTask': '第一個作業（選填）', 'project.description': '說明', 'project.phases': '階段（每行一個）', 'project.defaultPhases': '計畫\n實作\n檢查\n收尾', 'project.body': '主資料夾', 'project.pickFolder': '選擇…', 'project.parent': '上層專案', 'project.related': '相關專案', 'project.create': '建立專案', 'project.notes': '說明與備註', 'project.phaseComplete': 'COMPLETE · 這個階段的作業已完成', 'project.nextPhase': '前往下一階段', 'project.continuePhase': '繼續這個階段', 'project.activeTasks': '目前階段的作業', 'project.otherTasks': '其他階段', 'project.completedTasks': '已完成作業', 'project.quick': '快速開始', 'project.quickPlaceholder': '寫下想做的事就能開始（例：做一個登入畫面）', 'project.start': '開始', 'project.detailedTask': '＋ 詳細設定並新增作業', 'project.complete': '將專案標為完成', 'project.reopen': '取消完成',
