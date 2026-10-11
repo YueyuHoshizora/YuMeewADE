@@ -426,6 +426,13 @@ export interface QueueItem {
   error?: string;
 }
 
+export interface ToolApproval {
+  id: string;
+  tool: string;
+  summary: string;
+  expiresAt: string;
+}
+
 export interface Busy {
   request: string;
   ai: string;
@@ -434,6 +441,8 @@ export interface Busy {
   startedAt: string;
   /** 本輪是從哪種方式開始的。 */
   mode?: SendMode | 'answer';
+  approvals?: ToolApproval[];
+  approvalUnsupported?: boolean;
 }
 
 export interface RunningInfo extends Busy {
@@ -519,6 +528,7 @@ export interface SearchResult {
 export type ChatEvent =
   | { event: 'snapshot'; data: { rows: ChatRow[]; start: number; busy: Busy | null; partial: string; queue: QueueItem[] } }
   | { event: 'busy'; data: Busy }
+  | { event: 'approvals'; data: ToolApproval[] }
   /** 增量文字（客戶端自行累加到 partial）。 */
   | { event: 'delta'; data: { request: string; text: string } }
   | { event: 'row'; data: ChatRow }

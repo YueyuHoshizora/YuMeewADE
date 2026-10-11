@@ -35,6 +35,7 @@ export type CliEvent =
   | { type: 'result'; text: string }
   | { type: 'usage'; usage: TurnUsage }
   | { type: 'tool'; text: string }
+  | { type: 'permission'; id: string; tool: string; input: Record<string, unknown>; respond: (allow: boolean) => void }
   | { type: 'asks'; asks: Ask[] }
   /** 帳號額度（CLI 或 API 回報；at＝資料時間 ISO；prepaidCents＝明確回報的預付美元分餘額；resetCredits＝明確回報的重置券）。 */
   | { type: 'quota'; windows: QuotaWindow[]; limited: boolean; at: string; prepaidCents?: number; resetCredits?: ResetCredits; extraUsage?: ExtraUsage; cloudCredits?: CloudCredits }
@@ -62,6 +63,7 @@ export interface CliProvider {
   readonly dangerous: boolean;
   /** False/absent means review is refused, not silently downgraded. */
   readonly supportsReadonly?: boolean;
+  readonly supportsApprovals?: boolean;
   readonly readonlyEnforcement?: 'native-sandbox' | 'tool-allowlist';
   available(): Promise<boolean>;
   send(opts: SendOptions, onEvent: (ev: CliEvent) => void): CliRun;

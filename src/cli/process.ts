@@ -52,6 +52,8 @@ async function locate(command: string, env: NodeJS.ProcessEnv): Promise<string |
 
 export interface LineProcess {
   stop(): void;
+  write(message: string): void;
+  endInput(): void;
   done: Promise<RunOutcome>;
 }
 
@@ -106,7 +108,7 @@ export function spawnCli(command: string, args: string[], options: Parameters<ty
  * 啟動 CLI，把 prompt 寫進 stdin，stdout 逐行交給 onLine（已 JSON.parse；壞行略過）。
  * 結束時 done resolve：exit 0 → ok；stop() → stopped；否則 reason 帶退出碼與 stderr 片段（只進日誌）。
  */
-export function runLineProcess(opts: { command: string; args: string[]; cwd: string; env: NodeJS.ProcessEnv; prompt: string; label: string }, onLine: (obj: Record<string, unknown>) => void): LineProcess {
+export function runLineProcess(opts: { command: string; args: string[]; cwd: string; env: NodeJS.ProcessEnv; prompt: string; label: string; keepInput?: boolean }, onLine: (obj: Record<string, unknown>) => void): LineProcess {
   let run: LineProcess | undefined;
   let stopped = false;
   const done = findExecutable(opts.command, opts.env).then((command) => {
@@ -115,10 +117,10 @@ export function runLineProcess(opts: { command: string; args: string[]; cwd: str
     run = runResolvedLineProcess({ ...opts, command }, onLine);
     return run.done;
   });
-  return { done, stop: () => { stopped = true; run?.stop(); } };
+  return { done, stop: () => { stopped = true; run?.stop(); }, write: message => run?.write(message), endInput: () => run?.endInput() };
 }
 
-function runResolvedLineProcess(opts: { command: string; args: string[]; cwd: string; env: NodeJS.ProcessEnv; prompt: string; label: string }, onLine: (obj: Record<string, unknown>) => void): LineProcess {
+function runResolvedLineProcess(opts: { command: string; args: string[]; cwd: string; env: NodeJS.ProcessEnv; prompt: string; label: string; keepInput?: boolean }, onLine: (obj: Record<string, unknown>) => void): LineProcess {
   const { promise, resolve } = Promise.withResolvers<RunOutcome>();
   let child: ChildProcess;
   let stopped = false;
@@ -135,12 +137,13 @@ function runResolvedLineProcess(opts: { command: string; args: string[]; cwd: st
     child = spawnCli(opts.command, opts.args, { cwd: opts.cwd, env: opts.env, stdio: ['pipe', 'pipe', 'pipe'], windowsHide: true, detached: process.platform !== 'win32' });
   } catch (err) {
     finish({ ok: false, stopped: false, reason: `spawn 失敗：${(err as Error).message}` });
-    return { stop: () => undefined, done: promise };
+    return { stop: () => undefined, done: promise, write: () => undefined, endInput: () => undefined };
   }
   log.info('CLI 啟動', { label: opts.label, pid: child.pid, args: redactArgs(opts.args) });
   child.on('error', (err) => finish({ ok: false, stopped, reason: `啟動失敗：${err.message}` }));
   child.stdin?.on('error', () => undefined);
-  child.stdin?.end(opts.prompt);
+  if (opts.keepInput) child.stdin?.write(opts.prompt);
+  else child.stdin?.end(opts.prompt);
   let buf = '';
   let bufBytes = 0;
   let failure: string | undefined;
@@ -195,6 +198,8 @@ function runResolvedLineProcess(opts: { command: string; args: string[]; cwd: st
       stopped = true;
       cancelStop = terminateTree(child, () => finish({ ok: false, stopped: true }));
     },
+    write: message => { if (!stopped && !settled) child.stdin?.write(message); },
+    endInput: () => child.stdin?.end(),
     done: promise,
   };
 }

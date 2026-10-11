@@ -28,6 +28,7 @@ import { snippetsButton } from '../components/snippet-menu.ts';
 import { attachSlashCommands } from '../components/slash-menu.ts';
 import { contextButton } from '../components/context.ts';
 import { reviewButton } from '../components/review-button.ts';
+import { renderPermissions } from '../components/permissions.ts';
 import { reviewDrafts } from '../components/review-drafts.ts';
 import { executionButton } from '../components/execution.ts';
 import { gitWorkbenchButton } from '../components/git-workbench.ts';
@@ -191,6 +192,8 @@ export function taskView(
   transcript.setAttribute('aria-live', 'off');
   const announcer = statusRegion();
   node.append(announcer);
+  const approvalHost = el('div', 'tool-approvals');
+  node.append(approvalHost);
   const transcriptRows = el('div', 'transcript-rows');
   const virtualHost = el('div', 'transcript-window');
   transcriptRows.append(virtualHost);
@@ -292,6 +295,7 @@ export function taskView(
     }
   };
   function controls(): void {
+    renderPermissions(approvalHost, busy, project.id, task.id);
     if (busy) {
       actions.replaceChildren(
         button(t('chat.stop'), () => request('/api/chat/stop', { project: project.id, task: task.id }), 'danger'),
@@ -316,6 +320,7 @@ export function taskView(
     const time = `${Math.floor(elapsed / 60).toString().padStart(2, '0')}:${(elapsed % 60).toString().padStart(2, '0')}`;
     running.hidden = false;
     running.textContent = t('chat.running', { ai: aiLabel(busy.ai), model: modelLabel(context.state, busy.ai, busy.model), time });
+    if (busy.approvals?.length) running.textContent += ` · ${t('permission.waiting')}`;
     const timer = transcript.querySelector<HTMLElement>('.live-time');
     if (timer) timer.textContent = time;
   }
@@ -983,6 +988,11 @@ export function taskView(
         addLive();
         controls();
         break;
+      case 'approvals':
+        if (busy) busy.approvals = event.data;
+        announcer.textContent = event.data.length ? t('permission.waiting') : '';
+        controls();
+        break;
       case 'delta':
         if (busy?.request === event.data.request) {
           partial += event.data.text;
@@ -1025,7 +1035,7 @@ export function taskView(
     }
   }
   const listeners: Record<string, (message: MessageEvent<string>) => void> = {};
-  for (const event of ['snapshot', 'busy', 'delta', 'row', 'queue', 'idle'] as const) {
+  for (const event of ['snapshot', 'busy', 'approvals', 'delta', 'row', 'queue', 'idle'] as const) {
     listeners[event] = message => {
       try {
         receive({ event, data: JSON.parse(message.data) } as ChatEvent);

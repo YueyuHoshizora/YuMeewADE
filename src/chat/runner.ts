@@ -26,6 +26,7 @@ import { parseMentions, resolveMentions } from './mentions.ts';
 import { parseAsk } from './ask.ts';
 import { slashName } from '../cli/commands.ts';
 import { pathExists } from '../shared/fsx.ts';
+import { TurnPermissions } from './permissions.ts';
 
 export interface RunnerDeps {
   ws: Workspace;
@@ -46,6 +47,7 @@ export interface RunnerDeps {
     runSeconds: number;
     mentionFileBytes?: number;
     mentionTotalBytes?: number;
+    approvalSeconds?: number;
   };
   publish(project: string, task: string, event: ChatEvent): void;
   watching(project: string, task: string): boolean;
@@ -66,6 +68,7 @@ interface Slot {
   run: CliRun | null;
   finished: Promise<void>;
   text: string;
+  permissions?: TurnPermissions;
 }
 
 export class ChatRunner extends EventEmitter {
@@ -129,6 +132,9 @@ export class ChatRunner extends EventEmitter {
     }
     return runs;
   }
+  approve(p: string, t: string, id: string, allow: boolean, turn = false): void {
+    if (!this.slots.get(`${p}\0${t}`)?.permissions?.answer(id, allow, turn)) throw new AppError('conflict', 'chat_stopped');
+  }
 
   isRunning(p: string, t: string): boolean {
     const key = `${p}\0${t}`;
@@ -173,6 +179,7 @@ export class ChatRunner extends EventEmitter {
     this.shuttingDown = true;
     for (const s of this.slots.values()) {
       s.text = '';
+      s.permissions?.close();
       s.run?.stop();
     }
     let timer: NodeJS.Timeout | undefined;
@@ -182,6 +189,7 @@ export class ChatRunner extends EventEmitter {
           await Promise.allSettled([...this.locks.values()]);
           for (const s of this.slots.values()) {
             s.text = '';
+            s.permissions?.close();
             s.run?.stop();
           }
           await Promise.allSettled([...this.slots.values()].map(s => s.finished));
@@ -339,6 +347,7 @@ export class ChatRunner extends EventEmitter {
     const fullAccess = await this.deps.resolveFullAccess?.(p, item.ai, settings.fullAccess[item.ai] ?? provider.dangerous) ?? settings.fullAccess[item.ai] ?? provider.dangerous;
     if (s.busy) {
       const previous = s.text.slice(0, 400);
+      s.permissions?.close();
       s.run?.stop();
       await s.finished;
       item.text = chosen.mode === 'redo'
@@ -519,8 +528,21 @@ export class ChatRunner extends EventEmitter {
       if (this.shuttingDown) throw new AppError('unavailable');
       if (cancelled()) throw new AppError('conflict', 'chat_stopped');
       launched = true;
+      s.permissions = new TurnPermissions(this.deps.limits.approvalSeconds ?? 120, cards => {
+        if (s.busy) s.busy.approvals = cards;
+        this.publish(p, t, { event: 'approvals', data: cards });
+        this.deps.onChanged(p, t);
+      });
+      if (!opts.fullAccess && !provider.supportsApprovals && s.busy) {
+        s.busy.approvalUnsupported = true;
+        this.publish(p, t, { event: 'busy', data: s.busy });
+        this.deps.onChanged(p, t);
+      }
       const run = provider.send(opts, ev => {
-        if (ev.type === 'session') sid = ev.id;
+        if (ev.type === 'permission') {
+          if (opts.fullAccess || !provider.supportsApprovals) ev.respond(false);
+          else s.permissions?.request(ev);
+        } else if (ev.type === 'session') sid = ev.id;
         else if (ev.type === 'delta') {
           s.partial += ev.text;
           this.publish(p, t, { event: 'delta', data: { request: item.id, text: ev.text } });
@@ -548,6 +570,7 @@ export class ChatRunner extends EventEmitter {
       const limit = setTimeout(() => {
         timedOut = true;
         log.warn('執行超過時間上限，已停止', { project: p, task: t });
+        s.permissions?.close();
         run.stop();
       }, this.deps.limits.runSeconds * 1000);
       const outcome = await run.done.finally(() => clearTimeout(limit));
@@ -629,6 +652,8 @@ export class ChatRunner extends EventEmitter {
         log.error('用量紀錄失敗', recordError, { project: p, task: t });
         this.deps.onUsageFailure?.();
       }
+      s.permissions?.close();
+      delete s.permissions;
       s.busy = null;
       s.run = null;
       s.partial = '';
@@ -643,7 +668,7 @@ export class ChatRunner extends EventEmitter {
     this.stopVersions.set(key, (this.stopVersions.get(key) ?? 0) + 1);
     const preparing = this.isRunning(p, t);
     const current = this.slots.get(key);
-    if (current) { current.text = ''; current.run?.stop(); }
+    if (current) { current.text = ''; current.permissions?.close(); current.run?.stop(); }
     return this.lock(p, t, async () => {
       await this.deps.tasks.get(p, t);
       const s = this.slot(p, t);

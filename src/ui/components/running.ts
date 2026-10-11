@@ -28,7 +28,7 @@ function openRunning(state: AppState, now = Date.now()): void {
     }), 'danger');
     stopButtons.push(stopOne);
     const model = [aiLabel(info.ai), modelLabel(state, info.ai, info.model)].filter(Boolean).join(' · ');
-    return row(open, el('span', 'muted', `${model} · ${formatElapsed(now - Date.parse(info.startedAt))}`), stopOne);
+    return row(open, el('span', 'muted', `${model} · ${info.approvals?.length ? t('permission.waiting') : formatElapsed(now - Date.parse(info.startedAt))}`), stopOne);
   });
   const stopAll = button(t('running.stopAll'), () => run(async () => {
     if (!await confirmModal(t('running.stopAll'), t('running.stopAllConfirm', { n: state.running.length }), t('chat.stop'))) return;

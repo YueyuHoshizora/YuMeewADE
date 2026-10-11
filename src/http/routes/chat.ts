@@ -59,6 +59,14 @@ export function registerChatRoutes(router: Router, app: App): void {
     return app.runner.send(input);
   });
   router.post('/api/chat/stop', async ({ body }) => ({ stopped: await app.runner.stop(reqString(body, 'project', 100), reqString(body, 'task', 100)) }));
+  router.post('/api/chat/approve', async ({ body }) => {
+    const p = reqString(body, 'project', 100); const t = reqString(body, 'task', 100);
+    if (typeof body['allow'] !== 'boolean' || (body['turn'] !== undefined && typeof body['turn'] !== 'boolean')) throw new AppError('bad_request', 'field_type', { field: 'allow' });
+    await app.tasks.get(p, t);
+    if (body['allow']) await app.trust.assertExecutable(p);
+    app.runner.approve(p, t, reqString(body, 'id', 100), body['allow'], body['turn'] === true);
+    return { ok: true };
+  });
   router.post('/api/chat/unqueue', async ({ body }) => app.runner.unqueue(reqString(body, 'project', 100), reqString(body, 'task', 100), reqString(body, 'id', 100)));
   router.post('/api/chat/rollback', async ({ body }) => {
     const project = reqString(body, 'project', 100); const task = reqString(body, 'task', 100);

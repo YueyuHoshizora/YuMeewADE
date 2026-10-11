@@ -11,12 +11,16 @@ export interface MockOptions {
   events?: CliEvent[];
   /** stop 後延遲完成，用來測下一輪是否等待真正停止。 */
   stopMs?: number;
+  permissions?: { tool: string; input: Record<string, unknown> }[];
+  supportsApprovals?: boolean;
+  onPermission?: (allow: boolean) => void;
 }
 
 export class MockCliProvider implements CliProvider {
   readonly name = 'mock';
   readonly dangerous = false;
   readonly supportsReadonly = false;
+  get supportsApprovals(): boolean { return this.options.supportsApprovals ?? true; }
   private readonly chunkMs: number;
   private readonly options: MockOptions;
   private counter = 0;
@@ -46,9 +50,21 @@ export class MockCliProvider implements CliProvider {
     const sessionId = opts.resumeId ?? `mock-${++this.counter}-${Date.now().toString(36)}`;
     onEvent({ type: 'session', id: sessionId });
     let eventIndex = 0;
+    let permissionIndex = 0;
 
     const step = () => {
       if (stopped) return;
+      if (permissionIndex < (this.options.permissions?.length ?? 0)) {
+        const permission = this.options.permissions![permissionIndex++]!;
+        let answered = false;
+        onEvent({ type: 'permission', id: `mock-permission-${permissionIndex}`, ...permission, respond: allow => {
+          if (answered) return;
+          answered = true;
+          this.options.onPermission?.(allow);
+          if (!stopped) timer = setTimeout(step, this.chunkMs);
+        } });
+        return;
+      }
       if (eventIndex < (this.options.events?.length ?? 0)) {
         onEvent(this.options.events![eventIndex++]!);
         timer = setTimeout(step, slow ? this.chunkMs * 25 : this.chunkMs);

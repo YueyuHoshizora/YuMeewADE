@@ -790,3 +790,65 @@ test('redo admission includes final usage of the interrupted turn and retains th
     assert.equal(totals[0]!.input + totals[0]!.output, 20);
   } finally { await s.runner.stopAll(); }
 }));
+
+for (const decision of ['approve', 'deny', 'timeout', 'stop', 'unsupported', 'turn', 'redo'] as const) {
+  test(`tool permission broker: ${decision}`, () => withTmpWorkspace(async ws => {
+    const answers: boolean[] = [];
+    const { promise: waiting, resolve } = Promise.withResolvers<string>();
+    const s = await setup(ws, {
+      permissions: [{ tool: 'Bash', input: { command: 'echo hello', password: 'never rendered' } }, ...(decision === 'turn' ? [{ tool: 'Bash', input: { command: 'echo again' } }] : [])],
+      supportsApprovals: decision !== 'unsupported', onPermission: allow => answers.push(allow),
+    }, 600, {
+      resolveFullAccess: async () => false,
+      limits: { concurrentRuns: 2, queueLength: 3, handoffChars: 60000, imagesPerSend: 10, runSeconds: 600, approvalSeconds: decision === 'timeout' ? 0.02 : 2 },
+      publish: (_p, _t, event) => { if (event.event === 'approvals' && event.data[0]) resolve(event.data[0].id); },
+    });
+    await s.send('permission');
+    if (decision === 'unsupported') {
+      assert.equal(s.runner.running()[0]?.approvalUnsupported, true);
+      await s.runner.whenIdle();
+      assert.deepEqual(answers, [false]);
+      return;
+    }
+    const id = await waiting;
+    assert.equal(s.runner.running()[0]?.approvals?.[0]?.summary, 'echo hello');
+    const snapshot = await s.runner.snapshot('P', s.task.id);
+    assert.equal(snapshot.busy?.approvals?.[0]?.id, id);
+    if (decision === 'stop') await s.runner.stop('P', s.task.id);
+    else if (decision === 'redo') {
+      // The replacement request is independently gated; only the old turn is denied.
+      const next = s.send('replacement', { mode: 'redo' });
+      await next;
+      await s.runner.stop('P', s.task.id);
+    } else if (decision !== 'timeout') s.runner.approve('P', s.task.id, id, decision !== 'deny', decision === 'turn');
+    await s.runner.whenIdle();
+    assert.deepEqual(answers, decision === 'turn' ? [true, true] : decision === 'redo' ? [false] : [decision === 'approve']);
+    assert.throws(() => s.runner.approve('P', s.task.id, id, true), { code: 'conflict' });
+    assert.equal(s.runner.running().length, 0);
+  }));
+}
+
+test('approval route validates decisions and checks trust before allowing', () => withTmpWorkspace(async ws => {
+  const { promise: waiting, resolve } = Promise.withResolvers<string>();
+  const answers: boolean[] = [];
+  const s = await setup(ws, { permissions: [{ tool: 'Edit', input: { file_path: 'a.ts' } }], onPermission: allow => answers.push(allow) }, 600, {
+    resolveFullAccess: async () => false,
+    publish: (_p, _t, event) => { if (event.event === 'approvals' && event.data[0]) resolve(event.data[0].id); },
+  });
+  const routes = new Map<string, Handler>();
+  let trusted = false;
+  registerChatRoutes({ get: () => {}, postRaw: () => {}, post: (path: string, handler: Handler) => routes.set(path, handler) } as unknown as Router,
+    { runner: s.runner, tasks: s.tasks, config: DEFAULT_CONFIG, trust: { assertExecutable: async () => { if (!trusted) throw new AppError('forbidden'); } } } as unknown as App);
+  await s.send('edit');
+  const id = await waiting;
+  const handler = routes.get('/api/chat/approve')!;
+  const ctx = (body: Record<string, unknown>) => ({ body } as Ctx);
+  await assert.rejects(async () => handler(ctx({ project: 'P', task: s.task.id, id, allow: 'yes' })), { code: 'bad_request' });
+  await assert.rejects(async () => handler(ctx({ project: 'P', task: s.task.id, id, allow: true })), { code: 'forbidden' });
+  assert.equal(answers.length, 0);
+  trusted = true;
+  assert.deepEqual(await handler(ctx({ project: 'P', task: s.task.id, id, allow: true })), { ok: true });
+  await s.runner.whenIdle();
+  assert.deepEqual(answers, [true]);
+  await assert.rejects(async () => handler(ctx({ project: 'P', task: s.task.id, id, allow: false })), { code: 'conflict' });
+}));

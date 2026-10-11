@@ -8,7 +8,7 @@
 
 > **安全宣告（請先讀）**
 > - 核心只監聽 `http://127.0.0.1:4560`，**沒有登入、沒有認證**。這是刻意的：它是單人本機工具，不是網頁服務。本機上的其他程序可以呼叫它。請勿改綁 `0.0.0.0`，也不要把 port 轉發到外部。
-> - **AI 預設擁有完整權限**：claude 以 `--dangerously-skip-permissions`、codex 以 `--dangerously-bypass-approvals-and-sandbox`、grok 以 `--always-approve` 啟動，會用你的帳號權限改檔與執行任何指令（與 project-hub 相同；使用者 2026-10-10 決定）。可以在「設定 → AI 工具 → 完整權限」逐一關閉。關閉後 claude 只自動接受改檔，codex 在工作目錄沙箱內執行，grok 以 `dontAsk` 拒絕需要核准的操作。
+> - **AI 預設擁有完整權限**：claude 以 `--dangerously-skip-permissions`、codex 以 `--dangerously-bypass-approvals-and-sandbox`、grok 以 `--always-approve` 啟動，會用你的帳號權限改檔與執行任何指令。可在「設定 → AI 工具 → 完整權限」關閉。關閉後 Claude 需核准的工具由聊天卡片詢問；Codex 保持工作目錄沙箱、Grok 保持 `dontAsk`、agy 保持編輯模式，這三者目前不支援本程式的互動核准。安全模式不是跨 CLI 一致的唯讀或 OS 沙箱；CLI 與其設定仍須可信任。
 > - CLI 管理 AI 費用與 OAuth 登入，App 不保證不產生費用。App **會保存並更新憑證**：透過 Electron `safeStorage` 的作業系統保護加密後，存入 App 私有目錄的 `credentials.sqlite`（Node `node:sqlite`），不在工作區。Linux 必須有受支援的 libsecret／KWallet；不可用時拒絕啟動，不退回明文。核心為 CLI 還原隔離帳號檔案，並保存刷新後憑證；額度僅送固定官方端點。憑證不回傳 App API／畫面／日誌，但隔離 CLI 檔案與恢復快照可能含機密，不能公開分享。
 > - 本機 `GET /api/care/log` 檢視器刻意允許本機使用者讀取既有日誌堆疊；只讀固定檔案且限制大小，沿用 loopback／Host／Origin 保護，無遠端認證。home 轉為 `~` 並防禦遮蔽憑證與 token-like 文字，但不能保證任意日誌無機密，複製或分享前務必人工檢查。
 
@@ -65,6 +65,7 @@ Claude／Codex 模型清單直接讀 CLI 自己的快取（`~/.codex/models_cach
 - **命令面板**：⌘/Ctrl+Shift+P 模糊搜尋專案、作業與可用操作；↑↓ 選擇、Enter 執行、Esc 關閉。可切換語言／外觀、開啟目前範圍的檔案與 Git 工作台；停止全部 AI 先要求確認。
 - **前往檔案**：在專案／作業按 ⌘/Ctrl+P，透過既有檔案搜尋顯示最多 50 筆結果；輸入 `路徑:行號` 可定位到指定行（行號從 1 起算），Enter 開啟編輯器。
 - **快捷鍵說明**：非輸入狀態按 `?`，或隨時按 ⌘/Ctrl+/，顯示全域導航、面板、檔案儲存、輸入建議、對話送出與終端鍵盤操作；不改變原本 `/`、⌘K、⌘⇧F 或輸入框規則。
+- **工具核准**：Claude 安全模式提供工具名稱、摘要、允許一次／拒絕與本輪允許此工具；執行面板與「交給你嚕」顯示等待核准。預設 120 秒逾時拒絕；停止、重做、補充、關閉與重啟不保留授權。本輪允許是同名工具的廣泛授權，不是同一命令授權。Codex exec／Grok single／agy print 保留既有保護並明示未支援。
 - **封存恢復**：先預覽影響，再封存／還原專案或作業。強制封存保留分支及原工作副本恢復快照，含未追蹤、ignored、機密檔與刪除狀態；還原重建 worktree，拒絕覆蓋現有目的地。`.yumeewade/recovery/` 為私有資料，不是可公開的 Git 備份，也不是外部主資料夾的完整備份。
   成功還原後，該代快照移入保留區，不再套用到日後的封存；原始資料仍保留，不會覆蓋後續已合併的內容。
   還原涉及 checkout 仍須符合原保存信任及目前 root，拒絕則回滾，不自動信任封存專案；不涉及 checkout 的直接作業台帳還原仍可使用。
@@ -147,6 +148,8 @@ npm run desktop      # 桌面版（開發機）
 | `server` | `host`、`port` | 只允許 loopback；預設 `127.0.0.1:4560` |
 | `workspace` | `root` | 工作區根目錄，預設 `~/Documents/YuMeewWorkspace`；設定頁切換時會改寫這一行 |
 | `cli.claude` / `cli.codex` / `cli.grok` | `command`、`baseArgs`、`fullAccess`、`fullAccessArgs`、`safeArgs` | 指令與無頭模式旗標；`fullAccess` 是預設權限，設定頁的開關優先 |
+| `cli.claude` | `approvalArgs` | 安全模式雙向 stream-json 權限旗標；空清單停用互動核准 |
+| `limits` | `approvalSeconds` | 核准逾時秒數，預設 120，逾時拒絕 |
 | `cli` | `envPassthrough` | 額外放行給 CLI 子行程的環境變數（預設只給 PATH／HOME／LANG 等） |
 | `limits` | `bodyBytes`、`promptChars`、`sendPerMinute`、`concurrentRuns`、`sseConnections`、`queueLength`、`handoffChars`、`heartbeatSeconds`、`diffBytes`、`uploadBytes`、`imagesPerSend`、`verifySeconds`（驗證逾時，預設 600）、`verifyOutputBytes`（驗證輸出保留尾端位元組，預設 65536）、`runSeconds`（單輪 AI 執行時間上限，超過就停止並標記逾時，預設 7200） | 各種上限 |
 | `limits` | `usagePollSeconds` | 帳號額度查詢間隔（秒），預設 `60`＝1 分鐘 |
@@ -172,6 +175,7 @@ HTTP JSON 加 SSE，桌面版與網頁版完全相同。型別定義在 [`src/sh
 | `POST /api/chat/send` | 送出 `{project, task, text, ai?, model?, effort?, mode?, answer?, images?, fromQueue?}`；執行中必須帶 `mode`：`redo`／`amend`／`queue` |
 | `GET /api/chat/commands?project=&task=&ai=claude\|codex\|grok` | 目前帳號及作業可用的 CLI 指令 `{commands: [{name, description, argumentHint?}]}`，名稱不含開頭 `/`；Grok 回空清單，不自行補出內建指令 |
 | `POST /api/chat/stop`、`/api/chat/unqueue` | 停止（並清空排隊）、移除排隊 |
+| `POST /api/chat/approve` | `{project, task, id, allow: boolean, turn?: boolean}`：回覆待核准工具；過期／已回答回 409，允許前檢查專案信任 |
 | `POST /api/chat/rollback` | `{project, task, request}`：把工作副本還原到該則指示開始前（每輪開始前自動存檢查點）；執行中回 409，沒有檢查點回 404 |
 | `POST /api/chat/fork` | `{project, task, request}`：從該則指示開始之前分支出新作業（派生作業；副本長自當時的檢查點，帶走之前的對話但不帶附件），回新作業；執行中回 409，沒有檢查點回 404 |
 | `GET /api/chat/turn-diff?project=&task=&request=` | 單輪的變更差異（輪前檢查點 → 該輪結束的檢查點）；沒有檢查點回 404 |

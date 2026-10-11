@@ -26,7 +26,8 @@ cli:
     # 設定頁可逐一關閉（存在 .yumeewade/settings.json，優先於這裡）；關閉時改用 safeArgs。
     fullAccess: true
     fullAccessArgs: [--dangerously-skip-permissions]
-    safeArgs: [--permission-mode, acceptEdits]       # 只自動接受改檔，執行指令會被拒
+    safeArgs: [--permission-mode, manual]  # 需要核准時透過聊天卡片詢問
+    approvalArgs: [--input-format, stream-json, --permission-prompt-tool, stdio]
     # Review is independent of fullAccess. Verified restricted tool allowlist only; not an OS sandbox.
     # Empty/modified unverified profiles disable review rather than weaken it.
     readonlyArgs: [--restricted, --safe-mode, --tools, 'Read,Glob,Grep', --allowedTools, 'Read,Glob,Grep', --permission-mode, dontAsk, --permission-prompts, none, --strict-mcp-config, --disable-slash-commands, --no-session-persistence, -p, --output-format, stream-json, --verbose, --include-partial-messages]
@@ -96,4 +97,5 @@ limits:
   verifySeconds: 600       # 驗證指令逾時秒數
   verifyOutputBytes: 65536 # 驗證 stdout/stderr 合計保留尾端位元組
   runSeconds: 7200         # 單輪 AI 執行時間上限（秒），超過就停止，避免卡住的行程佔著名額
+  approvalSeconds: 120     # 工具核准等待上限；逾時拒絕
   usagePollSeconds: 60     # 底部額度向各 CLI 重新查詢的間隔（秒）

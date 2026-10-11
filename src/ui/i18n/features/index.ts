@@ -24,6 +24,7 @@ import * as github from './github.ts';
 import * as palette from './palette.ts';
 import * as paletteHelp from './palette-help.ts';
 import * as tasks from './tasks.ts';
+import * as permissions from './permissions.ts';
 
 export const featureZhTW = {
   ...archive.featureZhTW,
@@ -53,6 +54,7 @@ export const featureZhTW = {
   ...paletteHelp.featureZhTW,
   ...tasks.featureZhTW,
   ...tasks.templatesZhTW,
+  ...permissions.featureZhTW,
 };
 export const featureZhCN = {
   ...archive.featureZhCN,
@@ -82,6 +84,7 @@ export const featureZhCN = {
   ...paletteHelp.featureZhCN,
   ...tasks.featureZhCN,
   ...tasks.templatesZhCN,
+  ...permissions.featureZhCN,
 };
 export const featureEn = {
   ...archive.featureEn,
@@ -111,6 +114,7 @@ export const featureEn = {
   ...paletteHelp.featureEn,
   ...tasks.featureEn,
   ...tasks.templatesEn,
+  ...permissions.featureEn,
 };
 export const featureJa = {
   ...archive.featureJa,
@@ -140,6 +144,7 @@ export const featureJa = {
   ...paletteHelp.featureJa,
   ...tasks.featureJa,
   ...tasks.templatesJa,
+  ...permissions.featureJa,
 };
 export const featureDe = {
   ...archive.featureDe,
@@ -169,6 +174,7 @@ export const featureDe = {
   ...paletteHelp.featureDe,
   ...tasks.featureDe,
   ...tasks.templatesDe,
+  ...permissions.featureDe,
 };
 export const featureFr = {
   ...archive.featureFr,
@@ -198,6 +204,7 @@ export const featureFr = {
   ...paletteHelp.featureFr,
   ...tasks.featureFr,
   ...tasks.templatesFr,
+  ...permissions.featureFr,
 };
 export const featureIt = {
   ...archive.featureIt,
@@ -227,4 +234,5 @@ export const featureIt = {
   ...paletteHelp.featureIt,
   ...tasks.featureIt,
   ...tasks.templatesIt,
+  ...permissions.featureIt,
 };

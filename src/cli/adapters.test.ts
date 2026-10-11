@@ -92,7 +92,7 @@ test('引數組裝：每輪 fullAccess、圖片、resume 和 stdin marker', () =
   const claude = claudeArgs(DEFAULT_CONFIG.cli.claude, { prompt: '', cwd: '/w', model: 'haiku', effort: 'low', resumeId: 's1', addDirs: ['/p'], fullAccess: true });
   assert.deepEqual(claude, ['--dangerously-skip-permissions', ...DEFAULT_CONFIG.cli.claude.baseArgs, '--model', 'haiku', '--effort', 'low', '--resume', 's1', '--add-dir', '/p']);
   const plain = claudeArgs(DEFAULT_CONFIG.cli.claude, { prompt: '', cwd: '/w', fullAccess: false });
-  assert.deepEqual(plain, [...DEFAULT_CONFIG.cli.claude.safeArgs, ...DEFAULT_CONFIG.cli.claude.baseArgs]);
+  assert.deepEqual(plain, [...DEFAULT_CONFIG.cli.claude.safeArgs, ...DEFAULT_CONFIG.cli.claude.baseArgs, ...DEFAULT_CONFIG.cli.claude.approvalArgs!]);
   const codex = codexArgs(DEFAULT_CONFIG.cli.codex, { prompt: '', cwd: '/w', model: 'gpt-6-sol', effort: 'high', resumeId: 't1', images: ['/p.png', '/q.png'], fullAccess: false });
   assert.deepEqual(codex, ['exec', ...DEFAULT_CONFIG.cli.codex.safeArgs, '--json', '--skip-git-repo-check', '-m', 'gpt-6-sol', '-c', 'model_reasoning_effort="high"', '-i', '/p.png', '-i', '/q.png', 'resume', 't1', '-']);
   assert.ok(!codex.includes('--dangerously-bypass-approvals-and-sandbox'));
@@ -557,4 +557,36 @@ test('Codex credits：balance 是點數的十進位字串（單位 credits，不
   for (const bad of [null, 'x', { hasCredits: true }, { unlimited: false }]) assert.equal(codexExtraUsage(bad), undefined);
   const quota = codexAppServerQuota({ rateLimits: { primary: { usedPercent: 10, windowDurationMins: 300, resetsAt: 1791948586 }, credits: { hasCredits: true, unlimited: false, balance: '3' } } }, 'T');
   assert.equal(quota?.extraUsage?.balance, 3);
+});
+
+test('Claude bidirectional permissions preserve input and send one correlated allow/deny response', async () => {
+  const dir = await fs.mkdtemp(path.join(os.tmpdir(), 'cli-permission-'));
+  try {
+    const script = path.join(dir, 'fake.ts');
+    await fs.writeFile(script, `import { createInterface } from 'node:readline';
+const lines = createInterface({ input: process.stdin });
+lines.on('line', line => {
+  const msg = JSON.parse(line);
+  if (msg.type === 'user') {
+    if (msg.message.content !== 'secret prompt') process.exit(2);
+    console.log(JSON.stringify({ type: 'control_request', request_id: 'req1', request: { subtype: 'can_use_tool', tool_name: 'Bash', input: { command: 'echo hello' } } }));
+  } else {
+    if (msg.type !== 'control_response' || msg.response.request_id !== 'req1') process.exit(3);
+    const decision = msg.response.response;
+    if (decision.behavior === 'allow' && decision.updatedInput.command !== 'echo hello') process.exit(4);
+    console.log(JSON.stringify({ type: 'result', result: decision.behavior, subtype: 'success' }));
+  }
+});`);
+    for (const allow of [true, false]) {
+      const provider = new ClaudeCliProvider({ ...DEFAULT_CONFIG.cli.claude, command: process.execPath, baseArgs: [script], safeArgs: [], approvalArgs: ['--permission-prompt-tool', 'stdio'] }, []);
+      const events: CliEvent[] = [];
+      const run = provider.send({ prompt: 'secret prompt', cwd: dir, fullAccess: false }, event => {
+        events.push(event);
+        if (event.type === 'permission') { assert.equal(event.tool, 'Bash'); event.respond(allow); event.respond(!allow); }
+      });
+      assert.equal((await run.done).ok, true);
+      assert.equal(events.filter(e => e.type === 'permission').length, 1);
+      assert.ok(events.some(e => e.type === 'result' && e.text === (allow ? 'allow' : 'deny')));
+    }
+  } finally { await fs.rm(dir, { recursive: true, force: true }); }
 });

@@ -11,6 +11,7 @@ import { readonlyConfigured, reviewArgs } from './readonly.ts';
 
 export function claudeArgs(cfg: CliCommandConfig, opts: SendOptions): string[] {
   const args = opts.readonly ? reviewArgs('claude', cfg, opts) : [...((opts.fullAccess ?? cfg.fullAccess) ? cfg.fullAccessArgs : cfg.safeArgs), ...cfg.baseArgs];
+  if (!opts.readonly && !(opts.fullAccess ?? cfg.fullAccess)) args.push(...(cfg.approvalArgs ?? []));
   if (opts.model) args.push('--model', opts.model);
   if (opts.effort) args.push('--effort', opts.effort);
   if (opts.resumeId) args.push('--resume', opts.resumeId);
@@ -298,6 +299,7 @@ export function createClaudeParser(onEvent: (ev: CliEvent) => void, now: () => n
 export class ClaudeCliProvider implements CliProvider {
   readonly name = 'claude';
   readonly dangerous: boolean;
+  get supportsApprovals(): boolean { return (this.cfg.approvalArgs ?? []).includes('--permission-prompt-tool'); }
   readonly readonlyEnforcement = 'tool-allowlist' as const;
   get supportsReadonly(): boolean { return readonlyConfigured('claude', this.cfg); }
   private readonly cfg: CliCommandConfig;
@@ -333,16 +335,40 @@ export class ClaudeCliProvider implements CliProvider {
     const imagePrompt = opts.images?.length ? `\n\n# 圖片附件\n請用 Read 工具查看以下圖片：\n${opts.images.join('\n')}` : '';
     let completed = false;
     let failed = false;
+    const approvals = !opts.readonly && !(opts.fullAccess ?? this.cfg.fullAccess) && this.supportsApprovals;
+    const prompt = opts.slashCommand ?? opts.prompt + imagePrompt;
+    const parser = createClaudeParser(ev => {
+      if (ev.type === 'result') { completed = true; if (approvals) run.endInput(); }
+      if (ev.type === 'error') failed = true;
+      onEvent(ev);
+    });
     const run = runLineProcess(
       {
         command: this.cfg.command, args: claudeArgs(this.cfg, opts),
-        cwd: opts.cwd, env: opts.configDir ? { ...this.env, CLAUDE_CONFIG_DIR: opts.configDir } : this.env, prompt: opts.slashCommand ?? opts.prompt + imagePrompt, label: 'claude',
+        cwd: opts.cwd, env: opts.configDir ? { ...this.env, CLAUDE_CONFIG_DIR: opts.configDir } : this.env,
+        prompt: approvals ? JSON.stringify({ type: 'user', message: { role: 'user', content: prompt }, parent_tool_use_id: null, session_id: opts.resumeId ?? '' }) + '\n' : prompt,
+        keepInput: approvals, label: 'claude',
       },
-      createClaudeParser(ev => {
-        if (ev.type === 'result') completed = true;
-        if (ev.type === 'error') failed = true;
-        onEvent(ev);
-      }),
+      obj => {
+        if (approvals && obj['type'] === 'control_request') {
+          const request = obj['request'] as Record<string, unknown> | undefined;
+          const id = obj['request_id'];
+          if (typeof id !== 'string' || !request) return;
+          if (request['subtype'] !== 'can_use_tool' || typeof request['tool_name'] !== 'string' || !request['input'] || typeof request['input'] !== 'object' || Array.isArray(request['input'])) {
+            run.write(JSON.stringify({ type: 'control_response', response: { subtype: 'error', request_id: id, error: '不支援的控制請求' } }) + '\n');
+            return;
+          }
+          const input = request['input'] as Record<string, unknown>;
+          let answered = false;
+          onEvent({ type: 'permission', id, tool: request['tool_name'], input, respond: allow => {
+            if (answered) return;
+            answered = true;
+            run.write(JSON.stringify({ type: 'control_response', response: { subtype: 'success', request_id: id, response: allow ? { behavior: 'allow', updatedInput: input } : { behavior: 'deny', message: '使用者拒絕或核准已逾時' } } }) + '\n');
+          } });
+          return;
+        }
+        parser(obj);
+      },
     );
     return {
       stop: run.stop,

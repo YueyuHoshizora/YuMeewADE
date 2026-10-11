@@ -8,7 +8,7 @@
 
 > **セキュリティに関する注意（最初にお読みください）**
 > - コアは `http://127.0.0.1:4560` のみで待ち受け、**ログインも認証もありません**。これは意図的な設計です。個人用のローカルツールであり、Web サービスではありません。同じマシン上の他のプロセスからも呼び出せます。`0.0.0.0` にバインドしたり、ポートを外部に転送したりしないでください。
-> - **AI は既定でフルアクセス権限を持ちます**。claude は `--dangerously-skip-permissions`、codex は `--dangerously-bypass-approvals-and-sandbox`、grok は `--always-approve` で起動し、あなたの権限でファイル変更やコマンド実行ができます。「設定 → AI ツール → フルアクセス」で個別に無効化できます。無効時、claude はファイル編集のみ自動承認、codex は作業ディレクトリのサンドボックス、grok は `dontAsk` で承認が必要な操作を拒否します。
+> - **AI は既定でフルアクセス権限を持ちます**。claude は `--dangerously-skip-permissions`、codex は `--dangerously-bypass-approvals-and-sandbox`、grok は `--always-approve` で起動します。設定で無効化すると、Claude の承認が必要なツールはチャットカードで確認します。Codex の作業ディレクトリ sandbox、Grok の `dontAsk`、agy の編集モードを維持し、この3つの対話式承認は未対応です。安全モードは共通の読み取り専用保証や OS sandbox ではなく、CLI と設定への信頼が必要です。
 > - 料金と OAuth は CLI が管理し、無料である保証はありません。App は認証情報を**保存・更新します**。Electron `safeStorage` の OS 保護で暗号化し、ワークスペース外の App 専用 `credentials.sqlite`（Node `node:sqlite`）に保存します。Linux は対応 libsecret／KWallet が必要で、利用不可なら起動を拒否し、平文に退避しません。コアは隔離 CLI プロファイルを復元し、更新された認証情報を保存します。利用枠は固定の公式エンドポイントだけに送信し、認証情報を API 応答・UI・ログには出しません。ただし CLI ファイルや復元スナップショットには秘密情報が含まれ得るため、公開しないでください。
 > - ローカル `GET /api/care/log` は既存ログのスタックをローカル利用者へ意図的に表示します。固定ファイルのみをサイズ制限付きで読み、loopback／Host／Origin 保護を維持しますが、遠隔認証はありません。home を `~` にし、認証情報や token-like 文字を防御的に隠しますが、完全な機密除去は保証しません。コピー・共有前に確認してください。
 
@@ -61,6 +61,7 @@ Claude／Codex のモデル一覧・推論強度は CLI キャッシュから取
 
 - **Git 履歴**：ページ付きグラフとファイル履歴、コミット情報／ファイル／差分、行の blame を表示。秘密・範囲外パスは拒否します。
 - **Stash／リベース**：未追跡ファイルも保存可能、適用／pop／確認削除。cherry-pick の競合は自動中止。リベースは dirty tree を拒否し、三者比較で解決後に続行・中止できます。強制 push は行いません。
+- **ツール承認**：Claude 安全モードでツール名、要約、一度だけ許可／拒否、任意のターン内許可を表示します。実行と引き継ぎ画面も承認待ちを表示します。既定120秒で拒否し、停止・やり直し・補足・終了・再起動で承認は残りません。ターン内許可は同名ツール全体への許可です。Codex exec／Grok single／agy print は既存の保護を維持し未対応を明示します。
 - **アーカイブ復元**：プロジェクト／タスクへの影響をプレビューしてからアーカイブ・復元できます。強制アーカイブはブランチと元の作業コピーの復元スナップショットを保持し、未追跡・ignored・秘密ファイルと削除状態も保存します。復元は worktree を再作成し、既存の保存先を上書きしません。`.yumeewade/recovery/` は非公開資料であり、公開 Git バックアップや外部メインフォルダー全体のバックアップではありません。
   復元が成功した世代は保持領域へ移し、後のアーカイブには再適用しません。元のデータは残し、後からマージした内容を上書きしません。
   checkout を伴う復元は保存済み信頼と現在の root を満たす必要があり、拒否時は台帳復元をロールバックします。アーカイブ済みプロジェクトを自動で信頼しません。checkout のない直接タスクの台帳復元は利用できます。
@@ -143,6 +144,8 @@ npm run desktop      # 桌面版（開發機）
 | `server` | `host`、`port` | ループバックのみ許可。既定は `127.0.0.1:4560` |
 | `workspace` | `root` | ワークスペースのルート。既定は `~/Documents/YuMeewWorkspace`。設定画面で切り替えるとこの行が書き換わります |
 | `cli.claude` / `cli.codex` / `cli.grok` | `command`、`baseArgs`、`fullAccess`、`fullAccessArgs`、`safeArgs` | コマンドとヘッドレスモードのフラグ。`fullAccess` は既定の権限で、設定画面の切り替えが優先 |
+| `cli.claude` | `approvalArgs` | 安全モードの双方向 stream-json 承認フラグ。空リストで無効化 |
+| `limits` | `approvalSeconds` | 承認待ち秒数、既定120。時間切れは拒否 |
 | `cli` | `envPassthrough` | CLI 子プロセスに追加で渡す環境変数（既定では PATH／HOME／LANG などのみ） |
 | `limits` | `bodyBytes`、`promptChars`、`sendPerMinute`、`concurrentRuns`、`sseConnections`、`queueLength`、`handoffChars`、`heartbeatSeconds`、`diffBytes`、`uploadBytes`、`imagesPerSend`、`verifySeconds`（検証のタイムアウト、既定 600）、`verifyOutputBytes`（検証出力の末尾保持バイト数、既定 65536）、`runSeconds`（AI 1 ターンの最長実行時間。超えると停止してタイムアウト扱い、既定 7200） | 各種上限 |
 | `limits` | `usagePollSeconds` | 利用枠取得間隔（秒）、既定 `60`＝1 分 |
@@ -167,6 +170,7 @@ HTTP JSON と SSE を使い、デスクトップ版と Web 版で完全に共通
 | `POST /api/start` | クイックスタート（タスク作成＋送信） |
 | `POST /api/chat/send` | `{project, task, text, ai?, model?, effort?, mode?, answer?, images?, fromQueue?}` を送信。実行中は `mode` が必須：`redo`／`amend`／`queue` |
 | `POST /api/chat/stop`、`/api/chat/unqueue` | 停止（キューも消去）、キューから削除 |
+| `POST /api/chat/approve` | `{project, task, id, allow: boolean, turn?: boolean}`：待機中の承認へ回答。期限切れ／回答済みは409。許可前に信頼を確認 |
 | `POST /api/chat/rollback` | `{project, task, request}`：作業コピーをその指示の開始前に戻す（各ターン前にチェックポイントを自動保存）。実行中は 409、チェックポイントなしは 404 |
 | `POST /api/chat/fork` | `{project, task, request}`：その指示の開始前から新しい（派生）タスクを分岐。作業コピーは当時のチェックポイントから作られ、それ以前の会話（添付なし）を引き継ぐ。新しいタスクを返す。実行中は 409、チェックポイントなしは 404 |
 | `GET /api/chat/turn-diff?project=&task=&request=` | 1ターン分の差分（ターン前のチェックポイント → ターン終了時）。チェックポイントなしは 404 |

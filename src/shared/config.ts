@@ -16,6 +16,7 @@ export interface CliCommandConfig {
   fullAccessArgs: string[];
   /** fullAccess 關閉時改用的權限旗標。 */
   safeArgs: string[];
+  approvalArgs?: string[];
   /** Dedicated review invocation; never combined with ordinary permission/base arguments. Empty disables review. */
   readonlyArgs?: string[];
   /** 查詢帳號額度的子命令（Codex：app-server）；直接使用 API 的 adapter 不需要子命令。 */
@@ -52,6 +53,7 @@ export interface Config {
     verifySeconds: number;
     verifyOutputBytes: number;
     runSeconds: number;
+    approvalSeconds?: number;
     usagePollSeconds: number;
     mentionFileBytes: number;
     mentionTotalBytes: number;
@@ -71,8 +73,9 @@ export const DEFAULT_CONFIG: Config = {
       baseArgs: ['-p', '--output-format', 'stream-json', '--verbose', '--include-partial-messages'],
       fullAccess: true,
       fullAccessArgs: ['--dangerously-skip-permissions'],
-      // 只自動接受檔案編輯；執行指令會被拒
-      safeArgs: ['--permission-mode', 'acceptEdits'],
+      // 手動模式將需核准的工具交給主程式；不自動接受編輯。
+      safeArgs: ['--permission-mode', 'manual'],
+      approvalArgs: ['--input-format', 'stream-json', '--permission-prompt-tool', 'stdio'],
       readonlyArgs: ['--restricted', '--safe-mode', '--tools', 'Read,Glob,Grep', '--allowedTools', 'Read,Glob,Grep', '--permission-mode', 'dontAsk', '--permission-prompts', 'none', '--strict-mcp-config', '--disable-slash-commands', '--no-session-persistence', '-p', '--output-format', 'stream-json', '--verbose', '--include-partial-messages'],
       quotaArgs: [],
       loginArgs: ['auth', 'login'],
@@ -136,6 +139,7 @@ export const DEFAULT_CONFIG: Config = {
     verifySeconds: 600,
     verifyOutputBytes: 65_536,
     runSeconds: 7_200,
+    approvalSeconds: 120,
     usagePollSeconds: 60,
     mentionFileBytes: 65_536,
     mentionTotalBytes: 262_144,
@@ -224,6 +228,7 @@ function cliSection(map: YamlMap, name: 'claude' | 'codex' | 'grok' | 'gemini'):
     fullAccess: bool(s, 'fullAccess', d.fullAccess, where),
     fullAccessArgs: strList(s, 'fullAccessArgs', d.fullAccessArgs, where),
     safeArgs: strList(s, 'safeArgs', d.safeArgs, where),
+    approvalArgs: strList(s, 'approvalArgs', d.approvalArgs ?? [], where),
     readonlyArgs: strList(s, 'readonlyArgs', d.readonlyArgs ?? [], where),
     quotaArgs: strList(s, 'quotaArgs', d.quotaArgs, where),
     loginArgs: strList(s, 'loginArgs', d.loginArgs, where),
@@ -299,6 +304,7 @@ export function parseConfig(text: string, source: string | null): Config {
       runSeconds: int(limits, 'runSeconds', L.runSeconds, 'limits'),
       mentionFileBytes: int(limits, 'mentionFileBytes', L.mentionFileBytes, 'limits'),
       mentionTotalBytes: int(limits, 'mentionTotalBytes', L.mentionTotalBytes, 'limits'),
+      approvalSeconds: int(limits, 'approvalSeconds', L.approvalSeconds ?? 120, 'limits'),
       usagePollSeconds: int(limits, 'usagePollSeconds', L.usagePollSeconds, 'limits'),
     },
     source,
