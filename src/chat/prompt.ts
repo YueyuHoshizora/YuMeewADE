@@ -35,37 +35,43 @@ export function buildPreamble(p: Preamble): string {
  * 交接包：只取人與 AI 的文字對話（不含工具輸出），上限 limit 字，截舊留新。
  * rows 為空時回空字串。
  */
-export function buildHandoff(rows: ChatRow[], limit: number): string {
+export interface HandoffPreview { text: string; rows: number[]; start: number | null; end: number | null; truncated: boolean }
+export function inspectHandoff(rows: ChatRow[], limit: number, offset = 0): HandoffPreview {
   const entries = rows
-    .filter((r) => (r.role === 'user' || r.role === 'assistant' || (r.role === 'event' && r.rollback)) && r.text.trim() !== '')
-    .map((r) => `[${r.role === 'user' ? '人' : r.role === 'assistant' ? `AI ${r.ai}` : '系統'}${r.role === 'assistant' && r.stopped ? '，已被停止' : ''}]\n${r.text.trim()}`);
-  if (entries.length === 0) return '';
+    .map((r, index) => ({ row: index + offset, value: r }))
+    .filter(({ value: r }) => (r.role === 'user' || r.role === 'assistant' || (r.role === 'event' && r.rollback)) && r.text.trim() !== '')
+    .map(({ value: r, row }) => ({ row, text: `[row ${row}, ${r.at}, ${r.role === 'user' ? '人' : r.role === 'assistant' ? `AI ${r.ai}` : '系統'}${r.role === 'assistant' && r.stopped ? '，已被停止' : ''}]\n${r.text.trim()}` }));
+  const empty = { text: '', rows: [], start: null, end: null, truncated: entries.length > 0 };
+  if (entries.length === 0) return empty;
   const header = `<previous_conversation>\n${HANDOFF_NOTICE}\n`;
   const footer = '\n</previous_conversation>';
   const truncationNote = '（更早的對話已截去）\n\n';
   const budget = limit - header.length - footer.length - truncationNote.length;
   // 不可為了塞入歷史而截掉授權界線；極小上限就不附交接包。
-  if (budget <= 0) return '';
-  let kept: string[] = [];
+  if (budget <= 0) return empty;
+  let kept: { row: number; text: string }[] = [];
   let used = 0;
   let truncated = false;
   for (let i = entries.length - 1; i >= 0; i--) {
-    const e = entries[i] as string;
-    if (used + e.length + 2 > budget) {
+    const e = entries[i]!;
+    if (used + e.text.length + 2 > budget) {
       truncated = true;
       break;
     }
     kept.unshift(e);
-    used += e.length + 2;
+    used += e.text.length + 2;
   }
   if (kept.length === 0 && entries.length > 0) {
     // 單筆就超限：只留最新一筆的尾段
-    const last = entries.at(-1) as string;
-    kept = [last.slice(Math.max(0, last.length - budget))];
+    const last = entries.at(-1)!;
+    kept = [{ row: last.row, text: last.text.slice(Math.max(0, last.text.length - budget)) }];
     truncated = true;
   }
   const note = truncated ? truncationNote : '';
-  return `${header}${note}${kept.join('\n\n')}${footer}`;
+  return { text: `${header}${note}${kept.map(e => e.text).join('\n\n')}${footer}`, rows: kept.map(e => e.row), start: kept[0]?.row ?? null, end: kept.at(-1)?.row ?? null, truncated };
+}
+export function buildHandoff(rows: ChatRow[], limit: number, offset = 0): string {
+  return inspectHandoff(rows, limit, offset).text;
 }
 
 export const ASK_RULE = `# 需要人判斷時
@@ -77,6 +83,6 @@ export const ASK_RULE = `# 需要人判斷時
 [[/question]]
 提供 2–4 個選項；多個問題可連續寫。`;
 
-export function buildPrompt(parts: { preamble?: string; handoff?: string; text: string; images?: string[] }): string {
-  return [parts.preamble, ASK_RULE, parts.handoff, `# 這次的指示\n${parts.text}`, parts.images?.length ? `圖片（請用 Read 工具查看）：\n${parts.images.join('\n')}` : ''].filter(Boolean).join('\n\n');
+export function buildPrompt(parts: { preamble?: string; handoff?: string; context?: string; text: string; images?: string[] }): string {
+  return [parts.preamble, ASK_RULE, parts.context, parts.handoff, `# 這次的指示\n${parts.text}`, parts.images?.length ? `圖片（請用 Read 工具查看）：\n${parts.images.join('\n')}` : ''].filter(Boolean).join('\n\n');
 }

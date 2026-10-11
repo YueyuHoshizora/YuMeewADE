@@ -6,6 +6,8 @@ import { AppError } from '../shared/errors.ts';
 import type { UploadResult } from '../shared/types.ts';
 import { isValidProjectName, isValidTaskId } from '../shared/names.ts';
 import type { ChatStore } from './store.ts';
+import { draftFile, type Drafts } from './drafts.ts';
+import { readJson, withFileLocks } from '../shared/fsx.ts';
 export const UPLOAD_TTL_MS = 24 * 60 * 60 * 1000;
 const ID = /^[0-9a-f-]{36}\.(png|jpe?g|webp|gif)$/u;
 export const IMAGE_TYPES: Record<string, string> = { png: 'image/png', jpg: 'image/jpeg', jpeg: 'image/jpeg', webp: 'image/webp', gif: 'image/gif' };
@@ -43,8 +45,9 @@ export async function attachImages(ws: Workspace, project: string, task: string,
   }
   await fs.mkdir(dir, { recursive: true });
   for (let i = 0; i < ids.length; i++) {
-    try { await fs.rename(uploadPath(ws, project, ids[i]!), targets[i]!); }
-    catch (err) { if ((err as NodeJS.ErrnoException).code !== 'ENOENT') throw err; }
+    // Drafts retain the staged inode until send succeeds; no image-byte copying.
+    try { await fs.link(uploadPath(ws, project, ids[i]!), targets[i]!); }
+    catch (err) { if (!['ENOENT', 'EEXIST'].includes((err as NodeJS.ErrnoException).code ?? '')) throw err; }
   }
   return targets;
 }
@@ -57,7 +60,10 @@ export async function cleanupUploads(ws: Workspace, store: ChatStore, now = Date
       if (err.code === 'ENOENT') return null;
       throw err;
     }))?.isDirectory()) continue;
+    await withFileLocks([draftFile(ws, project.name)], async () => {
     const referenced = new Set<string>();
+    const drafts = await readJson<Drafts>(draftFile(ws, project.name), {});
+    for (const draft of Object.values(drafts)) for (const image of draft.images) referenced.add(image.id);
     const chatDir = path.join(ws.projectDir(project.name), '.ai', 'chat');
     const queues = await fs.readdir(chatDir).catch((err: NodeJS.ErrnoException) => {
       if (err.code === 'ENOENT') return [];
@@ -81,5 +87,6 @@ export async function cleanupUploads(ws: Workspace, store: ChatStore, now = Date
         if ((err as NodeJS.ErrnoException).code !== 'ENOENT') throw err;
       }
     }
+    });
   }
 }
