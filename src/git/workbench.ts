@@ -76,6 +76,30 @@ export class GitWorkbench {
       if (stat?.isSymbolicLink()) throw new AppError('forbidden', 'git_workbench_path');
     }
   }
+  async history(project: string, task: string | undefined, skip = 0, relative?: string): Promise<{ graph: string; next: number | null }> {
+    if (!Number.isSafeInteger(skip) || skip < 0 || skip > 100_000) throw new AppError('bad_request');
+    return this.locked(project, task, false, async root => {
+      if (relative) await this.safePath(root, relative);
+      if (!await hasCommits(root)) return { graph: '', next: null };
+      const graph = await this.command(root, ['log', '--graph', '--date=iso-strict', '--format=%H %P%n%an <%ae> %ad%n%s', '--max-count=51', `--skip=${skip}`, ...(relative ? ['--follow', '--', relative] : [])]);
+      const count = Number((await this.command(root, ['rev-list', '--count', 'HEAD', ...(relative ? ['--', relative] : [])])).trim());
+      return { graph, next: skip + 51 < count ? skip + 51 : null };
+    });
+  }
+  async commitDetail(project: string, task: string | undefined, sha: string): Promise<{ metadata: string; files: string[]; patch: string }> {
+    if (!/^[a-f0-9]{40,64}$/.test(sha)) throw new AppError('bad_request');
+    return this.locked(project, task, false, async root => {
+      const files = split(await this.command(root, ['diff-tree', '--root', '--no-commit-id', '--name-only', '-r', '-z', sha]));
+      const safe = files.filter(file => !isLocalSecret(file));
+      return { metadata: await this.command(root, ['show', '-s', '--format=fuller', sha]), files: safe, patch: safe.length ? await this.command(root, ['show', '--format=', sha, '--', ...safe]) : '' };
+    });
+  }
+  async blame(project: string, task: string | undefined, relative: string): Promise<string> {
+    return this.locked(project, task, false, async root => {
+      await this.safePath(root, relative);
+      return this.command(root, ['blame', '--line-porcelain', '--', relative]);
+    });
+  }
   async stage(project: string, task: string | undefined, relative: string, unstage = false): Promise<void> {
     return this.locked(project, task, true, async root => {
       const file = (await this.files(root)).find(file => file.path === relative);

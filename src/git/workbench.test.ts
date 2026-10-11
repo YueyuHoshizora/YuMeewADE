@@ -150,3 +150,20 @@ test('比較真實作業副本未提交變更且不外洩secret／不接受symli
   await fs.symlink(path.join(ws.root, 'outside'), path.join(a, 'escape.txt'));
   await assert.rejects(workbench.compareTasks('P', left.id, right.id));
 }));
+
+test('歷史、提交詳情與blame限制輸入並保護機密路徑', () => withTmpWorkspace(async ws => {
+  const projects = new ProjectLedger(ws); const tasks = new TaskLedger(ws); await projects.create({ name: 'P' });
+  const root = ws.projectDir('P'); const workbench = new GitWorkbench({ ws, projects, tasks, isRunning: () => false });
+  await fs.writeFile(path.join(root, 'history.txt'), 'first\n'); await commitAll(root, 'first history');
+  await fs.appendFile(path.join(root, 'history.txt'), 'second\n'); await commitAll(root, 'second history');
+  const sha = (await gitOk(root, ['rev-parse', 'HEAD'])).trim();
+  assert.match((await workbench.history('P', undefined, 0, 'history.txt')).graph, /second history/);
+  assert.equal((await workbench.history('P', undefined, 100)).graph, '');
+  const detail = await workbench.commitDetail('P', undefined, sha);
+  assert.match(detail.metadata, /second history/); assert.deepEqual(detail.files, ['history.txt']); assert.match(detail.patch, /\+second/);
+  assert.match(await workbench.blame('P', undefined, 'history.txt'), /author YuMeewADE/);
+  await assert.rejects(workbench.history('P', undefined, -1));
+  await assert.rejects(workbench.commitDetail('P', undefined, '--all'));
+  await assert.rejects(workbench.blame('P', undefined, '.env'));
+  await assert.rejects(workbench.history('P', undefined, 0, '../escape'));
+}));

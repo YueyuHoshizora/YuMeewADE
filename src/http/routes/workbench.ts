@@ -9,6 +9,9 @@ export function registerWorkbenchRoutes(router: Router, app: App): void {
   router.get('/api/git/conflict', async ({ query }) => app.gitWorkbench.conflict(reqString(query, 'project', 120), query.has('task') ? reqString(query, 'task', 120) : undefined, reqString(query, 'path', 1000)));
   router.get('/api/git/compare-options', async ({ query }) => (await app.tasks.list(reqString(query, 'project', 120))).filter(task => task.workdir || task.workspace === 'direct').map(task => ({ id: task.id, title: task.title })));
   router.get('/api/git/compare-tasks', async ({ query }) => app.gitWorkbench.compareTasks(reqString(query, 'project', 120), reqString(query, 'leftTask', 120), reqString(query, 'rightTask', 120)));
+  router.get('/api/git/history', async ({ query }) => app.gitWorkbench.history(reqString(query, 'project', 120), query.has('task') ? reqString(query, 'task', 120) : undefined, Number(query.get('skip') ?? 0), query.has('path') ? reqString(query, 'path', 1000) : undefined));
+  router.get('/api/git/commit-detail', async ({ query }) => app.gitWorkbench.commitDetail(reqString(query, 'project', 120), query.has('task') ? reqString(query, 'task', 120) : undefined, reqString(query, 'sha', 64)));
+  router.get('/api/git/blame', async ({ query }) => ({ text: await app.gitWorkbench.blame(reqString(query, 'project', 120), query.has('task') ? reqString(query, 'task', 120) : undefined, reqString(query, 'path', 1000)) }));
   router.post('/api/git/stage-lines', async ({ body }) => {
     if (typeof body.staged !== 'boolean' || !Array.isArray(body.lines) || body.lines.length > 100_000 || body.lines.some((line: unknown) => typeof line !== 'number' || !Number.isSafeInteger(line))) throw new AppError('bad_request');
     const project = reqString(body, 'project', 120); const task = body.task === undefined ? undefined : reqString(body, 'task', 120);

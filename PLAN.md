@@ -527,3 +527,4 @@ electron 44.7.0、vite 8.3.4、electron-builder 26.15.3、typescript 7.0.2、@ty
 - 長對話視窗化：Fenwick 高度索引與 600px overscan，只掛載附近列並保留高度／工具展開狀態；工具事件最多 24 列一組，展開仍保持有界 DOM。SSE delta 保留 MarkdownStream 增量更新，row 僅新增列或更新最後工具組；prepend 維持絕對列索引與閱讀錨點，搜尋命中先 reveal，再高亮。保留底部跟隨、問題／選項、附件、usage、copy、retry、rollback／fork／turn diff 與鍵盤導覽。瀏覽器尋找僅搜尋掛載內容，完整搜尋使用 App 搜尋或匯出。
 - 終端機分頁：同作業多個 PTY 並行，獨立 owner capability、輸出與停止；新增／改名／關閉分頁，執行中關閉須確認。全域並行上限含待啟動予約，持續輪詢維持心跳，五分鐘 owner 失聯回收不變。
 - 底部 dock 終端機：外殼層保留各專案／作業的分頁與 owner，切換畫面與隱藏不 dispose、心跳持續；執行對話框開啟 dock，標題列與 Ctrl/⌘+` 切換，拖曳／鍵盤調整高度，localStorage 記憶尺寸與顯示狀態。
+- Git 工作台增加有界分頁圖形歷史、檔案歷史、提交詳情與 blame；所有新 Git 路由沿用專案信任閘門。

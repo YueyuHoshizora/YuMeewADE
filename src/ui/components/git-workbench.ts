@@ -82,6 +82,24 @@ export function gitWorkbenchButton(context: ViewContext, project: string, task?:
         }
         panel.append(group);
       }
+      const historyPath = input(); const commitSha = input();
+      const history = async (skip = 0) => {
+        const result = await request<{ graph: string; next: number | null }>(query('/api/git/history', { ...ids, skip: String(skip), ...(historyPath.value ? { path: historyPath.value } : {}) }));
+        const view = el('div', 'form'); view.append(el('pre', '', result.graph));
+        for (const sha of new Set(result.graph.match(/[a-f0-9]{40,64}/g) ?? [])) view.append(button(sha.slice(0, 12), () => detail(sha)));
+        if (result.next !== null) view.append(button(t('gitManage.next'), () => history(result.next!)));
+        modal(t('gitManage.history'), view);
+      };
+      const detail = async (sha: string) => {
+        const result = await request<{ metadata: string; files: string[]; patch: string }>(query('/api/git/commit-detail', { ...ids, sha }));
+        const view = el('div', 'form'); view.append(el('pre', '', result.metadata), el('pre', '', result.patch));
+        for (const path of result.files) view.append(button(path, () => window.dispatchEvent(new CustomEvent('yumeewade:open-file', { detail: { project, task: task ?? '', path } }))));
+        modal(t('gitManage.detail'), view);
+      };
+      panel.append(field(t('gitManage.path'), historyPath), row(button(t('gitManage.history'), () => history()), button(t('gitManage.blame'), async () => {
+        const result = await request<{ text: string }>(query('/api/git/blame', { ...ids, path: historyPath.value }));
+        modal(t('gitManage.blame'), el('pre', '', result.text));
+      })), field(t('gitManage.sha'), commitSha), button(t('gitManage.detail'), () => detail(commitSha.value)));
       const message = area(); message.maxLength = 10_000;
       panel.append(field(t('workbench.message'), message), row(button(t('workbench.commit'), () => mutate('commit', { message: message.value })), button(t('gitPrecision.bypass'), async () => {
         if (await confirmModal(t('gitPrecision.bypass'), t('gitPrecision.confirmBypass'), t('workbench.commit'))) await mutate('commit', { message: message.value, bypassHooks: true, confirmed: true });
