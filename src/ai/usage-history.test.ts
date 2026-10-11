@@ -1,0 +1,59 @@
+import test from 'node:test';
+import assert from 'node:assert/strict';
+import { promises as fs } from 'node:fs';
+import os from 'node:os';
+import path from 'node:path';
+import { UsageHistory, budgetSettings } from './usage-history.ts';
+import type { UsageState } from '../shared/types.ts';
+
+const scope = { project: 'project', task: 'task', ai: 'claude', account: 'default' };
+const empty: UsageState = { ais: [], tokensPerSecond: null };
+test('durable attributed reports preserve unknown and separate units without counting cache twice', async t => {
+  const root = await fs.mkdtemp(path.join(os.tmpdir(), 'usage-history-')); t.after(() => fs.rm(root, { recursive: true, force: true }));
+  const history = new UsageHistory(root);
+  await Promise.all([
+    history.record({ ...scope, requestId: 'one', sessionId: 'session', usage: { input: 10, output: 5, cached: 8 }, claudeUsd: 0.03 }),
+    history.record({ ...scope, requestId: 'two', usage: null }),
+    history.record({ ...scope, ai: 'codex', requestId: 'three', usage: { input: 2, output: 3 }, codexCredits: 0.5 }),
+  ]);
+  await history.record({ ...scope, requestId: 'two', usage: null });
+  const view = await new UsageHistory(root).view();
+  assert.equal(view.records.length, 3);
+  const claude = view.totals.find(entry => entry.ai === 'claude')!;
+  assert.equal(claude.input + claude.output, 15); assert.equal(claude.cached, 8); assert.equal(claude.unknownReports, 1); assert.equal(claude.claudeUsd, 0.03); assert.equal(claude.codexCreditReports, 0);
+  assert.equal(view.totals.find(entry => entry.ai === 'codex')!.codexCredits, 0.5);
+  await assert.rejects(history.record({ ...scope, requestId: 'bad', usage: null, codexCredits: 1 }));
+});
+test('configured warnings require current scoped one-use acknowledgment and never assert costs for unknown usage', async t => {
+  const root = await fs.mkdtemp(path.join(os.tmpdir(), 'usage-budget-')); t.after(() => fs.rm(root, { recursive: true, force: true }));
+  let now = Date.parse('2026-10-11T00:00:00Z'); const history = new UsageHistory(root, () => now);
+  await history.saveSettings({ rules: [{ id: 'tokens', project: scope.project, unit: 'tokens', threshold: 10, since: '2026-01-01T00:00:00Z' }], quotaRemainingPercent: null, cloudExpiryHours: null });
+  assert.equal((await history.check(scope, empty)).unknown, true);
+  await history.record({ ...scope, requestId: 'one', usage: { input: 10, output: 1 } });
+  await assert.rejects(history.assertProceed(scope, empty));
+  const check = await history.check(scope, empty); assert.equal(check.warnings[0]!.reported, 11);
+  await assert.rejects(history.acknowledge({ ...scope, task: 'other' }, empty, check.acknowledgment!));
+  await history.acknowledge(scope, empty, check.acknowledgment!); await history.assertProceed(scope, empty); await assert.rejects(history.assertProceed(scope, empty));
+  await history.acknowledge(scope, empty, check.acknowledgment!); now += 300001; await assert.rejects(history.assertProceed(scope, empty));
+  await history.acknowledge(scope, empty, check.acknowledgment!);
+  await history.record({ ...scope, requestId: 'two', usage: { input: 1, output: 1 } });
+  await assert.rejects(history.assertProceed(scope, empty));
+});
+test('quota warnings respect unavailable provenance and cloud expiry does not convert balances into spend', async t => {
+  const root = await fs.mkdtemp(path.join(os.tmpdir(), 'usage-quota-')); t.after(() => fs.rm(root, { recursive: true, force: true }));
+  const history = new UsageHistory(root, () => Date.parse('2026-10-11T00:00:00Z'));
+  await history.saveSettings({ rules: [], quotaRemainingPercent: 20, cloudExpiryHours: 24 });
+  const live: UsageState = { tokensPerSecond: 500, ais: [{ ai: 'claude', account: 'default', status: 'ready', windows: [{ label: 'session', usedPercent: 85, resetsAt: null }], limited: false, quotaAt: '2026-10-11T00:00:00Z', cloudCredits: { balance: 100, expiresAt: '2026-10-11T12:00:00Z' } }] };
+  assert.deepEqual((await history.check(scope, live)).warnings.map(warning => warning.kind), ['quota', 'cloudExpiry']);
+  live.ais[0]!.status = 'unavailable'; assert.deepEqual((await history.check(scope, live)).warnings, []);
+  assert.deepEqual((await history.view()).records, []);
+  assert.throws(() => budgetSettings({ rules: [{ id: 'x', task: 'x', unit: 'tokens', threshold: 1, since: '2026-01-01' }], quotaRemainingPercent: null, cloudExpiryHours: null }));
+});
+test('same timestamp pagination never skips reports', async t => {
+  const root = await fs.mkdtemp(path.join(os.tmpdir(), 'usage-pages-')); t.after(() => fs.rm(root, { recursive: true, force: true }));
+  const history = new UsageHistory(root); const at = '2026-10-11T00:00:00Z';
+  for (let index = 0; index < 201; index++) await history.record({ ...scope, requestId: String(index).padStart(4, '0'), at, usage: null });
+  const first = await history.view(); assert.equal(first.records.length, 200); assert.equal(first.hasMore, true);
+  const last = first.records.at(-1)!; const next = await history.view({}, `${last.at}|${last.requestId}`);
+  assert.equal(next.records.length, 1); assert.equal(next.records[0]!.requestId, '0000');
+});

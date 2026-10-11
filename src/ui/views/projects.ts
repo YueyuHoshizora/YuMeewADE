@@ -1,4 +1,4 @@
-import { type NewTaskInput, type ProjectView, type SlashCommand } from '../../shared/types.ts';
+import { type NewTaskInput, type ProjectView, type SlashCommand, type StartInput, type Task } from '../../shared/types.ts';
 import { api, query, request } from '../api.ts';
 import { t } from '../i18n/index.ts';
 import { attachments } from '../components/attachments.ts';
@@ -11,6 +11,22 @@ import { attachSlashCommands } from '../components/slash-menu.ts';
 import { verificationConfigButton } from '../components/verification-config.ts';
 import { archiveButton } from '../components/archive.ts';
 import { gitWorkbenchButton } from '../components/git-workbench.ts';
+import { projectTrustButton } from '../components/project-trust.ts';
+import { confirmUsageRound } from '../components/usage-history.ts';
+
+async function startWithBudget(context: ViewContext, input: StartInput): Promise<void> {
+  const { task } = await request<{ task: Task }>('/api/start/prepare', input);
+  const draftKey = `yumeewade.draft.${input.project}/${task.id}`;
+  storeLocal(draftKey, input.text);
+  storeLocal(`yumeewade.quick.${input.project}`, '');
+  try {
+    if (!await confirmUsageRound({ project: input.project, task: task.id, ai: input.ai, account: context.state.settings.activeAccounts[input.ai] ?? 'default' })) return;
+    await api.send({ ...input, task: task.id });
+    storeLocal(draftKey, '');
+  } finally {
+    await context.refresh(); location.hash = taskHash(input.project, task.id);
+  }
+}
 
 declare global { interface Window { yumeewade?: { desktop: true; platform: string; pickFolder: () => Promise<string | null>; setBadge: (count: number) => void; focus: () => void }; } }
 
@@ -30,7 +46,7 @@ export function newProjectView(context: ViewContext, params: URLSearchParams): V
     try { const project = await api.createProject({ name: name.value.trim(), description: description.value.trim(), phases: lines(phases.value), body: body.value.trim(), parent: parent.value, related });
       // 建立台帳成功後立即離開此表單；即使第一輪失敗，也不能重複建立專案。
       await context.refresh(); location.hash = projectHash(project.id);
-      if (first.value.trim()) { const result = await api.start({ project: project.id, text: first.value.trim(), ...context.state.settings.initial }); await context.refresh(); location.hash = taskHash(project.id, result.task.id); }
+      if (first.value.trim()) await startWithBudget(context, { project: project.id, text: first.value.trim(), ...context.state.settings.initial });
     } finally { submit.disabled = false; }
   }); };
   node.append(el('h1', '', t('project.new')), form); return { node };
@@ -87,6 +103,7 @@ export function projectView(context: ViewContext, project: ProjectView, params: 
       archiveButton(context, project.id),
       gitWorkbenchButton(context, project.id),
       verificationConfigButton(context, project.id),
+      projectTrustButton(project.id),
     );
     overview.append(header, actions, disclosure(t('project.notes'), markdown(project.description + '\n\n' + project.notes)));
     const rules = area('', t('project.rulesPlaceholder'));
@@ -138,7 +155,7 @@ export function projectView(context: ViewContext, project: ProjectView, params: 
     query('/api/chat/commands', { project: project.id, ai: pick.value().ai }),
   )).commands);
   const start = button(t('project.start'), async () => { await upload.ready(); if (!draft.value.trim() && !upload.ids().length) return;
-    const result = await api.start({ project: project.id, text: draft.value.trim(), ...pick.value(), images: upload.ids() }); storeLocal(draftKey, ''); await upload.clear(); draft.value = ''; await context.refresh(); location.hash = taskHash(project.id, result.task.id);
+    await startWithBudget(context, { project: project.id, text: draft.value.trim(), ...pick.value(), images: upload.ids() }); storeLocal(draftKey, ''); await upload.clear(); draft.value = '';
   }, 'primary');
   draft.onkeydown = e => { if (shouldSend(e, readLocal('yumeewade.enterToSend', false))) { e.preventDefault(); start.click(); } };
   node.append(card(t('project.quick'), slashCommands.node, draft, upload.node, row(pick.node, start)), detailedTaskForm(context, project, params));

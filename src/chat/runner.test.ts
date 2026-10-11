@@ -23,6 +23,8 @@ import { ChatRunner } from './runner.ts';
 import type { RunnerDeps } from './runner.ts';
 import { ChatStore } from './store.ts';
 import { WorkflowService } from './workflows.ts';
+import { UsageHistory } from '../ai/usage-history.ts';
+import { AppError } from '../shared/errors.ts';
 async function setup(ws: Workspace, options: MockOptions = {}, runSeconds = 600, overrides: Partial<RunnerDeps> = {}) {
   const projects = new ProjectLedger(ws); await projects.create({ name: 'P' });
   const tasks = new TaskLedger(ws); const task = await tasks.create('P', { title: 'T', workspace: 'direct' });
@@ -568,7 +570,7 @@ test('workflow stop during awaited availability prevents writing and review laun
     const workflow = new WorkflowService({ ws, tasks: s.tasks, completion: s.completion, runner: s.runner,
       roles: async () => ({ roles: { worker: { main: { cli: 'codex', model: 'm', effort: 'high' }, job: '' } } }),
       available: () => { entered.resolve(); return release.promise; },
-      review: async () => { reviews++; return { request: 'review', ok: true }; },
+      review: async () => { reviews++; return { request: 'review', ai: 'codex', text: '', ok: true, approved: false, structured: false }; },
       stopReview: () => false, changed() {}, promptChars: 1000 });
     await workflow.configure('P', s.task.id, [], [{ role: 'worker', text: 'do work', review }]);
     await workflow.start('P', s.task.id);
@@ -700,4 +702,74 @@ test('workflow outcomes survive more than one history page of automatic-fix tool
     assert.equal(runs, 2); assert.equal(verifications, 2);
     assert.equal(plan.state, 'completed'); assert.equal(plan.cursor, 1);
   } finally { await workflow.close(); }
+}));
+
+test('review steps require explicit approval and edits/reruns preserve prior attempts', () => withTmpWorkspace(async ws => {
+  const s = await setup(ws);
+  let approved = false;
+  let finished = Promise.withResolvers<void>();
+  const workflow = new WorkflowService({ ws, tasks: s.tasks, completion: s.completion, runner: s.runner,
+    roles: async () => ({ roles: { reviewer: { main: { cli: 'codex', model: 'm', effort: 'high' }, job: '' } } }),
+    available: async () => true,
+    review: async () => ({ request: String(approved), ai: 'codex', text: approved ? 'structured approval' : 'APPROVED', ok: true, structured: approved, approved }),
+    stopReview: () => false, changed: () => { if (!workflow.isBusy('P', s.task.id)) finished.resolve(); }, promptChars: 1000 });
+  await workflow.configure('P', s.task.id, [], [{ role: 'reviewer', text: 'first', review: true }, { role: 'reviewer', text: 'next', review: true }]);
+  finished = Promise.withResolvers<void>();
+  await workflow.start('P', s.task.id); await finished.promise;
+  const failed = await workflow.get('P', s.task.id);
+  assert.equal(failed.state, 'failed'); assert.equal(failed.cursor, 0); assert.equal(failed.results[0]?.ok, false);
+  const edited = await workflow.configure('P', s.task.id, [], [{ role: 'reviewer', text: 'retry', review: true }]);
+  assert.equal(edited.results.length, 1);
+  approved = true; finished = Promise.withResolvers<void>();
+  await workflow.start('P', s.task.id); await finished.promise;
+  const completed = await workflow.get('P', s.task.id);
+  assert.equal(completed.state, 'completed'); assert.equal(completed.results.length, 2);
+  await assert.rejects(workflow.configure('P', s.task.id, [], [{ role: 'reviewer', text: 'replace completed', review: true }]));
+  const rerun = await workflow.rerun('P', s.task.id, 0);
+  assert.equal(rerun.cursor, 0); assert.equal(rerun.results.length, 2);
+  assert.ok(rerun.results.every(result => result.invalidatedAt));
+  await workflow.close();
+}));
+
+test('interrupted workflow recovery is durable and human approval requires saved evidence', () => withTmpWorkspace(async ws => {
+  const s = await setup(ws); let finished = Promise.withResolvers<void>();
+  const deps = { ws, tasks: s.tasks, completion: s.completion, runner: s.runner,
+    roles: async () => ({ roles: { human: { main: { cli: '人', model: '', effort: '' }, job: '' } } }),
+    available: async () => true, review: async () => { throw new Error('unexpected review'); }, stopReview: () => false,
+    changed: () => { if (!workflow.isBusy('P', s.task.id)) finished.resolve(); }, promptChars: 1000 };
+  const workflow = new WorkflowService(deps);
+  const plan = await workflow.configure('P', s.task.id, [], [{ role: 'human', text: 'confirm evidence', review: true }]);
+  const file = path.join(ws.projectDir('P'), '.ai', 'workflows', `${s.task.id}.json`);
+  await fs.writeFile(file, JSON.stringify({ ...plan, state: 'running' }));
+  assert.equal((await workflow.get('P', s.task.id)).state, 'paused');
+  const persisted: unknown = JSON.parse(await fs.readFile(file, 'utf8'));
+  assert.ok(persisted && typeof persisted === 'object' && 'state' in persisted);
+  assert.equal(persisted.state, 'paused');
+  finished = Promise.withResolvers<void>(); await workflow.start('P', s.task.id); await finished.promise;
+  await assert.rejects(workflow.approveHuman('P', s.task.id, ''));
+  const approved = await workflow.approveHuman('P', s.task.id, 'Inspected a.ts lines 1–10 and passing verification');
+  assert.equal(approved.state, 'completed'); assert.match(approved.results[0]?.evidence ?? '', /Inspected/);
+  assert.equal((await new WorkflowService(deps).get('P', s.task.id)).results[0]?.approved, true);
+  await workflow.close();
+}));
+
+test('redo admission includes final usage of the interrupted turn and retains the unsent replacement', () => withTmpWorkspace(async ws => {
+  const history = new UsageHistory(ws.root);
+  await history.saveSettings({ rules: [{ id: 'project', project: 'P', unit: 'tokens', threshold: 10, since: '2020-01-01T00:00:00.000Z' }], quotaRemainingPercent: null, cloudExpiryHours: null });
+  const reported = Promise.withResolvers<void>();
+  const s = await setup(ws, { chunkMs: 5, events: [{ type: 'usage', usage: { input: 12, output: 8 } }, { type: 'tokens', runId: 'first', count: 8, spanMs: 20, at: Date.now() }] }, 600, {
+    beforeLaunch: (project, task, ai, account) => history.assertProceed({ project, task, ai, account }, { ais: [], tokensPerSecond: null }),
+    onCompleted: input => history.record(input),
+    onUsage: (_ai, event) => { if (event.type === 'tokens') reported.resolve(); },
+  });
+  try {
+    await s.send('first [slow]'); await reported.promise;
+    await assert.rejects(s.send('replacement', { mode: 'redo' }), (error: unknown) => error instanceof AppError && error.detail === 'usage_ack_required');
+    await s.runner.whenIdle();
+    assert.equal(s.runner.isRunning('P', s.task.id), false);
+    const log = await s.store.readLog('P', s.task.id);
+    assert.equal(log.filter(row => row.role === 'user').length, 1); const reply = log.at(-1); assert.ok(reply?.role === 'assistant'); assert.equal(reply.stopped, true);
+    const totals = (await history.view()).totals;
+    assert.equal(totals[0]!.input + totals[0]!.output, 20);
+  } finally { await s.runner.stopAll(); }
 }));

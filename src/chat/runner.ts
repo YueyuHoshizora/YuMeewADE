@@ -50,6 +50,10 @@ export interface RunnerDeps {
   verify?: (project: string, task: string) => Promise<VerifyResult>;
   onChanged(project?: string, task?: string): void;
   beforeSend?: (project: string, task: string, workflow: boolean) => Promise<void>;
+  beforeLaunch?: (project: string, task: string, ai: string, account: string) => Promise<void>;
+  resolveFullAccess?: (project: string, ai: string, inherited: boolean) => Promise<boolean>;
+  onCompleted?: (input: { requestId: string; sessionId?: string; project: string; task: string; ai: string; account: string; usage: TurnUsage | null }) => Promise<void>;
+  onUsageFailure?: () => void;
   /** CLI 回報的帳號額度／輸出 token（帳號層級，不寫進對話）。 */
   onUsage(ai: string, ev: Extract<CliEvent, { type: 'quota' | 'tokens' }>, accountId: string): void;
 }
@@ -329,6 +333,7 @@ export class ChatRunner extends EventEmitter {
       this.deps.onChanged(p, t);
       return { request: item.id, queued: true };
     }
+    const fullAccess = await this.deps.resolveFullAccess?.(p, item.ai, settings.fullAccess[item.ai] ?? provider.dangerous) ?? settings.fullAccess[item.ai] ?? provider.dangerous;
     if (s.busy) {
       const previous = s.text.slice(0, 400);
       s.run?.stop();
@@ -337,6 +342,8 @@ export class ChatRunner extends EventEmitter {
         ? `（人取消了前一個指示「${previous}」。如果途中改了檔案，必要時先還原，然後只做這個新指示）\n${chosen.text}`
         : `（人送來補充說明。不要取消目前的指示「${previous}」，延續已做到的部分，並一起處理這個補充）\n${chosen.text}`;
     }
+    // Interrupted-turn completion persists its final usage before the replacement can be admitted.
+    await this.deps.beforeLaunch?.(p, t, item.ai, accountId);
     if (this.running().length >= this.deps.limits.concurrentRuns) throw new AppError('unavailable', 'runs_limit');
     assertActive();
     // 先佔槽，再做工作目錄與檔案 I/O，避免跨作業同時超過執行上限。
@@ -406,7 +413,7 @@ export class ChatRunner extends EventEmitter {
         ...(command?.native ? { slashCommand: command.text } : {}),
         ...(command?.standalone ? { standalone: true } : resumeId ? { resumeId } : {}),
         model: pick.model, effort: pick.effort,
-        fullAccess: settings.fullAccess[item.ai] ?? provider.dangerous,
+        fullAccess,
         accountId,
         addDirs: [path.join(this.deps.ws.projectDir(p), '.ai')], images,
       }, checkpoint, cancelled);
@@ -492,6 +499,7 @@ export class ChatRunner extends EventEmitter {
     let error = '';
     let usage: TurnUsage | undefined;
     let persisted = false;
+    let launched = false;
     const asks: Ask[] = [];
     let writes = Promise.resolve();
     let writeFailure: { error: unknown } | undefined;
@@ -502,6 +510,7 @@ export class ChatRunner extends EventEmitter {
     try {
       if (this.shuttingDown) throw new AppError('unavailable');
       if (cancelled()) throw new AppError('conflict', 'chat_stopped');
+      launched = true;
       const run = provider.send(opts, ev => {
         if (ev.type === 'session') sid = ev.id;
         else if (ev.type === 'delta') {
@@ -607,6 +616,11 @@ export class ChatRunner extends EventEmitter {
         this.publish(p, t, { event: 'row', data: row });
       }
     } finally {
+      try { if (launched) await this.deps.onCompleted?.({ requestId: item.id, ...(sid ? { sessionId: sid } : {}), project: p, task: t, ai: item.ai, account: opts.accountId ?? 'default', usage: usage ?? null }); }
+      catch (recordError) {
+        log.error('用量紀錄失敗', recordError, { project: p, task: t });
+        this.deps.onUsageFailure?.();
+      }
       s.busy = null;
       s.run = null;
       s.partial = '';

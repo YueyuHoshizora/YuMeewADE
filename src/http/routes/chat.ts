@@ -2,13 +2,13 @@ import { promises as fs } from 'node:fs';
 import path from 'node:path';
 import type { App } from '../../server/app.ts';
 import { AppError } from '../../shared/errors.ts';
-import { writeJson } from '../../shared/fsx.ts';
-import { SEND_MODES, type SendInput, type StartResult } from '../../shared/types.ts';
+import { readJson, withFileLocks, writeJson } from '../../shared/fsx.ts';
+import { SEND_MODES, type StartInput, type SendInput, type StartResult, type Task } from '../../shared/types.ts';
 import { isRepo } from '../../git/git.ts';
 import { IMAGE_TYPES, saveUpload, uploadPath } from '../../chat/attachments.ts';
 import { formatTranscript } from '../../chat/export.ts';
 import { taskKey } from '../sse.ts';
-import { addDraftImage, draftScope } from '../../chat/drafts.ts';
+import { addDraftImage, draftFile, draftScope, EMPTY_DRAFT, type Drafts } from '../../chat/drafts.ts';
 import { optString, reqString, type Router } from '../router.ts';
 function images(body: Record<string, unknown>, max: number): string[] | undefined {
   if (body['images'] === undefined) return undefined;
@@ -68,18 +68,38 @@ export function registerChatRoutes(router: Router, app: App): void {
   });
   router.post('/api/chat/fork', async ({ body }) => app.runner.fork(reqString(body, 'project', 100), reqString(body, 'task', 100), reqString(body, 'request', 100)));
   router.get('/api/chat/turn-diff', async ({ query }) => app.runner.turnDiff(reqString(query, 'project', 100), reqString(query, 'task', 100), reqString(query, 'request', 100)));
-  router.post('/api/start', async ({ body, ip }): Promise<StartResult> => {
-    if (!app.sendLimiter.take(ip)) throw new AppError('too_many_requests');
+  async function prepare(body: Record<string, unknown>): Promise<{ task: Task; input: StartInput }> {
     const p = reqString(body, 'project', 100); const project = await app.projects.get(p);
+    await app.trust.assertExecutable(p);
     const text = optString(body, 'text', app.config.limits.promptChars) ?? ''; const pics = images(body, app.config.limits.imagesPerSend);
     if (!text.trim() && !pics?.length) throw new AppError('bad_request');
     const ai = reqString(body, 'ai', 100); const model = optString(body, 'model', 200) ?? ''; const effort = optString(body, 'effort', 20) ?? '';
     const bodyPath = app.projects.bodyPath(project);
     const task = await app.tasks.create(p, { title: text.trim().split('\n')[0]?.slice(0, 40) || '看圖片', phase: app.projects.currentPhase(project), cli: ai, model, effort, workspace: bodyPath === app.ws.projectDir(p) || await isRepo(bodyPath) ? 'isolated' : 'direct' });
     await writeJson(app.ws.startPickFile(p), { ai, model, effort });
-    const sent = await app.runner.send({ project: p, task: task.id, text, ai, model, effort, ...(pics ? { images: pics } : {}) });
+    if (pics?.length) {
+      const file = draftFile(app.ws, p);
+      await withFileLocks([file], async () => {
+        const drafts = await readJson<Drafts>(file, {});
+        const quick = drafts.quickstart ?? EMPTY_DRAFT();
+        const moved = quick.images.filter(image => pics.includes(image.id));
+        drafts[task.id] = { images: moved, reviews: [] };
+        quick.images = quick.images.filter(image => !pics.includes(image.id));
+        if (quick.images.length || quick.reviews.length) drafts.quickstart = quick; else delete drafts.quickstart;
+        await writeJson(file, drafts);
+      });
+    }
     await app.oplog.record({ action: 'quickstart', project: p, task: task.id }); app.changed(p, task.id);
-    return { task: await app.tasks.get(p, task.id), request: sent.request };
+    return { task, input: { project: p, text, ai, model, effort, ...(pics ? { images: pics } : {}) } };
+  }
+  router.post('/api/start/prepare', async ({ body }) => {
+    return { task: (await prepare(body)).task };
+  });
+  router.post('/api/start', async ({ body, ip }): Promise<StartResult> => {
+    if (!app.sendLimiter.take(ip)) throw new AppError('too_many_requests');
+    const { task, input } = await prepare(body);
+    const sent = await app.runner.send({ ...input, task: task.id });
+    return { task: await app.tasks.get(input.project, task.id), request: sent.request };
   });
   router.postRaw('/api/upload', app.config.limits.uploadBytes, async ({ query, raw }) => {
     const p = reqString(query, 'project', 100); await app.projects.get(p);

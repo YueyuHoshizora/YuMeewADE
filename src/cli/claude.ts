@@ -284,7 +284,7 @@ export function createClaudeParser(onEvent: (ev: CliEvent) => void, now: () => n
       case 'result': {
         messages.clear();
         const usage = parseUsage(obj['usage']);
-        if (usage) onEvent({ type: 'usage', usage });
+        if (usage) onEvent({ type: 'usage', usage: { ...usage, ...(typeof obj['total_cost_usd'] === 'number' && Number.isFinite(obj['total_cost_usd']) && obj['total_cost_usd'] >= 0 ? { claudeUsd: obj['total_cost_usd'] } : {}) } });
         const isError = obj['is_error'] === true || (typeof obj['subtype'] === 'string' && obj['subtype'] !== 'success');
         const text = typeof obj['result'] === 'string' ? obj['result'] : '';
         if (isError) onEvent({ type: 'error', reason: `result ${String(obj['subtype'])}: ${text.slice(0, 200)}` });
