@@ -547,3 +547,4 @@ electron 44.7.0、vite 8.3.4、electron-builder 26.15.3、typescript 7.0.2、@ty
 - 作業範本：專案／工作區 Markdown 範本的標題、步驟、第一則指示；從現有作業建立／確認刪除，範本指示只預填新作業草稿，不自動執行 CLI。
 - 工具核准（permissions）：Claude Code 2.1.296 已確認接受 `--permission-prompt-tool stdio` 與 stream-json；依官方 Agent SDK 的 `can_use_tool`／`control_response` 協定實作。安全模式 manual、不把 stdin 提示改為 argv；雙向 JSONL 保留原 input。卡片支援一次／本輪同工具授權與拒絕；`limits.approvalSeconds` 預設 120，逾時、停止、重做、補充、關閉拒絕待核准，授權只存記憶體。
 - 能力調查：codex 0.162.1 exec 只有單向 JSONL；app-server 的 stdio JSON-RPC 需另外實作 session／turn 與續聊生命週期，不能混入現有 exec parser。保留 sandbox／never 並明示未支援。grok 1.0.46 single ACP updates 是輸出，非 agent stdio 雙向 session API；agy 1.3.3 stream-json help 未提供權限控制回覆協定。兩者保留 safeArgs 並明示未支援，不假造核准。Claude 協定來源：https://github.com/anthropics/claude-agent-sdk-python/blob/main/src/claude_agent_sdk/_internal/query.py。
+- 桌面視窗狀態依視窗 slot 原子保存於 userData/window-state.json；驗證數值與目前顯示器，離屏置中，恢復最大化與全螢幕。

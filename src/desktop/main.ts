@@ -1,7 +1,7 @@
 // Electron 主行程：只管視窗與生命週期，核心以 utilityProcess 另起（與 npm start 同一份 dist/server/main.js）。
 // renderer 走與網頁版完全相同的 http://127.0.0.1:{port}，不另立協定（安全節 4）。
 
-import { app, BrowserWindow, dialog, ipcMain, shell, utilityProcess, type UtilityProcess } from 'electron';
+import { app, BrowserWindow, dialog, ipcMain, screen, shell, utilityProcess, type UtilityProcess } from 'electron';
 import { mkdirSync, promises as fs } from 'node:fs';
 
 import path from 'node:path';
@@ -12,6 +12,7 @@ import { acceptsFrame, validBadgeCount } from './policy.ts';
 import { stopOwnedCore } from './shutdown.ts';
 import { configureSecretApplication, createSecretRequestHandler } from './secret-service.ts';
 import { reportArtifactSmoke } from './artifact-smoke.ts';
+import { WindowStateStore } from './window-state.ts';
 
 const HERE = path.dirname(fileURLToPath(import.meta.url));
 const APP_ROOT = path.join(HERE, '..', '..');
@@ -36,6 +37,7 @@ let mainWindow: BrowserWindow | null = null;
 let coreOrigin = '';
 mkdirSync(CONFIG_DIRECTORY, { recursive: true, mode: 0o700 });
 app.setPath('sessionData', CONFIG_DIRECTORY);
+const windowStates = new WindowStateStore(path.join(CONFIG_DIRECTORY, 'window-state.json'));
 configureSecretApplication();
 const primaryInstance = app.requestSingleInstanceLock();
 if (!primaryInstance) app.quit();
@@ -92,9 +94,10 @@ async function startCore(host: string, port: number): Promise<void> {
 }
 
 function createWindow(url: string): BrowserWindow {
+  const slot = BrowserWindow.getAllWindows().length;
+  const saved = windowStates.get(slot, [screen.getPrimaryDisplay(), ...screen.getAllDisplays().filter(d => d.id !== screen.getPrimaryDisplay().id)].map(d => d.workArea));
   const win = new BrowserWindow({
-    width: 1280,
-    height: 820,
+    ...saved.bounds,
     minWidth: 640,
     minHeight: 480,
     title: 'YuMeewADE',
@@ -107,6 +110,22 @@ function createWindow(url: string): BrowserWindow {
       webSecurity: true,
     },
   });
+  if (saved.maximized) win.maximize();
+  if (saved.fullscreen) win.setFullScreen(true);
+  const saveState = (): void => {
+    if (win.isDestroyed()) return;
+    try { windowStates.save(slot, { bounds: win.getNormalBounds(), maximized: win.isMaximized(), fullscreen: win.isFullScreen() }); }
+    catch (error) { console.error('無法保存視窗狀態', error); }
+  };
+  let stateTimer: NodeJS.Timeout | undefined;
+  const scheduleState = (): void => { clearTimeout(stateTimer); stateTimer = setTimeout(saveState, 250); };
+  win.on('resize', scheduleState);
+  win.on('move', scheduleState);
+  win.on('maximize', scheduleState);
+  win.on('unmaximize', scheduleState);
+  win.on('enter-full-screen', scheduleState);
+  win.on('leave-full-screen', scheduleState);
+  win.on('close', () => { clearTimeout(stateTimer); saveState(); });
   const origin = new URL(url).origin;
   coreOrigin = origin;
   mainWindow = win;
