@@ -15,13 +15,17 @@ export interface GitResult {
 
 const ENV = minimalEnv(['SSH_AUTH_SOCK']);
 const IDENTITY = ['-c', 'user.name=YuMeewADE', '-c', 'user.email=yumeewade@localhost'];
+// Repository fsmonitor/textconv/external diff commands must not execute while merely reading IDE state.
+const READ_POLICY = ['-c', 'core.fsmonitor=false'];
 
 
 /** Normal local operations must finish within two minutes; tests may use a shorter deadline. */
 export const GIT_TIMEOUT_MS = 120_000;
 export function git(cwd: string, args: string[], opts: { maxBytes?: number; timeoutMs?: number } = {}): Promise<GitResult> {
   const { promise, resolve, reject } = Promise.withResolvers<GitResult>();
-  const child = spawn('git', [...IDENTITY, ...args], { cwd, env: ENV, stdio: ['ignore', 'pipe', 'pipe'], windowsHide: true, detached: process.platform !== 'win32' });
+  const commandIndex = args.findIndex((arg, index) => !arg.startsWith('-') && !['-c', '-C', '--git-dir', '--work-tree', '--namespace', '--config-env'].includes(args[index - 1] ?? ''));
+  const safeArgs = ['diff', 'show', 'log'].includes(args[commandIndex] ?? '') ? [...args.slice(0, commandIndex + 1), '--no-ext-diff', '--no-textconv', ...args.slice(commandIndex + 1)] : args;
+  const child = spawn('git', [...IDENTITY, ...READ_POLICY, ...safeArgs], { cwd, env: ENV, stdio: ['ignore', 'pipe', 'pipe'], windowsHide: true, detached: process.platform !== 'win32' });
   const max = opts.maxBytes ?? 10_000_000;
   const decoder = new StringDecoder('utf8');
   let stdout = '';

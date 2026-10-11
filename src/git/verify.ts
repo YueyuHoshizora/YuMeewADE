@@ -17,6 +17,7 @@ interface VerifyOptions {
   tasks: TaskLedger;
   config: Config;
   isRunning: (project: string, task: string) => boolean;
+  beforeRun?: (project: string) => Promise<void>;
 }
 
 export class VerifyService {
@@ -81,6 +82,7 @@ export class VerifyService {
 
   private async execute(projectId: string, taskId: string, entry: { stop?: (() => void) | undefined }): Promise<VerifyResult> {
     const key = JSON.stringify([projectId, taskId]);
+    await this.opts.beforeRun?.(projectId);
     const context = await this.context(projectId, taskId);
     let drifted = false;
     const started = Date.now();

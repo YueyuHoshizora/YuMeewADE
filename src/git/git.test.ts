@@ -35,3 +35,17 @@ test('gitOk rejects incomplete output while git exposes truncation explicitly', 
   assert.equal(Buffer.byteLength(result.stdout), 3);
   await assert.rejects(gitOk(repo, args, { maxBytes: 3 }), (err: unknown) => err instanceof AppError && err.detail === 'git_failed');
 }));
+
+test('Git reads never execute repository fsmonitor, external diff or textconv programs', () => withTmpWorkspace(async (_ws, tmp) => {
+  const repo = path.join(tmp, 'repo'); await fs.mkdir(repo); await fs.writeFile(path.join(repo, 'file.txt'), 'old\n'); await ensureRepo(repo);
+  const marker = path.join(tmp, 'executed'); const program = path.join(tmp, 'integration.ts');
+  await fs.writeFile(program, `import { writeFileSync } from 'node:fs'; writeFileSync(${JSON.stringify(marker)}, 'executed'); process.stdout.write('converted');`);
+  const command = `"${process.execPath}" "${program}"`;
+  await gitOk(repo, ['config', 'core.fsmonitor', command]);
+  await gitOk(repo, ['config', 'diff.external', command]);
+  await gitOk(repo, ['config', 'diff.convert.textconv', command]);
+  await fs.writeFile(path.join(repo, '.gitattributes'), '*.txt diff=convert\n'); await fs.writeFile(path.join(repo, 'file.txt'), 'new\n');
+  const status = await gitOk(repo, ['status', '--porcelain']); assert.match(status, /file.txt/u);
+  const diff = await gitOk(repo, ['diff', '--', 'file.txt']); assert.match(diff, /\+new/u); assert.match(diff, /-old/u);
+  assert.equal(await fs.stat(marker).catch(() => null), null);
+}));

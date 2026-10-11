@@ -5,7 +5,7 @@ import os from 'node:os';
 import path from 'node:path';
 import { test } from 'node:test';
 import { startTestServer } from '../testing/server.ts';
-import type { AppState, Project, Settings, Task } from '../shared/types.ts';
+import type { AppState, Project, ProjectTrustView, Settings, Task } from '../shared/types.ts';
 import { MockCliProvider } from '../cli/mock.ts';
 import { gitOk } from '../git/git.ts';
 
@@ -212,4 +212,81 @@ test('account APIs register, activate, refresh and remove existing profiles safe
     assert.equal(JSON.stringify(failed.json).includes('secret'), false);
     assert.equal((await s.api('POST', '/api/accounts/add', { ai: 'claude', name: 'Refresh failure is safe', configDir: dir })).status, 200);
   } finally { await s.close(); await fs.rm(dir, { recursive: true, force: true }); }
+});
+
+test('restricted projects block Git reads that can execute repository clean filters', async () => {
+  const { server: s, project: p, task: t } = await setup();
+  try {
+    const root = s.app.ws.projectDir(p.id);
+    const marker = path.join(s.app.ws.root, 'filter-marker');
+    const filter = path.join(s.app.ws.root, 'filter.ts');
+    await fs.writeFile(filter, `import { appendFileSync } from 'node:fs'; appendFileSync(${JSON.stringify(marker)}, 'executed\\n'); process.stdin.pipe(process.stdout);`);
+    await fs.writeFile(path.join(root, '.gitattributes'), 'source.txt filter=local\n');
+    await fs.writeFile(path.join(root, 'source.txt'), 'before\n');
+    await gitOk(root, ['config', 'filter.local.clean', `${JSON.stringify(process.execPath)} ${JSON.stringify(filter)}`]);
+    await gitOk(root, ['add', '.gitattributes', 'source.txt']);
+    await gitOk(root, ['commit', '-m', 'filter fixture']);
+    await fs.writeFile(path.join(root, 'source.txt'), 'after\n');
+    await fs.rm(marker, { force: true });
+    const update = async (state: 'restricted' | 'trusted') => {
+      const view = (await s.api('GET', `/api/project/trust?project=${p.id}`)).json as ProjectTrustView;
+      assert.equal((await s.api('POST', '/api/project/trust', { project: p.id, state, overrides: {}, revision: view.revision, confirmed: true })).status, 200);
+    };
+    await update('restricted');
+    for (const route of [`/api/git/status?project=${p.id}`, `/api/git/diff?project=${p.id}&path=source.txt`, `/api/task/preview?project=${p.id}&task=${t.id}`, `/api/task/diff?project=${p.id}&task=${t.id}`]) {
+      const response = await s.api('GET', route);
+      assert.equal(response.status, 403);
+      assert.equal((response.json as { detail: string }).detail, 'project_restricted');
+    }
+    await assert.rejects(fs.access(marker), { code: 'ENOENT' });
+    assert.equal((await s.api('GET', '/api/state')).status, 200);
+    await update('trusted');
+    assert.equal((await s.api('GET', `/api/git/diff?project=${p.id}&path=source.txt`)).status, 200);
+    assert.match(await fs.readFile(marker, 'utf8'), /executed/);
+  } finally { await s.close(); }
+});
+
+test('archive restoration checks current and archived trust before checkout and rolls denied moves back', async () => {
+  const { server: s, project: p, task: t } = await setup();
+  try {
+    const root = s.app.ws.projectDir(p.id);
+    const marker = path.join(s.app.ws.root, 'checkout-marker');
+    const filter = path.join(s.app.ws.root, 'smudge.ts');
+    await fs.writeFile(filter, `import { appendFileSync } from 'node:fs'; appendFileSync(${JSON.stringify(marker)}, 'checkout\\n'); process.stdin.pipe(process.stdout);`);
+    await fs.writeFile(path.join(root, '.gitattributes'), 'source.txt filter=restore\n');
+    await fs.writeFile(path.join(root, 'source.txt'), 'retained bytes\n');
+    await gitOk(root, ['add', '.gitattributes', 'source.txt']);
+    await gitOk(root, ['commit', '-m', 'checkout fixture']);
+    await s.app.worktree.prepare(p.id, t.id);
+    assert.equal((await s.api('POST', '/api/task/archive', { project: p.id, task: t.id, force: true })).status, 200);
+    const [entry] = await s.app.archive.list(p.id);
+    assert.ok(entry);
+    await gitOk(root, ['config', 'filter.restore.smudge', `${JSON.stringify(process.execPath)} ${JSON.stringify(filter)}`]);
+    const update = async (state: 'restricted' | 'trusted') => {
+      const view = await s.app.trust.view(p.id);
+      await s.app.trust.update(p.id, { state, overrides: {}, revision: view.revision, confirmed: true });
+    };
+    await update('restricted');
+    assert.equal((await s.api('POST', '/api/archive/restore', { project: p.id, key: entry.key })).status, 403);
+    await assert.rejects(fs.access(marker), { code: 'ENOENT' });
+    await assert.rejects(s.app.tasks.get(p.id, t.id));
+    assert.equal((await s.app.archive.list(p.id))[0]?.key, entry.key);
+    await update('trusted');
+    assert.equal((await s.api('POST', '/api/archive/restore', { project: p.id, key: entry.key })).status, 200);
+    assert.equal(await fs.readFile(path.join(s.app.ws.worktreeDir(p.id, t.id), 'source.txt'), 'utf8'), 'retained bytes\n');
+    assert.match(await fs.readFile(marker, 'utf8'), /checkout/);
+    assert.equal((await s.api('POST', '/api/project/archive', { project: p.id, force: true })).status, 200);
+    const [projectEntry] = await s.app.archive.list();
+    assert.ok(projectEntry);
+    const archivedRoot = path.join(s.app.ws.projectsDir, '.trash', projectEntry.key);
+    const trustFile = path.join(archivedRoot, '.ai', 'trust.json');
+    const saved = JSON.parse(await fs.readFile(trustFile, 'utf8')) as { state: string };
+    saved.state = 'restricted';
+    await fs.writeFile(trustFile, JSON.stringify(saved));
+    await fs.rm(marker, { force: true });
+    assert.equal((await s.api('POST', '/api/archive/restore', { key: projectEntry.key })).status, 403);
+    await assert.rejects(fs.access(marker), { code: 'ENOENT' });
+    await assert.rejects(fs.access(root), { code: 'ENOENT' });
+    assert.equal((await s.app.archive.list())[0]?.key, projectEntry.key);
+  } finally { await s.close(); }
 });

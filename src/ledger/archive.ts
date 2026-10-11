@@ -16,8 +16,9 @@ export class ArchiveService {
   private readonly projects: ProjectLedger;
   private readonly tasks: TaskLedger;
   private readonly worktree: WorktreeService;
-  constructor(ws: Workspace, projects: ProjectLedger, tasks: TaskLedger, worktree: WorktreeService) {
-    this.ws = ws; this.projects = projects; this.tasks = tasks; this.worktree = worktree;
+  private readonly beforeRevive: ((project: string) => Promise<void>) | undefined;
+  constructor(ws: Workspace, projects: ProjectLedger, tasks: TaskLedger, worktree: WorktreeService, beforeRevive?: (project: string) => Promise<void>) {
+    this.ws = ws; this.projects = projects; this.tasks = tasks; this.worktree = worktree; this.beforeRevive = beforeRevive;
   }
   private root(project?: string): string { return project ? path.join(this.ws.projectDir(project), '.ai', 'trash') : path.join(this.ws.projectsDir, '.trash'); }
   private async safe(root: string, key: string): Promise<string> {
@@ -127,7 +128,10 @@ export class ArchiveService {
       return entry;
     }).then(async restored => {
       try {
-        for (const record of project ? [await this.tasks.get(project, entry.task)] : await this.tasks.list(entry.project)) {
+        const records = project ? [await this.tasks.get(project, entry.task)] : await this.tasks.list(entry.project);
+        // The archived ledger must be visible before checking its saved root/policy, but never before checkout.
+        if (records.some(record => record.workspace !== 'direct')) await this.beforeRevive?.(entry.project);
+        for (const record of records) {
           await this.worktree.revive(entry.project, record.id);
           revived.push(record.id);
         }
