@@ -47,7 +47,8 @@ export class ArchiveService {
       if ((await fs.lstat(file).catch((error: NodeJS.ErrnoException) => { if (error.code === 'ENOENT') return null; throw error; }))?.isSymbolicLink()) throw new AppError('conflict', 'archive_unsafe_path');
       if (!(await pathExists(file))) continue;
       const { data } = parseFrontmatter(await fs.readFile(file, 'utf8'));
-      result.push({ key: entry.name, project: project ?? id, task: project ? id : '', name: String(data[project ? 'title' : 'name'] ?? id), archivedAt: Number.parseInt(match[2]!, 36) });
+      const body = !project && typeof data['body'] === 'string' && path.isAbsolute(data['body']) ? data['body'] : '';
+      result.push({ key: entry.name, project: project ?? id, task: project ? id : '', name: String(data[project ? 'title' : 'name'] ?? id), archivedAt: Number.parseInt(match[2]!, 36), ...(body ? { body } : {}) });
     }
     return result.sort((a, b) => b.archivedAt - a.archivedAt);
   }
@@ -94,6 +95,8 @@ export class ArchiveService {
         for (const file of taskFiles.filter(name => name.endsWith('.md'))) {
           if (await pathExists(this.ws.worktreeDir(entry.project, file.slice(0, -3)))) throw new AppError('conflict', 'archive_restore_conflict');
         }
+        // 先前建立失敗留下的空資料夾不算衝突（與建立專案相同）；有內容就拒絕。
+        if (await pathExists(target) && (await fs.readdir(target).catch(() => ['.'])).length === 0) await fs.rmdir(target);
         if (await pathExists(target) || (await this.projects.list()).some(item => item.name.toLowerCase() === entry.name.toLowerCase())) throw new AppError('conflict', 'archive_restore_conflict');
         // External body paths remain untouched; only the ledger directory is moved.
         await fs.rename(source, target);

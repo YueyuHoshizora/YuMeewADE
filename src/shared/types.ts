@@ -678,7 +678,8 @@ export interface ExecutionRun {
   timedOut: boolean; truncated: boolean; output: ExecutionOutput[]; sequence: number; inspectorUrl?: string;
 }
 
-export interface ArchiveEntry { key: string; project: string; task: string; name: string; archivedAt: number }
+/** `body`：封存專案的外部主資料夾（PROJECT.md 有填時才有），供「開啟專案」比對選到的資料夾。 */
+export interface ArchiveEntry { key: string; project: string; task: string; name: string; archivedAt: number; body?: string }
 export interface ArchivePreview { git: string[]; preserved: string[]; unavailable: string[] }
 export interface GitWorkbenchFile {
   path: string; originalPath?: string; index: string; working: string;

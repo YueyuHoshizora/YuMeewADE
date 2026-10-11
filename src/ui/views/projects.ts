@@ -1,11 +1,11 @@
-import { type NewTaskInput, type ProjectView, type SlashCommand, type StartInput, type Task } from '../../shared/types.ts';
+import { type ArchiveEntry, type NewTaskInput, type ProjectView, type SlashCommand, type StartInput, type Task } from '../../shared/types.ts';
 import { ApiFailure, api, query, request } from '../api.ts';
 import { t } from '../i18n/index.ts';
 import { attachments } from '../components/attachments.ts';
 import { aiPicker } from '../components/picker.ts';
 import { markdown } from '../components/markdown.ts';
 import { archiveFlow, area, button, card, confirmModal, disclosure, el, field, input, lines, link, projectHash, readLocal, row, run, select, storeLocal, taskHash, toast, type View, type ViewContext } from '../components/dom.ts';
-import { localTime } from '../components/display.ts';
+import { localDateTime, localTime } from '../components/display.ts';
 import { shouldSend } from '../components/composer.ts';
 import { attachSlashCommands } from '../components/slash-menu.ts';
 import { verificationConfigButton } from '../components/verification-config.ts';
@@ -32,7 +32,7 @@ declare global { interface Window { yumeewade?: { desktop: true; platform: strin
 
 const normalizePath = (value: string): string => { const slashed = value.replace(/\\/g, '/').replace(/\/+$/, ''); return /^[A-Za-z]:/.test(slashed) || slashed.startsWith('//') ? slashed.toLowerCase() : slashed; };
 
-/** 以系統資料夾選擇器開啟專案：符合台帳資料夾或主資料夾就直接開啟；否則確認後以該資料夾為主資料夾建立專案。網頁版沒有選擇器，改進清單頁。 */
+/** 以系統資料夾選擇器開啟專案：符合台帳資料夾或主資料夾就直接開啟；屬於已封存專案就提示還原；否則確認後以該資料夾為主資料夾建立專案。網頁版沒有選擇器，改進清單頁。 */
 export async function openProjectFromFolder(context: ViewContext): Promise<void> {
   const pick = window.yumeewade?.pickFolder;
   if (!pick) { location.hash = '#/open'; return; }
@@ -42,9 +42,17 @@ export async function openProjectFromFolder(context: ViewContext): Promise<void>
   const found = context.state.projects.find(project => normalizePath(project.dir) === target) ?? context.state.projects.find(project => normalizePath(project.bodyPath) === target);
   if (found) { location.hash = projectHash(found.id); return; }
   const name = value.replace(/[\\/]+$/, '').split(/[\\/]/).at(-1) ?? '';
+  const sameKey = (key: string) => key.toLocaleLowerCase() === name.toLocaleLowerCase();
+  const archived = await request<ArchiveEntry[]>('/api/archive/list');
+  // 主資料夾相同的封存專案優先於同名的進行中專案：使用者選的是那份程式碼。
+  const archivedBody = archived.find(entry => entry.body && normalizePath(entry.body) === target);
+  if (archivedBody && await offerRestore(context, archivedBody)) return;
   // 資料夾名稱與既有專案同名（含大小寫差異）時，建立必定失敗，直接開啟該專案。
-  const sameName = context.state.projects.find(project => [project.id, project.name].some(key => key.toLocaleLowerCase() === name.toLocaleLowerCase()));
+  const sameName = context.state.projects.find(project => [project.id, project.name].some(sameKey));
   if (sameName) { location.hash = projectHash(sameName.id); return; }
+  // 同名的封存專案：另建新專案會讓它之後無法還原，所以先提議還原；拒絕才改為建立。
+  const archivedName = archived.find(entry => [entry.project, entry.name].some(sameKey));
+  if (archivedName && archivedName !== archivedBody && await offerRestore(context, archivedName)) return;
   if (!await confirmModal(t('project.adoptTitle'), t('project.adoptMessage', { name }), t('project.adoptAccept'))) return;
   try {
     const project = await api.createProject({ name, description: '', phases: lines(t('project.defaultPhases')), body: value, parent: '', related: [] });
@@ -52,6 +60,14 @@ export async function openProjectFromFolder(context: ViewContext): Promise<void>
   } catch (error) {
     if (error instanceof ApiFailure) toast(error.message); else throw error;
   }
+}
+
+/** 確認後還原封存專案並開啟；回傳是否已還原。 */
+async function offerRestore(context: ViewContext, entry: ArchiveEntry): Promise<boolean> {
+  if (!await confirmModal(t('project.restoreTitle'), t('project.restoreMessage', { name: entry.name, at: localDateTime(new Date(entry.archivedAt).toISOString()) }), t('project.restoreAccept'))) return false;
+  const restored = await request<ArchiveEntry>('/api/archive/restore', { key: entry.key });
+  await context.refresh(); location.hash = projectHash(restored.project);
+  return true;
 }
 
 export function openProjectView(context: ViewContext): View {

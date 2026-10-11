@@ -101,6 +101,7 @@ test('project archive/restore never moves external body code and restores task l
   await projects.archive('P');
   assert.equal(await fs.readFile(path.join(external, 'code.txt'), 'utf8'), 'external code\n');
   const [entry] = await archive.list();
+  assert.equal(entry!.body, external);
   await archive.restore(entry!.key);
   assert.equal((await projects.get('P')).body, external);
   assert.equal((await tasks.get('P', task.id)).title, '直接作業');
@@ -123,6 +124,22 @@ test('restore name and destination conflicts never overwrite and temporary lefto
   const [projectEntry] = await archive.list();
   await projects.create({ name: 'P' });
   await assert.rejects(archive.restore(projectEntry!.key));
+}));
+
+test('project restore reuses an empty leftover ledger folder but refuses one with data', () => withTmpWorkspace(async ws => {
+  const { projects, archive } = services(ws);
+  await projects.create({ name: 'P' });
+  await projects.archive('P');
+  const [entry] = await archive.list();
+  assert.equal(entry!.body, undefined);
+  await fs.mkdir(ws.projectDir('P'));
+  await fs.writeFile(path.join(ws.projectDir('P'), 'keep.txt'), 'data\n');
+  await assert.rejects(archive.restore(entry!.key));
+  assert.equal(await fs.readFile(path.join(ws.projectDir('P'), 'keep.txt'), 'utf8'), 'data\n');
+  await fs.rm(path.join(ws.projectDir('P'), 'keep.txt'));
+  await archive.restore(entry!.key);
+  assert.equal((await projects.get('P')).name, 'P');
+  assert.deepEqual(await archive.list(), []);
 }));
 
 test('recovery ignores incomplete staging names and refuses path escape', () => withTmpWorkspace(async ws => {
