@@ -4,7 +4,7 @@ import { AppError } from '../shared/errors.ts';
 import type { ExecutionService } from './commands.ts';
 
 export interface NativeTool { command: string; args: string[]; }
-export interface IntegrationOptions { ide?: NativeTool; terminal?: NativeTool; browser?: NativeTool; envPassthrough?: string[]; }
+export interface IntegrationOptions { ide?: NativeTool; terminal?: NativeTool; browser?: NativeTool; envPassthrough?: string[]; beforeStart?: (project: string, task: string) => Promise<void>; }
 
 export function loopbackUrl(value: string, inspector = false): URL {
   let url: URL;
@@ -67,6 +67,7 @@ export class IntegrationService {
   }
   async terminal(project: string, task: string, command = ''): Promise<void> {
     if (command.length > 8192 || /[\0\r\n]/u.test(command)) throw new AppError('bad_request');
+    await this.options.beforeStart?.(project, task);
     const cwd = await this.execution.cwd(project, task);
     if (this.options.terminal) {
       if (!this.options.terminal.args.some(a => a.includes('{cwd}')) || (command && !this.options.terminal.args.some(a => a.includes('{command}')))) throw new AppError('bad_request');

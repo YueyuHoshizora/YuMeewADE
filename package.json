@@ -11,13 +11,15 @@
     "node": ">=24"
   },
   "scripts": {
-    "build": "node -e \"require('node:fs').rmSync('dist',{recursive:true,force:true})\" && tsc -p tsconfig.build.json && vite build",
+    "build": "npm run prepare:pty && node -e \"require('node:fs').rmSync('dist',{recursive:true,force:true})\" && tsc -p tsconfig.build.json && vite build",
     "typecheck": "tsc --noEmit -p tsconfig.json && tsc --noEmit -p tsconfig.ui.json",
-    "test": "node --test \"src/**/*.test.ts\" \"scripts/**/*.test.ts\"",
+    "test": "npm run prepare:pty && node --test \"src/**/*.test.ts\" \"scripts/**/*.test.ts\"",
     "start": "node dist/server/main.js",
-    "dev": "node scripts/dev.ts",
+    "dev": "npm run prepare:pty && node scripts/dev.ts",
     "desktop": "electron .",
-    "dist": "electron-builder --config electron-builder.yml --publish never"
+    "dist": "node scripts/package-signing.ts",
+    "patch:build-deps": "node scripts/patch-sprintf.ts",
+    "prepare:pty": "node scripts/prepare-pty.ts"
   },
   "devDependencies": {
     "@types/node": "24.19.1",
@@ -25,5 +27,11 @@
     "electron-builder": "26.15.3",
     "typescript": "7.0.2",
     "vite": "8.3.4"
+  },
+  "dependencies": {
+    "node-pty": "1.1.0"
+  },
+  "allowScripts": {
+    "node-pty@1.1.0": true
   }
 }
