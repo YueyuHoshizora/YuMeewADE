@@ -4,6 +4,35 @@
 
 ## [Unreleased]
 
+### IDE 與本機工具
+
+- 檔案編輯器新增語法上色、帶 revision 的原子儲存與外部變更衝突處理；執行中禁止儲存。定義／引用／診斷使用原生 stdio LSP，預設使用已安裝 TypeScript 7 `tsc --lsp -stdio`；其他 server 可用 `YUMEEWADE_LSP_COMMANDS` 的 languageId → argv JSON 設定，不存在時明確回不可用。
+- 原生 command＋args 執行、stdout／stderr、結束碼、有限輸出與截斷提示、行程樹停止；App 內非互動管線，互動 PTY 使用系統終端，不冒充內嵌終端。新增 loopback 預覽、loopback Node Inspector 與外部 IDE／瀏覽器整合，`execution.*` 支援 command／args 與明確 placeholder。
+- Git 工作台新增 status／PR 狀態、逐檔 stage／unstage、衝突解決、commit、fetch、branch 建立／切換；push 僅允許明確確認的非 force 操作，PR 需確認及登入的 `gh`，不自動對外發布。
+
+### 驗證、審查與工作流程
+
+- 專案支援多個具名 `checks` 與逐項驗證結果，保留舊 `verify`；驗證綁目前工作內容與設定指紋，外部、generated／ignored 寫入及驗證自身改檔皆造成失效／drift，不沿用過期綠燈。可選 `requireVerification` 限制合併，結果仍僅存記憶體。
+- 獨立唯讀審查不借用寫作 session 或 full-access 旗標：Codex 僅 Darwin／Linux 原生 read-only sandbox；Claude 只允許 Read／Glob／Grep（工具政策，不是 OS 沙箱）；不支援服務及不符限制的設定 fail closed。
+- 角色明確 backup 只在開始前且角色選取的主 CLI 不可用時使用；手動選擇不回退，執行失敗不自行換 AI。持久化 workflow 支援相依、角色／審查步驟與人工關卡，依賴完成且人工核准後才啟動，重啟中斷不自動恢復執行。
+- 固定決策、釘選來源行段與交接預覽呈現 provenance／截斷，背景不視為本輪授權。圖片及逐行評論草稿持久化，評論以 diff hash 判斷過期，差異變動不能悄悄送出舊稿。
+
+### 恢復、帳號與維護
+
+- 封存列表、影響預覽與還原；強制封存保留分支及原工作副本私有快照，保存 ignored／未追蹤／機密檔及刪除狀態，重建 worktree 時不覆蓋既有目的地。恢復快照不是外部主資料夾完整備份或可公開分享資料。
+- 本機健康檢查與可選外網檢查、私有工作區備份、完整性指紋、新目的地恢復與 worktree 關聯重寫。外部主資料夾 opt-in 才完整，拒絕恢復不完整備份及不支援的 linked／alternates repo。備份可能含專案機密，排除 App 憑證庫／CLI 帳號，恢復後重新登入。
+- 診斷只輸出允許的版本、能力、數量及錯誤碼，不帶私有路徑、對話、內容、token 或任意日誌。
+- 修正 AI 啟動前檢查的保留競態：等待 CLI 可用性時也禁止同作業的指令執行、編輯及封存，避免交錯修改。
+- 尚未建立／已清除隔離副本的檔案瀏覽回退到主資料夾唯讀，不允許錯寫主資料夾，仍可使用語言導覽。
+- workflow 從完整對話紀錄取得步驟結果，避免自動修正產生超過一頁工具輸出後誤判失敗。
+- 還原成功後退休該代恢復快照並保留原始資料，避免後續合併／封存還原重新覆蓋成舊內容。
+- 更正三語 README 的「不存憑證／沒有資料庫／Node22 相容」與過時帳號登錄說明：實際使用 App 私有加密 SQLite、Electron safeStorage OS 保護及 Node24 API；Electron 固定 44.7.0。OAuth 由隔離 CLI 流程完成，Gemini 經系統終端登入後匯入，Linux 無可信 keyring 不退回明文。
+
+### 打包與文件
+
+- CI 新增實際安裝／展開後的 dmg／zip、NSIS／portable、deb／AppImage 啟動 smoke，隔離設定與加密 keyring，成功後才上傳產物；CI 定義不是本次已執行所有平台的成功證明。
+- 三語 README 補齊安全界線、恢復範圍、設定、驗證／編輯器 API 及新功能分組路由；保留 loopback 無認證、AI 預設完整權限與費用風險警告。
+
 ## [1.0.2] - 2026-10-11
 
 ### 新增

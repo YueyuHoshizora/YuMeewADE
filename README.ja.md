@@ -9,16 +9,17 @@
 > **セキュリティに関する注意（最初にお読みください）**
 > - コアは `http://127.0.0.1:4560` のみで待ち受け、**ログインも認証もありません**。これは意図的な設計です。個人用のローカルツールであり、Web サービスではありません。同じマシン上の他のプロセスからも呼び出せます。`0.0.0.0` にバインドしたり、ポートを外部に転送したりしないでください。
 > - **AI は既定でフルアクセス権限を持ちます**。claude は `--dangerously-skip-permissions`、codex は `--dangerously-bypass-approvals-and-sandbox`、grok は `--always-approve` で起動し、あなたの権限でファイル変更やコマンド実行ができます。「設定 → AI ツール → フルアクセス」で個別に無効化できます。無効時、claude はファイル編集のみ自動承認、codex は作業ディレクトリのサンドボックス、grok は `dontAsk` で承認が必要な操作を拒否します。
-> - 料金とログインは各 CLI が管理し、本ツールは認証情報を保存・変更せず、料金が発生しないことも保証しません。利用枠取得時のみ、コアは Claude のアカウント専用 OAuth 認証情報（macOS キーチェーンまたは `.credentials.json`）と Grok 設定フォルダーの `auth.json` にある有効な公式ログイン情報を**読み取り**、固定の公式使用量／billing エンドポイントだけに送ります。App API・画面・ログには出さず、追加アカウントが既定の認証情報を借用することもありません。期限切れは CLI で再ログインしてください。
+> - 料金と OAuth は CLI が管理し、無料である保証はありません。App は認証情報を**保存・更新します**。Electron `safeStorage` の OS 保護で暗号化し、ワークスペース外の App 専用 `credentials.sqlite`（Node `node:sqlite`）に保存します。Linux は対応 libsecret／KWallet が必要で、利用不可なら起動を拒否し、平文に退避しません。コアは隔離 CLI プロファイルを復元し、更新された認証情報を保存します。利用枠は固定の公式エンドポイントだけに送信し、認証情報を API 応答・UI・ログには出しません。ただし CLI ファイルや復元スナップショットには秘密情報が含まれ得るため、公開しないでください。
 
 ## 画面とワークフロー
 
 - **左側のツリー**：プロジェクトの下にタスクを表示します。子タスクは `↳` で字下げし、分岐タスクには `⑂` を付けます。丸印の色は、赤＝AI 実行中、黄＝回答待ち、青＝完了確認待ち、紫＝完了、薄緑＝対応済み、灰＝未開始です。未読の結果には「未読」と表示します。コンテキストメニュー（⋯）では名前の変更、子タスク／分岐の追加、アーカイブができます。プロジェクトではピン留め、順序の変更（ドラッグでも可）、子プロジェクトの追加もできます。上部の検索欄（`/` または Ctrl/⌘+K）でプロジェクトとタスクを絞り込めます。
 - **あなたの番**：タイトルバーのボタンに「回答待ち」と「完了を確認」のタスク数を表示します。開いて「完了にする」か「続ける」を選べます。
 - **実行中パネル**：AI が実行中のとき、画面下のステータスバーに赤い「実行中 N」を表示します。開くと実行中のタスク（AI、モデル、経過時間）を一覧でき、そのタスクへ移動、個別停止、「すべて停止」ができます（タスク内の「停止」と同じで、そのタスクのキューも空になります）。
-- **アカウントと利用枠**：フッターの Claude／Codex／Grok をクリックすると、既定・追加アカウントの使用率、残りの割合、リセット時刻、取得時刻・状態を確認できます。フッターには各 AI の使用中アカウントだけを表示します。詳細で切り替え、登録・登録削除、手動取得ができます。追加には名前と既存のログイン済み独立 CLI 設定フォルダー（絶対パス、`~` 可）を入力します。事前に `CLAUDE_CONFIG_DIR`（Claude）／`CODEX_HOME`（Codex）／`GROK_HOME`（Grok）を指定して CLI でログインしてください。認証情報の入力機能はなく、登録削除はフォルダー削除やログアウトを行いません。設定はワークスペース単位で、切り替えは次の指示から有効です。実行中の作業や別アカウントのセッションは引き継ぎません。
-  - 利用枠は起動時と既定で **5 分ごと**（`limits.usagePollSeconds: 300`）に取得します。失敗時は取得不可と表示して前回の数値・時刻を保持し、リアルタイムの値ではありません。登録アカウントごとに使い切った時と新しい成功データで回復を確認した時に通知します。最初の成功報告では通知せず、リセット時刻の経過や取得失敗だけでは回復としません。バックグラウンドではシステム通知も行います（完了通知と同じスイッチ）。
+- **アカウントと利用枠**：フッター詳細で Claude／Codex／Grok／Gemini の切り替え、追加・削除、手動取得ができます。サービスと名前だけを入力すると、App が隔離プロファイルを作り、CLI 自身の OAuth（`cli.*.loginArgs`）を実行し、成功後に暗号化庫へ取り込みます。Gemini は隔離 HOME を準備し、その HOME でシステム端末から `agy` にログインして取り込みます。App に token を入力しません。最初の成功アカウントを自動選択し、切り替えは App 内部の既定スロットに適用、次のターンから有効です。別アカウントの session は引き継ぎません。登録削除はサーバー側のログイン取消ではありません。
+  - 起動時と **1 分ごと**（`limits.usagePollSeconds: 60`）に取得します。失敗時は前回の値・時刻を保持し、リアルタイム値ではありません。残り 20% 未満、10% 未満、使い切り、既知リセットの 5／1 分前、成功データで確認した回復を、前景・背景ともシステム通知します（通知許可と設定スイッチが必要）。初回成功は通知せず、リセット時刻経過や取得失敗だけでは回復としません。
   - Grok は `GET https://cli-chat-proxy.grok.com/v1/billing?format=credits` を直接取得し、API の当期使用率・残りの割合・リセット時刻、明示されたプリペイド米ドル残高、上限付き従量課金の使用率を表示します。欠落・不正な値を 0 と見なしません。API キーのみのログインではこのアカウント利用枠を取得できません。有料枠が残っていてもプラン内の枠を使い切ると通知します。
+  - Gemini は `agy -p /usage --output-format json`（agy ≥ 1.1.11）の独立した読み取り専用報告を App 隔離認証で取得し、Gemini と Claude／GPT 共用枠の実際に報告された window のみ表示します。`cli.gemini.quotaArgs`（`[]` で停止）で設定し、割合欠落や不正リセットは利用不可で、0 としません。
   - 右下の値は直近の実測**平均 tok/s**です。CLI が報告した実際の出力 token 合計を計測区間の和集合の長さで割り、計測を 4 秒間保持します。未計測は「—」。Claude は各メッセージ（交錯するサブエージェントを含む）を個別に計測し、連続するメッセージは上書きせず保持します。Codex／Grok は待機・ツールを含むターン全体です。Gemini は完了したステップのスナップショットを累計し、同じステップの再送は二重計上せず、修正値は旧値を置き換えます。CLI が報告した思考用量を含み、推定やリアルタイムの生成速度ではありません。
 - **新規プロジェクト**：名前、説明、フェーズを入力します（既定は計画／実装／確認／仕上げ）。「メインフォルダー」に既存のコードフォルダーを指定できます（デスクトップ版には「選択…」ボタンがあります）。空欄なら台帳フォルダー自体を使います。「最初のタスク（任意）」を入力すると、そのまま実行を開始します。
 - **プロジェクト概要**：フェーズの流れと現在のフェーズのタスクを表示します。現在のフェーズのタスクがすべて完了すると、「次のフェーズへ」を案内します。**クイックスタート**：やりたいことを書き、AI／モデル／推論の強度を選びます（前回の選択を記憶します）。画像も添付できます。「開始」を押すとタスクを作成して AI に渡します。「＋ 詳細を設定してタスクを追加」も用意しています。
@@ -27,7 +28,7 @@
   - 実行中の送信：**① 中止してやり直す**、**② 補足（同時に実行）**、**③ 終了後に続ける**（キューに追加し、終了後に自動実行。再起動しても保持します）を選べます。「停止」はキューも同時に空にします。
   - AI が判断を求める場合、応答の最後に決まった形式で質問します。画面では**選択肢ボタン**として表示し、自分で回答を書くこともできます。回答すると、タスクは「回答待ち」から「進行中」に戻ります。
   - 作業コピー：「N ファイル +a −b」と競合の警告を表示します。「差分を見る」（ファイルごとに分割・折りたたみ可能、ファイル別の +/− 付き）、**メインフォルダーにマージ**（両側を自動保存してから `--no-ff` でマージ。成功するとコピーを削除してタスクを完了にします。競合するとマージを中止し、メインフォルダーは変更せず、タスクを回答待ちにします。新規の `.env*` などコミットされないファイルがコピーに残っている場合、マージは成功しますがコピーは保持し、そのファイルを一覧表示します）、または「マージから除外」を選べます。
-  - 検証：プロジェクトに「検証コマンド」（例：`npm test`、`PROJECT.md` に保存）を設定でき、タスクのヘッダーにある「検証を実行」でそのタスクの作業コピー内で実行し、成功／失敗、exit code、所要時間、出力の末尾を表示します。コマンドは台帳からのみ取得し、リクエストでは受け付けません。タイムアウトするとプロセスツリー全体を終了します。
+  - 検証：`PROJECT.md` の旧 `verify` または名前付き `checks: [{name, command}]` を順番に実行し、個別結果と出力末尾を表示します。コマンドは台帳からのみ取得し、タイムアウトはプロセスツリーを終了します。成功は現在の内容 fingerprint と一致する必要があり、外部編集、設定変更、生成・ignored ファイルへの書き込みで無効になります。検証自身の変更も `drifted` となり、成功扱いを再利用しません。結果はメモリのみ。任意の `requireVerification: true` はマージ前の現内容の成功を必須にします（既定は無効）。
   - 検証失敗時の自動修正：プロジェクトページの「検証失敗時の自動修正」で 0〜5 回を設定できます（`PROJECT.md` の `autoFix`、既定 0＝オフ）。AI が指示を終えてキューが空になると検証を自動実行し、失敗したら出力の末尾を同じ AI に返して、成功するか回数が尽きるまで繰り返します。回数が尽きても失敗する場合、タスクを「回答待ち」にして引き継ぎを求めます。AI の失敗・停止・回答待ちのときは検証しません。新しい指示を出すとカウントはリセットされます。
   - 会話：各メッセージにコピーボタン、失敗または停止した応答に「再試行」、応答に CLI が報告したターンごとのトークン使用量（入力／出力／キャッシュ）を表示します。ヘッダーの「Markdown を書き出す」で会話全体をダウンロードできます。
   - ツール呼び出しのグループは履歴も含めて既定で折りたたみ、以前の全体自動展開設定は使用しません。見出しをクリックすると手動で展開できます。
@@ -37,6 +38,22 @@
 - **設定**：言語（7言語）、Enter／⌘+Enter での送信、通知、ワークスペースのルート（その場で切り替え、設定ファイルに保存。デスクトップ版は「選択…」でフォルダーを選べます）、新規タスクの既定 AI、AI ツール（バージョン、「モデルを更新」、「CLI を更新」、「フルアクセス」の切り替え）、メニューに表示するモデルと順序、役割分担（`roles.yaml` に書き戻します）、最近の操作を設定・確認できます。
 
 Claude／Codex のモデル一覧・推論強度は CLI キャッシュから取得し、読めない場合は組み込み一覧を使います。Grok は使用中アカウントの `grok models` から取得し、同じ設定フォルダーの `models_cache.json` にある対応能力だけを補います。モデルや強度を推測せず、初回失敗時は架空の一覧を出しません。再取得失敗時はそのアカウントの前回結果を保持します。
+
+## IDE・復元・メンテナンス
+
+- **アーカイブ復元**：プロジェクト／タスクへの影響をプレビューしてからアーカイブ・復元できます。強制アーカイブはブランチと元の作業コピーの復元スナップショットを保持し、未追跡・ignored・秘密ファイルと削除状態も保存します。復元は worktree を再作成し、既存の保存先を上書きしません。`.yumeewade/recovery/` は非公開資料であり、公開 Git バックアップや外部メインフォルダー全体のバックアップではありません。
+  復元が成功した世代は保持領域へ移し、後のアーカイブには再適用しません。元のデータは残し、後からマージした内容を上書きしません。
+- **エディター**：メイン／作業コピーの構文色分けと原子的保存。読み取り時の `revision` が必要で、外部変更は競合、実行中は保存拒否です。定義・参照・診断はネイティブ stdio LSP。インストール済み TypeScript 7 の `tsc --lsp -stdio` を TS／JS に使用し、server 不在は利用不可と表示します。`YUMEEWADE_LSP_COMMANDS` は languageId → argv 配列の JSON（例 `{"python":["pylsp"]}`）。信頼できるローカル server を用意し、shell 経由では実行しません。
+  隔離コピーの作成前や削除後はメインフォルダーを読み取り専用で閲覧・言語ナビゲーションできますが、そのタスクからメインへの保存は拒否します。
+- **本機実行**：command＋args を起動し stdout／stderr、終了コード、切り詰め、プロセスツリー停止を提供します。App 内は非対話パイプで、**内蔵 PTY ではありません**。対話プログラムはシステム端末（macOS Terminal、Windows Terminal、Linux `x-terminal-emulator`）で実行し、App は出力やライフサイクルを管理しません。プレビューは明示 port 付き loopback HTTP(S) のみ。Node Inspector は loopback のランダム port に bind し、ブラウザー DevTools／外部 IDE で接続します。汎用 App 内 debugger ではありません。
+  - 実行上限：command／debug は 10 分、preview は 24 時間、出力末尾は最大 256 KiB／1024 イベント。同時数は `limits.concurrentRuns`。AI の `limits.runSeconds` とは別で、システム端末は管理対象外です。
+- **統合設定**：`config.yaml` の `execution.ide`／`terminal`／`browser` は `{command, args}`、argv 内で `{cwd}`／`{url}`／`{command}` を置換します。IDE フォルダーには `{cwd}`、IDE debug には `{url}` が必要。カスタム端末には `{cwd}`、コマンド指定時には `{command}` も必要です。外部ツールは自分でインストールし、指示は自分の権限で実行します。
+- **Git**：status／PR 状態、ファイル単位 stage／unstage、競合解決マーク、commit、fetch、branch 作成・切り替え。Push は明示確認必須、force 禁止。PR 作成は確認とログイン済み `gh` が必要です。自動 push／PR は行わず、fetch／push／PR は外部通信です。
+- **独立した読み取り専用審査**：書き込み session／full-access 旗標を流用しません。Codex は Darwin／Linux のみネイティブ read-only sandbox、Claude は Read／Glob／Grep のみの **CLI ツールポリシーで、OS sandbox ではありません**。Grok／Gemini や有効な制限設定のない provider は明確に拒否し、プロンプトだけを隔離保証にしません。CLI 自体は信頼するローカルプログラムです。
+- **役割／workflow**：役割が選んだ主 CLI が開始前に利用不可の場合のみ、明示 backup を選択します。手動指定は回避せず、実行失敗後に別 AI で再試行しません。永続 workflow は依存タスク、役割・審査ステップ、人間の関門に対応し、依存は完了と人間の承認が必要。再起動後は中断状態で停止し、許可を自動更新しません。
+- **見える背景／草稿**：固定決定、指定ファイル行範囲、引き継ぎプレビューで出典と切り詰めを確認できます。背景は今回の許可ではありません。画像と行コメント草稿は永続化し、コメントは diff hash に結び付け、差分変更後は古い状態として扱い、黙って送信しません。
+- **健康／バックアップ／診断**：既定はローカル検査のみ、外部ネットワーク検査は opt-in。非公開バックアップは台帳、会話、添付、Git／worktree、復元資料やプロジェクトの秘密を含み、**暗号化共有パッケージではありません**。App 認証庫／CLI アカウントは除外し、復元後は再ログインが必要。外部メインフォルダーは opt-in で完全化し、`complete:false` は復元不可。新規保存先のみ復元し、fingerprint と worktree 関連を検査・変更、元を上書きしません。linked repo／alternates など不完全な repository family は拒否します。診断は許可欄位のみで、パス、会話、ファイル内容、token、任意ログを除外します。
+- **成果物 CI**：ビルド後に実際のインストール／展開済み dmg／zip、NSIS／portable、deb／AppImage を隔離設定・keyring で起動してから upload します。CI 設定の説明であり、今回の全プラットフォーム成功証拠や正式署名・公証を意味しません。
 
 ## アーキテクチャ
 
@@ -62,7 +79,7 @@ Claude／Codex のモデル一覧・推論強度は CLI キャッシュから取
 
 **4種類の配布形式、共通のコード**：macOS アプリ（dmg／zip）、Windows アプリ（nsis／portable）、Linux アプリ（AppImage／deb）、Web 版（ブラウザーでローカルサービスを開く）を提供します。デスクトップアプリはコアを起動し、同じ URL を読み込むウィンドウを開くだけです。
 
-**台帳＝Markdown ファイル**：`PROJECT.md` と `.ai/tasks/*.md` は frontmatter と本文で構成し、会話は1行1レコードの JSONL です。grep で検索でき、手動編集もできます。データベースはありません。状態値（未開始／進行中／等待回覆／暫停／完成 — ファイルに書き込むリテラル値なので中国語のまま）は繁体字中国語でファイルに記録し、UI では選択した言語で表示します。
+**台帳＝Markdown ファイル**：`PROJECT.md` と `.ai/tasks/*.md` は frontmatter と本文、会話は JSONL で検索・手動編集できます。台帳はデータベースではありませんが、**認証情報は別の暗号化 SQLite に保存します**。状態のリテラル値（未開始／進行中／等待回覆／暫停／完成）は繁体字中国語のまま、UI は翻訳します。
 
 ## 必要環境
 
@@ -81,7 +98,7 @@ npm start            # 網頁版：瀏覽器開 http://127.0.0.1:4560
 npm run desktop      # 桌面版（開發機）
 ```
 
-> ソースから動かす場合は Node 24 以上が必要です。パッケージ版デスクトップアプリのコアは Electron 同梱の Node 22 で動くため、コードは Node 22 とも互換に保っています（Node 24 専用 API は使いません）。Web 版に専用のインストーラーはなく、手元で `npm start` を実行する形です。
+> ソース実行には Node 24 以上が必要で、`node:sqlite` など Node 24 API を使います。Node 22 互換は保証しません。デスクトップは Electron **44.7.0** に固定し、同梱 Node を使用します。実際のバージョンは健康チェックに表示します。Web 版も Electron の OS 認証保護 helper と利用可能なシステム keyring が必要で、純粋な headless Node サービスではありません。
 
 - 初回起動時に `~/Documents/YuMeewWorkspace/`、`Projects/`、`Work/`、`.yumeewade/`、`roles.yaml` を作成します。
 - 新規プロジェクトには `templates/project/` から `.ai/rules.md`（AI の作業ルール）、`.ai/memory/INDEX.md`、`CLAUDE.md`、`AGENTS.md` をコピーします。テンプレートは自由に変更できます。
@@ -100,7 +117,7 @@ npm run desktop      # 桌面版（開發機）
 | `cli.claude` / `cli.codex` / `cli.grok` | `command`、`baseArgs`、`fullAccess`、`fullAccessArgs`、`safeArgs` | コマンドとヘッドレスモードのフラグ。`fullAccess` は既定の権限で、設定画面の切り替えが優先 |
 | `cli` | `envPassthrough` | CLI 子プロセスに追加で渡す環境変数（既定では PATH／HOME／LANG などのみ） |
 | `limits` | `bodyBytes`、`promptChars`、`sendPerMinute`、`concurrentRuns`、`sseConnections`、`queueLength`、`handoffChars`、`heartbeatSeconds`、`diffBytes`、`uploadBytes`、`imagesPerSend`、`verifySeconds`（検証のタイムアウト、既定 600）、`verifyOutputBytes`（検証出力の末尾保持バイト数、既定 65536）、`runSeconds`（AI 1 ターンの最長実行時間。超えると停止してタイムアウト扱い、既定 7200） | 各種上限 |
-| `limits` | `usagePollSeconds` | アカウント利用枠の取得間隔（秒）、既定 `300`＝5 分 |
+| `limits` | `usagePollSeconds` | 利用枠取得間隔（秒）、既定 `60`＝1 分 |
 
 ## プロトコル概要（UI ⇄ コア）
 
@@ -130,17 +147,29 @@ HTTP JSON と SSE を使い、デスクトップ版と Web 版で完全に共通
 | `GET /api/task/merged`、`POST /api/task/unmerge` | メインフォルダの最新コミットがこのタスクのマージ（`YuMeewADE-Task:` トレーラー）ならそのハッシュを返す。マージの取り消し：メインフォルダをマージ前に戻し、ブランチと作業コピーを再作成してタスクを進行中に戻す。新しいコミットや未コミットの内容があると 409 |
 | `GET /api/task/files?project=&task=&q=`、`GET /api/task/file?project=&task=&path=` | 読み取り専用のファイル閲覧と `@ファイル名` メンション：ファイル名検索（最大 50 件、`.env*` などのローカル秘密ファイルは除外）と 1 ファイルの読み取り（先頭 256 KB。パスは一覧内かつ解決後もコピー内であること。バイナリは内容なし） |
 | `POST /api/task/revert-file` | `{project, task, path}`：1 ファイルをメインフォルダから分岐した時点の状態に戻す（既存ファイルは元の内容に、新規追加は削除）。パスは現在変更のあるファイルであること（なければ 404）。AI 実行中は 409 |
-| `POST /api/task/verify` | タスクの作業コピーでプロジェクトの検証コマンドを実行し、`{ok, exitCode, timedOut, ms, output, truncated}` を返す。AI 実行中、検証が実行中、または `concurrentRuns` 超過のとき 409 |
-| `GET /api/task/verify?project=&task=` | 直近の検証の概要 `{ok, exitCode, timedOut, at}`。未検証、またはその後 AI が再び作業を始めた／ファイルを元に戻した（単一ファイルの復元、ロールバック）場合は `null`。メモリ上のみで、Git パネルが「検証成功／失敗／未検証」の表示に使います |
+| `POST /api/task/verify` | 台帳の全検証を実行し `{ok, exitCode, timedOut, ms, output, truncated, steps, drifted}` を返す。排他実行 |
+| `GET /api/task/verify?project=&task=` | 現内容 fingerprint が一致すると `{ok, exitCode, timedOut, at, steps, drifted}`、それ以外は `null`。メモリのみ |
 | `GET /api/ai`、`POST /api/ai/refresh`、`POST /api/ai/update` | AI ツールとモデル一覧 |
 | `POST /api/settings`、`POST /api/roles`、`GET /api/log` | 設定、役割、操作記録 |
-| `POST /api/accounts/add` | 既存のログイン済み CLI フォルダーを登録 `{ai: 'claude'|'codex'|'grok', name, configDir}`。`Settings` を返す |
-| `POST /api/accounts/remove` | 登録を削除 `{ai,id}`（既定アカウントは不可）。CLI データは保持。`Settings` を返す |
+| `POST /api/accounts/prepare`、`/api/accounts/add` | 隔離フォルダー準備。`{ai, name, login:true}` で OAuth、または `{ai, name, configDir}` で取り込み（Gemini 含む） |
+| `POST /api/accounts/remove` | App 登録 `{ai,id}` を削除。サーバー側ログイン取消ではない |
 | `POST /api/accounts/refresh` | `{}`：すべての登録アカウントを今すぐ取得。`UsageState` を返す |
-| `POST /api/settings`（アカウント切り替え） | `{activeAccounts:{[ai]:id}}`。既定の id は `default`。`Settings` を返す |
+| `POST /api/settings`（アカウント切り替え） | `{activeAccounts:{[ai]:id}}`。App 専用スロットに適用、CLI の既定ログインは借用しない |
 | `POST /api/open` | システムでフォルダーやファイルを開く |
 | `POST /api/workspace` | ワークスペースのルートを切り替え（AI 実行中は拒否。使用中の設定ファイルに保存） |
 | `GET /api/ping` | デスクトップ版の起動確認 |
+
+新規ルートのグループ（正確な request／response は [`src/http/routes/`](src/http/routes/) と shared types）：
+
+| 機能 | ルート |
+|---|---|
+| アーカイブ | `GET /api/archive/list`、`/api/archive/preview`；`POST /api/archive/restore` |
+| エディター | `GET /api/editor/file`；`POST /api/editor/save`（revision）、`/api/editor/language`（definition／references／diagnostics） |
+| 実行／統合 | `POST /api/execution/{start,stop,preview,ide,terminal,debug}`；`GET /api/execution/{list,output}` |
+| Git | `GET /api/git/{status,pr-status}`；`POST /api/git/{stage,unstage,resolve,commit,fetch,branch,push,pr}` |
+| 審査／workflow | `GET /api/review/capabilities`；`POST /api/review/{run,stop}`；`GET /api/task/workflow`；`POST /api/task/workflow/{configure,start,stop,approve}` |
+| 背景／草稿 | `GET/POST /api/task/context`、`GET /api/task/handoff`；`GET/POST /api/chat/draft`、`GET /api/chat/draft-image` |
+| 維持管理 | `GET/POST /api/care/health`；`GET /api/care/{backups,diagnostics}`；`POST /api/care/backup`（includeExternal）、`/api/care/restore`（id、destination） |
 
 エラー応答は `{error, message, detail?, field?}` です。`detail` は翻訳可能なコードで、UI の言語に応じて表示します。内部の原因はローカルログのみに記録します。
 

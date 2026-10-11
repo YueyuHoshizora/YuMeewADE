@@ -9,14 +9,14 @@
 > **安全宣告（請先讀）**
 > - 核心只監聽 `http://127.0.0.1:4560`，**沒有登入、沒有認證**。這是刻意的：它是單人本機工具，不是網頁服務。本機上的其他程序可以呼叫它。請勿改綁 `0.0.0.0`，也不要把 port 轉發到外部。
 > - **AI 預設擁有完整權限**：claude 以 `--dangerously-skip-permissions`、codex 以 `--dangerously-bypass-approvals-and-sandbox`、grok 以 `--always-approve` 啟動，會用你的帳號權限改檔與執行任何指令（與 project-hub 相同；使用者 2026-10-10 決定）。可以在「設定 → AI 工具 → 完整權限」逐一關閉。關閉後 claude 只自動接受改檔，codex 在工作目錄沙箱內執行，grok 以 `dontAsk` 拒絕需要核准的操作。
-> - AI 的費用、方案與登入由各 CLI 自行管理。本工具不保存、不修改憑證，也不保證不產生費用。查額度時核心會**唯讀**存取 Claude 的 OAuth 憑證（帳號專屬 macOS 鑰匙圈或設定目錄的 `.credentials.json`），以及 Grok 設定目錄 `auth.json` 的有效第一方登入資料，分別只送往固定的 Anthropic 用量端點與 Grok billing API。憑證不進 App API／畫面／日誌、不送往其他來源；額外帳號不借用預設帳號憑證，過期時需透過原 CLI 重新登入。
+> - CLI 管理 AI 費用與 OAuth 登入，App 不保證不產生費用。App **會保存並更新憑證**：透過 Electron `safeStorage` 的作業系統保護加密後，存入 App 私有目錄的 `credentials.sqlite`（Node `node:sqlite`），不在工作區。Linux 必須有受支援的 libsecret／KWallet；不可用時拒絕啟動，不退回明文。核心為 CLI 還原隔離帳號檔案，並保存刷新後憑證；額度僅送固定官方端點。憑證不回傳 App API／畫面／日誌，但隔離 CLI 檔案與恢復快照可能含機密，不能公開分享。
 
 ## 畫面與流程
 
 - **左側樹狀清單**：專案底下列出作業，子作業以 `↳` 縮排，分支作業標 `⑂`。圓點顏色：紅＝AI 執行中、黃＝等你回覆、藍＝等你確認完成、紫＝完成、淺綠＝處理過、灰＝未開始。未讀結果標「未讀」。右鍵選單（⋯）可以改名、新增子作業／分支、封存，專案還能釘選、調整順序（或直接拖曳）、新增子專案。上方搜尋框（`/` 或 Ctrl/⌘+K）可以篩選專案與作業。
 - **交給你嚕**：標題列按鈕列出「等待回覆」與「確認完成」的作業數。點開後可以直接標為完成，或選擇繼續進行。
 - **執行中面板**：畫面最下方的狀態列在有 AI 執行時顯示紅色「執行中 N」；點開列出每個執行中的作業（AI、模型、已執行多久），可以直接跳到該作業、逐一停止或「全部停止」（與作業內的停止相同，會清空該作業的排隊）。
-- **帳號與額度**：點底部的 Claude／Codex／Grok 額度開啟詳情，查看預設及額外帳號的各時間窗使用率、剩餘比例、重置時間、取得時間與查詢狀態。底部每個 AI 只顯示使用中帳號，可在詳情切換、新增／移除登錄或手動查詢。新增時輸入名稱及既有已登入的獨立 CLI 設定資料夾（絕對路徑，可用 `~`）；事先以 `CLAUDE_CONFIG_DIR`（Claude）／`CODEX_HOME`（Codex）／`GROK_HOME`（Grok）指定另一資料夾並在 CLI 登入。App 不提供登入或憑證輸入，移除只刪登錄、不刪資料夾或登出；帳號設定按工作區保存。切換只影響下一次送出，不改變執行中的作業，也不接續另一帳號的 session。
+- **帳號與額度**：底部詳情可切換、新增／移除 Claude／Codex／Grok／Gemini 帳號並手動查詢。新增只填服務與名稱，App 建立隔離目錄並執行 CLI 自己的 OAuth 流程（`cli.*.loginArgs`），成功後匯入加密庫。Gemini 需先「準備」隔離 HOME，在系統終端以該 HOME 執行 `agy` 登入，再匯入；不向 App 輸入 token。第一個成功帳號自動選取，切換套用至 App 內部預設槽，只影響下一輪，不接續另一帳號 session；移除 App 登錄不等於撤銷服務端登入。
   - 額度啟動時與預設每 **1 分鐘**查詢一次（`limits.usagePollSeconds: 60`）。失敗標示「目前無法查詢」，保留上次數值與時間，不是即時額度。各已登錄帳號以**標準系統通知**提醒剩餘低於 20%、低於 10%、用滿（0%）；用滿且重置時間已知時，恢復前 5 分鐘、前 1 分鐘各一次，確認恢復時再通知（需新的成功查詢）。前景、背景皆通知，不再顯示畫面 toast；沿用通知開關，需授予系統通知權限。初次成功回報不提示低額度；經過重置時間或查詢失敗本身不算恢復。
   - Grok 直接以 `GET https://cli-chat-proxy.grok.com/v1/billing?format=credits` 查詢方案額度；依 API 的當期使用百分比顯示已用／剩餘比例與重置時間，另顯示明確回報的預付美元餘額及有上限的隨用隨付額度。缺少或無效資料不當成 0；僅有 API key 的登入不支援此帳號額度查詢。方案額度用滿仍會提醒，即使尚有可付費的額度。
   - Gemini（Antigravity）以 `agy -p /usage --output-format json` 查詢（agy ≥ 1.1.11）；這是唯讀命令，不啟動模型回合、不消耗推論 tokens。查詢使用 App 隔離帳號，而非 CLI 的預設登入，分別顯示 Gemini 與 Claude／GPT 共用額度池；只有 CLI 實際回傳的週／五小時窗口才顯示。旗標由 `cli.gemini.quotaArgs` 設定，設為 `[]` 停用查詢；缺少比例或無效重置時間視為無法查詢。
@@ -29,7 +29,7 @@
   - 執行中送出：**① 取消並重做**、**② 補充說明（一起做）**、**③ 做完再接續**（排隊，做完自動開始；重啟後也保留），以及「停止」（同時清空排隊）。
   - AI 需要你決定時，會在回覆最後用固定格式提問，畫面顯示成**選項按鈕**，也能自己寫答案。回答後作業從「等待回覆」回到「進行中」。
   - 工作副本：顯示「N 個檔案 +a −b」與衝突預警。可以看差異（依檔案分段、可收合、逐檔顯示 +/−）、**合併到主資料夾**（自動儲存兩邊再 `--no-ff` 合併，成功後移除副本並把作業標為完成；衝突就中止、主資料夾不變，作業轉為等待回覆。副本內若還有不會被提交的檔案，例如新增的 `.env*`，合併仍成功，但副本會保留並列出這些檔案），或排除合併。
-  - 驗證：專案可設定「驗證指令」（例如 `npm test`，存在 `PROJECT.md`），作業標題列的「執行驗證」會在該作業的工作副本執行它，顯示通過／失敗、exit code、耗時與輸出尾段。指令只來自台帳，不接受請求傳入；逾時會終止整個行程樹。
+  - 驗證：`PROJECT.md` 支援舊 `verify` 或多個具名 `checks: [{name, command}]`，依序執行並顯示逐項結果與輸出尾段；指令只來自台帳，逾時終止行程樹。通過必須符合目前內容指紋；外部編輯、設定變動、產生檔及 ignored 檔的寫入都會使結果失效，驗證本身改檔也算 `drifted`，不能沿用綠燈。結果僅存記憶體。可選 `requireVerification: true` 要求合併前目前內容已通過，預設不強制。
   - 驗證失敗自動修正：專案頁的「驗證失敗自動修正」可設 0–5 次（`PROJECT.md` 的 `autoFix`，預設 0＝關閉）。AI 做完一則指示、隊列已空時自動跑驗證；失敗就把輸出尾段交回同一個 AI，直到通過或用完次數；用完仍失敗會把作業轉為「等待回覆」請你接手。AI 失敗、被停止、等你回答時不驗證；你下新指示會重新計數。
   - 對話：每則訊息有複製鈕；失敗或被停止的回覆有「重試」；回覆顯示 CLI 回報的本輪 token 用量（輸入／輸出／快取）；標題列「匯出 Markdown」下載整段對話。
   - 工具呼叫群組預設收合（包含歷史紀錄），不沿用舊的全域自動展開偏好；點群組標題即可手動展開。
@@ -43,6 +43,22 @@
 - **設定**：語言（7 種）、Enter／⌘+Enter 送出、通知開關、工作區根目錄（可直接切換，寫回設定檔；桌面版可用「選擇…」挑資料夾）、新作業預設 AI、AI 工具（版本、重新取得模型、更新 CLI、完整權限開關）、選單顯示的模型與順序、角色分工（寫回 `roles.yaml`）、最近操作紀錄。
 
 Claude／Codex 模型清單直接讀 CLI 自己的快取（`~/.codex/models_cache.json`、`~/.claude/cache/model-catalog/`），讀不到才用內建清單。Grok 清單來自目前帳號的 `grok models`，思考強度只補入同一帳號 `models_cache.json` 的已知能力；不猜模型或強度。初次查詢失敗不提供虛構清單，重新取得失敗保留該帳號先前的結果。
+
+## IDE、恢復與維護
+
+- **封存恢復**：先預覽影響，再封存／還原專案或作業。強制封存保留分支及原工作副本恢復快照，含未追蹤、ignored、機密檔與刪除狀態；還原重建 worktree，拒絕覆蓋現有目的地。`.yumeewade/recovery/` 為私有資料，不是可公開的 Git 備份，也不是外部主資料夾的完整備份。
+  成功還原後，該代快照移入保留區，不再套用到日後的封存；原始資料仍保留，不會覆蓋後續已合併的內容。
+- **編輯器**：主資料夾／作業副本的檔案可語法上色、原子儲存；必須提交讀取時的 `revision`，外部改動回衝突，執行中禁止儲存。定義、引用、診斷透過原生 stdio LSP；已安裝 TypeScript 7 原生 `tsc --lsp -stdio` 用於 TS／JS。缺少 server 明確不可用。`YUMEEWADE_LSP_COMMANDS` 是 languageId → argv 陣列的 JSON，例如 `{"python":["pylsp"]}`；使用可信任的本機 server，不透過 shell。
+  尚未建立或已清除隔離副本時，可唯讀瀏覽主資料夾及使用語言導覽，但不能從該作業儲存到主資料夾。
+- **本機執行**：直接啟動 command＋args，顯示 stdout／stderr、結束碼、截斷與停止，停止會終止行程樹。App 內是非互動管線，**不是內嵌 PTY**；互動程式在系統終端（macOS Terminal、Windows Terminal、Linux `x-terminal-emulator`）執行，App 不擷取其輸出或控制其生命週期。預覽只開啟有明確 port 的 loopback HTTP(S)；Node Inspector 綁 loopback 隨機 port，以系統瀏覽器 DevTools／外部 IDE 連接，不是 App 內通用 debugger。
+  - 執行上限：command／debug 10 分鐘，preview 24 小時，輸出尾段最多 256 KiB／1024 筆事件；同時執行數使用 `limits.concurrentRuns`。這些執行期限不是 AI 的 `limits.runSeconds`，系統終端不受此管理。
+- **整合設定**：`config.yaml` 的 `execution.ide`／`terminal`／`browser` 各為 `{command, args}`；argv 支援 `{cwd}`、`{url}`、`{command}` 替換。IDE 開資料夾需要 `{cwd}`，IDE debug 需要 `{url}`；自訂 terminal 需要 `{cwd}`，帶指令時也需 `{command}`。外部工具需自行安裝，指令以你的權限執行。
+- **Git**：查看 status／PR、逐檔 stage／unstage、標記解決衝突、commit、fetch 與建立／切換 branch。Push 必須明確確認、只允許非 force；PR 透過已登入的 `gh` 建立並需確認。App 不自動 push／發 PR，fetch／push／PR 是網路操作。
+- **獨立唯讀審查**：不借用寫作 session 或 full-access 旗標。Codex 使用原生 read-only sandbox，僅 Darwin／Linux；Claude 僅允許 Read／Glob／Grep，**是 CLI 工具政策，不是 OS 沙箱**。Grok／Gemini 或不符受限設定的 provider 明確拒絕，不以提示詞冒充安全隔離。CLI 本身仍是受信任的本機程式。
+- **角色與流程**：僅角色自動選擇的主 CLI 在開始前不可用時，才使用明確設定的 backup；手動選擇不回退、執行失敗不換 AI 重試。持久化 workflow 支援相依作業與角色步驟／審查／人類關卡；相依作業須完成且人工確認，重啟中斷後暫停，不自動恢復授權。
+- **可見背景與草稿**：固定決策、釘選檔案行段及交接預覽呈現來源與截斷，背景不等於本次授權。圖片與逐行審查草稿持久化；評論綁 diff hash，差異變動會標過期，不能悄悄送出舊評論。
+- **健康／備份／診斷**：本機健康檢查預設不探測外網，可另行選擇網路檢查。私有備份包含台帳、對話、附件、Git／工作副本、恢復資料與可能的專案機密，**不是加密分享包**；不備份 App 憑證庫／CLI 帳號，恢復後需登入。外部主資料夾必須 opt-in 才完整，`complete:false` 備份不能恢復。僅恢復到新目的地，檢查指紋、改寫 worktree 關聯，不覆蓋原工作區；linked repo／alternates 等不完整儲存庫拒絕。診斷只選允許欄位，不包含路徑、對話、檔案內容、token 或任意日誌。
+- **產物 CI**：工作流程建置後啟動實際安裝／解出的 dmg／zip、NSIS／portable、deb／AppImage，以隔離設定／鑰匙圈進行 smoke，再上傳。這是 CI 定義，不代表本次已取得三平台通過證據，也不代表正式簽名／公證。
 
 ## 架構
 
@@ -68,7 +84,7 @@ Claude／Codex 模型清單直接讀 CLI 自己的快取（`~/.codex/models_cach
 
 **四個交付版本、同一份程式碼**：macOS App（dmg／zip）、Windows App（nsis／portable）、Linux App（AppImage／deb）、網頁版（瀏覽器開本機服務）。桌面 App 只是拉起核心，再開一個視窗載入同一個網址。
 
-**台帳＝Markdown 檔案**：`PROJECT.md` 與 `.ai/tasks/*.md` 是 frontmatter 加正文，對話是 JSONL，一行一筆。可以 grep、可以手改；程式沒有資料庫。狀態值（未開始／進行中／等待回覆／暫停／完成）以繁中寫進檔案，UI 依語言顯示。
+**台帳＝Markdown 檔案**：`PROJECT.md` 與 `.ai/tasks/*.md` 是 frontmatter 加正文，對話是 JSONL，一行一筆，可搜尋及手改。台帳不是資料庫；**帳號憑證另存加密 SQLite**。狀態值（未開始／進行中／等待回覆／暫停／完成）以繁中寫入，UI 依語言顯示。
 
 ## 需求
 
@@ -87,7 +103,7 @@ npm start            # 網頁版：瀏覽器開 http://127.0.0.1:4560
 npm run desktop      # 桌面版（開發機）
 ```
 
-> 原始碼模式需要 Node 24+；打包後的桌面 App 核心跑在 Electron 內建的 Node 22，所以程式碼也必須相容 Node 22（不使用 24 才有的 API）。網頁版沒有單獨的安裝包，就是在你的機器上跑 `npm start`。
+> 原始碼需要 Node 24+，核心使用 `node:sqlite` 等 Node 24 API，不宣稱相容 Node 22。桌面版固定 Electron **44.7.0**，使用其內建 Node；實際版本可在健康檢查查看。網頁版也需要 Electron 的 OS 憑證保護 helper 與可用的系統鑰匙圈，並非純 headless Node 服務。
 
 - 第一次啟動會建立 `~/Documents/YuMeewWorkspace/`、`Projects/`、`Work/`、`.yumeewade/` 與 `roles.yaml`。
 - 新專案會從 `templates/project/` 複製 `.ai/rules.md`（AI 工作規則）、`.ai/memory/INDEX.md`、`CLAUDE.md`、`AGENTS.md`，範本可以自己改。
@@ -137,17 +153,29 @@ HTTP JSON 加 SSE，桌面版與網頁版完全相同。型別定義在 [`src/sh
 | `GET /api/task/merged`、`POST /api/task/unmerge` | 主資料夾最新 commit 若是該作業的合併（`YuMeewADE-Task:` 標記）就回其 hash；撤銷合併：主資料夾回到合併前、重建分支與副本、作業回到進行中。之後有新 commit 或未提交內容時回 409 |
 | `GET /api/task/files?project=&task=&q=`、`GET /api/task/file?project=&task=&path=` | 唯讀檔案瀏覽與 `@檔名` 提及：依檔名搜尋（最多 50 筆，不含 `.env*` 等本機機密檔）、讀取單一檔案（前 256 KB；路徑必須在清單內且解析後仍在副本內，二進位檔不回內容） |
 | `POST /api/task/revert-file` | `{project, task, path}`：把單一檔案還原成與主資料夾分岔時的樣子（原有檔案取回原內容、新增的檔案刪除）；路徑必須是目前有變更的檔案，否則 404；AI 執行中回 409 |
-| `POST /api/task/verify` | 在作業工作副本執行專案的驗證指令，回 `{ok, exitCode, timedOut, ms, output, truncated}`；AI 執行中、已有驗證在跑或超過 `concurrentRuns` 回 409 |
-| `GET /api/task/verify?project=&task=` | 最近一次驗證的摘要 `{ok, exitCode, timedOut, at}`；沒驗證過，或之後 AI 又開始工作／檔案被還原（單檔還原、回溯）就回 `null`。只存記憶體，Git 面板用它顯示「驗證通過／失敗／尚未驗證」 |
+| `POST /api/task/verify` | 執行台帳的全部具名檢查；回 `{ok, exitCode, timedOut, ms, output, truncated, steps, drifted}`；互斥執行 |
+| `GET /api/task/verify?project=&task=` | 目前內容指紋仍相符時回 `{ok, exitCode, timedOut, at, steps, drifted}`，否則 `null`；僅存記憶體 |
 | `GET /api/ai`、`POST /api/ai/refresh`、`POST /api/ai/update` | AI 工具與模型清單 |
 | `POST /api/settings`、`POST /api/roles`、`GET /api/log` | 設定、角色、操作紀錄 |
-| `POST /api/accounts/add` | 登錄既有已登入 CLI 目錄 `{ai: 'claude'|'codex'|'grok', name, configDir}`；回 `Settings` |
-| `POST /api/accounts/remove` | 移除登錄 `{ai,id}`，預設帳號不可移除；不刪 CLI 資料；回 `Settings` |
+| `POST /api/accounts/prepare`、`/api/accounts/add` | 準備隔離目錄；新增 `{ai, name, login:true}` 執行 OAuth，或 `{ai, name, configDir}` 匯入（含 Gemini） |
+| `POST /api/accounts/remove` | 移除 App 帳號 `{ai,id}`，不代表服務端撤銷登入 |
 | `POST /api/accounts/refresh` | `{}`：立即重新查詢所有已登錄帳號；回 `UsageState` |
-| `POST /api/settings`（帳號切換） | `{activeAccounts:{[ai]:id}}`，缺省帳號 id 為 `default`；回 `Settings` |
+| `POST /api/settings`（帳號切換） | `{activeAccounts:{[ai]:id}}`；套用 App 私有帳號槽，無 CLI 預設帳號借用 |
 | `POST /api/open` | 用系統開啟資料夾或檔案 |
 | `POST /api/workspace` | 切換工作區根目錄（AI 執行中拒絕；寫回目前採用的設定檔） |
 | `GET /api/ping` | 桌面版啟動探測 |
+
+新增路由按功能分組（確切 request／response 見 [`src/http/routes/`](src/http/routes/) 與 shared types）：
+
+| 功能 | 路由 |
+|---|---|
+| 封存 | `GET /api/archive/list`、`/api/archive/preview`；`POST /api/archive/restore` |
+| 編輯器 | `GET /api/editor/file`；`POST /api/editor/save`（含 revision）、`/api/editor/language`（definition／references／diagnostics） |
+| 執行／整合 | `POST /api/execution/start`、`/stop`、`/preview`、`/ide`、`/terminal`、`/debug`；`GET /api/execution/list`、`/output`（上述短路徑均接 `/api/execution`） |
+| Git | `GET /api/git/status`、`/api/git/pr-status`；`POST /api/git/{stage,unstage,resolve,commit,fetch,branch,push,pr}` |
+| 審查／流程 | `GET /api/review/capabilities`；`POST /api/review/run`、`/api/review/stop`；`GET /api/task/workflow`；`POST /api/task/workflow/{configure,start,stop,approve}` |
+| 背景／草稿 | `GET/POST /api/task/context`、`GET /api/task/handoff`；`GET/POST /api/chat/draft`、`GET /api/chat/draft-image` |
+| 維護 | `GET/POST /api/care/health`；`GET /api/care/backups`、`/api/care/diagnostics`；`POST /api/care/backup`（includeExternal）、`/api/care/restore`（id、destination） |
 
 錯誤回應為 `{error, message, detail?, field?}`：`detail` 是可翻譯的代碼，UI 依語言顯示；內部原因只進本地日誌。
 

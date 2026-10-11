@@ -498,3 +498,10 @@ electron 44.7.0、vite 8.3.4、electron-builder 26.15.3、typescript 7.0.2、@ty
 - Gemini（`agy`）帳號：無頭模式在非終端機下拒絕登入，故為半手動——`POST /api/accounts/prepare {ai}` 建立 0700 的獨立 HOME 並回傳 CLI 指令，使用者在終端機執行 `HOME=<資料夾> agy` 完成登入，`/api/accounts/add {ai,name,configDir}` 匯入 `<HOME>/.gemini/antigravity-cli/antigravity-oauth-token`。對話時以 `HOME`／`USERPROFILE` 指向執行用資料夾還原憑證，結束後寫回刷新值並刪除檔案。憑證庫 `provider` CHECK 加入 gemini，舊庫開啟時於交易內重建並先備份為 `credentials.sqlite.pre-gemini`。
 - 憑證庫不隨工作區切換搬移；工作區仍保存帳號顯示名稱與作用中選擇。測試必須注入臨時資料目錄與測試加密器，不存取真實使用者登入。
 
+### B.11 IDE 完整接手與復原（使用者裁示 2026-10-11）
+- 在原 AI 作業控制台上增加安全封存還原、內容綁定驗證、編輯與語言服務、人工指令／終端／除錯、Git 工作台、唯讀審查、明確多角色工作流程、持久草稿及工作區維護；不更換台帳架構，不新增執行期套件，不自行推送。
+- 新增的作業相依與角色流程存於 `.ai/workflows/{作業ID}.json`：`{ dependencies: string[], steps: [{role, text, review}], cursor, state, results }`。相依僅限同專案、不得形成循環；前置作業須由人核可完成才能開始。流程只有人在介面明確啟動才執行，失敗或需人工判斷時停止；重啟不自動續跑。角色備援只在主 CLI 尚未執行且不可用時選擇，不重試失敗回合。
+- 固定決策、交接來源與未送出圖片／審查草稿使用作業旁的 JSON 檔保存；這些背景資料不是執行授權。台帳與草稿保持原子寫入，圖片清理保留仍被草稿引用的檔案。
+- `PROJECT.md` 增加具名 `checks: [{name, command}]` 與 `requireVerification`（預設 false）；既有 `verify` 仍可讀取。驗證結果必須對應目前命令與實際工作內容，不以 HEAD 未變代替未提交檔案的驗證。
+- 封存、備份與復原不得將新機密檔提交至 Git；本機復原快照使用限權限的私有目錄。工作區備份不包含 App 憑證庫，還原不覆寫既有目的地；加密憑證的跨機移轉仍須重新登入。
+
