@@ -100,6 +100,7 @@ test('editor LSP exposes completion hover formatting rename actions and project 
   for (const name of ['a.ts', 'b.ts']) await fs.writeFile(path.join(ws.projectDir('P'), name), 'old');
   const script = String.raw`
     let buffer = Buffer.alloc(0);
+    let documentUri;
     const send = message => { const body = JSON.stringify({jsonrpc:'2.0', ...message}); process.stdout.write('Content-Length: '+Buffer.byteLength(body)+'\r\n\r\n'+body); };
     const edits = [{range:{start:{line:0,character:0},end:{line:0,character:3}},newText:'new'}];
     process.stdin.on('data', chunk => { buffer = Buffer.concat([buffer,chunk]); for (;;) {
@@ -108,15 +109,18 @@ test('editor LSP exposes completion hover formatting rename actions and project 
       if (buffer.length < end+4+size) return;
       const message = JSON.parse(buffer.subarray(end+4,end+4+size).toString()); buffer=buffer.subarray(end+4+size);
       if (!message.id) continue;
-      const uri = message.params.textDocument?.uri;
+      const uri = message.params.textDocument?.uri ?? documentUri;
+      if (uri) documentUri = uri;
       let result = null;
       if (message.method==='initialize') result={capabilities:{}};
       else if (message.method==='textDocument/completion') result=[{label:'new',insertText:'new'}];
       else if (message.method==='textDocument/hover') result={contents:{kind:'markdown',value:'symbol information'}};
-      else if (message.method==='textDocument/formatting') result=edits;
+      else if (message.method==='textDocument/formatting') result=message.params.options.tabSize === 7 ? [{...edits[0],newText:message.params.options.tabSize+':'+message.params.options.insertSpaces+'\n'}] : edits;
       else if (message.method==='textDocument/rename') result={changes:{[uri]:edits,[uri.replace(/a\.ts$/,'b.ts')]:edits}};
       else if (message.method==='textDocument/codeAction') result=[{title:'Fix',edit:{changes:{[uri]:edits}}}];
       else if (message.method==='textDocument/diagnostic') result={items:[{range:{start:{line:0,character:0}},message:'problem',severity:2}]};
+      else if (message.method==='textDocument/documentSymbol') result=[{name:'outer',kind:12,selectionRange:{start:{line:0,character:0}},children:[{name:'inner',kind:13,selectionRange:{start:{line:0,character:1}}}]}];
+      else if (message.method==='workspace/symbol') result=[{name:'safe',kind:12,location:{uri,range:{start:{line:0,character:0}}}},{name:'secret',kind:12,location:{uri:uri.replace(/a\.ts$/,'.env'),range:{start:{line:0,character:0}}}}];
       send({id:message.id,result});
     }});
   `;
@@ -125,7 +129,12 @@ test('editor LSP exposes completion hover formatting rename actions and project 
     assert.equal((await editor.language('P', '', 'a.ts', 'old', 0, 0, 'completion')).suggestions?.[0]?.insertText, 'new');
     assert.equal((await editor.language('P', '', 'a.ts', 'old', 0, 0, 'hover')).hover, 'symbol information');
     assert.equal((await editor.language('P', '', 'a.ts', 'old', 0, 0, 'format')).changes?.[0]?.text, 'new');
+    await fs.writeFile(path.join(ws.projectDir('P'), '.editorconfig'), '[*.ts]\nindent_size = 7\nindent_style = tab\nend_of_line = crlf\n');
+    assert.equal((await editor.language('P', '', 'a.ts', 'old', 0, 0, 'format')).changes?.[0]?.text, '7:false\r\n');
+    await fs.unlink(path.join(ws.projectDir('P'), '.editorconfig'));
     assert.equal((await editor.language('P', '', 'a.ts', 'old', 0, 0, 'codeActions')).actions?.[0]?.changes[0]?.text, 'new');
+    assert.deepEqual((await editor.language('P', '', 'a.ts', 'old', 0, 0, 'documentSymbols')).symbols?.map(item => [item.name, item.container]), [['outer', undefined], ['inner', 'outer']]);
+    assert.deepEqual((await editor.language('P', '', 'a.ts', 'old', 0, 0, 'workspaceSymbols', 'safe')).symbols?.map(item => item.name), ['safe']);
     assert.equal((await editor.problems('P', '')).length, 2);
     await assert.rejects(editor.language('P', '', 'a.ts', 'unsaved', 0, 0, 'rename', 'new'));
     const rename = await editor.language('P', '', 'a.ts', 'old', 0, 0, 'rename', 'new');
@@ -315,5 +324,23 @@ test('focused revisions and three-way merge preserve disk and reject stale or un
     await fs.unlink(file);
     assert.equal((await editor.revisions('P', '', [{ path: 'a.txt', revision: remote.revision }])).changes[0]?.status, 'missing');
     await assert.rejects(editor.revisions('P', '', Array.from({ length: 51 }, (_, i) => ({ path: `${i}.txt`, revision: '' }))));
+  } finally { editor.dispose(); }
+}));
+
+test('format preferences resolve nested EditorConfig within scope and reject symlink configuration', () => withTmpWorkspace(async (ws, directory) => {
+  const projects = new ProjectLedger(ws); const tasks = new TaskLedger(ws); await projects.create({ name: 'P' });
+  const editor = new EditorService(new WorktreeService({ ws, projects, tasks, diffBytes: 100000 }), tasks, {});
+  const root = ws.projectDir('P');
+  try {
+    await fs.mkdir(path.join(root, 'src')); await fs.writeFile(path.join(root, 'src/a.ts'), 'old');
+    assert.equal((await editor.preferences('P', '', 'src/a.ts')).source, 'default');
+    await fs.writeFile(path.join(root, '.editorconfig'), '[*.ts]\nindent_size = 8\nend_of_line = crlf\n');
+    await fs.writeFile(path.join(root, 'src/.editorconfig'), 'root = true\n[*.ts]\nindent_size = 3\n');
+    assert.deepEqual(await editor.preferences('P', '', 'src/a.ts'), { tabSize: 3, insertSpaces: true, eol: 'preserve', source: 'editorconfig' });
+    await fs.unlink(path.join(root, 'src/.editorconfig'));
+    assert.equal((await editor.preferences('P', '', 'src/a.ts')).tabSize, 8);
+    const outside = path.join(directory, 'outside-config'); await fs.writeFile(outside, '[*]\nindent_size = 9\n');
+    await fs.symlink(outside, path.join(root, 'src/.editorconfig'));
+    await assert.rejects(editor.preferences('P', '', 'src/a.ts'));
   } finally { editor.dispose(); }
 }));

@@ -32,6 +32,7 @@ import { buildState, type StateSnapshot } from '../state/state.ts';
 import path from 'node:path';
 import { ArchiveService } from '../ledger/archive.ts';
 import { EditorService } from '../system/editor.ts';
+import { EditorSettingsStore } from '../system/editor-settings.ts';
 import { ExecutionService } from '../system/commands.ts';
 import { IntegrationService } from '../system/integrations.ts';
 import { GitWorkbench } from '../git/workbench.ts';
@@ -148,7 +149,9 @@ export class App {
       isRunning: (project, task) => this.runner.isRunning(project, task) || this.execution.isRunning(project, task) || this.terminal.isRunning(project, task) || this.review.isBusy(project, task),
       beforeRun: project => this.trust.assertExecutable(project) });
     this.archive = new ArchiveService(this.ws, this.projects, this.tasks, this.worktree, project => this.trust.assertExecutable(project));
-    this.editor = new EditorService(this.worktree, this.tasks, undefined, config.limits.bodyBytes);
+    this.editor = new EditorService(this.worktree, this.tasks, undefined, config.limits.bodyBytes, {
+      settings: new EditorSettingsStore(this.ws.internalDir), assertExecutable: project => this.trust.assertExecutable(project),
+    });
     this.execution = new ExecutionService({ ws: this.ws, projects: this.projects, tasks: this.tasks, concurrent: config.limits.concurrentRuns,
       envPassthrough: config.cli.envPassthrough,
       beforeStart: project => this.trust.assertExecutable(project),

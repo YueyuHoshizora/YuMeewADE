@@ -1,6 +1,7 @@
 import { spawn, type ChildProcessWithoutNullStreams } from 'node:child_process';
 import { pathToFileURL } from 'node:url';
 import { AppError } from '../shared/errors.ts';
+import { minimalEnv, terminateTree } from '../cli/process.ts';
 
 /** 原生 stdio JSON-RPC；不執行 shell，stderr 不記錄文件或憑證。 */
 export class LanguageClient {
@@ -15,11 +16,12 @@ export class LanguageClient {
   private diagnosticWaiters = new Map<string, () => void>();
   private opened = new Set<string>();
   readonly ready: Promise<unknown>;
+  capabilities: Record<string, unknown> = {};
   get alive(): boolean { return !this.dead; }
   constructor(command: string[], root: string, onDeath: () => void = () => undefined) {
     this.onDeath = onDeath;
     if (!command[0]) throw new AppError('unavailable');
-    this.child = spawn(command[0], command.slice(1), { cwd: root, stdio: 'pipe', shell: false });
+    this.child = spawn(command[0], command.slice(1), { cwd: root, env: minimalEnv([]), stdio: 'pipe', shell: false, windowsHide: true, detached: process.platform !== 'win32' });
     this.child.stderr.resume();
     this.child.stdin.on('error', () => this.fail());
     this.child.on('error', () => this.fail());
@@ -38,7 +40,11 @@ export class LanguageClient {
         try { this.receive(JSON.parse(body.toString()) as Record<string, unknown>); } catch { this.dispose(); return; }
       }
     });
-    this.ready = this.request('initialize', { processId: process.pid, rootUri: pathToFileURL(root).href, capabilities: { textDocument: { publishDiagnostics: {}, diagnostic: {} }, general: { positionEncodings: ['utf-16'] } }, workspaceFolders: [{ uri: pathToFileURL(root).href, name: 'workspace' }] }).then(result => { this.notify('initialized', {}); return result; });
+    this.ready = this.request('initialize', { processId: process.pid, rootUri: pathToFileURL(root).href, capabilities: { textDocument: { publishDiagnostics: {}, diagnostic: {}, documentSymbol: { hierarchicalDocumentSymbolSupport: true } }, workspace: { symbol: {} }, general: { positionEncodings: ['utf-16'] } }, workspaceFolders: [{ uri: pathToFileURL(root).href, name: 'workspace' }] }).then(result => {
+      const capabilities = (result as { capabilities?: Record<string, unknown> } | null)?.capabilities;
+      this.capabilities = capabilities && typeof capabilities === 'object' && !Array.isArray(capabilities) ? capabilities : {};
+      this.notify('initialized', {}); return result;
+    });
   }
   private receive(message: Record<string, unknown>): void {
     if (this.dead) return;
@@ -50,6 +56,7 @@ export class LanguageClient {
     } else if (message.method === 'textDocument/publishDiagnostics') {
       const params = message.params as { uri: string; diagnostics: unknown[]; version?: number } | undefined;
       if (!params || typeof params.uri !== 'string' || !Array.isArray(params.diagnostics) || params.diagnostics.length > 1000 || (!this.diagnostics.has(params.uri) && this.diagnostics.size >= 1000)) { this.dispose(); return; }
+      if (!this.opened.has(params.uri)) return;
       if (typeof params.version === 'number' && params.version < (this.diagnosticVersions.get(params.uri) ?? 0)) return;
       this.diagnostics.set(params.uri, params.diagnostics);
       this.diagnosticWaiters.get(params.uri)?.();
@@ -105,5 +112,5 @@ export class LanguageClient {
     for (const finish of this.diagnosticWaiters.values()) finish();
     this.onDeath();
   }
-  dispose(): void { this.fail(); this.child.kill(); }
+  dispose(): void { this.fail(); terminateTree(this.child, () => undefined); }
 }

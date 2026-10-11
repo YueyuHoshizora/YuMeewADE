@@ -30,7 +30,7 @@ export function registerRoutes(router: Router, app: App): void {
   router.setRequestGuard(async (path, ctx) => {
     const post = ctx.req.method === 'POST';
     const executable = post
-      ? path.startsWith('/api/git/') || ['/api/task/merge', '/api/task/unmerge', '/api/task/revert-file', '/api/task/verify', '/api/task/archive', '/api/project/archive', '/api/chat/rollback', '/api/chat/fork', '/api/editor/language', '/api/execution/start', '/api/execution/terminal', '/api/execution/ide', '/api/execution/debug', '/api/terminal/start'].includes(path)
+      ? path.startsWith('/api/git/') || ['/api/task/merge', '/api/task/unmerge', '/api/task/revert-file', '/api/task/verify', '/api/task/archive', '/api/project/archive', '/api/chat/rollback', '/api/chat/fork', '/api/editor/language', '/api/editor/settings', '/api/execution/start', '/api/execution/terminal', '/api/execution/ide', '/api/execution/debug', '/api/terminal/start'].includes(path)
       // Git status/diff/merge previews can invoke repository filters or merge drivers, even on GET.
       : path.startsWith('/api/git/') || ['/api/task/preview', '/api/task/diff', '/api/archive/preview', '/api/chat/commands', '/api/editor/problems'].includes(path);
     const project = post ? ctx.body.project : ctx.query.get('project');

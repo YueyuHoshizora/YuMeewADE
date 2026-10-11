@@ -12,6 +12,8 @@ import { AppError } from '../shared/errors.ts';
 import { isInside, pathExists, withFileLocks } from '../shared/fsx.ts';
 import { LanguageClient } from './editor-lsp.ts';
 import type { EditorAction, EditorActionResult, EditorChange, EditorMutation, EditorSearchResult, EditorProblem, EditorRevisionResult, EditorMergeResult } from '../shared/editor-workbench.ts';
+import type { EditorSettings, EditorSettingsPatch, EditorResolvedFormatPreferences } from '../shared/editor-preferences.ts';
+import { EditorSettingsStore, validateEditorCommands, DEFAULT_EDITOR_FORMAT, applyEditorConfig } from './editor-settings.ts';
 
 const LANGUAGE: Record<string, string> = { ts: 'typescript', tsx: 'typescriptreact', js: 'javascript', jsx: 'javascriptreact', mjs: 'javascript', cjs: 'javascript', json: 'json', py: 'python', rs: 'rust', go: 'go', css: 'css', scss: 'scss', html: 'html', vue: 'html', md: 'markdown', c: 'c', h: 'c', cpp: 'cpp', hpp: 'cpp', java: 'java', kt: 'kotlin', php: 'php', sql: 'sql', xml: 'xml', svg: 'xml', yaml: 'yaml', yml: 'yaml', toml: 'toml', sh: 'shellscript', bash: 'shellscript', zsh: 'shellscript', rb: 'ruby', swift: 'swift', lua: 'lua', ini: 'ini' };
 export class EditorService {
@@ -23,11 +25,15 @@ export class EditorService {
   private readonly bodyBytes: number;
   private readonly worktree: WorktreeService;
   private readonly tasks: TaskLedger;
-  constructor(worktree: WorktreeService, tasks: TaskLedger, commands?: Record<string, string[]>, bodyBytes = 2_097_152) {
+  private readonly settingsStore: EditorSettingsStore | undefined;
+  private readonly assertExecutable: ((project: string) => Promise<void>) | undefined;
+  private failed = new Set<string>();
+  constructor(worktree: WorktreeService, tasks: TaskLedger, commands?: Record<string, string[]>, bodyBytes = 2_097_152, options: { settings?: EditorSettingsStore; assertExecutable?: (project: string) => Promise<void> } = {}) {
     this.worktree = worktree; this.tasks = tasks;
+    this.settingsStore = options.settings; this.assertExecutable = options.assertExecutable;
     this.bodyBytes = bodyBytes;
     this.MAX = Math.max(0, Math.min(8 * 1024 * 1024, bodyBytes - 8192));
-    this.commands = commands ?? this.environmentCommands();
+    this.commands = validateEditorCommands(commands ?? this.environmentCommands());
   }
   private environmentCommands(): Record<string, string[]> {
     const configured: unknown = JSON.parse(process.env.YUMEEWADE_LSP_COMMANDS ?? '{}');
@@ -45,6 +51,58 @@ export class EditorService {
       for (const language of ['typescript', 'typescriptreact', 'javascript', 'javascriptreact']) commands[language] ??= [exe, '--lsp', '-stdio'];
     } catch { /* 未安裝的打包環境明確回 unavailable；可配置本機 server。 */ }
     return commands;
+  }
+  private async configured(project: string): Promise<EditorSettingsPatch> {
+    if (this.settingsStore) return this.settingsStore.get(project, this.commands);
+    const format = { ...DEFAULT_EDITOR_FORMAT };
+    return { commands: this.commands, format, revision: createHash('sha256').update(JSON.stringify({ commands: this.commands, format })).digest('hex') };
+  }
+  async settings(project: string): Promise<EditorSettings> {
+    const { root } = await this.root(project, '');
+    const saved = await this.configured(project);
+    return { ...saved, format: saved.format ?? { ...DEFAULT_EDITOR_FORMAT }, diagnostics: Object.keys(saved.commands).map(language => {
+      const client = this.clients.get(`${root}\0${language}`);
+      return { language, state: client?.alive ? 'running' : this.failed.has(`${root}\0${language}`) ? 'failed' : 'stopped', capabilities: client ? Object.keys(client.capabilities).filter(key => /Provider$/u.test(key) && !!client.capabilities[key]).slice(0, 64) : [] };
+    }) };
+  }
+  async updateSettings(project: string, patch: EditorSettingsPatch): Promise<EditorSettings> {
+    await this.root(project, '');
+    await this.assertExecutable?.(project);
+    if (!this.settingsStore) throw new AppError('unavailable');
+    await this.settingsStore.update(project, patch, this.commands);
+    const snapshots = this.snapshots;
+    this.snapshots = new Map();
+    this.dispose(); this.failed.clear();
+    this.snapshots = snapshots;
+    return this.settings(project);
+  }
+  async preferences(project: string, task: string, relative: string): Promise<EditorResolvedFormatPreferences> {
+    await this.target(project, task, relative);
+    const configured = await this.configured(project);
+    const fallback = configured.format ?? { ...DEFAULT_EDITOR_FORMAT };
+    let source: EditorResolvedFormatPreferences['source'] = configured.formatConfigured ? 'project' : 'default';
+    let format = { ...fallback };
+    const parts = relative.split('/'); parts.pop();
+    if (parts.length > 32) throw new AppError('too_large');
+    for (let depth = 0; depth <= parts.length; depth++) {
+      const configPath = [...parts.slice(0, depth), '.editorconfig'].join('/');
+      try {
+        const { file } = await this.target(project, task, configPath, false);
+        const handle = await fs.open(file, constants.O_RDONLY | constants.O_NOFOLLOW);
+        let text: string;
+        try {
+          const stat = await handle.stat();
+          if (!stat.isFile() || stat.size > 65536) throw new AppError('too_large');
+          const bytes = Buffer.alloc(65537); const { bytesRead } = await handle.read(bytes, 0, bytes.length, 0);
+          if (bytesRead > 65536) throw new AppError('too_large');
+          try { text = new TextDecoder('utf-8', { fatal: true }).decode(bytes.subarray(0, bytesRead)); } catch { throw new AppError('bad_request'); }
+        } finally { await handle.close(); }
+        const preamble = text.split(/^\s*\[/mu)[0] ?? '';
+        if (/^\s*root\s*=\s*true\s*$/imu.test(preamble)) { format = { ...fallback }; source = configured.formatConfigured ? 'project' : 'default'; }
+        format = applyEditorConfig(text, [...parts.slice(depth), path.posix.basename(relative)].join('/'), format, () => { source = 'editorconfig'; });
+      } catch (error) { if ((error as NodeJS.ErrnoException).code !== 'ENOENT') throw error; }
+    }
+    return { ...format, source };
   }
   private async root(project: string, task: string): Promise<{ root: string; readonly: boolean }> {
     const repo = await this.worktree.bodyPath(project);
@@ -86,7 +144,12 @@ export class EditorService {
       return { path: relative, text: binary ? '' : text, size: stat.size, binary, truncated: stat.size > this.MAX, revision, language, languageAvailable: !!this.commands[language], readonly: readonly || Buffer.byteLength(JSON.stringify(text)) > this.bodyBytes - 8192 };
     } finally { await handle.close(); }
   }
-  async read(project: string, task: string, relative: string): Promise<EditorDocument> { const { file, readonly } = await this.target(project, task, relative); return this.document(file, relative, readonly); }
+  async read(project: string, task: string, relative: string): Promise<EditorDocument> {
+    const { file, readonly } = await this.target(project, task, relative);
+    const document = await this.document(file, relative, readonly);
+    document.languageAvailable = !!(await this.configured(project)).commands[document.language];
+    return document;
+  }
   async revisions(project: string, task: string, documents: { path: string; revision: string }[]): Promise<EditorRevisionResult> {
     if (documents.length > 50 || new Set(documents.map(item => item.path)).size !== documents.length) throw new AppError('bad_request');
     const changes: EditorRevisionResult['changes'] = [];
@@ -161,7 +224,9 @@ export class EditorService {
     });
   }
   async close(project: string, task: string, relative: string): Promise<void> {
-    const { root, file } = await this.target(project, task, relative);
+    if (!relative || path.isAbsolute(relative) || relative.includes('\\') || relative.split('/').some(part => !part || part === '.' || part === '..' || part === '.git' || part === '.ai' || isLocalSecret(part))) throw new AppError('not_found', 'file_missing');
+    const { root } = await this.root(project, task); const file = path.join(root, relative);
+    if (!this.snapshots.has(`${root}\0${pathToFileURL(file).href}`)) await this.target(project, task, relative);
     await withFileLocks([file], async () => {
       const uri = pathToFileURL(file).href;
       for (const [clientKey, client] of this.clients) if (clientKey.startsWith(`${root}\0`)) client.closeDocument(uri);
@@ -174,7 +239,8 @@ export class EditorService {
     return withFileLocks([file], async () => {
     const document = await this.document(file, relative);
     if (document.binary || document.truncated || Buffer.byteLength(text) > this.MAX || Buffer.byteLength(JSON.stringify(text)) > this.bodyBytes - 8192 || text.includes('\0')) throw new AppError('bad_request', 'editor_readonly');
-    const command = this.commands[document.language];
+    await this.assertExecutable?.(project);
+    const command = (await this.configured(project)).commands[document.language];
     if (!command) throw new AppError('unavailable', 'editor_language_unavailable');
     const key = `${root}\0${document.language}`;
     let client = this.clients.get(key);
@@ -183,6 +249,7 @@ export class EditorService {
       const created: LanguageClient = new LanguageClient(command, root, () => this.evictClient(key, created));
       client = created; this.clients.set(key, client);
       try { await client.ready; } catch (error) { client.dispose(); this.evictClient(key, client); throw error; }
+      this.failed.delete(key);
       for (const snapshot of this.snapshots.values()) if (snapshot.root === root) {
         const snapshotKey = `${key}\0${snapshot.uri}`;
         const version = (this.versions.get(snapshotKey) ?? 0) + 1;
@@ -193,6 +260,9 @@ export class EditorService {
     try { await client.ready; } catch (error) { client.dispose(); this.evictClient(key, client); throw error; }
     const uri = pathToFileURL(file).href;
     if (!this.snapshots.has(`${root}\0${uri}`) && this.snapshots.size >= 1000) throw new AppError('too_large');
+    let snapshotBytes = Buffer.byteLength(text);
+    for (const snapshot of this.snapshots.values()) if (snapshot.root !== root || snapshot.uri !== uri) snapshotBytes += Buffer.byteLength(snapshot.text);
+    if (snapshotBytes > 32 * 1024 * 1024) throw new AppError('too_large');
     this.snapshots.set(`${root}\0${uri}`, { root, uri, language: document.language, text });
     for (const [clientKey, active] of this.clients) if (clientKey.startsWith(`${root}\0`)) {
       const snapshotKey = `${clientKey}\0${uri}`;
@@ -201,9 +271,32 @@ export class EditorService {
       active.openDocument(uri, document.language, version, text);
     }
     const locations: EditorLocation[] = []; const diagnostics: EditorDiagnostic[] = [];
+    if (action === 'documentSymbols' || action === 'workspaceSymbols') {
+      const result = await client.request(action === 'documentSymbols' ? 'textDocument/documentSymbol' : 'workspace/symbol', action === 'documentSymbols' ? { textDocument: { uri } } : { query: newName ?? '' });
+      if (result !== null && !Array.isArray(result)) throw new AppError('bad_request');
+      const symbols: NonNullable<EditorActionResult['symbols']> = [];
+      let count = 0;
+      const visit = async (values: unknown[], container?: string, depth = 0): Promise<void> => {
+        if (depth > 32) throw new AppError('too_large');
+        for (const value of values) {
+          if (++count > 500) throw new AppError('too_large');
+          if (!value || typeof value !== 'object') continue;
+          const item = value as { name?: string; kind?: number; containerName?: string; selectionRange?: { start?: { line: number; character: number } }; range?: { start?: { line: number; character: number } }; location?: { uri?: string; range?: { start?: { line: number; character: number } } }; children?: unknown[] };
+          const start = (item.location?.range ?? item.selectionRange ?? item.range)?.start;
+          if (typeof item.name !== 'string' || item.name.length > 1000 || !Number.isSafeInteger(item.kind) || !start || !Number.isSafeInteger(start.line) || !Number.isSafeInteger(start.character) || start.line < 0 || start.character < 0) continue;
+          let relativePath: string;
+          try { relativePath = item.location?.uri ? path.relative(root, fileURLToPath(item.location.uri)).split(path.sep).join('/') : relative; await this.target(project, task, relativePath); } catch { continue; }
+          symbols.push({ name: item.name, kind: item.kind!, path: relativePath, line: start.line, character: start.character, ...(container || item.containerName ? { container: (container ?? item.containerName)!.slice(0, 1000) } : {}) });
+          if (Array.isArray(item.children)) await visit(item.children, item.name, depth + 1);
+        }
+      };
+      await visit(result as unknown[] ?? []);
+      return { locations, diagnostics, symbols };
+    }
     if (action === 'completion' || action === 'hover' || action === 'rename' || action === 'format' || action === 'codeActions') {
       const method = action === 'format' ? 'formatting' : action === 'codeActions' ? 'codeAction' : action;
-      const result = await client.request(`textDocument/${method}`, { textDocument: { uri }, position: { line, character }, ...(action === 'rename' ? { newName } : {}), ...(action === 'format' ? { options: { tabSize: 2, insertSpaces: true } } : {}), ...(action === 'codeActions' ? { range: { start: { line, character }, end: { line, character } }, context: { diagnostics: [] } } : {}) });
+      const format = action === 'format' ? await this.preferences(project, task, relative) : undefined;
+      const result = await client.request(`textDocument/${method}`, { textDocument: { uri }, position: { line, character }, ...(action === 'rename' ? { newName } : {}), ...(format ? { options: { tabSize: format.tabSize, insertSpaces: format.insertSpaces } } : {}), ...(action === 'codeActions' ? { range: { start: { line, character }, end: { line, character } }, context: { diagnostics: [] } } : {}) });
       if (action === 'hover') {
         const value = result as { contents?: unknown } | null;
         const contents = value?.contents;
@@ -239,7 +332,15 @@ export class EditorService {
         }
         return { locations, diagnostics, actions };
       }
-      return { locations, diagnostics, changes: await this.workspaceChanges(project, task, root, action === 'format' ? { changes: { [uri]: result } } : result) };
+      const changes = await this.workspaceChanges(project, task, root, action === 'format' ? { changes: { [uri]: result ?? [] } } : result);
+      if (format) {
+        const eol = format.eol === 'preserve' ? (document.text.includes('\r\n') ? '\r\n' : '\n') : format.eol === 'crlf' ? '\r\n' : '\n';
+        for (const change of changes) {
+          change.text = change.text.replace(/\r\n|\r|\n/gu, eol);
+          if (Buffer.byteLength(change.text) > this.MAX) throw new AppError('too_large');
+        }
+      }
+      return { locations, diagnostics, changes };
     }
     if (action === 'diagnostics') {
       let items: unknown[];
@@ -403,7 +504,8 @@ export class EditorService {
   }
   async problems(project: string, task: string): Promise<EditorProblem[]> {
     const { root } = await this.root(project, task); const output: EditorProblem[] = [];
-    const paths = (await this.files(root)).filter(relative => !!this.commands[LANGUAGE[path.extname(relative).slice(1)] ?? 'plaintext']);
+    const commands = (await this.configured(project)).commands;
+    const paths = (await this.files(root)).filter(relative => !!commands[LANGUAGE[path.extname(relative).slice(1).toLowerCase()] ?? 'plaintext']);
     if (paths.length > 1000) throw new AppError('too_large');
     const checked = new Set<string>(); let bytes = 0;
     for (const relative of paths) {
@@ -435,6 +537,7 @@ export class EditorService {
   private evictClient(key: string, client: LanguageClient): void {
     if (this.clients.get(key) !== client) return;
     this.clients.delete(key);
+    if (this.failed.size < 1000) this.failed.add(key);
     for (const versionKey of this.versions.keys()) if (versionKey.startsWith(`${key}\0`)) this.versions.delete(versionKey);
   }
   dispose(): void { for (const client of this.clients.values()) client.dispose(); this.clients.clear(); this.versions.clear(); this.snapshots.clear(); }

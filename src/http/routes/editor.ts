@@ -2,8 +2,17 @@ import type { App } from '../../server/app.ts';
 import { AppError } from '../../shared/errors.ts';
 import { Router, reqString } from '../router.ts';
 import type { EditorAction, EditorChange, EditorMutation } from '../../shared/editor-workbench.ts';
+import type { EditorSettingsPatch } from '../../shared/editor-preferences.ts';
 export function registerEditorRoutes(router: Router, app: App): void {
   router.get('/api/editor/scope', async ({ query }) => app.editor.scope(reqString(query, 'project', 120), query.has('task') ? reqString(query, 'task', 120) : '', app.ws.root));
+  router.get('/api/editor/settings', async ({ query }) => app.editor.settings(reqString(query, 'project', 120)));
+  router.get('/api/editor/preferences', async ({ query }) => app.editor.preferences(reqString(query, 'project', 120), query.has('task') ? reqString(query, 'task', 120) : '', reqString(query, 'path', 1000)));
+  router.post('/api/editor/settings', async ({ body }) => {
+    const project = reqString(body, 'project', 120);
+    await app.trust.assertExecutable(project);
+    if (app.taskBusy(project)) throw new AppError('conflict', 'editor_running');
+    return app.editor.updateSettings(project, { revision: reqString(body, 'revision', 100), commands: body.commands, ...(body.format !== undefined ? { format: body.format } : {}) } as EditorSettingsPatch);
+  });
   router.post('/api/editor/revisions', async ({ body }) => {
     if (!Array.isArray(body.documents) || body.documents.length > 50 || !body.documents.every(item => item && typeof item === 'object' && typeof item.path === 'string' && item.path.length <= 1000 && typeof item.revision === 'string' && item.revision.length <= 100)) throw new AppError('bad_request');
     return app.editor.revisions(reqString(body, 'project', 120), body.task === undefined ? '' : reqString(body, 'task', 120), body.documents as { path: string; revision: string }[]);
@@ -36,13 +45,18 @@ export function registerEditorRoutes(router: Router, app: App): void {
       await app.editor.close(reqString(body, 'project', 120), body.task === undefined ? '' : reqString(body, 'task', 120), reqString(body, 'path', 1000));
       return { ok: true };
     }
-    if (typeof action !== 'string' || !['definition', 'references', 'diagnostics', 'completion', 'hover', 'rename', 'format', 'codeActions'].includes(action)) throw new AppError('bad_request');
+    if (typeof action !== 'string' || !['definition', 'references', 'diagnostics', 'completion', 'hover', 'rename', 'format', 'codeActions', 'documentSymbols', 'workspaceSymbols'].includes(action)) throw new AppError('bad_request');
+    await app.trust.assertExecutable(reqString(body, 'project', 120));
+    if (body.newName !== undefined && (typeof body.newName !== 'string' || body.newName.length > 200)) throw new AppError('bad_request');
     if (action === 'rename' && (typeof body.newName !== 'string' || !body.newName || body.newName.length > 200)) throw new AppError('bad_request');
     if (typeof body.text !== 'string' || !Number.isSafeInteger(body.line) || !Number.isSafeInteger(body.character) || (body.line as number) < 0 || (body.character as number) < 0) throw new AppError('bad_request');
     return app.editor.language(reqString(body, 'project', 120), body.task === undefined ? '' : reqString(body, 'task', 120), reqString(body, 'path', 1000), body.text, body.line as number, body.character as number, action as EditorAction, typeof body.newName === 'string' ? body.newName : undefined);
   });
   router.get('/api/editor/search', async ({ query }) => app.editor.search(reqString(query, 'project', 120), query.has('task') ? reqString(query, 'task', 120) : '', reqString(query, 'q', 1000)));
-  router.get('/api/editor/problems', async ({ query }) => app.editor.problems(reqString(query, 'project', 120), query.has('task') ? reqString(query, 'task', 120) : ''));
+  router.get('/api/editor/problems', async ({ query }) => {
+    const project = reqString(query, 'project', 120); await app.trust.assertExecutable(project);
+    return app.editor.problems(project, query.has('task') ? reqString(query, 'task', 120) : '');
+  });
   router.get('/api/editor/folder', async ({ query }) => app.editor.folderRevision(reqString(query, 'project', 120), query.has('task') ? reqString(query, 'task', 120) : '', reqString(query, 'path', 1000)));
   router.post('/api/editor/apply', async ({ body }) => {
     const project = reqString(body, 'project', 120); const task = body.task === undefined ? '' : reqString(body, 'task', 120);

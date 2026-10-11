@@ -1,8 +1,9 @@
 import type { EditorDocument, EditorLocation, EditorDiagnostic } from './types.ts';
-export type EditorAction = 'definition' | 'references' | 'diagnostics' | 'completion' | 'hover' | 'rename' | 'format' | 'codeActions';
+export type EditorAction = 'definition' | 'references' | 'diagnostics' | 'completion' | 'hover' | 'rename' | 'format' | 'codeActions' | 'documentSymbols' | 'workspaceSymbols';
 export interface EditorChange { path: string; revision: string; text: string }
 export interface EditorSuggestion { label: string; detail?: string; insertText: string; start?: number; end?: number }
-export interface EditorActionResult { locations: EditorLocation[]; diagnostics: EditorDiagnostic[]; hover?: string; suggestions?: EditorSuggestion[]; changes?: EditorChange[]; actions?: { title: string; changes: EditorChange[] }[] }
+export interface EditorSymbol extends EditorLocation { name: string; kind: number; container?: string }
+export interface EditorActionResult { locations: EditorLocation[]; diagnostics: EditorDiagnostic[]; hover?: string; suggestions?: EditorSuggestion[]; changes?: EditorChange[]; actions?: { title: string; changes: EditorChange[] }[]; symbols?: EditorSymbol[] }
 export interface EditorSearchHit { path: string; revision: string; line: number; character: number; end: number; preview: string }
 export interface EditorSearchResult { hits: EditorSearchHit[]; scanned: number }
 export interface EditorMutation { action: 'createFile' | 'createFolder' | 'rename' | 'delete'; path: string; destination?: string; revision?: string; confirmation?: string }

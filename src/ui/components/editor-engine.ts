@@ -16,7 +16,7 @@ import { php } from '@codemirror/lang-php';
 import { sql } from '@codemirror/lang-sql';
 import { xml } from '@codemirror/lang-xml';
 import { yaml } from '@codemirror/lang-yaml';
-import { HighlightStyle, StreamLanguage, syntaxHighlighting } from '@codemirror/language';
+import { HighlightStyle, StreamLanguage, syntaxHighlighting, indentUnit } from '@codemirror/language';
 import { tags } from '@lezer/highlight';
 import { shell } from '@codemirror/legacy-modes/mode/shell';
 import { ruby } from '@codemirror/legacy-modes/mode/ruby';
@@ -28,6 +28,8 @@ import { properties } from '@codemirror/legacy-modes/mode/properties';
 import { kotlin } from '@codemirror/legacy-modes/mode/clike';
 import { autocompletion, type CompletionContext, type CompletionResult } from '@codemirror/autocomplete';
 import { lintGutter, setDiagnostics, type Diagnostic } from '@codemirror/lint';
+import { readPreferences } from './editor-preferences.ts';
+import type { EditorResolvedFormatPreferences } from '../../shared/types.ts';
 
 // basicSetup 的預設配色是亮底用色（fallback）；這組以 App 主題變數上色，深淺主題都可讀，且優先於預設。
 export const appHighlight = HighlightStyle.define([
@@ -64,6 +66,9 @@ export class EditorContent {
   readonly view: EditorView;
   private language = new Compartment();
   private editable = new Compartment();
+  private preferences = new Compartment();
+  private format: EditorResolvedFormatPreferences | undefined;
+  private readonly refreshPreferences = () => this.view.dispatch({ effects: this.preferences.reconfigure(this.preferenceExtensions()) });
   private states = new Map<string, EditorState>();
   private path = '';
   private replacing = false;
@@ -76,16 +81,24 @@ export class EditorContent {
     this.view.dom.addEventListener('focusin', () => this.onfocus?.());
     this.view.dom.addEventListener('keydown', event => this.onkeydown?.(event));
     this.view.scrollDOM.addEventListener('scroll', () => this.onscroll?.());
+    window.addEventListener('yumeewade:editor-preferences', this.refreshPreferences);
+  }
+  private preferenceExtensions() {
+    const prefs = { ...readPreferences(), ...(this.format?.source !== 'default' ? this.format : {}) };
+    return [EditorState.tabSize.of(prefs.tabSize), indentUnit.of(prefs.insertSpaces ? ' '.repeat(prefs.tabSize) : '\t'), ...(prefs.wrap ? [EditorView.lineWrapping] : []), EditorView.theme({ '.cm-scroller': { fontFamily: prefs.fontFamily, fontSize: `${prefs.fontSize}px` } })];
+  }
+  resolvedFormat(format: EditorResolvedFormatPreferences | undefined): void {
+    this.format = format; this.refreshPreferences();
   }
   private state(text: string): EditorState {
     return EditorState.create({ doc: text, extensions: [
       basicSetup, syntaxHighlighting(appHighlight), rectangularSelection(), crosshairCursor(),
       EditorView.clickAddsSelectionRange.of(event => event.altKey || event.metaKey || event.ctrlKey),
-      keymap.of([indentWithTab]), this.language.of([]), this.editable.of(EditorState.readOnly.of(true)),
+      keymap.of([indentWithTab]), this.language.of([]), this.editable.of(EditorState.readOnly.of(true)), this.preferences.of(this.preferenceExtensions()),
       lintGutter(), autocompletion({ override: [context => this.complete?.(context) ?? null] }),
       EditorView.theme({
         '&': { backgroundColor: 'var(--panel)', color: 'var(--c-e7eaf4)' },
-        '.cm-scroller': { height: 'min(480px, 52dvh)', fontFamily: 'ui-monospace, monospace' },
+        '.cm-scroller': { height: 'min(480px, 52dvh)' },
         '.cm-gutters': { backgroundColor: 'var(--panel)', color: 'var(--muted)', borderColor: 'var(--border)' },
         '.cm-content': { caretColor: 'var(--accent)' },
         '.cm-activeLine, .cm-activeLineGutter': { backgroundColor: 'color-mix(in srgb, var(--accent) 10%, transparent)' },
@@ -105,6 +118,7 @@ export class EditorContent {
     const state = this.states.get(path);
     this.view.setState(state?.doc.toString() === text ? state : this.state(text));
     this.view.dispatch({ effects: this.language.reconfigure(editorLanguage(path)) });
+    this.refreshPreferences();
     this.replacing = false;
   }
   forget(path: string): void { this.states.delete(path); if (this.path === path) this.path = ''; }
@@ -126,5 +140,5 @@ export class EditorContent {
   focus(): void { this.view.focus(); }
   dispatchEvent(_event: Event): void { this.oninput?.(); }
   diagnostics(items: Diagnostic[]): void { this.view.dispatch(setDiagnostics(this.view.state, items)); }
-  destroy(): void { this.view.destroy(); this.states.clear(); }
+  destroy(): void { window.removeEventListener('yumeewade:editor-preferences', this.refreshPreferences); this.view.destroy(); this.states.clear(); }
 }

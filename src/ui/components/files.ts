@@ -1,14 +1,16 @@
-import type { EditorDiagnostic, EditorDocument, EditorAction, EditorActionResult, EditorChange, EditorMutation, EditorSearchResult, EditorProblem, EditorRecovery, TaskContext } from '../../shared/types.ts';
+import type { EditorDiagnostic, EditorDocument, EditorAction, EditorActionResult, EditorChange, EditorMutation, EditorSearchResult, EditorProblem, EditorRecovery, TaskContext, EditorResolvedFormatPreferences } from '../../shared/types.ts';
 import { query, request } from '../api.ts';
 import { t } from '../i18n/index.ts';
-import { el, input, area, button, row, confirmModal, run } from './dom.ts';
+import { el, input, area, button, row, confirmModal, run, toast } from './dom.ts';
 import { EditorContent } from './editor-engine.ts';
 import { FilePreview, isImage } from './file-preview.ts';
 import { selectionMention } from './editor-mention.ts';
 import { fileHierarchy, normalizeLayout } from './editor-layout.ts';
+import { preferenceCommand, readPreferences, serializeEol } from './editor-preferences.ts';
 
 export interface WorkbenchEditorHost {
   snapshot(): { path: string; revision: string; text: string; selection: { from: number; to: number } } | null;
+  reserve(expected: { path: string; revision: string; text: string }): (() => void) | null;
   applyEdits(expected: { path: string; revision: string; text: string }, edits: { from: number; to: number; text: string }[]): boolean;
 }
 export interface WorkbenchPanelContext { project: string; task: string; node: HTMLElement; open(path: string, line?: number): Promise<void>; editor: WorkbenchEditorHost; }
@@ -31,6 +33,7 @@ export function setWorkbenchScope(project: string, task: string, workspace: stri
 }
 
 const browsers = new Map<string, { dialog: HTMLElement; open: (path: string, line?: number) => Promise<void>; flush(): void; dispose(): void; canDispose(): boolean; restoreLayout(): void }>();
+window.addEventListener('yumeewade:workspace-changed', () => { for (const browser of browsers.values()) browser.dispose(); browsers.clear(); });
 
 window.addEventListener('yumeewade:open-file', event => {
   const detail = (event as CustomEvent<unknown>).detail;
@@ -54,40 +57,59 @@ export function openFileBrowser(project: string, task: string, workspace = activ
   if (browsers.size >= 12) throw new Error(t('ew.recoveryLimit'));
   const ids: Record<string, string> = { project, ...(task ? { task } : {}) }; let storageKey = ''; let persistenceEnabled = false;
   const buffers = new Map<string, EditorRecovery>(); const views: { path: string | undefined; content: EditorContent; preview: FilePreview; tabs: HTMLDivElement; node: HTMLDivElement }[] = [];
+  const formats = new Map<string, EditorResolvedFormatPreferences>();
   const dialog = el('section', 'editor-workbench'); const results = el('div', 'editor-file-tree'); const output = el('div', 'editor-problems'); const panes = el('div', 'editor-panes'); let focused = 0;
   const filter = input('', t('files.search')); const sourceSearch = input('', t('ew.search')); const replacement = input('', t('ew.replacement'));
   const conflicts = new Map<string, EditorDocument>();
   const unresolved = new Set<string>();
+  let editReserved = false;
+  let pendingWrites = 0;
+  let disposeDeferred = false;
   const conflictHost = el('div');
+  const conflictPanels = new Map<string, HTMLElement>();
+  function markUnresolved(path: string): void {
+    unresolved.add(path); conflictPanels.get(path)?.remove();
+    const resolve = el('div', 'editor-conflict');
+    resolve.append(el('p', 'warning', `${path}: ${t('editorUI.unresolved')}`), button(t('ew.apply'), async () => {
+      views.forEach((_, index) => capture(index));
+      if (/^(<<<<<<<|=======|>>>>>>>|\|\|\|\|\|\|\|)(?: |$)/m.test(buffers.get(path)?.text ?? '')) throw new Error(t('editorUI.unresolved'));
+      if (!await confirmModal(t('ew.apply'), t('editorUI.unresolved'), t('ew.apply'))) return;
+      unresolved.delete(path); resolve.remove(); conflictPanels.delete(path); persist();
+    }));
+    conflictPanels.set(path, resolve); conflictHost.append(resolve); schedulePersist();
+  }
   function refreshConflict(path: string): void {
     const buffer = buffers.get(path); const remote = conflicts.get(path);
     if (!buffer || !remote) return;
     const compare = el('div', 'editor-comparison');
     for (const [label, text] of [[t('editorUI.base'), buffer.document.text], [t('editorUI.local'), buffer.text], [t('editorUI.remote'), remote.text]]) { const preview = area(text); preview.readOnly = true; preview.setAttribute('aria-label', label!); compare.append(preview); }
     const banner = el('div', 'editor-conflict');
-    const adopt = (document: EditorDocument, text: string) => {
-      views.forEach((_, index) => capture(index)); buffer.document = document; buffer.text = text;
+    const adopt = (document: EditorDocument, text: string, expected?: string) => {
+      views.forEach((_, index) => capture(index));
+      if (disposed || (expected !== undefined && buffer.text !== expected)) throw new Error(t('detail.editor_conflict'));
+      buffer.document = document; buffer.text = text;
       conflicts.delete(path); for (const view of views) if (view.path === path) { view.content.value = text; view.preview.update(text); }
       banner.remove(); persist(); refreshTabs();
     };
     banner.append(el('p', 'warning', `${path}: ${t('editorUI.external')}`), compare,
-      button(t('editorUI.adopt'), async () => { if (!await confirmModal(t('editorUI.adopt'), t('editor.dirty'), t('editorUI.adopt'))) return; const latest = await request<EditorDocument>(query('/api/editor/file', { ...ids, path })); adopt(latest, latest.text); unresolved.delete(path); }),
-      button(t('editorUI.keep'), async () => { if (!await confirmModal(t('editorUI.keep'), t('editorUI.unresolved'), t('editorUI.keep'))) return; const latest = await request<EditorDocument>(query('/api/editor/file', { ...ids, path })); capture(focused); adopt(latest, buffer.text); unresolved.delete(path); }),
+      button(t('editorUI.adopt'), async () => { if (!await confirmModal(t('editorUI.adopt'), t('editor.dirty'), t('editorUI.adopt'))) return; views.forEach((_, index) => capture(index)); const local = buffer.text; const latest = await request<EditorDocument>(query('/api/editor/file', { ...ids, path })); unresolved.delete(path); adopt(latest, latest.text, local); }),
+      button(t('editorUI.keep'), async () => { if (!await confirmModal(t('editorUI.keep'), t('editorUI.unresolved'), t('editorUI.keep'))) return; const latest = await request<EditorDocument>(query('/api/editor/file', { ...ids, path })); views.forEach((_, index) => capture(index)); unresolved.delete(path); adopt(latest, buffer.text); }),
       button(t('editorUI.merge'), async () => {
         views.forEach((_, index) => capture(index)); const local = buffer.text; const base = buffer.document.text;
         const result = await request<{ text: string; revision: string; conflicts: boolean }>('/api/editor/merge', { ...ids, path, base, local, revision: remote.revision });
         views.forEach((_, index) => capture(index)); if (buffer.text !== local || buffer.document.text !== base) throw new Error(t('detail.editor_conflict'));
         adopt({ ...remote, revision: result.revision }, result.text);
-        if (result.conflicts) { unresolved.add(path); const resolve = el('div', 'editor-conflict'); resolve.append(el('p', 'warning', t('editorUI.unresolved')), button(t('ew.apply'), async () => { if (!await confirmModal(t('ew.apply'), t('editorUI.unresolved'), t('ew.apply'))) return; unresolved.delete(path); resolve.remove(); })); conflictHost.append(resolve); }
+        if (result.conflicts) markUnresolved(path);
       }));
-    conflictHost.replaceChildren(banner);
+    conflictPanels.get(path)?.remove(); conflictPanels.set(path, banner); conflictHost.append(banner);
   }
   let syncing = false;
   async function synchronize(): Promise<void> {
-    if (syncing || disposed || !persistenceEnabled || dialog.hidden || !buffers.size) return;
+    if (syncing || disposed || editReserved || !persistenceEnabled || dialog.hidden || !buffers.size) return;
     syncing = true;
     try {
       views.forEach((_, index) => capture(index));
+      const revisions = new Map([...buffers.values()].map(buffer => [buffer.document.path, buffer.document.revision]));
       const result = await request<{ changes: { path: string; status: string }[] }>('/api/editor/revisions', { ...ids, documents: [...buffers.values()].map(buffer => ({ path: buffer.document.path, revision: buffer.document.revision })) });
       for (const change of result.changes) {
         if (change.status === 'unchanged') continue;
@@ -95,6 +117,7 @@ export function openFileBrowser(project: string, task: string, workspace = activ
         if (change.status === 'missing') { buffer.document = { ...buffer.document, readonly: true }; for (const view of views) if (view.path === change.path) view.content.readOnly = true; continue; }
         const remote = await request<EditorDocument>(query('/api/editor/file', { ...ids, path: change.path }));
         views.forEach((_, index) => capture(index));
+        if (disposed || buffer.document.revision !== revisions.get(change.path)) continue;
         if (dirty(buffer)) { conflicts.set(change.path, remote); refreshConflict(change.path); }
         else { buffer.document = remote; buffer.text = remote.text; for (const view of views) if (view.path === change.path) { view.content.value = remote.text; view.preview.update(remote.text); } }
       }
@@ -103,7 +126,7 @@ export function openFileBrowser(project: string, task: string, workspace = activ
   }
   const syncTimer = window.setInterval(() => { void run(synchronize); }, 5000);
   const syncFocus = () => { void run(synchronize); }; window.addEventListener('focus', syncFocus);
-  const dirty = (buffer: EditorRecovery) => buffer.text !== buffer.document.text;
+  const dirty = (buffer: EditorRecovery) => buffer.text.replace(/\r\n/g, '\n') !== buffer.document.text.replace(/\r\n/g, '\n');
   let persistenceTimer: number | undefined;
   const live = new Map<string, { timer?: number; flight?: Promise<void>; disabled: boolean; text?: string; diagnostics: EditorDiagnostic[] }>();
   let disposed = false;
@@ -156,7 +179,7 @@ export function openFileBrowser(project: string, task: string, workspace = activ
         document: { ...buffer.document, text: '' }, text: '', clean: true,
         start: buffer.start, end: buffer.end, top: buffer.top, left: buffer.left
       });
-      const state = { version: 3, buffers: recovery, panes: views.map(view => ({ path: view.path ?? null, start: view.content.selectionStart, end: view.content.selectionEnd, top: view.content.scrollTop, left: view.content.scrollLeft })), focused };
+      const state = { version: 3, buffers: recovery, unresolved: [...unresolved], split: Number(views[0]?.node.style.flex) || 50, panes: views.map(view => ({ path: view.path ?? null, start: view.content.selectionStart, end: view.content.selectionEnd, top: view.content.scrollTop, left: view.content.scrollLeft })), focused };
       let data = JSON.stringify(state); let omitted = false;
       while (new TextEncoder().encode(data).byteLength > 4 * 1024 * 1024 && recovery.length && 'clean' in recovery.at(-1)!) {
         recovery.pop(); omitted = true; data = JSON.stringify(state);
@@ -164,15 +187,17 @@ export function openFileBrowser(project: string, task: string, workspace = activ
       if (new TextEncoder().encode(data).byteLength > 4 * 1024 * 1024) throw new Error(t('ew.recoveryLimit'));
       if (omitted) output.append(el('p', 'warning', t('ew.recoveryLimit')));
       localStorage.setItem(storageKey, data);
-    } catch { output.replaceChildren(el('p', 'warning', t('ew.recoveryLimit'))); }
+    } catch { output.replaceChildren(el('p', 'warning', t('ew.recoveryLimit'))); toast(t('ew.recoveryLimit')); }
   }
   function capture(index: number): void { const view = views[index]!; const buffer = view.path ? buffers.get(view.path) : undefined; if (buffer && !isImage(buffer.document.path)) { buffer.text = view.content.value; buffer.start = view.content.selectionStart; buffer.end = view.content.selectionEnd; buffer.top = view.content.scrollTop; buffer.left = view.content.scrollLeft; } }
   function refreshTabs(): void {
     for (const view of views) view.tabs.replaceChildren(...[...buffers].map(([path, buffer]) => row(
       button(`${path}${dirty(buffer) ? ' *' : ''} · ${t('editor.diagnostics')}: ${live.get(path)?.diagnostics.length ?? 0}`, () => activate(path, views.indexOf(view))),
       button(t('common.close'), async () => {
+        if (editReserved) return;
         views.forEach((_, index) => capture(index));
         if (dirty(buffer) && !(await confirmModal(t('editor.dirty'), path, t('editor.discard')))) return;
+        if (editReserved) return;
         buffers.delete(path);
         await closeDiagnostics(path);
         for (const item of views) { item.content.forget(path); if (item.path === path) { item.path = undefined; item.content.value = ''; item.content.readOnly = true; item.preview.clear(); } }
@@ -181,14 +206,17 @@ export function openFileBrowser(project: string, task: string, workspace = activ
     )));
   }
   function activate(path: string, index = focused, line?: number, character = 0): void {
+    if (editReserved) return;
     capture(index); const buffer = buffers.get(path); if (!buffer) return;
     const view = views[index]!; view.path = path; view.content.open(path, buffer.text); view.content.readOnly = isImage(path) || buffer.document.readonly || buffer.document.binary || buffer.document.truncated;
+    view.content.resolvedFormat(formats.get(path));
     view.preview.open(path, buffer.text, buffer.document.size);
     if (line === undefined) {
       view.content.setSelectionRange(buffer.start, buffer.end); view.content.scrollTop = buffer.top; view.content.scrollLeft = buffer.left;
     } else view.content.revealLine(line + 1, character);
     if (!isImage(path)) view.content.focus(); focused = index; refreshTabs();
     capture(index); schedulePersist();
+    window.dispatchEvent(new CustomEvent('yumeewade:editor-active', { detail: { project, task, path, content: view.content } }));
     if (!isImage(path)) { renderDiagnostics(path); scheduleDiagnostics(path); }
     if (view.content.readOnly && !isImage(path)) output.replaceChildren(el('p', 'warning', buffer.document.binary ? t('files.binary') : buffer.document.truncated ? t('files.truncated') : t('detail.editor_readonly')));
   }
@@ -198,6 +226,8 @@ export function openFileBrowser(project: string, task: string, workspace = activ
     if (!buffers.has(path)) {
       if (buffers.size >= 50) throw new Error(t('ew.recoveryLimit'));
       const document = await request<EditorDocument>(query('/api/editor/file', { ...ids, path }));
+      const format = await request<EditorResolvedFormatPreferences>(query('/api/editor/preferences', { ...ids, path }));
+      if (!disposed) formats.set(path, format);
       if (!dialog.isConnected) return;
       if (!buffers.has(path)) buffers.set(path, { document, text: document.text, start: 0, end: 0, top: 0, left: 0 });
     }
@@ -233,16 +263,25 @@ export function openFileBrowser(project: string, task: string, workspace = activ
     content.onscroll = () => { capture(index); schedulePersist(); };
     content.onselect = () => { capture(index); schedulePersist(); };
     content.onkeydown = event => {
-      if (!(event.ctrlKey || event.metaKey)) return;
-      if (event.shiftKey && event.key.toLowerCase() === 'l' && task) { event.preventDefault(); sendSelection(); }
-      else if (!event.shiftKey && event.key.toLowerCase() === 's') { event.preventDefault(); void run(save); }
+      const command = preferenceCommand(event, readPreferences());
+      if (command === 'selection' && task) { event.preventDefault(); sendSelection(); }
+      else if (command === 'save') { event.preventDefault(); void run(save); }
     };
   }
   function current(): EditorRecovery | undefined { capture(focused); const path = views[focused]!.path; return path ? buffers.get(path) : undefined; }
   async function save(): Promise<void> {
-    const buffer = current(); if (!buffer || !dirty(buffer)) return;
-    if (conflicts.has(buffer.document.path) || unresolved.has(buffer.document.path)) throw new Error(t('editorUI.unresolved'));
-    const text = buffer.text; buffer.document = await request<EditorDocument>('/api/editor/save', { ...ids, path: buffer.document.path, text, revision: buffer.document.revision }); persist(); refreshTabs();
+    if (editReserved) throw new Error(t('detail.editor_conflict'));
+    pendingWrites++;
+    try {
+      const buffer = current(); if (!buffer || !dirty(buffer)) return;
+      if (conflicts.has(buffer.document.path) || unresolved.has(buffer.document.path)) throw new Error(t('editorUI.unresolved'));
+      const local = buffer.text; const format = await request<EditorResolvedFormatPreferences>(query('/api/editor/preferences', { ...ids, path: buffer.document.path }));
+      const text = serializeEol(local, format.source === 'default' ? readPreferences().eol : format.eol, buffer.document.text);
+      buffer.document = await request<EditorDocument>('/api/editor/save', { ...ids, path: buffer.document.path, text, revision: buffer.document.revision });
+      views.forEach((_, index) => capture(index));
+      if (buffer.text === local) { buffer.text = text; for (const view of views) if (view.path === buffer.document.path) view.content.value = text; }
+      persist(); refreshTabs();
+    } finally { pendingWrites--; }
   }
   function sendSelection(): void {
     if (!task) return;
@@ -268,12 +307,16 @@ export function openFileBrowser(project: string, task: string, workspace = activ
       if (!(await confirmModal(t('ew.apply'), t('ew.confirm'), t('ew.apply')))) return;
       views.forEach((_, index) => capture(index));
       if (changes.some(change => { const buffer = buffers.get(change.path); return buffer && dirty(buffer); })) throw new Error(t('ew.saveFirst'));
-      const snapshots = new Map(changes.map(change => [change.path, buffers.get(change.path)?.text]));
-      const documents = await request<EditorDocument[]>('/api/editor/apply', { ...ids, changes });
-      views.forEach((_, index) => capture(index));
-      for (const document of documents) { const buffer = buffers.get(document.path); if (buffer) { const unchanged = buffer.text === snapshots.get(document.path); buffer.document = document; if (unchanged) buffer.text = document.text; } }
-      for (let index = 0; index < views.length; index++) { const path = views[index]!.path; if (path) { views[index]!.path = undefined; activate(path, index); } }
-      persist(); output.replaceChildren();
+      if (editReserved) throw new Error(t('detail.editor_conflict'));
+      pendingWrites++;
+      try {
+        const snapshots = new Map(changes.map(change => [change.path, buffers.get(change.path)?.text]));
+        const documents = await request<EditorDocument[]>('/api/editor/apply', { ...ids, changes });
+        views.forEach((_, index) => capture(index));
+        for (const document of documents) { const buffer = buffers.get(document.path); if (buffer) { const unchanged = buffer.text === snapshots.get(document.path); buffer.document = document; if (unchanged) buffer.text = document.text; } }
+        for (let index = 0; index < views.length; index++) { const path = views[index]!.path; if (path) { views[index]!.path = undefined; activate(path, index); } }
+        persist(); output.replaceChildren();
+      } finally { pendingWrites--; }
     }));
   }
   const newName = input('', t('ew.newName'));
@@ -281,9 +324,10 @@ export function openFileBrowser(project: string, task: string, workspace = activ
     const buffer = current(); if (!buffer) return; const snapshot = buffer.text; const start = buffer.start; const end = buffer.end; const before = snapshot.slice(0, start).split('\n');
     const result = await request<EditorActionResult>('/api/editor/language', { ...ids, path: buffer.document.path, text: buffer.text, line: before.length - 1, character: before.at(-1)!.length, action, newName: newName.value });
     output.replaceChildren(...result.locations.map(location => button(`${location.path}:${location.line + 1}`, () => show(location.path, location.line, location.character))), ...result.diagnostics.map(item => button(`${item.line + 1} ${item.message}`, () => show(buffer.document.path, item.line, item.character))));
+    for (const symbol of result.symbols ?? []) output.append(button(`${symbol.container ? `${symbol.container} · ` : ''}${symbol.name} · ${symbol.path}:${symbol.line + 1}`, () => show(symbol.path, symbol.line, symbol.character)));
     if (result.hover) output.append(el('pre', '', result.hover));
     for (const suggestion of result.suggestions ?? []) output.append(button(`${suggestion.label} ${suggestion.detail ?? ''}`, () => {
-      if (buffer.text !== snapshot) throw new Error(t('detail.editor_conflict'));
+      if (editReserved || buffer.text !== snapshot) throw new Error(t('detail.editor_conflict'));
       activate(buffer.document.path);
       const view = views[focused]!; view.content.setRangeText(suggestion.insertText, suggestion.start ?? start, suggestion.end ?? end, 'end'); view.content.dispatchEvent(new Event('input'));
     }));
@@ -309,6 +353,7 @@ export function openFileBrowser(project: string, task: string, workspace = activ
   }
   const pathInput = input('', t('ew.path')); const destination = input('', t('ew.destination'));
   async function mutate(action: EditorMutation['action']): Promise<void> {
+    if (editReserved) throw new Error(t('detail.editor_conflict'));
     const path = pathInput.value; const mutation: EditorMutation = { action, path, destination: destination.value };
     if (action === 'delete' || action === 'rename') {
       if ([...buffers.values()].some(buffer => dirty(buffer) && (buffer.document.path === path || buffer.document.path.startsWith(`${path}/`)))) throw new Error(t('ew.saveFirst'));
@@ -318,13 +363,17 @@ export function openFileBrowser(project: string, task: string, workspace = activ
       if (!(await confirmModal(`${t('ew.confirm')} ${path}`, path, t(`ew.${action}`)))) return;
     }
     if (action === 'delete' || action === 'rename') for (const key of buffers.keys()) if (key === path || key.startsWith(`${path}/`)) await closeDiagnostics(key);
-    await request('/api/editor/mutate', { ...ids, ...mutation });
-    if (action === 'delete' || action === 'rename') {
-      for (const key of buffers.keys()) if (key === path || key.startsWith(`${path}/`)) { buffers.delete(key); views.forEach(view => view.content.forget(key)); }
-      for (const view of views) if (view.path && (view.path === path || view.path.startsWith(`${path}/`))) { view.path = undefined; view.content.value = ''; view.content.readOnly = true; view.preview.clear(); }
-      persist(); refreshTabs();
-    }
-    await load();
+    if (editReserved) throw new Error(t('detail.editor_conflict'));
+    pendingWrites++;
+    try {
+      await request('/api/editor/mutate', { ...ids, ...mutation });
+      if (action === 'delete' || action === 'rename') {
+        for (const key of buffers.keys()) if (key === path || key.startsWith(`${path}/`)) { buffers.delete(key); views.forEach(view => view.content.forget(key)); }
+        for (const view of views) if (view.path && (view.path === path || view.path.startsWith(`${path}/`))) { view.path = undefined; view.content.value = ''; view.content.readOnly = true; view.preview.clear(); }
+        persist(); refreshTabs();
+      }
+      await load();
+    } finally { pendingWrites--; }
   }
   async function recover(): Promise<void> {
     let raw: string | null;
@@ -332,10 +381,10 @@ export function openFileBrowser(project: string, task: string, workspace = activ
     catch { output.append(el('p', 'warning', t('ew.recoveryLimit'))); return; }
     if (!raw) return;
     let parsed: unknown; try { parsed = JSON.parse(raw); } catch { output.append(el('p', 'warning', t('ew.recoveryLimit'))); return; }
-    const session = parsed && typeof parsed === 'object' && !Array.isArray(parsed) ? parsed as { version?: unknown; buffers?: unknown; panes?: unknown; focused?: unknown } : undefined;
+    const session = parsed && typeof parsed === 'object' && !Array.isArray(parsed) ? parsed as { version?: unknown; buffers?: unknown; panes?: unknown; focused?: unknown; unresolved?: unknown; split?: unknown } : undefined;
     const values = Array.isArray(parsed) ? parsed : session?.version === 3 ? session.buffers : undefined;
     if (!Array.isArray(values) || values.length > 50 || new TextEncoder().encode(raw).byteLength > 4 * 1024 * 1024) { output.append(el('p', 'warning', t('ew.recoveryLimit'))); return; }
-    if (values.some(value => value && typeof value === 'object' && !('clean' in value && value.clean === true)) && !(await confirmModal(t('ew.recover'), t('ew.recover'), t('ew.recover')))) return;
+    if (values.some(value => value && typeof value === 'object' && !('clean' in value && value.clean === true)) && !(await confirmModal(t('ew.recover'), t('ew.recover'), t('ew.recover')))) throw new Error(t('ew.recover'));
     for (const value of values) { if (!value || typeof value !== 'object') continue; const candidate = value as Partial<EditorRecovery> & { clean?: boolean }; if (!candidate.document || typeof candidate.document.path !== 'string' || typeof candidate.document.revision !== 'string' || typeof candidate.text !== 'string' || candidate.text.length > 4 * 1024 * 1024) continue;
       const original = candidate.document;
       if (typeof original.text !== 'string') continue;
@@ -346,17 +395,15 @@ export function openFileBrowser(project: string, task: string, workspace = activ
         const conflict = !candidate.clean && document.revision !== original.revision;
         recovered.document = conflict ? { ...document, text: original.text, revision: original.revision } : document;
         if (candidate.clean) recovered.text = document.text;
-        if (conflict) output.append(row(el('p', 'warning', `${document.path}: ${t('ew.recoveryConflict')}`), button(t('ew.rebase'), async () => {
-          const latest = await request<EditorDocument>(query('/api/editor/file', { ...ids, path: document.path }));
-          const preview = area(latest.text); preview.readOnly = true; output.append(preview);
-          if (!(await confirmModal(t('ew.rebase'), t('ew.confirm'), t('ew.rebase')))) return;
-          recovered.document = latest; persist(); refreshTabs();
-        })));
+        if (conflict) { conflicts.set(document.path, document); refreshConflict(document.path); }
+        formats.set(document.path, await request<EditorResolvedFormatPreferences>(query('/api/editor/preferences', { ...ids, path: document.path })));
       } catch { recovered.document = { ...original, readonly: true }; output.append(el('p', 'warning', `${original.path}: ${t('ew.recoveryConflict')}`)); }
     }
     refreshTabs();
+    if (Array.isArray(session?.unresolved)) for (const path of session.unresolved.slice(0, 50)) if (typeof path === 'string' && buffers.has(path)) markUnresolved(path);
     const savedPanes = session?.version === 3 && Array.isArray(session.panes) && session.panes.length > 0 && session.panes.length <= 2 ? session.panes : [];
     while (views.length < savedPanes.length) pane();
+    if (views.length === 2 && typeof session?.split === 'number' && session.split >= 20 && session.split <= 80) { views[0]!.node.style.flex = String(session.split); views[1]!.node.style.flex = String(100 - session.split); }
     for (let index = 0; index < savedPanes.length; index++) {
       const saved = savedPanes[index] as { path?: unknown; start?: unknown; end?: unknown; top?: unknown; left?: unknown };
       if (!saved || typeof saved.path !== 'string' || !buffers.has(saved.path)) continue;
@@ -384,13 +431,26 @@ export function openFileBrowser(project: string, task: string, workspace = activ
     })] : []));
   actions.append(send);
   filter.oninput = () => void run(load);
-  const unload = (event: BeforeUnloadEvent) => { views.forEach((_, index) => capture(index)); persist(); if ([...buffers.values()].some(dirty)) { event.preventDefault(); event.returnValue = ''; } };
+  const unload = (event: BeforeUnloadEvent) => { views.forEach((_, index) => capture(index)); persist(); if (editReserved || [...buffers.values()].some(dirty)) { event.preventDefault(); event.returnValue = ''; } };
   window.addEventListener('beforeunload', unload);
   const panelHost = el('div', 'editor-extension-panels');
   const editor: WorkbenchEditorHost = {
     snapshot: () => { const buffer = current(); if (!buffer) return null; return { path: buffer.document.path, revision: buffer.document.revision, text: buffer.text, selection: { from: buffer.start, to: buffer.end } }; },
+    reserve: expected => {
+      const buffer = current();
+      if (disposed || editReserved || pendingWrites || syncing || !buffer || buffer.document.path !== expected.path || buffer.document.revision !== expected.revision || buffer.text !== expected.text || views[focused]!.content.readOnly || conflicts.has(expected.path) || unresolved.has(expected.path)) return null;
+      editReserved = true; dialog.inert = true;
+      const editable = views.map(view => ({ content: view.content, readonly: view.content.readOnly }));
+      for (const view of editable) view.content.readOnly = true;
+      let released = false;
+      return () => {
+        if (released) return; released = true; editReserved = false; dialog.inert = false;
+        for (const view of editable) view.content.readOnly = view.readonly;
+        if (disposeDeferred) dispose();
+      };
+    },
     applyEdits: (expected, edits) => {
-      const buffer = current(); if (!buffer || buffer.document.path !== expected.path || buffer.document.revision !== expected.revision || buffer.text !== expected.text || views[focused]!.content.readOnly) return false;
+      const buffer = current(); if (!buffer || buffer.document.path !== expected.path || buffer.document.revision !== expected.revision || buffer.text !== expected.text || (!editReserved && views[focused]!.content.readOnly)) return false;
       const sorted = [...edits].sort((a, b) => a.from - b.from);
       if (sorted.some((edit, index) => !Number.isSafeInteger(edit.from) || !Number.isSafeInteger(edit.to) || edit.from < 0 || edit.to < edit.from || edit.to > buffer.text.length || (index > 0 && edit.from < sorted[index - 1]!.to))) return false;
       views[focused]!.content.view.dispatch({ changes: sorted.map(edit => ({ from: edit.from, to: edit.to, insert: edit.text })) }); return true;
@@ -403,13 +463,20 @@ export function openFileBrowser(project: string, task: string, workspace = activ
   let layout = normalizeLayout(undefined);
   const resize = input(); resize.type = 'range'; resize.min = '20'; resize.max = '80'; resize.value = '50'; resize.setAttribute('aria-label', t('editorUI.resize'));
   resize.oninput = () => { layout.width = Number(resize.value); applyLayout(); };
+  const treeResize = input(); treeResize.type = 'range'; treeResize.min = '20'; treeResize.max = '60'; treeResize.value = String(layout.tree); treeResize.setAttribute('aria-label', `${t('files.title')} · ${t('editorUI.resize')}`);
+  treeResize.oninput = () => { layout.tree = Number(treeResize.value); applyLayout(); };
+  const splitResize = input(); splitResize.type = 'range'; splitResize.min = '20'; splitResize.max = '80'; splitResize.value = '50'; splitResize.setAttribute('aria-label', `${t('ew.split')} · ${t('editorUI.resize')}`);
+  splitResize.oninput = () => { if (views.length === 2) { views[0]!.node.style.flex = splitResize.value; views[1]!.node.style.flex = String(100 - Number(splitResize.value)); } schedulePersist(); };
   function applyLayout(): void {
     if (!workbenchMount) return;
     workbenchMount.style.width = layout.dock === 'right' ? `${layout.width}%` : '100%'; workbenchMount.dataset.dock = layout.dock;
     document.body.classList.toggle('workbench-bottom', layout.dock === 'bottom');
+    results.style.width = `${layout.tree}%`; treeResize.value = String(layout.tree); resize.value = String(layout.width);
+    if (views.length === 2) splitResize.value = views[0]!.node.style.flex || '50';
     try { if (storageKey) localStorage.setItem(`${storageKey}:layout`, JSON.stringify(layout)); } catch { output.append(el('p', 'warning', t('ew.recoveryLimit'))); }
   }
   dialog.append(row(el('h2', '', t('files.title')), dock, resize), actions, row(pathInput, destination, ...(['createFile', 'createFolder', 'rename', 'delete'] as const).map(action => button(t(`ew.${action}`), () => mutate(action)))), row(sourceSearch, replacement, button(t('ew.search'), () => search(false)), button(t('ew.replacePreview'), () => search(true))), filter);
+  dialog.prepend(row(treeResize, splitResize));
   dialog.append(conflictHost);
   const body = el('div', 'editor-workbench-body'); body.append(results, panes); dialog.append(body, output, panelHost);
   (workbenchMount ?? document.body).append(dialog);
@@ -424,13 +491,14 @@ export function openFileBrowser(project: string, task: string, workspace = activ
   })().catch(error => { dispose(); browsers.delete(key); throw error; });
   const flush = () => { views.forEach((_, index) => capture(index)); persist(); };
   const dispose = () => {
+    if (editReserved) { disposeDeferred = true; dialog.hidden = true; return; }
     flush(); disposed = true; window.clearInterval(syncTimer); window.clearTimeout(persistenceTimer);
     window.removeEventListener('focus', syncFocus); window.removeEventListener('beforeunload', unload);
-    window.removeEventListener('yumeewade:workbench-panels', mountPanels);
+    window.removeEventListener('yumeewade:workbench-panels', mountPanels); 
     for (const state of live.values()) window.clearTimeout(state.timer);
     live.clear();
     views.forEach(view => { view.content.destroy(); view.preview.destroy(); }); dialog.remove();
   };
-  browsers.set(key, { dialog, flush, dispose, canDispose: () => ![...buffers.values()].some(dirty) && !conflicts.size && !unresolved.size, restoreLayout: applyLayout, open: async (path, line) => { await ready; if (dialog.isConnected) await show(path, line === undefined ? undefined : line - 1); } });
+  browsers.set(key, { dialog, flush, dispose, canDispose: () => !editReserved && !pendingWrites && ![...buffers.values()].some(dirty) && !conflicts.size && !unresolved.size, restoreLayout: applyLayout, open: async (path, line) => { await ready; if (dialog.isConnected) await show(path, line === undefined ? undefined : line - 1); } });
   void run(async () => { await ready; await load(); });
 }
