@@ -5,6 +5,7 @@ import type { UsageState } from '../shared/types.ts';
 import { UsageBoard } from './usage.ts';
 import { createClaudeParser } from '../cli/claude.ts';
 import { createCodexParser } from '../cli/codex.ts';
+import { createGeminiParser } from '../cli/gemini.ts';
 
 const quota = (at: string, used: number) => ({ type: 'quota' as const, windows: [{ label: '5h', usedPercent: used, resetsAt: null }], limited: false, at });
 
@@ -121,6 +122,49 @@ test('主訊息與子代理交錯輸出各自計時，結束子訊息不會停�
     assert.equal(board.snapshot().tokensPerSecond, 110);
   } finally { board.close(); }
 });
+
+test('Gemini 重複 step 不灌水或延長計時，修正用量取代且不同 step 才累加', () => {
+  let clock = 0;
+  const board = new UsageBoard(() => {}, () => clock);
+  const events: CliEvent[] = [];
+  const parse = createGeminiParser(ev => {
+    events.push(ev);
+    if (ev.type === 'tokens') board.record('gemini', ev);
+  }, () => clock);
+  const done = (index: number, input: number, output: number, cached: number) => parse({
+    event: 'step_update', step_update: { step_index: index, state: 'DONE', step_type: 'agent_response', usage: { input_tokens: input, output_tokens: output, cache_read_tokens: cached } },
+  });
+  try {
+    clock = 1000; done(1, 10, 50, 2);
+    clock = 1200; done(1, 10, 50, 2);
+    assert.equal(board.snapshot().tokensPerSecond, 50);
+    clock = 2000; done(1, 12, 60, 3);
+    assert.equal(board.snapshot().tokensPerSecond, 30);
+    clock = 2500; done(1, 20, 40, 5);
+    assert.equal(board.snapshot().tokensPerSecond, 16);
+    clock = 3000; done(3, 30, 30, 2);
+    assert.equal(board.snapshot().tokensPerSecond, 23.3);
+    parse({ event: 'result', result: { conversation_id: 'conv', status: 'SUCCESS', response: 'Done', usage: { input_tokens: 999, output_tokens: 999 } } });
+    assert.deepEqual(events.find(ev => ev.type === 'usage'), { type: 'usage', usage: { input: 50, output: 70, cached: 7 } });
+    assert.equal(board.snapshot().tokensPerSecond, 23.3);
+    assert.equal(board.rateAt(7000), null);
+  } finally { board.close(); }
+});
+
+test('Gemini 缺少實際輸出計數或 step 身分時不假裝有 tok/s 量測', () => {
+  let clock = 0;
+  const board = new UsageBoard(() => {}, () => clock);
+  const parse = createGeminiParser(ev => { if (ev.type === 'tokens') board.record('gemini', ev); }, () => clock);
+  try {
+    clock = 1000;
+    for (const output of [undefined, NaN, Infinity, -1, 1.5]) {
+      parse({ event: 'step_update', step_update: { step_index: 1, state: 'DONE', step_type: 'agent_response', usage: { input_tokens: 10, output_tokens: output } } });
+    }
+    parse({ event: 'step_update', step_update: { state: 'DONE', step_type: 'agent_response', usage: { output_tokens: 10 } } });
+    assert.equal(board.snapshot().tokensPerSecond, null);
+  } finally { board.close(); }
+});
+
 
 test('同一 AI 的並行 parser 有獨立 runId，不互相覆蓋或被文字估算抵銷', () => {
   let clock = 0;

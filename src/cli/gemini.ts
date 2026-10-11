@@ -47,6 +47,7 @@ export function createGeminiParser(onEvent: (ev: CliEvent) => void, now: () => n
   let output = 0;
   let cached = 0;
   const tools = new Set<number>();
+  const measured = new Map<number, { input: number; output: number; cached: number }>();
   return obj => {
     if (terminal) return;
     if (obj['event'] === 'step_update') {
@@ -57,12 +58,21 @@ export function createGeminiParser(onEvent: (ev: CliEvent) => void, now: () => n
         if (typeof delta === 'string' && delta) { text += delta; onEvent({ type: 'delta', text: delta }); }
         const usage = record(step['usage']);
         if (step['state'] === 'DONE' && usage) {
-          input += count(usage['input_tokens']);
-          output += count(usage['output_tokens']);
-          cached += count(usage['cache_read_tokens']);
+          const index = step['step_index'];
+          const tokens = usage['output_tokens'];
+          if (typeof index !== 'number' || !Number.isSafeInteger(index) || index < 0 ||
+              typeof tokens !== 'number' || !Number.isSafeInteger(tokens) || tokens < 0) return;
+          const previous = measured.get(index);
+          const current = { input: count(usage['input_tokens']), output: tokens, cached: count(usage['cache_read_tokens']) };
+          input += current.input - (previous?.input ?? 0);
+          output += current.output - (previous?.output ?? 0);
+          cached += current.cached - (previous?.cached ?? 0);
+          measured.set(index, current);
+          // step_update carries snapshots: replaying or correcting a step must not add it twice.
+          if (previous?.output === current.output) return;
           const at = now();
           const spanMs = at - started;
-          if (output > 0 && spanMs > 0) onEvent({ type: 'tokens', runId, count: output, spanMs, at });
+          if (spanMs > 0) onEvent({ type: 'tokens', runId, count: output, spanMs, at });
         }
       } else if (step['step_type'] === 'tool' && step['state'] === 'ACTIVE') {
         const index = step['step_index'];
