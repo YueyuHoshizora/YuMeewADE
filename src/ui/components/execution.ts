@@ -2,7 +2,7 @@ import type { ExecutionRun, ExecutionRequest, RunConfiguration } from '../../sha
 import { query, request } from '../api.ts';
 import { t } from '../i18n/index.ts';
 import { area, button, el, field, input, row, run, select, type ViewContext } from './dom.ts';
-import { embeddedTerminal } from './terminal.ts';
+import { openDockTerminal } from './terminal-dock.ts';
 import { embeddedDebugger } from './debugger.ts';
 
 export function executionButton(_context: ViewContext, project: string, task: string): HTMLElement {
@@ -20,7 +20,6 @@ export function executionButton(_context: ViewContext, project: string, task: st
     const configKind = select([{ value: 'command', label: t('execution.start') }, { value: 'preview', label: t('execution.background') }, { value: 'debug', label: t('execution.debug') }], 'command');
     const configList = select([]);
     let configurations: RunConfiguration[] = [];
-    const embedded = embeddedTerminal(project, task);
     const debuggerPanel = embeddedDebugger(project, task);
     let alive = true;
     let timer: number | undefined;
@@ -79,8 +78,8 @@ export function executionButton(_context: ViewContext, project: string, task: st
       row(button(t('execution.ide'), () => request('/api/execution/ide', ids))),
       field(t('execution.terminalCommand'), terminal), button(t('execution.terminal'), () => request('/api/execution/terminal', { ...ids, command: terminal.value })),
       field(t('execution.inspector'), inspector), row(button(t('execution.attach'), () => request('/api/execution/debug', { ...ids, url: inspector.value })), button(t('execution.attachIde'), () => request('/api/execution/debug', { ...ids, url: inspector.value, target: 'ide' }))),
-      embedded.node, debuggerPanel.node, output);
-    dialog.addEventListener('close', () => { alive = false; clearTimeout(timer); embedded.dispose(); debuggerPanel.dispose(); dialog.remove(); }, { once: true });
+      button(t('terminalDock.open'), async () => { dialog.close(); await openDockTerminal(project, task); }), debuggerPanel.node, output);
+    dialog.addEventListener('close', () => { alive = false; clearTimeout(timer); debuggerPanel.dispose(); dialog.remove(); }, { once: true });
     document.body.append(dialog); dialog.showModal(); void run(poll); void run(loadConfigurations);
   });
 }

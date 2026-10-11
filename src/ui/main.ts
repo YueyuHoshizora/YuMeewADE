@@ -17,8 +17,10 @@ import { runningChip } from './components/running.ts';
 import { openUpdateDialog, updateChip, visibleUpdate } from './components/update.ts';
 import { openUsageDetails } from './components/usage-details.ts';
 import { showInitialCare } from './components/care.ts';
+import { mountTerminalDock, toggleTerminalDock } from './components/terminal-dock.ts';
 
 const header = document.getElementById('header')!; const sidebar = document.getElementById('sidebar')!; const main = document.getElementById('main')!; const footer = document.getElementById('footer')!;
+mountTerminalDock();
 let state: AppState | null = null; let usage: UsageState = { ais: [], tokensPerSecond: null }; let view: View | null = null; let route = ''; let viewTarget = ''; let refreshJob: Promise<void> | null = null; let refreshAgain = false; let debounce: number | undefined;
 let initialCareShown = false;
 function notify(previous: AppState | null, next: AppState): void {
@@ -83,6 +85,7 @@ function drawShell(): void {
   const tasks = state.projects.flatMap(p => p.tasks); const replies = tasks.filter(needsReply).length; const confirmations = tasks.filter(task => task.confirm && !needsReply(task)).length;
   const menu = button('☰', () => document.body.classList.toggle('sidebar-open'), 'menu-toggle'); menu.setAttribute('aria-label', t('nav.menu'));
   header.replaceChildren(menu, link(t('app.title'), '#/turn', 'brand'), el('span', 'version', `v${state.version}`), ...(visibleUpdate(state.update) ? [updateChip(state.update!, state.version, drawShell)] : []), el('span', 'spacer'), link(`${t('nav.turn')} · ${t('tree.reply')} ${replies} · ${t('tree.confirm')} ${confirmations}`, '#/turn', 'turn-button'), link(t('nav.settings'), '#/settings', 'settings-button'));
+  header.append(button(t('terminalDock.toggle'), toggleTerminalDock));
   const searching = document.activeElement instanceof HTMLInputElement && document.activeElement.classList.contains('tree-search'); const top = sidebar.scrollTop;
   const shell = { state, refresh }; sidebar.replaceChildren(el('div', 'sidebar-heading', t('nav.projects')), tree(shell), button(t('project.openExisting'), () => openProjectFromFolder(shell), 'new-project'), link(t('nav.new'), '#/new', 'new-project'));
   sidebar.scrollTop = top; if (searching) sidebar.querySelector<HTMLInputElement>('.tree-search')?.focus({ preventScroll: true });

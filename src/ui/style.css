@@ -467,3 +467,12 @@ body { height: 100dvh; display: grid; grid-template-rows: 64px minmax(0, 1fr) au
 .syntax-number { color: var(--yellow); }
 .syntax-keyword { color: var(--accent); }
 .readonly-review { display: inline-flex; align-items: center; flex-wrap: wrap; gap: 6px; }
+
+/* Dock lives outside view replacement; hidden sessions retain their heartbeat and screen. */
+.terminal-dock { min-height: 0; overflow: hidden; background: var(--panel); border-top: 1px solid var(--border); display: flex; flex-direction: column; padding: 0 12px 8px; }
+.terminal-dock[hidden], .terminal-tabs [hidden] { display: none !important; }
+body.terminal-dock-open { grid-template-rows: 64px minmax(0, 1fr) var(--terminal-dock-height, 320px) auto; }
+.terminal-dock-content { overflow: auto; min-height: 0; flex: 1; }
+.terminal-dock-resize { height: 8px; flex-shrink: 0; cursor: ns-resize; touch-action: none; border-top: 2px solid var(--border); }
+.terminal-tabs [role="tab"][aria-selected="true"] { border-color: var(--accent); color: var(--accent); }
+@media (max-width: 760px) { body.terminal-dock-open { grid-template-rows: 58px minmax(0, 1fr) var(--terminal-dock-height, 320px) auto; } }
