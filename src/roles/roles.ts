@@ -53,3 +53,17 @@ export function resolveLaunch(roles: Roles, task: Pick<Task, 'role' | 'cli' | 'm
   if (effort && !EFFORTS.includes(effort)) throw new AppError('bad_request', 'invalid_effort');
   return { cli, model: model === 'default' ? '' : model, effort };
 }
+
+/** Select a backup only before execution and only when the role chose the CLI. */
+export async function resolveAvailableLaunch(
+  roles: Roles, task: Pick<Task, 'role' | 'cli' | 'model' | 'effort'>,
+  override: Partial<Launch>, initial: AiPick, available: (cli: string) => Promise<boolean>,
+): Promise<Launch> {
+  const primary = resolveLaunch(roles, task, override, initial);
+  if (await available(primary.cli)) return primary;
+  const backup = roles.roles[task.role]?.backup;
+  if (override.cli || task.cli || !backup || backup.cli === HUMAN || !await available(backup.cli)) {
+    throw new AppError('bad_request', 'cli_unavailable', { field: primary.cli });
+  }
+  return { cli: backup.cli, model: override.model ?? backup.model, effort: override.effort ?? backup.effort };
+}

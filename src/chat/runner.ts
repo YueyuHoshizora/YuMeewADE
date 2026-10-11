@@ -10,15 +10,16 @@ import type { CompletionStore } from '../ledger/completion.ts';
 import type { SettingsStore } from '../ledger/settings.ts';
 import type { OpLog } from '../ledger/oplog.ts';
 import type { WorktreeService } from '../git/worktree.ts';
-import { resolveLaunch } from '../roles/roles.ts';
+import { resolveAvailableLaunch } from '../roles/roles.ts';
 import { AppError } from '../shared/errors.ts';
 import { log } from '../shared/log.ts';
 import type {
   Ask, Busy, ChatEvent, ChatHistory, ChatRow, QueueItem, Roles, RunningInfo,
-  SendInput, SendResult, Task, TurnUsage, VerifyResult,
+  SendInput, SendResult, Task, TurnUsage, VerifyResult, ContextPreview,
 } from '../shared/types.ts';
 import { HISTORY_PAGE } from '../shared/types.ts';
-import { buildHandoff, buildPreamble, buildPrompt } from './prompt.ts';
+import { buildHandoff, buildPreamble, buildPrompt, inspectHandoff } from './prompt.ts';
+import { buildTaskContext } from './context.ts';
 import { ChatStore, type ChatMeta } from './store.ts';
 import { attachImages } from './attachments.ts';
 import { parseAsk } from './ask.ts';
@@ -48,6 +49,7 @@ export interface RunnerDeps {
   /** 在作業副本跑專案的驗證指令；省略＝不做自動驗證。 */
   verify?: (project: string, task: string) => Promise<VerifyResult>;
   onChanged(project?: string, task?: string): void;
+  beforeSend?: (project: string, task: string, workflow: boolean) => Promise<void>;
   /** CLI 回報的帳號額度／輸出 token（帳號層級，不寫進對話）。 */
   onUsage(ai: string, ev: Extract<CliEvent, { type: 'quota' | 'tokens' }>, accountId: string): void;
 }
@@ -66,7 +68,8 @@ export class ChatRunner extends EventEmitter {
   /** 目前這一串自動修正已用掉的次數；人下新指示就歸零。 */
   private readonly autoFixes = new Map<string, number>();
   private readonly unreadTasks = new Map<string, { project: string; task: string }>();
-  private readonly jobs = new Set<Promise<void>>();
+  private readonly jobs = new Map<Promise<void>, string>();
+  private readonly stopVersions = new Map<string, number>();
   private shuttingDown = false;
 
   constructor(deps: RunnerDeps) {
@@ -121,7 +124,21 @@ export class ChatRunner extends EventEmitter {
   }
 
   isRunning(p: string, t: string): boolean {
-    return this.slots.get(`${p}\0${t}`)?.busy != null;
+    const key = `${p}\0${t}`;
+    return this.slots.get(key)?.busy != null || this.locks.has(key);
+  }
+
+  isBusy(project?: string, task?: string): boolean {
+    if (project === undefined) {
+      if (this.jobs.size || this.locks.size) return true;
+      for (const slot of this.slots.values()) if (slot.busy) return true;
+      return false;
+    }
+    const selected = task === undefined ? `${project}\0` : `${project}\0${task}`;
+    for (const key of this.locks.keys()) if (task === undefined ? key.startsWith(selected) : key === selected) return true;
+    for (const key of this.jobs.values()) if (task === undefined ? key.startsWith(selected) : key === selected) return true;
+    for (const [key, slot] of this.slots) if (slot.busy && (task === undefined ? key.startsWith(selected) : key === selected)) return true;
+    return false;
   }
 
   unread(): { project: string; task: string }[] {
@@ -133,7 +150,16 @@ export class ChatRunner extends EventEmitter {
   }
 
   async whenIdle(): Promise<void> {
-    while (this.jobs.size) await Promise.all([...this.jobs]);
+    while (this.jobs.size) await Promise.all([...this.jobs.keys()]);
+  }
+
+  async whenTaskIdle(p: string, t: string): Promise<void> {
+    const key = `${p}\0${t}`;
+    for (;;) {
+      const jobs = [...this.jobs].filter(([, task]) => task === key).map(([job]) => job);
+      if (!jobs.length) return;
+      await Promise.all(jobs);
+    }
   }
 
   async stopAll(): Promise<void> {
@@ -187,6 +213,13 @@ export class ChatRunner extends EventEmitter {
     return { rows: rows.slice(start, end), start };
   }
 
+  async outcome(p: string, t: string, request: string): Promise<Extract<ChatRow, { role: 'assistant' }> | undefined> {
+    await this.deps.tasks.get(p, t);
+    return (await this.deps.store.readLog(p, t)).findLast(
+      (row): row is Extract<ChatRow, { role: 'assistant' }> => row.role === 'assistant' && row.request === request,
+    );
+  }
+
   async commands(p: string, t: string | undefined, ai: string) {
     if (ai !== 'claude' && ai !== 'codex' && ai !== 'grok' && ai !== 'gemini') throw new AppError('bad_request', 'cli_unsupported');
     const task = t === undefined ? undefined : await this.deps.tasks.get(p, t);
@@ -198,13 +231,38 @@ export class ChatRunner extends EventEmitter {
     return provider.commands(cwd);
   }
 
-  send(input: SendInput): Promise<SendResult> {
-    return this.lock(input.project, input.task, () => this.sendLocked(input));
+  async contextPreview(p: string, t: string, ai: string, model: string): Promise<ContextPreview> {
+    const task = await this.deps.tasks.get(p, t);
+    const settings = await this.deps.settings.get();
+    const pick = await resolveAvailableLaunch(await this.deps.roles(), task, { cli: ai, model }, settings.initial, async cli => {
+      const provider = this.deps.providers[cli];
+      if (!provider) throw new AppError('bad_request', 'cli_unsupported', { field: cli });
+      return provider.available();
+    });
+    const prior = await this.deps.store.readLog(p, t);
+    const meta = await this.deps.store.readMeta(p, t);
+    const sameAccount = (meta.accounts?.[pick.cli] ?? 'default') === (settings.activeAccounts[pick.cli] ?? 'default');
+    const resume = sameAccount && (pick.cli !== 'codex' || meta.models[pick.cli] === pick.model) ? meta.sessions[pick.cli] : undefined;
+    const selected = resume ? unseenRows(prior, meta, pick.cli) : prior;
+    const cwd = task.workspace !== 'direct' && task.workdir && await pathExists(task.workdir) ? task.workdir : await this.deps.worktree.bodyPath(p);
+    return {
+      handoff: inspectHandoff(selected, this.deps.limits.handoffChars, prior.length - selected.length),
+      context: await buildTaskContext(this.deps.ws, p, t, cwd, this.deps.limits.handoffChars),
+    };
   }
 
-  private async sendLocked(input: SendInput, auto = false): Promise<SendResult> {
+  send(input: SendInput, options: { workflow?: boolean } = {}): Promise<SendResult> {
+    const version = this.stopVersions.get(`${input.project}\0${input.task}`) ?? 0;
+    return this.lock(input.project, input.task, () => this.sendLocked(input, false, options.workflow === true, version));
+  }
+
+  private async sendLocked(input: SendInput, auto = false, workflow = false, version = this.stopVersions.get(`${input.project}\0${input.task}`) ?? 0): Promise<SendResult> {
     if (this.shuttingDown) throw new AppError('unavailable');
     const { project: p, task: t } = input;
+    const cancelled = () => version !== (this.stopVersions.get(`${p}\0${t}`) ?? 0);
+    const assertActive = () => { if (cancelled()) throw new AppError('conflict', 'chat_stopped'); };
+    await this.deps.beforeSend?.(p, t, auto || workflow);
+    assertActive();
     if (!auto) this.autoFixes.delete(`${p}\0${t}`);
     const s = this.slot(p, t);
     let chosen = input;
@@ -229,11 +287,15 @@ export class ChatRunner extends EventEmitter {
     if (s.busy && !chosen.mode) throw new AppError('conflict', 'mode_required');
     const task = await this.deps.tasks.get(p, t);
     const settings = await this.deps.settings.get();
-    const pick = resolveLaunch(await this.deps.roles(), task, {
+    const pick = await resolveAvailableLaunch(await this.deps.roles(), task, {
       ...(chosen.ai ? { cli: chosen.ai } : {}),
       ...(chosen.model !== undefined ? { model: chosen.model } : {}),
       ...(chosen.effort !== undefined ? { effort: chosen.effort } : {}),
-    }, settings.initial);
+    }, settings.initial, async cli => {
+      const provider = this.deps.providers[cli];
+      if (!provider) throw new AppError('bad_request', 'cli_unsupported', { field: cli });
+      return provider.available();
+    });
     const provider = this.deps.providers[pick.cli];
     if (!provider) throw new AppError('bad_request', 'cli_unsupported');
     const accountId = settings.activeAccounts[pick.cli] ?? 'default';
@@ -276,6 +338,7 @@ export class ChatRunner extends EventEmitter {
         : `（人送來補充說明。不要取消目前的指示「${previous}」，延續已做到的部分，並一起處理這個補充）\n${chosen.text}`;
     }
     if (this.running().length >= this.deps.limits.concurrentRuns) throw new AppError('unavailable', 'runs_limit');
+    assertActive();
     // 先佔槽，再做工作目錄與檔案 I/O，避免跨作業同時超過執行上限。
     s.busy = {
       request: item.id, ai: item.ai, model: pick.model, effort: pick.effort,
@@ -284,6 +347,7 @@ export class ChatRunner extends EventEmitter {
     };
     try {
       const cwd = await this.deps.worktree.prepare(p, t);
+      assertActive();
       if (command && cwd !== commandCwd) command = await provider.resolveCommand!(chosen.text, cwd);
       const checkpoint = await this.deps.worktree.checkpoint(p, t);
       const images = await attachImages(this.deps.ws, p, t, chosen.images ?? [], this.deps.limits.imagesPerSend);
@@ -311,7 +375,10 @@ export class ChatRunner extends EventEmitter {
           taskId: t, taskTitle: task.title, taskFile: this.deps.ws.taskFile(p, t),
           cwd, role: task.role, job: roles.roles[task.role]?.job ?? '', cli: item.ai,
         });
-      const handoff = buildHandoff(resumeId ? unseenRows(prior, meta, item.ai) : prior, this.deps.limits.handoffChars);
+      const selectedHistory = resumeId ? unseenRows(prior, meta, item.ai) : prior;
+      const handoff = buildHandoff(selectedHistory, this.deps.limits.handoffChars, prior.length - selectedHistory.length);
+      const taskContext = await buildTaskContext(this.deps.ws, p, t, cwd, this.deps.limits.handoffChars);
+      assertActive();
       const user: ChatRow = {
         at: item.at, role: 'user', text: item.text, to: item.ai,
         model: pick.model, effort: pick.effort, request: item.id,
@@ -335,14 +402,14 @@ export class ChatRunner extends EventEmitter {
       this.deps.onChanged(p, t);
       await this.deps.store.writeMeta(p, t, meta);
       s.finished = this.execute(p, t, item, provider, meta, {
-        prompt: buildPrompt({ preamble, handoff, text: command ? (command.native ? '' : command.text) : item.text, images }), cwd,
+        prompt: buildPrompt({ preamble, handoff, context: taskContext.text, text: command ? (command.native ? '' : command.text) : item.text, images }), cwd,
         ...(command?.native ? { slashCommand: command.text } : {}),
         ...(command?.standalone ? { standalone: true } : resumeId ? { resumeId } : {}),
         model: pick.model, effort: pick.effort,
         fullAccess: settings.fullAccess[item.ai] ?? provider.dangerous,
         accountId,
         addDirs: [path.join(this.deps.ws.projectDir(p), '.ai')], images,
-      }, checkpoint);
+      }, checkpoint, cancelled);
       this.trackQueuedRun(p, t, s);
       return { request: item.id, queued: false };
     } catch (err) {
@@ -378,25 +445,27 @@ export class ChatRunner extends EventEmitter {
     }).finally(() => {
       this.jobs.delete(job);
     });
-    this.jobs.add(job);
+    this.jobs.set(job, `${p}\0${t}`);
   }
 
   /** 專案開了 autoFix 時：驗證失敗就把輸出交回同一個 AI，直到通過或用完次數。 */
   private async autoFix(p: string, t: string): Promise<void> {
     const verify = this.deps.verify;
     const key = `${p}\0${t}`;
+    const version = this.stopVersions.get(key) ?? 0;
     if (!verify || this.shuttingDown) return;
     const project = await this.deps.projects.get(p);
     const task = await this.deps.tasks.get(p, t);
     if (!project.verify.trim() || project.autoFix < 1 || task.state === '等待回覆') { this.autoFixes.delete(key); return; }
     const result = await verify(p, t).catch(err => { log.warn('自動驗證失敗', { project: p, task: t, err: String(err) }); return null; });
+    if (version !== (this.stopVersions.get(key) ?? 0)) return;
     const used = this.autoFixes.get(key) ?? 0;
     if (!result || result.ok) { this.autoFixes.delete(key); return; }
     if (used >= project.autoFix) {
       // 用完次數仍失敗：交還給人，讓作業顯示成「等你回覆」並觸發通知。
       this.autoFixes.delete(key);
       await this.lock(p, t, async () => {
-        if (this.slot(p, t).busy || this.shuttingDown) return;
+        if (this.slot(p, t).busy || this.shuttingDown || version !== (this.stopVersions.get(key) ?? 0)) return;
         await this.deps.tasks.update(p, t, { state: '等待回覆', question: `驗證在 ${used} 次自動修正後仍失敗，請接手` });
         this.deps.onChanged(p, t);
       });
@@ -405,16 +474,16 @@ export class ChatRunner extends EventEmitter {
     const output = result.output.length > 8000 ? result.output.slice(-8000) : result.output;
     const text = `（自動驗證：驗證指令 ${project.verify.trim()} ${result.timedOut ? '逾時' : `失敗，結束碼 ${result.exitCode ?? '無'}`}，這是第 ${used + 1}/${project.autoFix} 次自動修正）\n輸出尾段如下。請找出原因並修正，修正後自行再跑一次驗證確認。\n\n\`\`\`\n${output}\n\`\`\``;
     await this.lock(p, t, async () => {
-      if (this.slot(p, t).busy || this.shuttingDown || (await this.deps.store.readQueue(p, t)).length) return;
+      if (this.slot(p, t).busy || this.shuttingDown || (await this.deps.store.readQueue(p, t)).length || version !== (this.stopVersions.get(key) ?? 0)) return;
       this.autoFixes.set(key, used + 1);
-      try { await this.sendLocked({ project: p, task: t, text }, true); }
+      try { await this.sendLocked({ project: p, task: t, text }, true, false, version); }
       catch (err) { this.autoFixes.delete(key); log.warn('自動修正送出失敗', { project: p, task: t, err: String(err) }); }
     });
   }
 
   private async execute(
     p: string, t: string, item: QueueItem, provider: CliProvider,
-    meta: ChatMeta, opts: Parameters<CliProvider['send']>[0], startCheckpoint?: string,
+    meta: ChatMeta, opts: Parameters<CliProvider['send']>[0], startCheckpoint?: string, cancelled: () => boolean = () => false,
   ): Promise<void> {
     const s = this.slot(p, t);
     const started = Date.now();
@@ -432,6 +501,7 @@ export class ChatRunner extends EventEmitter {
     const previousAccount = meta.accounts?.[item.ai];
     try {
       if (this.shuttingDown) throw new AppError('unavailable');
+      if (cancelled()) throw new AppError('conflict', 'chat_stopped');
       const run = provider.send(opts, ev => {
         if (ev.type === 'session') sid = ev.id;
         else if (ev.type === 'delta') {
@@ -516,7 +586,7 @@ export class ChatRunner extends EventEmitter {
       s.text = '';
       const row: ChatRow = {
         at: new Date().toISOString(), role: 'assistant', ai: item.ai,
-        text: s.partial, error: 'internal', ms: Date.now() - started, request: item.id,
+        text: s.partial, ...(cancelled() ? { stopped: true } : { error: 'internal' }), ms: Date.now() - started, request: item.id,
         model: item.model ?? '', effort: item.effort ?? '',
         ...(usage ? { usage } : {}),
       };
@@ -547,10 +617,15 @@ export class ChatRunner extends EventEmitter {
   }
 
   stop(p: string, t: string): Promise<boolean> {
+    const key = `${p}\0${t}`;
+    this.stopVersions.set(key, (this.stopVersions.get(key) ?? 0) + 1);
+    const preparing = this.isRunning(p, t);
+    const current = this.slots.get(key);
+    if (current) { current.text = ''; current.run?.stop(); }
     return this.lock(p, t, async () => {
       await this.deps.tasks.get(p, t);
       const s = this.slot(p, t);
-      const stopped = Boolean(s.busy);
+      const stopped = preparing || Boolean(s.busy);
       s.text = '';
       s.run?.stop();
       await s.finished;

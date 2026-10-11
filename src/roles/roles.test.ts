@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';
 import { promises as fs } from 'node:fs';
 import { test } from 'node:test';
 import { withTmpWorkspace } from '../testing/tmp.ts';
-import { parseRoles, resolveLaunch, writeRoles } from './roles.ts';
+import { parseRoles, resolveAvailableLaunch, resolveLaunch, writeRoles } from './roles.ts';
 const initial = { ai: 'codex', model: 'gpt-6.1-sol', effort: 'high' };
 test('real defaults and roleless fallback', () => withTmpWorkspace(async ws => {
   const roles = parseRoles(await fs.readFile(ws.rolesFile, 'utf8'));
@@ -27,3 +27,15 @@ test('role write round-trip retains header and unrelated sections', () => withTm
   await assert.rejects(writeRoles(ws.rolesFile, [inputs[0]!, inputs[0]!]));
   await assert.rejects(writeRoles(ws.rolesFile, [{ name: 'x', job: '', main: { cli: 'codex', model: 'm', effort: 'ultra' } }]));
 }));
+
+test('role backup is selected only before execution when the primary is unavailable', async () => {
+  const roles = parseRoles('roles:\n  build:\n    main: [claude, primary-model, max]\n    backup: [codex, backup-model, high]\n');
+  const task = { role: 'build', cli: '', model: '', effort: '' };
+  const available = async (cli: string) => cli === 'codex';
+  assert.deepEqual(await resolveAvailableLaunch(roles, task, {}, initial, available), { cli: 'codex', model: 'backup-model', effort: 'high' });
+  assert.deepEqual(await resolveAvailableLaunch(roles, task, {}, initial, async () => true), { cli: 'claude', model: 'primary-model', effort: 'max' });
+  await assert.rejects(resolveAvailableLaunch(roles, task, { cli: 'claude' }, initial, available), { detail: 'cli_unavailable' });
+  await assert.rejects(resolveAvailableLaunch(roles, { ...task, cli: 'claude' }, {}, initial, available), { detail: 'cli_unavailable' });
+  await assert.rejects(resolveAvailableLaunch(roles, task, {}, initial, async () => false), { detail: 'cli_unavailable' });
+  await assert.rejects(resolveAvailableLaunch(roles, task, {}, initial, async () => { throw new Error('availability failure'); }), /availability failure/u);
+});
