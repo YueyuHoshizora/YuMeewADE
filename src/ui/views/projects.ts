@@ -19,6 +19,7 @@ import { githubIssuesButton } from '../components/github-issues.ts';
 import { metadataBadge, metadataFields } from '../components/task-metadata.ts';
 import { taskTemplates } from '../components/task-templates.ts';
 import { memoryPanel } from '../components/memory.ts';
+import { taskBoard } from '../components/task-board.ts';
 
 async function startWithBudget(context: ViewContext, input: StartInput): Promise<void> {
   const { task } = await request<{ task: Task }>('/api/start/prepare', input);
@@ -163,6 +164,7 @@ export function detailedTaskForm(context: ViewContext, project: ProjectView, par
 
 export function projectView(context: ViewContext, project: ProjectView, params: URLSearchParams): View {
   const node = el('div', 'page project-page'); const overview = el('div', 'project-overview');
+  let activity = JSON.stringify([context.state.running, context.state.unread]);
   function tasksList(tasks: typeof project.tasks): HTMLElement {
     const list = el('div', 'task-list');
     for (const task of tasks) list.append(row(link(task.title, taskHash(project.id, task.id)), el('span', 'state-chip', t(`state.${task.state}`)), metadataBadge(task)));
@@ -225,14 +227,15 @@ export function projectView(context: ViewContext, project: ProjectView, params: 
       button(t('project.nextPhase'), async () => { await request('/api/phase/next', { project: project.id }); await context.refresh(); }, 'primary'),
       button(t('project.continuePhase'), async () => { await request('/api/phase/continue', { project: project.id }); await context.refresh(); }),
     )));
-    const active = project.tasks.filter(task => task.state !== '完成');
-    overview.append(card(t('project.activeTasks'), tasksList(active.filter(task => !project.currentPhase || task.phase === project.currentPhase))));
-    const other = active.filter(task => !!project.currentPhase && task.phase !== project.currentPhase);
-    if (other.length) {
-      const sections = Array.from(new Set(other.map(task => task.phase))).map(phase => disclosure(phase || t('common.none'), tasksList(other.filter(task => task.phase === phase))));
-      overview.append(disclosure(t('project.otherTasks'), ...sections));
-    }
-    overview.append(disclosure(t('project.completedTasks'), tasksList(project.tasks.filter(task => task.state === '完成'))));
+    overview.append(taskBoard(context, project, tasks => {
+      const sections = el('div');
+      const active = tasks.filter(task => task.state !== '完成');
+      sections.append(card(t('project.activeTasks'), tasksList(active.filter(task => !project.currentPhase || task.phase === project.currentPhase))));
+      const other = active.filter(task => !!project.currentPhase && task.phase !== project.currentPhase);
+      if (other.length) sections.append(disclosure(t('project.otherTasks'), ...Array.from(new Set(other.map(task => task.phase))).map(phase => disclosure(phase || t('common.none'), tasksList(other.filter(task => task.phase === phase))))));
+      sections.append(disclosure(t('project.completedTasks'), tasksList(tasks.filter(task => task.state === '完成'))));
+      return sections;
+    }));
     for (const detail of overview.querySelectorAll('details')) detail.open = opened.has(detail.querySelector('summary')?.textContent);
   }
   renderOverview(); node.append(overview);
@@ -254,7 +257,8 @@ export function projectView(context: ViewContext, project: ProjectView, params: 
     context.state = state;
     const next = state.projects.find(p => p.id === project.id);
     if (!next) { location.hash = '#/turn'; return; }
-    if (JSON.stringify(next) !== JSON.stringify(project)) { project = next; renderOverview(); }
+    const nextActivity = JSON.stringify([state.running, state.unread]);
+    if (JSON.stringify(next) !== JSON.stringify(project) || nextActivity !== activity) { project = next; activity = nextActivity; renderOverview(); }
     slashCommands.refresh();
   } };
 }

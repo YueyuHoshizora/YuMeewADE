@@ -33,6 +33,7 @@ import * as gitRemotes from './git-remotes.ts';
 import * as sideDiff from './side-diff.ts';
 import * as gitWorktrees from './git-worktrees.ts';
 import * as overview from './overview.ts';
+import * as taskBoard from './task-board.ts';
 
 export const featureZhTW = {
   ...archive.featureZhTW,
@@ -71,6 +72,7 @@ export const featureZhTW = {
   ...sideDiff.featureZhTW,
   ...gitWorktrees.featureZhTW,
   ...overview.featureZhTW,
+  ...taskBoard.featureZhTW,
 };
 export const featureZhCN = {
   ...archive.featureZhCN,
@@ -109,6 +111,7 @@ export const featureZhCN = {
   ...sideDiff.featureZhCN,
   ...gitWorktrees.featureZhCN,
   ...overview.featureZhCN,
+  ...taskBoard.featureZhCN,
 };
 export const featureEn = {
   ...archive.featureEn,
@@ -147,6 +150,7 @@ export const featureEn = {
   ...sideDiff.featureEn,
   ...gitWorktrees.featureEn,
   ...overview.featureEn,
+  ...taskBoard.featureEn,
 };
 export const featureJa = {
   ...archive.featureJa,
@@ -185,6 +189,7 @@ export const featureJa = {
   ...sideDiff.featureJa,
   ...gitWorktrees.featureJa,
   ...overview.featureJa,
+  ...taskBoard.featureJa,
 };
 export const featureDe = {
   ...archive.featureDe,
@@ -223,6 +228,7 @@ export const featureDe = {
   ...sideDiff.featureDe,
   ...gitWorktrees.featureDe,
   ...overview.featureDe,
+  ...taskBoard.featureDe,
 };
 export const featureFr = {
   ...archive.featureFr,
@@ -261,6 +267,7 @@ export const featureFr = {
   ...sideDiff.featureFr,
   ...gitWorktrees.featureFr,
   ...overview.featureFr,
+  ...taskBoard.featureFr,
 };
 export const featureIt = {
   ...archive.featureIt,
@@ -299,4 +306,5 @@ export const featureIt = {
   ...sideDiff.featureIt,
   ...gitWorktrees.featureIt,
   ...overview.featureIt,
+  ...taskBoard.featureIt,
 };
