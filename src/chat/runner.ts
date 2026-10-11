@@ -187,14 +187,14 @@ export class ChatRunner extends EventEmitter {
     return { rows: rows.slice(start, end), start };
   }
 
-  async commands(p: string, t: string, ai: string) {
-    if (ai !== 'claude' && ai !== 'codex' && ai !== 'grok') throw new AppError('bad_request', 'cli_unsupported');
-    const task = await this.deps.tasks.get(p, t);
+  async commands(p: string, t: string | undefined, ai: string) {
+    if (ai !== 'claude' && ai !== 'codex' && ai !== 'grok' && ai !== 'gemini') throw new AppError('bad_request', 'cli_unsupported');
+    const task = t === undefined ? undefined : await this.deps.tasks.get(p, t);
+    const cwd = task && task.workspace !== 'direct' && task.workdir && await pathExists(task.workdir)
+      ? task.workdir : await this.deps.worktree.bodyPath(p);
     const provider = this.deps.providers[ai];
     // Chats always run on the App's default slot; switching an account copies its credentials there.
     if (!provider?.commands || !await provider.available()) return [];
-    const cwd = task.workspace !== 'direct' && task.workdir && await pathExists(task.workdir)
-      ? task.workdir : await this.deps.worktree.bodyPath(p);
     return provider.commands(cwd);
   }
 
@@ -245,7 +245,7 @@ export class ChatRunner extends EventEmitter {
       ? task.workspace !== 'direct' && task.workdir && await pathExists(task.workdir)
         ? task.workdir : await this.deps.worktree.bodyPath(p)
       : '';
-    let command: { text: string; native: boolean } | undefined;
+    let command: { text: string; native: boolean; standalone?: boolean } | undefined;
     if (name) {
       if (!provider.resolveCommand || chosen.answer || (s.busy && chosen.mode !== 'queue')) {
         throw new AppError('bad_request', 'slash_unsupported');
@@ -337,7 +337,8 @@ export class ChatRunner extends EventEmitter {
       s.finished = this.execute(p, t, item, provider, meta, {
         prompt: buildPrompt({ preamble, handoff, text: command ? (command.native ? '' : command.text) : item.text, images }), cwd,
         ...(command?.native ? { slashCommand: command.text } : {}),
-        ...(resumeId ? { resumeId } : {}), model: pick.model, effort: pick.effort,
+        ...(command?.standalone ? { standalone: true } : resumeId ? { resumeId } : {}),
+        model: pick.model, effort: pick.effort,
         fullAccess: settings.fullAccess[item.ai] ?? provider.dangerous,
         accountId,
         addDirs: [path.join(this.deps.ws.projectDir(p), '.ai')], images,
@@ -490,7 +491,7 @@ export class ChatRunner extends EventEmitter {
           delete meta.sessions[item.ai];
           delete meta.models[item.ai];
         }
-      } else {
+      } else if (!opts.standalone) {
         if ((meta.accounts?.[item.ai] ?? 'default') !== (opts.accountId ?? 'default')) {
           delete meta.sessions[item.ai];
           delete meta.models[item.ai];

@@ -844,7 +844,7 @@ export function taskView(
     return JSON.stringify([ai, context.state.settings.activeAccounts[ai], context.state.settings.accounts[ai], task.workdir, task.copy, task.copyMissing]);
   }, async () => {
     const ai = pick.value().ai;
-    if (ai !== 'claude' && ai !== 'codex' && ai !== 'grok') return [];
+    if (ai !== 'claude' && ai !== 'codex' && ai !== 'grok' && ai !== 'gemini') return [];
     return (await request<{ commands: SlashCommand[] }>(query('/api/chat/commands', { project: project.id, task: task.id, ai }))).commands;
   });
   composer.append(queueNode, mentions, slashCommands.node, draft, upload.strip, running, composerControls, actions);

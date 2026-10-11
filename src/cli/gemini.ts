@@ -1,13 +1,15 @@
 // Google Gemini via the Antigravity CLI (`agy`) print mode.
-// The prompt travels over stdin as one stream-json "user" message, never argv; the CLI's own login is used.
+// Prompts use stdin, never argv; read-only slash reports run separately without a model turn.
 import { randomUUID } from 'node:crypto';
 import { promises as fs } from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import type { CliCommandConfig } from '../shared/config.ts';
-import type { TurnUsage } from '../shared/types.ts';
+import type { SlashCommand, TurnUsage } from '../shared/types.ts';
 import { captureCommand, findExecutable, minimalEnv, runLineProcess } from './process.ts';
 import type { CliEvent, CliProvider, CliRun, RunOutcome, SendOptions } from './provider.ts';
+import { AppError } from '../shared/errors.ts';
+import { normalizeCommands, slashName } from './commands.ts';
 
 export function geminiArgs(cfg: CliCommandConfig, opts: SendOptions): string[] {
   const args = [...((opts.fullAccess ?? cfg.fullAccess) ? cfg.fullAccessArgs : cfg.safeArgs), ...cfg.baseArgs];
@@ -128,10 +130,33 @@ export class GeminiCliProvider implements CliProvider {
     this.env = env ?? minimalEnv(envPassthrough);
   }
   async available(): Promise<boolean> { return (await findExecutable(this.cfg.command, this.env)) !== null; }
+  private environment(configDir?: string): NodeJS.ProcessEnv {
+    // agy selects file credentials for SSH sessions instead of the ambient macOS Keychain.
+    return configDir ? { ...this.env, HOME: configDir, USERPROFILE: configDir, SSH_TTY: 'yumeewade-cli' } : this.env;
+  }
+  async commands(cwd: string, configDir?: string): Promise<SlashCommand[]> {
+    if (!this.cfg.commandsArgs.length || !this.cfg.slashArgs.length) return [];
+    const result = await captureCommand({ command: this.cfg.command, args: this.cfg.commandsArgs, cwd, env: this.environment(configDir), timeoutMs: 15_000, maxOutputBytes: 1024 * 1024 });
+    if (!result.ok) throw new AppError('unavailable');
+    let report: Record<string, unknown> | undefined;
+    try { report = record(JSON.parse(result.stdout)); }
+    catch { throw new AppError('unavailable'); }
+    const command = record(report?.['command']);
+    const commands = record(command?.['data'])?.['commands'];
+    if (report?.['status'] !== 'SUCCESS' || command?.['name'] !== 'help' || !Array.isArray(commands)) throw new AppError('unavailable');
+    return normalizeCommands(commands);
+  }
+  async resolveCommand(text: string, cwd: string, configDir?: string): Promise<{ text: string; native: boolean; standalone: boolean }> {
+    const name = slashName(text);
+    // Discovery lists read-only reports, not arbitrary prompts or persistent TUI controls.
+    if (!name || text.trim() !== `/${name}` || !(await this.commands(cwd, configDir)).some(command => command.name === name)) {
+      throw new AppError('bad_request', 'slash_unsupported');
+    }
+    return { text: text.trim(), native: true, standalone: true };
+  }
   async quota(configDir?: string): Promise<Extract<CliEvent, { type: 'quota' }> | null> {
     if (!this.cfg.quotaArgs.length) return null;
-    // SSH_TTY selects agy's file credential store rather than the ambient macOS Keychain.
-    const env = configDir ? { ...this.env, HOME: configDir, USERPROFILE: configDir, SSH_TTY: 'yumeewade-quota' } : this.env;
+    const env = this.environment(configDir);
     const cwd = await fs.mkdtemp(path.join(os.tmpdir(), 'ym-gemini-quota-'));
     try {
       const result = await captureCommand({ command: this.cfg.command, args: this.cfg.quotaArgs, env, cwd, timeoutMs: 90_000, maxOutputBytes: 1024 * 1024 });
@@ -140,18 +165,36 @@ export class GeminiCliProvider implements CliProvider {
     } finally { await fs.rm(cwd, { recursive: true, force: true }); }
   }
   send(opts: SendOptions, onEvent: (ev: CliEvent) => void): CliRun {
-    if (opts.slashCommand) {
-      const reason = 'Gemini print mode slash commands are unsupported';
+    const name = opts.slashCommand ? slashName(opts.slashCommand) : null;
+    if (opts.slashCommand && (!this.cfg.slashArgs.length || !name || opts.slashCommand.trim() !== `/${name}`)) {
+      const reason = 'Gemini slash command is unavailable';
       onEvent({ type: 'error', reason });
       return { stop: () => undefined, done: Promise.resolve({ ok: false, stopped: false, reason }) };
     }
     let completed = false;
     let failed = false;
-    const run = runLineProcess({ command: this.cfg.command, args: geminiArgs(this.cfg, opts), cwd: opts.cwd, env: this.env, prompt: geminiInput(opts), label: 'gemini' }, createGeminiParser(ev => {
+    const emit = (ev: CliEvent) => {
       if (ev.type === 'result') completed = true;
       if (ev.type === 'error') failed = true;
       onEvent(ev);
-    }));
+    };
+    const parse = opts.slashCommand ? (obj: Record<string, unknown>) => {
+      if (completed || failed) return;
+      if (obj['status'] !== 'SUCCESS' || typeof obj['response'] !== 'string' || typeof record(obj['command'])?.['name'] !== 'string') {
+        emit({ type: 'error', reason: 'Gemini command report failed' });
+        return;
+      }
+      const quota = geminiQuota(obj);
+      if (quota) emit(quota);
+      // Read-only reports have no conversation id and must not replace the chat session.
+      emit({ type: 'result', text: obj['response'] });
+    } : createGeminiParser(emit);
+    const run = runLineProcess({
+      command: this.cfg.command,
+      args: opts.slashCommand ? [...this.cfg.slashArgs, opts.slashCommand.trim()] : geminiArgs(this.cfg, opts),
+      cwd: opts.cwd, env: this.environment(opts.configDir),
+      prompt: opts.slashCommand ? '' : geminiInput(opts), label: 'gemini',
+    }, parse);
     const done = run.done.then(outcome => {
       const final = geminiOutcome(outcome, completed, failed);
       if (!final.ok && !final.stopped && !failed) onEvent({ type: 'error', reason: final.reason ?? 'Gemini process failed' });

@@ -56,6 +56,8 @@ cli:
     safeArgs: [--mode, accept-edits]      # 只自動接受檔案編輯
     quotaArgs: [-p, /usage, --output-format, json]  # 唯讀額度報告，不啟動模型回合
     loginArgs: []
+    commandsArgs: [-p, /help, --output-format, json]  # CLI 回報可用的唯讀 slash 命令
+    slashArgs: [--output-format, json, --print]       # 獨立執行，不混入對話提示
   # 子行程環境變數採白名單；除了內建的 PATH／HOME／LANG 等基本變數外，額外要放行的名稱寫在這裡
   envPassthrough: []
 

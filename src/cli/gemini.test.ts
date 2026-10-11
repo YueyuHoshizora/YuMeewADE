@@ -133,3 +133,51 @@ test('missing or invalid measurements never invent available quota', () => {
   assert.equal(geminiQuota({ ...report(bucket), status: 'ERROR' }), null);
   assert.equal(geminiQuota({ ...report(bucket), command: { name: 'model' } }), null);
 });
+
+test('native Gemini reports discover aliases, execute without sessions, and fail closed', async () => {
+  const dir = await fs.mkdtemp(path.join(os.tmpdir(), 'ym-gemini-commands-'));
+  const script = path.join(dir, 'cli.ts');
+  try {
+    await fs.writeFile(script, `
+const mode = process.argv[2];
+const name = process.argv[3];
+if (mode === 'discovery') {
+  console.log(JSON.stringify({ status: 'SUCCESS', command: { name: 'help', data: { commands: [
+    { name: 'usage', aliases: ['quota'], description: 'View usage' },
+    { name: 'help', description: 'Show commands' },
+    { name: 'broken', description: 'Error report' },
+    { name: 'nonzero', description: 'Nonzero exit' },
+  ] } } }));
+} else if (name === '/usage' || name === '/quota') {
+  console.log(JSON.stringify({ status: 'SUCCESS', conversation_id: '', response: 'Gemini Models: 81% remaining',
+    command: { name: 'usage', data: { groups: [{ name: 'Gemini Models', buckets: [
+      { name: 'Weekly Limit Remaining', remaining_fraction: 0.81, reset_time: '2026-10-15T06:14:55Z' },
+    ] }] } } }));
+} else if (name === '/nonzero') {
+  console.log(JSON.stringify({ status: 'SUCCESS', response: 'must fail', command: { name: 'nonzero' } }));
+  process.exitCode = 3;
+} else {
+  console.log(JSON.stringify({ status: 'ERROR', response: 'not an answer', command: { name: 'broken' } }));
+}
+`);
+    const provider = new GeminiCliProvider({ ...cfg, command: process.execPath, commandsArgs: [script, 'discovery'], slashArgs: [script, 'report'] }, []);
+    assert.deepEqual((await provider.commands(dir)).map(command => command.name), ['broken', 'help', 'nonzero', 'quota', 'usage']);
+    const command = await provider.resolveCommand('/quota', dir);
+    await assert.rejects(provider.resolveCommand('/model secret prompt', dir), { detail: 'slash_unsupported' });
+    await assert.rejects(provider.resolveCommand('/unknown', dir), { detail: 'slash_unsupported' });
+    const events: CliEvent[] = [];
+    const successful = await provider.send({ prompt: 'system preamble', cwd: dir, resumeId: 'existing-chat', slashCommand: command.text, standalone: command.standalone }, ev => events.push(ev)).done;
+    assert.equal(successful.ok, true);
+    assert.deepEqual(events.find(ev => ev.type === 'result'), { type: 'result', text: 'Gemini Models: 81% remaining' });
+    assert.equal(events.some(ev => ev.type === 'session'), false);
+    const quota = events.find(ev => ev.type === 'quota');
+    assert.ok(quota?.type === 'quota');
+    assert.ok(Math.abs(quota.windows[0]!.usedPercent - 19) < 1e-10);
+    for (const slashCommand of ['/broken', '/nonzero']) {
+      const failureEvents: CliEvent[] = [];
+      const failure = await provider.send({ prompt: '', cwd: dir, slashCommand }, ev => failureEvents.push(ev)).done;
+      assert.equal(failure.ok, false);
+      assert.equal(failureEvents.some(ev => ev.type === 'error'), true);
+    }
+  } finally { await fs.rm(dir, { recursive: true, force: true }); }
+});

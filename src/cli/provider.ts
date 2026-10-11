@@ -22,6 +22,8 @@ export interface SendOptions {
   configDir?: string;
   /** 原生 slash 的完整文字；prompt 此時作為系統前言，不混入指令。 */
   slashCommand?: string;
+  /** CLI 的獨立唯讀報告，不推進或清除模型對話狀態。 */
+  standalone?: boolean;
 }
 
 export type CliEvent =
@@ -60,7 +62,7 @@ export interface CliProvider {
   send(opts: SendOptions, onEvent: (ev: CliEvent) => void): CliRun;
   commands?(cwd: string, configDir?: string): Promise<SlashCommand[]>;
   /** 原生回傳原文；自訂模板回傳展開後的提示。未知指令必須拒絕。 */
-  resolveCommand?(text: string, cwd: string, configDir?: string): Promise<{ text: string; native: boolean }>;
+  resolveCommand?(text: string, cwd: string, configDir?: string): Promise<{ text: string; native: boolean; standalone?: boolean }>;
   /** 不送指示，查指定設定目錄的帳號額度；沒有資料回 null。 */
   quota?(configDir?: string): Promise<Extract<CliEvent, { type: 'quota' }> | null>;
 }

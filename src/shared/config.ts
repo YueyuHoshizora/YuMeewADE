@@ -20,6 +20,10 @@ export interface CliCommandConfig {
   quotaArgs: string[];
   /** 新增帳號時在獨立設定資料夾內執行的 OAuth 登入子命令（由 CLI 自行開啟瀏覽器）。 */
   loginArgs: string[];
+  /** 唯讀命令清單查詢（Gemini：print /help）。 */
+  commandsArgs: string[];
+  /** 獨立唯讀 slash 執行旗標；命令文字作為最後一個參數。 */
+  slashArgs: string[];
 }
 
 export interface Config {
@@ -60,6 +64,8 @@ export const DEFAULT_CONFIG: Config = {
       safeArgs: ['--permission-mode', 'acceptEdits'],
       quotaArgs: [],
       loginArgs: ['auth', 'login'],
+      commandsArgs: [],
+      slashArgs: [],
     },
     codex: {
       command: 'codex',
@@ -70,6 +76,8 @@ export const DEFAULT_CONFIG: Config = {
       safeArgs: ['-s', 'workspace-write', '-c', 'approval_policy="never"'],
       quotaArgs: ['app-server'],
       loginArgs: ['login', '-c', 'cli_auth_credentials_store="file"'],
+      commandsArgs: [],
+      slashArgs: [],
     },
     grok: {
       command: 'grok',
@@ -80,6 +88,8 @@ export const DEFAULT_CONFIG: Config = {
       safeArgs: ['--permission-mode', 'dontAsk'],
       quotaArgs: [],
       loginArgs: ['login', '--oauth'],
+      commandsArgs: [],
+      slashArgs: [],
     },
     // Google 官方後繼：Antigravity CLI（agy）。提示經 stdin 的 stream-json 傳入，沒有 argv 外洩。
     gemini: {
@@ -91,6 +101,8 @@ export const DEFAULT_CONFIG: Config = {
       safeArgs: ['--mode', 'accept-edits'],
       quotaArgs: ['-p', '/usage', '--output-format', 'json'],
       loginArgs: [],
+      commandsArgs: ['-p', '/help', '--output-format', 'json'],
+      slashArgs: ['--output-format', 'json', '--print'],
     },
     envPassthrough: [],
   },
@@ -192,6 +204,8 @@ function cliSection(map: YamlMap, name: 'claude' | 'codex' | 'grok' | 'gemini'):
     safeArgs: strList(s, 'safeArgs', d.safeArgs, where),
     quotaArgs: strList(s, 'quotaArgs', d.quotaArgs, where),
     loginArgs: strList(s, 'loginArgs', d.loginArgs, where),
+    commandsArgs: strList(s, 'commandsArgs', d.commandsArgs, where),
+    slashArgs: strList(s, 'slashArgs', d.slashArgs, where),
   };
 }
 
