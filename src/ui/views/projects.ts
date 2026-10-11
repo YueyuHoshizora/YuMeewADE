@@ -33,7 +33,7 @@ async function startWithBudget(context: ViewContext, input: StartInput): Promise
   }
 }
 
-declare global { interface Window { yumeewade?: { desktop: true; platform: string; pickFolder: () => Promise<string | null>; setBadge: (count: number) => void; focus: () => void }; } }
+declare global { interface Window { yumeewade?: { desktop: true; platform: string; pickFolder: () => Promise<string | null>; setBadge: (count: number) => void; focus: () => void; onMenuCommand?: (callback: (command: string) => void) => () => void }; } }
 
 const normalizePath = (value: string): string => { const slashed = value.replace(/\\/g, '/').replace(/\/+$/, ''); return /^[A-Za-z]:/.test(slashed) || slashed.startsWith('//') ? slashed.toLowerCase() : slashed; };
 

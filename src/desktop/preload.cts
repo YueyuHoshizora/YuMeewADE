@@ -8,4 +8,11 @@ electron.contextBridge.exposeInMainWorld('yumeewade', Object.freeze({
   pickFolder: (): Promise<string | null> => electron.ipcRenderer.invoke('pick-folder') as Promise<string | null>,
   setBadge: (count: number): void => electron.ipcRenderer.send('set-badge', count),
   focus: (): void => electron.ipcRenderer.send('focus-window'),
+  onMenuCommand: (callback: (command: string) => void): (() => void) => {
+    const listener = (_event: Electron.IpcRendererEvent, command: unknown): void => {
+      if (typeof command === 'string' && ['new-project', 'open-project', 'settings', 'palette', 'search'].includes(command)) callback(command);
+    };
+    electron.ipcRenderer.on('menu-command', listener);
+    return () => { electron.ipcRenderer.removeListener('menu-command', listener); };
+  },
 }));

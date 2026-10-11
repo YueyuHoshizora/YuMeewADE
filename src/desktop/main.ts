@@ -13,6 +13,7 @@ import { stopOwnedCore } from './shutdown.ts';
 import { configureSecretApplication, createSecretRequestHandler } from './secret-service.ts';
 import { reportArtifactSmoke } from './artifact-smoke.ts';
 import { WindowStateStore } from './window-state.ts';
+import { installMenu } from './menu.ts';
 
 const HERE = path.dirname(fileURLToPath(import.meta.url));
 const APP_ROOT = path.join(HERE, '..', '..');
@@ -187,6 +188,7 @@ if (primaryInstance) app
     const url = `http://${hostAuthority(host, port)}/`;
     if (quitting) return;
     createWindow(url);
+    installMenu(() => { if (!quitting) createWindow(url); });
     app.on('activate', () => {
       if (BrowserWindow.getAllWindows().length === 0) createWindow(url);
     });

@@ -161,3 +161,10 @@ const events = stream('/api/events', {
 }, () => { void refresh(); });
 window.addEventListener('pagehide', () => { events.close(); view?.dispose?.(); });
 void refresh();
+window.yumeewade?.onMenuCommand?.(command => {
+  window.dispatchEvent(new CustomEvent('yumeewade:menu', { detail: { command } }));
+  if (command === 'new-project') location.hash = '#/new';
+  else if (command === 'settings') location.hash = '#/settings';
+  else if (command === 'search') location.hash = '#/search';
+  else if (command === 'open-project') void run(async () => { if (!state) await refresh(); if (state) await openProjectFromFolder({ state, refresh }); });
+});
