@@ -6,21 +6,28 @@
 
 ### IDE 與本機工具
 
-- 檔案編輯器新增語法上色、帶 revision 的原子儲存與外部變更衝突處理；執行中禁止儲存。定義／引用／診斷使用原生 stdio LSP，預設使用已安裝 TypeScript 7 `tsc --lsp -stdio`；其他 server 可用 `YUMEEWADE_LSP_COMMANDS` 的 languageId → argv JSON 設定，不存在時明確回不可用。
-- 原生 command＋args 執行、stdout／stderr、結束碼、有限輸出與截斷提示、行程樹停止；App 內非互動管線，互動 PTY 使用系統終端，不冒充內嵌終端。新增 loopback 預覽、loopback Node Inspector 與外部 IDE／瀏覽器整合，`execution.*` 支援 command／args 與明確 placeholder。
-- Git 工作台新增 status／PR 狀態、逐檔 stage／unstage、衝突解決、commit、fetch、branch 建立／切換；push 僅允許明確確認的非 force 操作，PR 需確認及登入的 `gh`，不自動對外發布。
+- 多文件工作台支援最多 50 文件、雙分割、依工作區／主資料夾／作業根隔離的 4 MiB v3 復原，含所有開啟文件／clean 分頁中繼資料、dirty 文字、兩面板路徑、焦點與各面板游標選取／捲動位置；revision 原子儲存及外部變更明確採用新基底。新增檔案／資料夾 CRUD、有界 literal 搜尋、取代預覽與多文件套用；執行中禁止儲存。
+- 原生 stdio LSP 增加 completion、hover、rename、format、code actions、專案 Problems 與來源行段／搜尋命中釘選；workspace edits 必須基於已儲存快照，dirty 文件先儲存，否則 editor_conflict。TS／JS 使用已安裝 TypeScript 7 `tsc --lsp -stdio`，其他可信任 server 使用 `YUMEEWADE_LSP_COMMANDS`，缺少時明確不可用。
+- 編輯器 action 嚴格檢查字串型別，不將陣列轉為字串後當成合法語言請求；錯誤型別回 400，不啟動 LSP 或改檔。
+- 持久化具名執行設定、有限輸出與行程樹停止；真正內嵌 `node-pty` 終端提供 ANSI、輸入／resize／stop、POST body owner capability 與失聯回收。內嵌有界 Node Inspector 提供 breakpoint／stack／variables／pause／resume／step，僅連 App 自己啟動的 loopback debug 行程，不是任意 DAP／evaluate；保留 loopback 預覽及系統終端／外部 IDE／瀏覽器整合。
+- Git 工作台支援 staged diff、綁定實際 index／worktree 的逐檔／hunk／選取行 stage／unstage、base／ours／theirs 三方與人工文字解衝突。手動 commit 預設執行 hooks，bypass 須明確確認；push 僅確認後非 force，PR 須確認與已登入 `gh`，不自動發布。
 
 ### 驗證、審查與工作流程
 
 - 專案支援多個具名 `checks` 與逐項驗證結果，保留舊 `verify`；驗證綁目前工作內容與設定指紋，外部、generated／ignored 寫入及驗證自身改檔皆造成失效／drift，不沿用過期綠燈。可選 `requireVerification` 限制合併，結果仍僅存記憶體。
 - 獨立唯讀審查不借用寫作 session 或 full-access 旗標：Codex 僅 Darwin／Linux 原生 read-only sandbox；Claude 只允許 Read／Glob／Grep（工具政策，不是 OS 沙箱）；不支援服務及不符限制的設定 fail closed。
-- 角色明確 backup 只在開始前且角色選取的主 CLI 不可用時使用；手動選擇不回退，執行失敗不自行換 AI。持久化 workflow 支援相依、角色／審查步驟與人工關卡，依賴完成且人工核准後才啟動，重啟中斷不自動恢復執行。
+- 結構化 schema=1 JSON 審查保存內容／HEAD 快照與 findings 生命週期；人工 resolved／dismissed 需證據且不製造 AI 核准。可選合併門檻要求目前內容明確核准且無未解重大發現。
+- 角色明確 backup 只在開始前且角色選取的主 CLI 不可用時使用，手動選擇／執行失敗不換 AI。持久化 workflow 支援相依、角色／審查及人工關卡，人工證據為非空字串；逐步重跑保留歷次結果並使該步／下游失效。新增兩個實際作業工作樹的有界比較；依賴完成且人工核准才啟動，重啟不自動續跑。
 - 固定決策、釘選來源行段與交接預覽呈現 provenance／截斷，背景不視為本輪授權。圖片及逐行評論草稿持久化，評論以 diff hash 判斷過期，差異變動不能悄悄送出舊稿。
 
 ### 恢復、帳號與維護
 
 - 封存列表、影響預覽與還原；強制封存保留分支及原工作副本私有快照，保存 ignored／未追蹤／機密檔及刪除狀態，重建 worktree 時不覆蓋既有目的地。恢復快照不是外部主資料夾完整備份或可公開分享資料。
+- 還原涉及 checkout 仍須符合原保存信任及目前 root，拒絕則回滾，不自動信任封存專案；信任檢查位於台帳恢復後、首次 checkout 前。不涉及 checkout 的直接作業台帳還原仍可使用。
 - 本機健康檢查與可選外網檢查、私有工作區備份、完整性指紋、新目的地恢復與 worktree 關聯重寫。外部主資料夾 opt-in 才完整，拒絕恢復不完整備份及不支援的 linked／alternates repo。備份可能含專案機密，排除 App 憑證庫／CLI 帳號，恢復後重新登入。
+- 備份顯示 bytes、精確 ID 刪除、驗證完整備份保留清理；依 canonical workspace 隔離的排程預設關閉。可攜備份使用 scrypt／AES-256-GCM 串流加密，解出前驗證密碼／完整性且僅恢復到新目的地，含專案機密但不夾帶 App 帳號憑證。
+- 用量歷史只保存 provider 已知實報 tokens／Codex credits／Claude USD，不混算或以餘額差估費，未知不是零。scope 預算／剩餘額度／雲端點數到期警告逐新回合與流程步驟檢查，需 scope 綁定、5 分鐘、一次性人工 acknowledgment 才可續行，不聲稱帳單硬上限。
+- 專案信任 unreviewed 保留全域預設、trusted 允許逐 AI 下輪 override、restricted 禁止新 AI／驗證／執行／終端／Git 讀寫／作業差異與合併預覽／封存預覽與封存／LSP 啟動；已核准 root 變更須再核准。Git diff 即使禁用 ext-diff／textconv 仍可能執行 filter.clean，Git 查看也須信任批准；內嵌與外部終端服務皆在 spawn 前檢查信任，不只依賴 HTTP 守衛。停止、檔案閱讀與純文件編輯仍可用，不冒充 OS 沙箱。
 - 診斷只輸出允許的版本、能力、數量及錯誤碼，不帶私有路徑、對話、內容、token 或任意日誌。
 - 修正 AI 啟動前檢查的保留競態：等待 CLI 可用性時也禁止同作業的指令執行、編輯及封存，避免交錯修改。
 - 尚未建立／已清除隔離副本的檔案瀏覽回退到主資料夾唯讀，不允許錯寫主資料夾，仍可使用語言導覽。
@@ -30,7 +37,11 @@
 
 ### 打包與文件
 
-- CI 新增實際安裝／展開後的 dmg／zip、NSIS／portable、deb／AppImage 啟動 smoke，隔離設定與加密 keyring，成功後才上傳產物；CI 定義不是本次已執行所有平台的成功證明。
+- CI 新增實際安裝／展開後的 dmg／zip、NSIS／portable、deb／AppImage 啟動 smoke，隔離設定與加密 keyring，並斷言原生 PTY TTY／輸入／resize，成功後才上傳產物；CI 定義不是本次已執行所有平台的成功證明。
+- 修正安裝版從 ASAR 複製專案範本時的 `fs.cp` 目錄 ENOENT：以虛擬檔案系統遞迴 readdir／readFile 與位元組原子寫入建立範本，不把 ASAR 目錄當原生目錄複製；不以原始碼模式成功代替安裝版證據。
+- 本次重新產出的 macOS dmg／zip 已實際安裝／解出並驗證 renderer／preload 及原生 PTY TTY／輸入／resize；不延伸宣稱 Windows／Linux 已通過，也不代表官方簽名。
+- 更新 SHA256 僅證明完整性；macOS／Windows 明確啟動安裝須獨立固定公鑰 Ed25519 manifest 簽章及原生 Team ID／certificate thumbprint 驗證，Linux／portable 僅揭示檔案。CI 可選簽名／公證憑證；目前未提供，維持 ad-hoc／unsigned，不聲稱官方簽名或新增三平台通過。
+- 使用者批准 `node-pty@1.1.0` 作為唯一額外執行期相依；`prepare:pty` 安裝／建置時準備 Darwin helper 權限，不在 runtime chmod 已簽章 App。局部 `sprintf-js@1.1.3` precision guard 以精確 SHA256、原子冪等修補、漂移 fail closed 重現，上游 advisory 仍未解，不宣稱 audit 清零。
 - 三語 README 補齊安全界線、恢復範圍、設定、驗證／編輯器 API 及新功能分組路由；保留 loopback 無認證、AI 預設完整權限與費用風險警告。
 
 ## [1.0.2] - 2026-10-11

@@ -48,17 +48,23 @@ Claude／Codex 模型清單直接讀 CLI 自己的快取（`~/.codex/models_cach
 
 - **封存恢復**：先預覽影響，再封存／還原專案或作業。強制封存保留分支及原工作副本恢復快照，含未追蹤、ignored、機密檔與刪除狀態；還原重建 worktree，拒絕覆蓋現有目的地。`.yumeewade/recovery/` 為私有資料，不是可公開的 Git 備份，也不是外部主資料夾的完整備份。
   成功還原後，該代快照移入保留區，不再套用到日後的封存；原始資料仍保留，不會覆蓋後續已合併的內容。
-- **編輯器**：主資料夾／作業副本的檔案可語法上色、原子儲存；必須提交讀取時的 `revision`，外部改動回衝突，執行中禁止儲存。定義、引用、診斷透過原生 stdio LSP；已安裝 TypeScript 7 原生 `tsc --lsp -stdio` 用於 TS／JS。缺少 server 明確不可用。`YUMEEWADE_LSP_COMMANDS` 是 languageId → argv 陣列的 JSON，例如 `{"python":["pylsp"]}`；使用可信任的本機 server，不透過 shell。
+  還原涉及 checkout 仍須符合原保存信任及目前 root，拒絕則回滾，不自動信任封存專案；不涉及 checkout 的直接作業台帳還原仍可使用。
+- **編輯工作台**：最多 50 個文件、雙分割檢視、語法上色與 revision 檢查的原子儲存；外部改動需明確採用新基底，執行中禁止儲存。未儲存文字、游標／捲動位置依工作區／主資料夾／作業根隔離復原，總量上限 4 MiB。檔案／資料夾建立、重新命名、刪除、有界 literal 搜尋及先預覽再套用的取代均驗證範圍與 revision。原生 stdio LSP 提供定義、引用、補全、hover、rename、格式化、code actions 與專案 Problems；來源行段／搜尋命中可釘選到背景。已安裝 TypeScript 7 `tsc --lsp -stdio` 用於 TS／JS；缺少 server 明確不可用。`YUMEEWADE_LSP_COMMANDS` 為 languageId → 可信任本機 argv 陣列 JSON，例如 `{"python":["pylsp"]}`，不透過 shell。
+  復原格式 v3 也保存所有已開啟文件（含未修改分頁）的中繼資料、兩個面板路徑、焦點面板與各面板游標選取／捲動位置。rename／format／code actions 的 workspace edits 必須基於已儲存快照；先儲存 dirty 文件，否則回 `editor_conflict`。
   尚未建立或已清除隔離副本時，可唯讀瀏覽主資料夾及使用語言導覽，但不能從該作業儲存到主資料夾。
-- **本機執行**：直接啟動 command＋args，顯示 stdout／stderr、結束碼、截斷與停止，停止會終止行程樹。App 內是非互動管線，**不是內嵌 PTY**；互動程式在系統終端（macOS Terminal、Windows Terminal、Linux `x-terminal-emulator`）執行，App 不擷取其輸出或控制其生命週期。預覽只開啟有明確 port 的 loopback HTTP(S)；Node Inspector 綁 loopback 隨機 port，以系統瀏覽器 DevTools／外部 IDE 連接，不是 App 內通用 debugger。
+- **本機執行**：持久化具名 command／args／kind／cwd／env 設定，提供有限 stdout／stderr、結束碼及行程樹停止。內嵌終端使用真正 `node-pty`、ANSI 畫面、輸入／resize／stop、只放 POST body 的 owner capability，失聯 5 分鐘回收。系統終端整合仍保留，其輸出／生命週期不由 App 管理。預覽限明確 port 的 loopback HTTP(S)。內嵌 Node Inspector 僅附加 App 自己啟動的 loopback debug 行程，提供 breakpoint、stack、variables、pause／resume／step 與有界請求；不是任意遠端 DAP 或無限制 evaluate。仍可使用瀏覽器 DevTools／外部 IDE。
   - 執行上限：command／debug 10 分鐘，preview 24 小時，輸出尾段最多 256 KiB／1024 筆事件；同時執行數使用 `limits.concurrentRuns`。這些執行期限不是 AI 的 `limits.runSeconds`，系統終端不受此管理。
 - **整合設定**：`config.yaml` 的 `execution.ide`／`terminal`／`browser` 各為 `{command, args}`；argv 支援 `{cwd}`、`{url}`、`{command}` 替換。IDE 開資料夾需要 `{cwd}`，IDE debug 需要 `{url}`；自訂 terminal 需要 `{cwd}`，帶指令時也需 `{command}`。外部工具需自行安裝，指令以你的權限執行。
-- **Git**：查看 status／PR、逐檔 stage／unstage、標記解決衝突、commit、fetch 與建立／切換 branch。Push 必須明確確認、只允許非 force；PR 透過已登入的 `gh` 建立並需確認。App 不自動 push／發 PR，fetch／push／PR 是網路操作。
+- **Git**：status／PR、staged diff、綁定實際版本的逐檔／hunk／選取行 stage／unstage、base／ours／theirs 三方衝突與人工合併文字、commit、fetch 及 branch 操作。手動 commit 預設執行 hooks，bypass 必須明確確認。Push 須確認且禁止 force；PR 須確認及已登入 `gh`。不自動 push／發 PR，fetch／push／PR 是網路操作。
 - **獨立唯讀審查**：不借用寫作 session 或 full-access 旗標。Codex 使用原生 read-only sandbox，僅 Darwin／Linux；Claude 僅允許 Read／Glob／Grep，**是 CLI 工具政策，不是 OS 沙箱**。Grok／Gemini 或不符受限設定的 provider 明確拒絕，不以提示詞冒充安全隔離。CLI 本身仍是受信任的本機程式。
-- **角色與流程**：僅角色自動選擇的主 CLI 在開始前不可用時，才使用明確設定的 backup；手動選擇不回退、執行失敗不換 AI 重試。持久化 workflow 支援相依作業與角色步驟／審查／人類關卡；相依作業須完成且人工確認，重啟中斷後暫停，不自動恢復授權。
+  結構化 `schema:1` JSON 審查持久化內容／HEAD 綁定的快照與 findings，含嚴重性、證據及生命週期歷史。人工 resolved／dismissed 必須附證據，不製造 AI 核准；可選合併門檻要求目前內容明確核准且沒有未解重大發現。
+- **角色與流程**：僅角色選取的主 CLI 在開始前不可用時，才用明確 backup；手動選擇不回退，執行失敗不換 AI。持久化 workflow 支援相依、角色／審查步驟與人工關卡，人工證據為非空字串。逐步重跑保留歷次結果並使該步及下游檢查點失效；作業比較使用兩個實際工作樹，列出有界檔案／內容差異。相依須完成且人工確認；重啟中斷後暫停，不自動恢復授權。
 - **可見背景與草稿**：固定決策、釘選檔案行段及交接預覽呈現來源與截斷，背景不等於本次授權。圖片與逐行審查草稿持久化；評論綁 diff hash，差異變動會標過期，不能悄悄送出舊評論。
-- **健康／備份／診斷**：本機健康檢查預設不探測外網，可另行選擇網路檢查。私有備份包含台帳、對話、附件、Git／工作副本、恢復資料與可能的專案機密，**不是加密分享包**；不備份 App 憑證庫／CLI 帳號，恢復後需登入。外部主資料夾必須 opt-in 才完整，`complete:false` 備份不能恢復。僅恢復到新目的地，檢查指紋、改寫 worktree 關聯，不覆蓋原工作區；linked repo／alternates 等不完整儲存庫拒絕。診斷只選允許欄位，不包含路徑、對話、檔案內容、token 或任意日誌。
-- **產物 CI**：工作流程建置後啟動實際安裝／解出的 dmg／zip、NSIS／portable、deb／AppImage，以隔離設定／鑰匙圈進行 smoke，再上傳。這是 CI 定義，不代表本次已取得三平台通過證據，也不代表正式簽名／公證。
+- **健康／備份／診斷**：本機健康檢查預設不探測外網。私有備份含台帳、對話、附件、Git／工作副本、恢復資料與可能的專案機密；不含 App 憑證庫／CLI 帳號，恢復後須登入。列表顯示 bytes、精確 ID 刪除及驗證完整備份的保留清理；依工作區隔離的排程預設關閉。外部主資料夾須 opt-in，不完整或不支援的 linked／alternates repo 拒絕恢復。驗證指紋並改寫 worktree 關聯，僅恢復到新目的地。可攜匯出以 AES-256-GCM／scrypt 串流加密，解出前驗證密碼及完整性；仍含專案機密，不夾帶 App 帳號憑證。診斷不含路徑、對話、內容、token 或任意日誌。
+- **用量／預算**：持久化歷史只記錄 provider 實際回報且已知的 tokens、Codex credits、Claude USD，不混算單位或以餘額差推估費用；未知不是零。專案／作業／AI／帳號 scope 門檻、剩餘額度及雲端點數到期警告每個新回合／流程步驟重新檢查；繼續需 scope 綁定、5 分鐘、一次性的人工 acknowledgment，不保證帳單硬上限。
+- **專案信任**：`unreviewed` 保留全域權限預設，`trusted` 可逐 AI override 下輪權限；`restricted` 禁止新 AI、驗證、執行／終端、Git 讀寫、作業差異／合併預覽、封存預覽／封存與 LSP 啟動，已核准 root 變更須重新核准。Git diff 即使停用 ext-diff／textconv 仍可能執行儲存庫的 `filter.clean`，因此查看 Git 也須通過信任政策。停止、檔案閱讀與純文件編輯仍可用。畫面呈現 OS user、root、cwd 及附加目錄；**不是 OS 沙箱**。
+- **更新**：allowlist release 下載以 SHA256 驗證完整性，不代表發布者可信。macOS／Windows 明確啟動安裝還須通過獨立固定公鑰的 Ed25519 manifest 簽章與原生發布者驗證（Team ID／憑證 thumbprint）；Linux／portable 只揭示檔案。
+- **產物 CI**：工作流程建置後啟動實際安裝／解出的 dmg／zip、NSIS／portable、deb／AppImage，以隔離設定／鑰匙圈進行 smoke，包含原生 PTY 的 TTY、輸入與 resize 斷言，再上傳。這是 CI 定義，不代表本次已取得三平台通過證據，也不代表正式簽名／公證。
 
 ## 架構
 
@@ -109,7 +115,8 @@ npm run desktop      # 桌面版（開發機）
 - 新專案會從 `templates/project/` 複製 `.ai/rules.md`（AI 工作規則）、`.ai/memory/INDEX.md`、`CLAUDE.md`、`AGENTS.md`，範本可以自己改。
 - 封存不是刪除：作業封存到 `Projects/{專案}/.ai/trash/`，專案封存到 `Projects/.trash/`。
 - 開發模式：`npm run dev`（tsc／vite watch，核心自動重啟）。
-- 打包目前平台的未簽名產物：`npm run dist` → `release/`。正式產物由 GitHub Actions（`.github/workflows/build.yml`）在三平台各自建置。產物未簽名、未公證：macOS 第一次開啟要到「系統設定 → 隱私權與安全性」允許，Windows 要按「仍要執行」。
+- 打包目前平台：`npm run dist` → `release/`。CI 可選提供平台簽名／公證及 manifest 簽章憑證；目前未提供，維持 ad-hoc／unsigned，不聲稱官方發布者簽名。三平台工作流程不等於本次新增三平台通過證據。
+- `node-pty@1.1.0` 是唯一批准的額外執行期相依。安裝／建置以 `npm run prepare:pty` 在打包前準備 Darwin helper 執行權限，不在 runtime chmod 已簽章 App。批准的局部 `sprintf-js@1.1.3` precision guard 以精確來源 SHA256、原子／冪等修補，來源漂移 fail closed（`npm run patch:build-deps`）；上游 advisory 仍開放，不宣稱 `npm audit` 清零。
 
 ## `config.yaml`
 

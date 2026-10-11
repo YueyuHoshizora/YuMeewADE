@@ -38,9 +38,9 @@
 - 對外部署、網域、HTTPS、遠端存取（僅監聽 127.0.0.1；網頁版＝本機瀏覽器介面，見假設 3）。
 - 帳號系統、多使用者、權限管理。
 - 套件發布（npm／JSR）：只開原始碼倉庫，不發套件。
-- 內嵌終端機（pty）畫面：第一版僅無頭串流對話。
-- ~~AI 帳號切換與用量監控~~ → **改為範圍內**（使用者裁示 2026-10-11，見附錄 B.6）：底部只顯示各 AI 使用中帳號，詳情可登錄既有已登入 CLI 設定資料夾並切換，查詢額度與轉換通知；不提供登入流程、不修改方案或額度上限。
-- 自動更新機制、程式碼簽名與公證、各平台商店上架（見假設 7）。
+- 任意遠端 DAP adapter／無限制 evaluate；內嵌 PTY 與 App 自有 Node Inspector 已依 B.12 納入。
+- ~~AI 帳號切換與用量監控~~ → **改為範圍內**（使用者裁示 2026-10-11，見 B.6／B.10／B.12）：隔離 CLI OAuth 登入、App 私有加密憑證庫、帳號切換、額度通知、已知單位用量歷史與 scope 預算警告；不修改服務方案或額度上限。
+- 各平台商店上架；更新完整性下載、可選發布者簽章驗證與簽名／公證 CI 已依 B.12 納入，未提供官方憑證不得聲稱正式簽名。
 - ~~多語系（第一版僅繁體中文）~~ → **改為範圍內**（使用者裁示 2026-10-10，見附錄 A.8）：UI 支援繁體中文／簡體中文／英文／日文／德文／法文／義大利文。
 - 即時通訊（Discord 等）整合、MCP 伺服器管理、圖片／影片生成流程。
 
@@ -100,7 +100,7 @@
 ```
 
 - **語言與建置**：後端 `tsc` → `dist/`（Node ESM，目標 Node v24）；前端 Vite build；桌面以 electron-builder 打包 dmg／zip（macOS）、nsis／portable（Windows）、AppImage／deb（Linux）。`npm run typecheck`（`tsc --noEmit`）、`npm test`（`node --test`＋MockCliProvider）、`npm run dist`（三平台產物）。
-- **依賴策略**：最少相依＝Electron（外殼，執行期）＋Vite／electron-builder（dev）；其餘盡量用 Node 內建模組（`child_process`、`http`）。全部釘選版本、lockfile 入庫。
+- **依賴策略**：最少相依＝Electron（外殼，執行期）＋Vite／electron-builder（dev）；使用者批准內嵌 PTY 的唯一額外執行期相依 `node-pty@1.1.0`。其餘使用 Node 內建模組，版本釘選、lockfile 入庫。
 - **狀態儲存**：檔案即資料庫（見「五、資料模型」）；快取僅記憶體，不落地。
 - **部署形態**：本機程序＋桌面打包（見「八、倉庫與部署」）；網頁版與桌面 App 共用核心與 UI。
 
@@ -278,8 +278,8 @@ Roles   { models, roles: { role: { main, backup, job } }, permissions }   // rol
 3. 「四個版本」解讀為**單一程式碼庫、四個交付物**：macOS／Windows／Linux 桌面 App＋網頁版；網頁版＝瀏覽器開本機服務（127.0.0.1），不做對外部署。若解讀有誤請裁示。
 4. 桌面外殼＝**Electron（裁示）**；前端建置工具採 **Vite＋vanilla TypeScript**（預設，沿用前案規格，可調整）；打包＝electron-builder。
 5. AI CLI（`claude`／`codex`）輸出契約未定案 → 本文件先行定案最小契約（3.1），衝突時**以 CLI 實際行為為準**，只改 adapter。
-6. `claude`／`codex` CLI 由使用者本機另行安裝與登入；本工具不代管憑證、不代裝（見 3.1 `available()`）。
-7. 程式碼簽名／公證**裁示：先不簽（使用者裁示 2026-10-10）**——開發期一律產**未簽名產物**；日後要簽再議（待定項，不影響程式實作）。例外：macOS 產物用 ad-hoc 簽名（`identity: "-"`，不需憑證）。完全不簽時 Electron 原有簽章會在打包後失效，Apple 晶片的 Mac 下載後會判定為「已毀損」（v1.0.0 實際發生，v1.0.1 修正）。Windows／Linux 若無實機，以建置產物＋checklist 驗證。
+6. AI CLI 由使用者本機另行安裝；App 已依 B.10 管理隔離 OAuth 流程與 OS 保護的加密憑證，不代裝 CLI。
+7. 程式碼簽名／公證：B.12 增加可選 CI 環境憑證，未提供時維持 macOS ad-hoc 與其他平台 unsigned，不聲稱官方發布者簽名／公證。三平台 CI 定義與建置產物不能代替三平台實際通過證據。
 8. 介紹網址未指定 → 以倉庫 `README.md` 為介紹；不影響程式實作。
 9. port 預設 4560、資料根目錄預設 `~/Documents/YuMeewWorkspace`、危險旗標與各項上限皆為**可調整**新創值，定案一律入 `config.yaml`。
 
@@ -499,9 +499,24 @@ electron 44.7.0、vite 8.3.4、electron-builder 26.15.3、typescript 7.0.2、@ty
 - 憑證庫不隨工作區切換搬移；工作區仍保存帳號顯示名稱與作用中選擇。測試必須注入臨時資料目錄與測試加密器，不存取真實使用者登入。
 
 ### B.11 IDE 完整接手與復原（使用者裁示 2026-10-11）
-- 在原 AI 作業控制台上增加安全封存還原、內容綁定驗證、編輯與語言服務、人工指令／終端／除錯、Git 工作台、唯讀審查、明確多角色工作流程、持久草稿及工作區維護；不更換台帳架構，不新增執行期套件，不自行推送。
+- 在原 AI 作業控制台上增加安全封存還原、內容綁定驗證、編輯與語言服務、人工指令／終端／除錯、Git 工作台、唯讀審查、明確多角色工作流程、持久草稿及工作區維護；不更換台帳架構。後續使用者批准 `node-pty@1.1.0` 作為內嵌 PTY 的唯一額外執行期相依；不自行推送。
 - 新增的作業相依與角色流程存於 `.ai/workflows/{作業ID}.json`：`{ dependencies: string[], steps: [{role, text, review}], cursor, state, results }`。相依僅限同專案、不得形成循環；前置作業須由人核可完成才能開始。流程只有人在介面明確啟動才執行，失敗或需人工判斷時停止；重啟不自動續跑。角色備援只在主 CLI 尚未執行且不可用時選擇，不重試失敗回合。
 - 固定決策、交接來源與未送出圖片／審查草稿使用作業旁的 JSON 檔保存；這些背景資料不是執行授權。台帳與草稿保持原子寫入，圖片清理保留仍被草稿引用的檔案。
 - `PROJECT.md` 增加具名 `checks: [{name, command}]` 與 `requireVerification`（預設 false）；既有 `verify` 仍可讀取。驗證結果必須對應目前命令與實際工作內容，不以 HEAD 未變代替未提交檔案的驗證。
 - 封存、備份與復原不得將新機密檔提交至 Git；本機復原快照使用限權限的私有目錄。工作區備份不包含 App 憑證庫，還原不覆寫既有目的地；加密憑證的跨機移轉仍須重新登入。
+
+### B.12 IDE 深度補完（使用者裁示「全都做，依功能提交」，2026-10-11）
+- 多文件工作台：最多 50 個 buffer、雙分割檢視；v3 保存所有已開啟文件（含 clean 分頁）的中繼資料、dirty 文字、兩面板路徑、焦點面板及各面板游標選取／捲動位置，依 workspace／主資料夾／作業根 SHA256 隔離復原，總量 4 MiB。外部變更保留舊 revision，必須明確採用新基底才可覆寫。檔案／資料夾 CRUD 與多文件套用均驗證範圍、機密／忽略／symlink、revision；刪除需精確路徑確認。全文 literal 搜尋有檔案／位元組／命中上限，取代先預覽再套用；不宣稱 regex 搜尋。
+- LSP 擴充 completion、hover、rename、format、code actions 與 project Problems；workspace edits 限工作根、驗證每個文件 revision，rename／format／code actions 須基於已儲存快照，dirty 文字回 editor_conflict，必須先儲存；不執行任意 server command。範圍／搜尋命中可釘到既有 context.sources；dirty 文件先儲存，命中 revision 必須仍有效。
+- `.ai/reviews/{作業ID}.json` 保存 `{snapshots, requireApproval}`。每個 snapshot 包含 request、AI、時間、HEAD／content 指紋、原文、ok／structured／approved 與 findings；finding 含 severity、path、line、message、evidence、state、transitions。AI 只能回明確 schema=1 JSON；文字成功不等於核准。人工 resolved／dismissed 需證據，但不製造 AI 核准；啟用門檻時，合併需要目前內容的明確核准且沒有未解重大發現。
+- workflow results 擴充 step、output、approved、reviewSnapshot、invalidatedAt，以及人工 `evidence?: string`（非空字串）與 `at`；實際結果使用 `ai: "人"`（`HUMAN`），不是 `{kind:"human", evidence, at}` 物件。分步重跑保留歷史並使該步及後續結果失效，不悄悄重用完成結果。比較功能使用兩個實際作業工作樹，列出有界檔案／內容差異。
+- Git 支援 staged diff、hunk／line stage／unstage（綁定實際 index／worktree 指紋）、base／ours／theirs 三方衝突與人工合併文本。讀 status 不刷新 index；手動 commit 正常執行 hooks，只有明確確認才 bypass，自動儲存仍按原規則 `--no-verify`。
+- `.ai/run-configs/{作業ID}.json` 保存最多 50 個具名 command／args／kind／相對 cwd／env 設定，0600、總量 1 MiB；cwd 以 realpath 限工作根，env 限 64 鍵／16 KiB，不保存 credential／loader-injection 變數。真正 PTY 使用 Node-PTY、ANSI 畫面、input／resize／stop 與 5 分鐘失聯回收；owner capability 只放 POST body。Darwin helper 在 build／package 前修正可執行位元，不修改已簽章 app。
+- 內嵌 debugger 使用 Node 24 WebSocket／Inspector，只附加 App 自己啟動的 numeric loopback debug run；支援 breakpoint、stack、variables、pause／resume／step。不是任意遠端 DAP adapter，也不執行任意 evaluate。
+- `.yumeewade/usage.jsonl` 追加 provider-reported request／session／project／task／AI／account／時間及 token／Codex credits／Claude USD。缺失不是零、不從餘額差推算費用；不同單位不混算。`.yumeewade/budgets.json` 保存 threshold rules／quotaRemainingPercent／cloudExpiryHours。每次真正的新回合或流程下一步重新檢查；警告以 scope 綁定、5 分鐘、一次性的人工 acknowledgment 才可繼續，不自動重試或冒充硬上限。快速開始先建立單一作業、保留草稿，再批准該作業實際 scope。
+- 備份列表含 bytes／容量、精確 ID 刪除；保留只清除驗證完整且匹配 workspace 的完成備份，不碰損壞／不完整／使用中資料。私有資料目錄依 canonical workspace SHA256 保存排程 `{enabled,includeExternal,intervalHours,retention}`、預設關閉，失敗經全域事件通知。加密 portable `YMAEBK01` 使用 scrypt（N=32768,r=8,p=1）與 AES-256-GCM，先驗證密碼／完整性再解析與解出到全新目錄，8 GiB／100k entries 有界；匯出含專案機密，不含 App 帳號憑證。
+- 更新下載只接受目前 release 公告的 allowlisted GitHub HTTPS 產物，以 SHA256 manifest 校驗；完整性不等於發布者可信。可選 Ed25519 manifest 簽章，獨立固定公鑰且符合 mac Team ID／Windows certificate thumbprint 才可明確啟動安裝；Linux／portable 僅揭示檔案。CI 可選提供平台憑證、公證與 manifest signing secret；無憑證維持 ad-hoc／unsigned，不聲稱正式簽章。
+- `.ai/trust.json` 保存 `{state,root,overrides}`，state 為 unreviewed／trusted／restricted。未審查專案保留既有全域權限預設；明確 restricted 或已核准 root 變更拒絕新 AI／驗證／終端／執行／Git 讀寫／作業差異與合併預覽／封存預覽與封存／LSP 啟動，停止、檔案閱讀與純文件編輯仍可用。Git diff 禁用 ext-diff／textconv 仍可能執行 repo filter.clean，查看 Git 也須通過信任政策。變更需 revision＋confirmed；trusted 的逐 AI override 只影響下一輪。顯示 OS user、root、cwd、附加目錄及目前完整權限；這不是 OS 沙箱。
+- 還原涉及 checkout 仍須符合原保存信任及目前 root，拒絕則回滾，不自動信任封存專案。信任檢查在台帳恢復後、第一次 checkout 前執行；不涉及 checkout 的直接作業台帳還原仍可使用。
+- 使用者批准對釘選 `sprintf-js@1.1.3` 套用局部 precision DoS 修補：精確來源 SHA256、原子替換、冪等、來源漂移 fail-closed，保留版本與授權；CI 與打包重現此修補。上游 registry advisory 仍存在，不宣稱 `npm audit` 清零，不升級未批准工具鏈。
 

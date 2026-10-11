@@ -43,17 +43,23 @@ Claude／Codex のモデル一覧・推論強度は CLI キャッシュから取
 
 - **アーカイブ復元**：プロジェクト／タスクへの影響をプレビューしてからアーカイブ・復元できます。強制アーカイブはブランチと元の作業コピーの復元スナップショットを保持し、未追跡・ignored・秘密ファイルと削除状態も保存します。復元は worktree を再作成し、既存の保存先を上書きしません。`.yumeewade/recovery/` は非公開資料であり、公開 Git バックアップや外部メインフォルダー全体のバックアップではありません。
   復元が成功した世代は保持領域へ移し、後のアーカイブには再適用しません。元のデータは残し、後からマージした内容を上書きしません。
-- **エディター**：メイン／作業コピーの構文色分けと原子的保存。読み取り時の `revision` が必要で、外部変更は競合、実行中は保存拒否です。定義・参照・診断はネイティブ stdio LSP。インストール済み TypeScript 7 の `tsc --lsp -stdio` を TS／JS に使用し、server 不在は利用不可と表示します。`YUMEEWADE_LSP_COMMANDS` は languageId → argv 配列の JSON（例 `{"python":["pylsp"]}`）。信頼できるローカル server を用意し、shell 経由では実行しません。
+  checkout を伴う復元は保存済み信頼と現在の root を満たす必要があり、拒否時は台帳復元をロールバックします。アーカイブ済みプロジェクトを自動で信頼しません。checkout のない直接タスクの台帳復元は利用できます。
+- **編集ワークベンチ**：最大50文書、2分割表示、構文色分けと revision 検証付き原子的保存。外部変更には明示的な基底更新が必要で、実行中は保存を拒否します。未保存テキスト、カーソル／スクロール位置を workspace／メイン／タスク root ごとに分離し、合計4 MiB以内で復元します。ファイル／フォルダー作成・名前変更・削除、有界 literal 検索、プレビュー後の置換は範囲と revision を検証します。ネイティブ stdio LSP は定義、参照、補完、hover、rename、整形、code actions、プロジェクト Problems に対応し、行範囲／検索結果を背景へ固定できます。インストール済み TypeScript 7 `tsc --lsp -stdio` を TS／JS に使用し、不在は利用不可と表示します。`YUMEEWADE_LSP_COMMANDS` は languageId → 信頼するローカル argv 配列の JSON（例 `{"python":["pylsp"]}`）で、shell は使いません。
+  復元形式 v3 は未変更タブを含む全開文書のメタデータ、両ペインのパス、フォーカス、ペイン別カーソル選択／スクロールも保持します。rename／format／code actions の workspace edits は保存済み snapshot が必要です。dirty 文書を先に保存しなければ `editor_conflict` を返します。
   隔離コピーの作成前や削除後はメインフォルダーを読み取り専用で閲覧・言語ナビゲーションできますが、そのタスクからメインへの保存は拒否します。
-- **本機実行**：command＋args を起動し stdout／stderr、終了コード、切り詰め、プロセスツリー停止を提供します。App 内は非対話パイプで、**内蔵 PTY ではありません**。対話プログラムはシステム端末（macOS Terminal、Windows Terminal、Linux `x-terminal-emulator`）で実行し、App は出力やライフサイクルを管理しません。プレビューは明示 port 付き loopback HTTP(S) のみ。Node Inspector は loopback のランダム port に bind し、ブラウザー DevTools／外部 IDE で接続します。汎用 App 内 debugger ではありません。
+- **本機実行**：名前付き command／args／kind／cwd／env 設定を永続化し、有界 stdout／stderr、終了コードとプロセスツリー停止を提供します。内蔵端末は実際の `node-pty`、ANSI 表示、入力／resize／stop、POST body のみの owner capability、切断5分後の回収に対応します。システム端末連携も残し、その出力／ライフサイクルは App 管理外です。プレビューは明示 port 付き loopback HTTP(S) のみ。内蔵 Node Inspector は App 自身が起動した loopback debug プロセスだけに接続し、breakpoint、stack、variables、pause／resume／step と有界リクエストを提供します。任意の遠隔 DAP や無制限 evaluate ではなく、ブラウザー DevTools／外部 IDE 連携も利用できます。
   - 実行上限：command／debug は 10 分、preview は 24 時間、出力末尾は最大 256 KiB／1024 イベント。同時数は `limits.concurrentRuns`。AI の `limits.runSeconds` とは別で、システム端末は管理対象外です。
 - **統合設定**：`config.yaml` の `execution.ide`／`terminal`／`browser` は `{command, args}`、argv 内で `{cwd}`／`{url}`／`{command}` を置換します。IDE フォルダーには `{cwd}`、IDE debug には `{url}` が必要。カスタム端末には `{cwd}`、コマンド指定時には `{command}` も必要です。外部ツールは自分でインストールし、指示は自分の権限で実行します。
-- **Git**：status／PR 状態、ファイル単位 stage／unstage、競合解決マーク、commit、fetch、branch 作成・切り替え。Push は明示確認必須、force 禁止。PR 作成は確認とログイン済み `gh` が必要です。自動 push／PR は行わず、fetch／push／PR は外部通信です。
+- **Git**：status／PR 状態、staged diff、実際の revision に結び付いたファイル／hunk／選択行 stage／unstage、base／ours／theirs 3方向競合表示と手動マージ文、commit、fetch、branch 操作。手動 commit は既定で hooks を実行し、bypass は明示確認が必要です。Push は確認必須・force 禁止、PR は確認とログイン済み `gh` が必要です。自動 push／PR は行わず、fetch／push／PR は外部通信です。
 - **独立した読み取り専用審査**：書き込み session／full-access 旗標を流用しません。Codex は Darwin／Linux のみネイティブ read-only sandbox、Claude は Read／Glob／Grep のみの **CLI ツールポリシーで、OS sandbox ではありません**。Grok／Gemini や有効な制限設定のない provider は明確に拒否し、プロンプトだけを隔離保証にしません。CLI 自体は信頼するローカルプログラムです。
-- **役割／workflow**：役割が選んだ主 CLI が開始前に利用不可の場合のみ、明示 backup を選択します。手動指定は回避せず、実行失敗後に別 AI で再試行しません。永続 workflow は依存タスク、役割・審査ステップ、人間の関門に対応し、依存は完了と人間の承認が必要。再起動後は中断状態で停止し、許可を自動更新しません。
+  構造化 `schema:1` JSON 審査は内容／HEAD に結び付く snapshot と、重大度・証拠・ライフサイクル履歴付き findings を保存します。手動 resolved／dismissed は証拠必須で、AI 承認を作りません。任意のマージ関門は現在の内容への明示承認と未解決重大指摘なしを要求します。
+- **役割／workflow**：役割が選んだ主 CLI が開始前に利用不可の場合だけ明示 backup を選びます。手動指定は回避せず、実行失敗後に AI を切り替えません。永続 workflow は依存、役割／審査ステップ、人間の関門に対応し、人工証拠は空でない文字列です。ステップ再実行は過去の試行を残して当該／後続の checkpoint を無効化します。タスク比較は2つの実際の作業ツリーから有界ファイル／内容差分を表示します。依存は完了と人工承認が必要で、再起動後は停止し許可を自動更新しません。
 - **見える背景／草稿**：固定決定、指定ファイル行範囲、引き継ぎプレビューで出典と切り詰めを確認できます。背景は今回の許可ではありません。画像と行コメント草稿は永続化し、コメントは diff hash に結び付け、差分変更後は古い状態として扱い、黙って送信しません。
-- **健康／バックアップ／診断**：既定はローカル検査のみ、外部ネットワーク検査は opt-in。非公開バックアップは台帳、会話、添付、Git／worktree、復元資料やプロジェクトの秘密を含み、**暗号化共有パッケージではありません**。App 認証庫／CLI アカウントは除外し、復元後は再ログインが必要。外部メインフォルダーは opt-in で完全化し、`complete:false` は復元不可。新規保存先のみ復元し、fingerprint と worktree 関連を検査・変更、元を上書きしません。linked repo／alternates など不完全な repository family は拒否します。診断は許可欄位のみで、パス、会話、ファイル内容、token、任意ログを除外します。
-- **成果物 CI**：ビルド後に実際のインストール／展開済み dmg／zip、NSIS／portable、deb／AppImage を隔離設定・keyring で起動してから upload します。CI 設定の説明であり、今回の全プラットフォーム成功証拠や正式署名・公証を意味しません。
+- **健康／バックアップ／診断**：既定はローカル検査のみ。非公開バックアップは台帳、会話、添付、Git／worktree、復元資料やプロジェクトの秘密を含みますが、App 認証庫／CLI アカウントは除外し、復元後は再ログインが必要です。一覧は bytes、正確な ID での削除、検証済み完全バックアップの保持整理に対応し、workspace ごとのスケジュールは既定で無効です。外部メインは opt-in、不完全または非対応 linked／alternates repo は復元不可。fingerprint 検証と worktree 関連変更後、新規保存先だけに復元します。可搬エクスポートは AES-256-GCM／scrypt でストリーム暗号化し、展開前にパスワード／完全性を検証します。プロジェクトの秘密は含みますが App アカウント認証は同梱しません。診断はパス、会話、内容、token、任意ログを除外します。
+- **使用量／予算**：永続履歴は provider が実際に報告した既知の tokens、Codex credits、Claude USD だけを記録し、単位混算や残高差による推測はしません。未知はゼロではありません。project／task／AI／account scope の閾値、残り利用枠、クラウド点数期限の警告を各新規ターン／workflow ステップで確認します。継続には scope に結び付いた5分間・一度限りの人工 acknowledgment が必要で、請求の強制上限を保証しません。
+- **プロジェクト信頼**：`unreviewed` は全体の権限既定を維持し、`trusted` は次のターン向け AI 別 override を許可します。`restricted` は新規 AI、検証、実行／端末、Git 読み書き、タスク差分／マージプレビュー、アーカイブプレビュー／アーカイブ、LSP 起動を拒否し、承認済み root の変更は再承認が必要です。Git diff は ext-diff／textconv を無効にしても repository の `filter.clean` を実行し得るため、Git 閲覧にも信頼承認が必要です。停止、ファイル閲覧、通常の文書編集は可能です。OS user、root、cwd、追加ディレクトリーを表示しますが、**OS sandbox ではありません**。
+- **更新**：allowlist release のダウンロードを SHA256 で検証しますが、完全性は発行者の信頼性ではありません。macOS／Windows の明示的インストーラー起動には独立固定鍵の Ed25519 manifest 署名とネイティブ発行者検証（Team ID／証明書 thumbprint）も必要です。Linux／portable はファイル表示のみです。
+- **成果物 CI**：ビルド後に実際のインストール／展開済み dmg／zip、NSIS／portable、deb／AppImage を隔離設定・keyring で起動し、ネイティブ PTY の TTY／入力／resize 検証も行ってから upload します。CI 設定の説明であり、今回の全プラットフォーム成功証拠や正式署名・公証を意味しません。
 
 ## アーキテクチャ
 
@@ -104,7 +110,8 @@ npm run desktop      # 桌面版（開發機）
 - 新規プロジェクトには `templates/project/` から `.ai/rules.md`（AI の作業ルール）、`.ai/memory/INDEX.md`、`CLAUDE.md`、`AGENTS.md` をコピーします。テンプレートは自由に変更できます。
 - アーカイブは削除ではありません。タスクは `Projects/{專案}/.ai/trash/`、プロジェクトは `Projects/.trash/` に移動します。
 - 開発モード：`npm run dev`（tsc／vite watch、コアは自動再起動）。
-- 現在のプラットフォーム向けの未署名成果物を作成：`npm run dist` → `release/`。リリース成果物は GitHub Actions（`.github/workflows/build.yml`）で3つのプラットフォームそれぞれでビルドします。成果物は未署名・未公証です。macOS では初回起動時に「システム設定 → プライバシーとセキュリティ」で許可し、Windows では「実行」をクリックする必要があります。
+- 現在のプラットフォームをパッケージ化：`npm run dist` → `release/`。CI は任意のプラットフォーム署名／公証・manifest 署名認証を利用できますが、今回は未提供のため ad-hoc／unsigned で、公式発行者署名を主張しません。3プラットフォーム向け workflow は今回の新たな全平台成功証拠ではありません。
+- `node-pty@1.1.0` は唯一承認された追加ランタイム依存です。インストール／ビルド時の `npm run prepare:pty` がパッケージ前に Darwin helper の実行権限を準備し、署名済み App を runtime chmod しません。承認済みローカル `sprintf-js@1.1.3` precision guard は正確なソース SHA256、原子的・冪等修正、変更時 fail closed（`npm run patch:build-deps`）を使用します。上流 advisory は未解決で、`npm audit` 解消は主張しません。
 
 ## `config.yaml`
 
