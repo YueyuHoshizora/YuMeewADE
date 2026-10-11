@@ -48,6 +48,7 @@ export const de: Record<MessageKey, string> = {
   'connection.reconnecting': 'Verbindung zum Kern getrennt. Erneute Verbindung…',
   'usage.region': 'Kontingent und Ausgabegeschwindigkeit', 'usage.none': 'Noch keine Kontingentdaten; Aktualisierung nach der nächsten Anweisung', 'usage.quotaAt': 'Kontingentdaten von {at}', 'usage.window': '{label}-Fenster: {percent} verbraucht, Zurücksetzung {reset}', 'usage.windowNoReset': '{label}-Fenster: {percent} verbraucht', 'usage.windowReset': '{label}-Fenster wurde um {reset} zurückgesetzt; warte auf die nächste Meldung', 'usage.limited': 'Limit erreicht',
   'usage.alertTitle': 'Kontingenthinweis', 'usage.alertFull': 'Das Kontingent von {ai} ist aufgebraucht ({windows}); Zurücksetzung {reset}', 'usage.alertFullNoReset': 'Das Kontingent von {ai} ist aufgebraucht ({windows})', 'usage.alertRecovered': 'Das Kontingent von {ai} ist wieder verfügbar; es kann weitergehen',
+  'usage.alertLow': 'Das Kontingent von {ai} liegt unter {threshold}% ({windows}, noch {remaining}%)', 'usage.alertSoon': 'Das Kontingent von {ai} ist in {minutes} Min. wieder verfügbar ({reset})',
   'tree.search': 'Projekte und Aufgaben suchen…',
   'settings.enterToSend': 'Enter sendet, Shift+Enter fügt eine neue Zeile ein', 'chat.placeholderEnter': 'Anweisungen schreiben… (Enter sendet, Shift+Enter für neue Zeile)', 'chat.hintEnter': 'Enter sendet, Shift+Enter für neue Zeile', 'chat.hintModifier': '⌘ / Ctrl + Enter zum Senden',
   'markdown.copy': 'Code kopieren', 'markdown.copied': 'Kopiert', 'markdown.copyFailed': 'Kopieren fehlgeschlagen',

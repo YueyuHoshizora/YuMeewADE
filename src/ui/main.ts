@@ -3,7 +3,7 @@ import { api } from './api.ts';
 import { getLocale, t } from './i18n/index.ts';
 import { button, el, link, readLocal, run, showError, taskHash, toast, type View, type ViewContext } from './components/dom.ts';
 import { aiLabel, localTime, quotaLabel } from './components/display.ts';
-import { quotaAlerts } from './components/quota-alert.ts';
+import { quotaAlerts, quotaCountdowns, type QuotaAlert } from './components/quota-alert.ts';
 import { needsReply, tree } from './components/tree.ts';
 import { newProjectView, projectView } from './views/projects.ts';
 import { taskView } from './views/task.ts';
@@ -29,26 +29,30 @@ function notify(previous: AppState | null, next: AppState): void {
   }
 }
 
-/** 額度剛用滿或剛恢復：一律彈出提示；視窗不在前景時另發系統通知（與完成通知共用開關）。 */
-function announceQuota(next: UsageState): void {
-  const alerts = quotaAlerts(usage, next);
+/** 額度低於 20%／10%、用滿、恢復前 5／1 分鐘與恢復：一律彈出文字提示；視窗不在前景時另發系統通知（與完成通知共用開關）。 */
+const firedCountdowns = new Set<string>();
+function deliverQuota(alerts: QuotaAlert[]): void {
   const messages: string[] = [];
   for (const alert of alerts) {
     const account = state?.settings.accounts[alert.ai]?.find(entry => entry.id === alert.account);
     const ai = `${aiLabel(alert.ai)} · ${account?.name ?? t('usage.defaultAccount')}`;
     const windows = alert.windows.map(quotaLabel).join('/') || t('usage.limited');
+    const reset = alert.resetsAt ? localTime(alert.resetsAt) : '';
     const message = alert.kind === 'recovered' ? t('usage.alertRecovered', { ai })
-      : alert.resetsAt ? t('usage.alertFull', { ai, windows, reset: localTime(alert.resetsAt) })
-        : t('usage.alertFullNoReset', { ai, windows });
+      : alert.kind === 'low' ? t('usage.alertLow', { ai, windows, threshold: alert.threshold ?? 20, remaining: alert.remaining ?? 0 })
+        : alert.kind === 'soon' ? t('usage.alertSoon', { ai, minutes: alert.minutes ?? 1, reset })
+          : alert.resetsAt ? t('usage.alertFull', { ai, windows, reset })
+            : t('usage.alertFullNoReset', { ai, windows });
     messages.push(message);
     if (!readLocal('yumeewade.notifications', true) || !('Notification' in window) || Notification.permission !== 'granted' || (!document.hidden && document.hasFocus())) continue;
     try {
-      const notice = new Notification(t('usage.alertTitle'), { body: message, tag: `quota-${alert.ai}-${alert.account}` });
+      const notice = new Notification(t('usage.alertTitle'), { body: message, tag: `quota-${alert.ai}-${alert.account}-${alert.kind}${alert.threshold ?? alert.minutes ?? ''}` });
       notice.onclick = () => { window.yumeewade?.focus?.(); window.focus(); if (state) openUsageDetails(() => state!, () => usage, refresh, alert.ai); notice.close(); };
     } catch { /* 系統通知不可用時，畫面內提示仍會顯示。 */ }
   }
   if (messages.length) toast(messages.join('\n'));
 }
+function announceQuota(next: UsageState): void { deliverQuota(quotaAlerts(usage, next)); }
 
 function drawShell(): void {
   if (!state) return;
@@ -114,6 +118,7 @@ window.addEventListener('keydown', event => {
 });
 window.addEventListener('focus', () => { void refresh(); });
 window.setInterval(() => { void refresh(); }, 15_000);
+window.setInterval(() => { deliverQuota(quotaCountdowns(usage, Date.now(), firedCountdowns)); }, 15_000);
 const events = stream('/api/events', {
   changed: () => { window.clearTimeout(debounce); debounce = window.setTimeout(() => { void refresh(); }, 150); },
   usage: event => { const next = JSON.parse(event.data) as UsageState; announceQuota(next); usage = next; drawFooter(); },

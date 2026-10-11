@@ -93,7 +93,7 @@ export const DEFAULT_CONFIG: Config = {
     verifySeconds: 600,
     verifyOutputBytes: 65_536,
     runSeconds: 7_200,
-    usagePollSeconds: 300,
+    usagePollSeconds: 60,
   },
   source: null,
 };

@@ -48,6 +48,7 @@ export const it: Record<MessageKey, string> = {
   'connection.reconnecting': 'Connessione al nucleo interrotta. Riconnessione…',
   'usage.region': 'Quota dell’account e velocità di output', 'usage.none': 'Nessun dato di quota; si aggiorna dopo la prossima istruzione', 'usage.quotaAt': 'Dati di quota delle {at}', 'usage.window': 'Finestra {label}: {percent} usato, azzeramento {reset}', 'usage.windowNoReset': 'Finestra {label}: {percent} usato', 'usage.windowReset': 'Finestra {label} azzerata alle {reset}; in attesa del prossimo rilevamento', 'usage.limited': 'Limite raggiunto',
   'usage.alertTitle': 'Avviso quota', 'usage.alertFull': 'La quota di {ai} è esaurita ({windows}); azzeramento {reset}', 'usage.alertFullNoReset': 'La quota di {ai} è esaurita ({windows})', 'usage.alertRecovered': 'La quota di {ai} è tornata disponibile; puoi continuare',
+  'usage.alertLow': 'La quota di {ai} è sotto il {threshold}% ({windows}, resta il {remaining}%)', 'usage.alertSoon': 'La quota di {ai} tornerà disponibile entro {minutes} min ({reset})',
   'tree.search': 'Cerca progetti e attività…',
   'settings.enterToSend': 'Invio per inviare, Maiusc+Invio per andare a capo', 'chat.placeholderEnter': 'Scrivi le istruzioni… (Invio per inviare, Maiusc+Invio per andare a capo)', 'chat.hintEnter': 'Invio per inviare, Maiusc+Invio per andare a capo', 'chat.hintModifier': '⌘ / Ctrl + Invio per inviare',
   'markdown.copy': 'Copia codice', 'markdown.copied': 'Copiato', 'markdown.copyFailed': 'Copia non riuscita',

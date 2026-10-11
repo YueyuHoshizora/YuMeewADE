@@ -48,6 +48,7 @@ export const fr: Record<MessageKey, string> = {
   'connection.reconnecting': 'Connexion au cœur perdue. Reconnexion…',
   'usage.region': 'Quota du compte et vitesse de sortie', 'usage.none': 'Aucune donnée de quota ; mise à jour après la prochaine instruction', 'usage.quotaAt': 'Données de quota de {at}', 'usage.window': 'Fenêtre {label} : {percent} utilisé, réinitialisation {reset}', 'usage.windowNoReset': 'Fenêtre {label} : {percent} utilisé', 'usage.windowReset': 'Fenêtre {label} réinitialisée à {reset} ; en attente du prochain relevé', 'usage.limited': 'Limite atteinte',
   'usage.alertTitle': 'Alerte de quota', 'usage.alertFull': 'Le quota de {ai} est épuisé ({windows}) ; réinitialisation {reset}', 'usage.alertFullNoReset': 'Le quota de {ai} est épuisé ({windows})', 'usage.alertRecovered': 'Le quota de {ai} est rétabli ; vous pouvez continuer',
+  'usage.alertLow': 'Le quota de {ai} est sous {threshold} % ({windows}, {remaining} % restant)', 'usage.alertSoon': 'Le quota de {ai} sera rétabli dans {minutes} min ({reset})',
   'tree.search': 'Rechercher des projets et tâches…',
   'settings.enterToSend': 'Entrée pour envoyer, Maj+Entrée pour un saut de ligne', 'chat.placeholderEnter': 'Écrivez vos instructions… (Entrée pour envoyer, Maj+Entrée pour un saut de ligne)', 'chat.hintEnter': 'Entrée pour envoyer, Maj+Entrée pour un saut de ligne', 'chat.hintModifier': '⌘ / Ctrl + Entrée pour envoyer',
   'markdown.copy': 'Copier le code', 'markdown.copied': 'Copié', 'markdown.copyFailed': 'Échec de la copie',
