@@ -1,4 +1,4 @@
-import { CREDITS_UNIT, type AppState, type ExtraUsage } from '../../shared/types.ts';
+import { CREDITS_UNIT, type AppState, type CloudCredits, type ExtraUsage } from '../../shared/types.ts';
 import { getLocale, t } from '../i18n/index.ts';
 import type { MessageKey } from '../i18n/zh-TW.ts';
 
@@ -32,6 +32,12 @@ export function extraUsageLabel(extra: ExtraUsage): string {
     return money.format(value / 10 ** (money.resolvedOptions().maximumFractionDigits ?? 2));
   };
   return `${title} · ${extra.unlimited ? t('usage.extraUnlimited') : t('usage.extraBalance', { amount: format(extra.balance) })}`;
+}
+/** 雲端工作階段點數的一行文字：餘額（美元）＋到期時間。 */
+export function cloudCreditsLabel(credits: CloudCredits): string {
+  const amount = new Intl.NumberFormat(getLocale(), { style: 'currency', currency: 'USD' }).format(credits.balance / 100);
+  const expires = credits.expiresAt ? ` · ${t('usage.cloudExpires', { at: localDateTime(credits.expiresAt) })}` : '';
+  return `${t('usage.cloudTitle')} · ${t('usage.extraBalance', { amount })}${expires}`;
 }
 export function quotaLabel(label: string): string {
   switch (label) {

@@ -23,7 +23,7 @@ export const fr: Record<MessageKey, string> = {
   'update.notice': 'YuMeewADE v{version} est disponible',
   'usage.codexReset': 'Réinitialisation prévue le {at}',
   'usage.codexResetNotice': 'Codex : réinitialisation prévue le {at}',
-  'usage.extraTitle': 'Utilisation supplémentaire', 'usage.extraUnlimited': 'illimitée', 'usage.extraBalance': 'solde {amount}', 'usage.extraCredits': '{amount} crédits',
+  'usage.extraTitle': 'Utilisation supplémentaire', 'usage.extraUnlimited': 'illimitée', 'usage.extraBalance': 'solde {amount}', 'usage.extraCredits': '{amount} crédits', 'usage.cloudTitle': 'Crédits de session cloud', 'usage.cloudExpires': 'expire le {at}',
   'usage.resetCredits': '{count} crédit(s) de réinitialisation', 'usage.resetCreditDefault': 'Crédit de réinitialisation', 'usage.resetCreditExpires': '{title} · expire le {expires}', 'usage.resetCreditNoExpiry': '{title} · sans expiration',
   'usage.weeklyCredits': 'Crédits hebdomadaires', 'usage.monthlyCredits': 'Crédits mensuels', 'usage.credits': 'Crédits', 'usage.onDemand': 'À la demande', 'usage.remaining': '{percent}% restants',
   'usage.averageSpeed': '{speed} tok/s moy.', 'usage.measuredSpeed': 'Total des tokens de sortie réels récemment signalés par la CLI divisé par l’union des intervalles mesurés ; mesures conservées 4 secondes. — signifie aucune mesure, pas une vitesse de génération en direct. Claude mesure chaque message séparément, y compris les sous-agents entrelacés, et conserve les messages successifs. Codex/Grok utilisent le tour complet, attente et outils compris. Gemini cumule les instantanés d’étapes terminées : une répétition ne compte pas deux fois, une correction remplace la valeur précédente. Inclut la réflexion signalée par la CLI, sans estimation.',

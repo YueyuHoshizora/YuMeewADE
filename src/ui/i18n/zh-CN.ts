@@ -23,7 +23,7 @@ export const zhCN: Record<MessageKey, string> = {
   'update.notice': 'YuMeewADE v{version} 已发布，可以更新',
   'usage.codexReset': '预计重置于 {at}',
   'usage.codexResetNotice': 'Codex 预计重置于 {at}',
-  'usage.extraTitle': '额外使用额度', 'usage.extraUnlimited': '无上限', 'usage.extraBalance': '余额 {amount}', 'usage.extraCredits': '{amount} 点',
+  'usage.extraTitle': '额外使用额度', 'usage.extraUnlimited': '无上限', 'usage.extraBalance': '余额 {amount}', 'usage.extraCredits': '{amount} 点', 'usage.cloudTitle': '云端会话点数', 'usage.cloudExpires': '{at} 到期',
   'usage.resetCredits': '重置券 {count} 张', 'usage.resetCreditDefault': '重置券', 'usage.resetCreditExpires': '{title} · {expires} 到期', 'usage.resetCreditNoExpiry': '{title} · 不会到期',
   'usage.weeklyCredits': '每周额度', 'usage.monthlyCredits': '每月额度', 'usage.credits': '额度', 'usage.onDemand': '按量付费', 'usage.remaining': '剩余 {percent}%',
   'usage.averageSpeed': '{speed} 平均 tok/s', 'usage.measuredSpeed': '最近 CLI 回报的实际输出 token 总数除以测量时间区间的并集，测量保留 4 秒；没有测量时显示 —，不是实时生成速度。Claude 每条消息（含子代理）各自计时，连续消息分开保留；Codex／Grok 按完整回合（含等待与工具）；Gemini 以完成步骤快照累计，同一步骤重播不重复计算、修正值取代旧值。包含 CLI 回报的思考用量，不做估算。',

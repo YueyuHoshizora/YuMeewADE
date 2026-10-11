@@ -23,7 +23,7 @@ export const en: Record<MessageKey, string> = {
   'update.notice': 'YuMeewADE v{version} is available',
   'usage.codexReset': 'Expected reset at {at}',
   'usage.codexResetNotice': 'Codex expected reset at {at}',
-  'usage.extraTitle': 'Extra usage', 'usage.extraUnlimited': 'unlimited', 'usage.extraBalance': 'balance {amount}', 'usage.extraCredits': '{amount} credits',
+  'usage.extraTitle': 'Extra usage', 'usage.extraUnlimited': 'unlimited', 'usage.extraBalance': 'balance {amount}', 'usage.extraCredits': '{amount} credits', 'usage.cloudTitle': 'Cloud session credits', 'usage.cloudExpires': 'expires {at}',
   'usage.resetCredits': '{count} reset credit(s)', 'usage.resetCreditDefault': 'Reset credit', 'usage.resetCreditExpires': '{title} · expires {expires}', 'usage.resetCreditNoExpiry': '{title} · does not expire',
   'usage.weeklyCredits': 'Weekly credits', 'usage.monthlyCredits': 'Monthly credits', 'usage.credits': 'Credits', 'usage.onDemand': 'On demand', 'usage.remaining': '{percent}% remaining',
   'usage.averageSpeed': '{speed} avg tok/s', 'usage.measuredSpeed': 'Recent actual CLI output token totals divided by the union of measured time intervals; measurements retained for 4 seconds. — means no measurement, not live generation speed. Claude times each message separately, including interleaved subagent streams, and keeps consecutive messages. Codex/Grok use the whole turn, including waits and tools. Gemini accumulates completed step snapshots: a replay does not double-count, and a correction replaces the previous value. Includes CLI-reported thinking usage, without estimates.',

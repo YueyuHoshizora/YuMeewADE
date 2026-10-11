@@ -60,7 +60,8 @@ export class UsageBoard {
     if (current?.quotaAt && Date.parse(ev.at) < Date.parse(current.quotaAt)) return;
     const resetCredits = ev.resetCredits ?? current?.resetCredits;
     const extraUsage = ev.extraUsage ?? current?.extraUsage;
-    this.items.set(key, { ai, account, status: 'ready', windows: ev.windows, limited: ev.limited, quotaAt: ev.at, ...(ev.prepaidCents !== undefined ? { prepaidCents: ev.prepaidCents } : {}), ...(resetCredits ? { resetCredits } : {}), ...(extraUsage ? { extraUsage } : {}) });
+    const cloudCredits = ev.cloudCredits ?? current?.cloudCredits;
+    this.items.set(key, { ai, account, status: 'ready', windows: ev.windows, limited: ev.limited, quotaAt: ev.at, ...(ev.prepaidCents !== undefined ? { prepaidCents: ev.prepaidCents } : {}), ...(resetCredits ? { resetCredits } : {}), ...(extraUsage ? { extraUsage } : {}), ...(cloudCredits ? { cloudCredits } : {}) });
     this.onChange(this.snapshot());
   }
 

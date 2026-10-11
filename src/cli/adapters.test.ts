@@ -2,7 +2,7 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import { DEFAULT_CONFIG } from '../shared/config.ts';
-import { ClaudeCliProvider, claudeArgs, claudeExtraUsage, claudeOauthQuota, claudeQuota, claudeResetCredits, createClaudeParser, fetchClaudeQuota } from './claude.ts';
+import { ClaudeCliProvider, claudeArgs, claudeCloudCredits, claudeExtraUsage, claudeOauthQuota, claudeQuota, claudeResetCredits, createClaudeParser, fetchClaudeQuota } from './claude.ts';
 import { CodexCliProvider, codexAppServerQuota, codexArgs, codexExtraUsage, codexQuota, createCodexParser, fetchCodexQuota, readCodexQuota } from './codex.ts';
 import { captureCommand, redactArgs } from './process.ts';
 import { MockCliProvider } from './mock.ts';
@@ -539,6 +539,14 @@ test('Claude extra_usage：餘額＝月上限－已用，缺幣別預設 USD，�
   assert.equal(claudeExtraUsage({ extra_usage: { is_enabled: false, monthly_limit: 5000, used_credits: 0 } })?.balance, 0);
   for (const none of [{ extra_usage: null }, {}]) assert.deepEqual(claudeExtraUsage(none), { unlimited: false, currency: 'USD', balance: 0 });
   for (const bad of [{ extra_usage: { monthly_limit: 1 } }, { extra_usage: 5 }, null]) assert.equal(claudeExtraUsage(bad), undefined);
+});
+
+test('Claude 雲端工作階段點數：remaining_dollars 換成 cents，resets_at 是到期時間；沒有／已到期為 $0 且無到期，格式錯誤忽略', () => {
+  const live = { iguana_necktie: { utilization: 0, resets_at: '2026-11-05T07:59:00+00:00', limit_dollars: 250, used_dollars: 12.34, remaining_dollars: 237.66 } };
+  assert.deepEqual(claudeCloudCredits(live, Date.parse('2026-10-11T00:00:00Z')), { balance: 23766, expiresAt: '2026-11-05T07:59:00.000Z' });
+  assert.deepEqual(claudeCloudCredits(live, Date.parse('2026-11-06T00:00:00Z')), { balance: 0, expiresAt: null });
+  for (const none of [{ iguana_necktie: null }, {}]) assert.deepEqual(claudeCloudCredits(none), { balance: 0, expiresAt: null });
+  for (const bad of [{ iguana_necktie: { resets_at: 'x' } }, { iguana_necktie: 5 }, null]) assert.equal(claudeCloudCredits(bad), undefined);
 });
 
 test('Codex credits：balance 是點數的十進位字串（單位 credits，不換算），沒有數字的餘額視為 0', () => {

@@ -237,6 +237,12 @@ export interface ExtraUsage {
   balance: number;
 }
 
+/** Claude 雲端工作階段的限期點數餘額；美元 cents；未獲配或已過期時 expiresAt 為 null。 */
+export interface CloudCredits {
+  balance: number;
+  expiresAt: string | null;
+}
+
 /** 各 AI 帳號的額度；只在記憶體，核心重啟後等下一次回報。 */
 export interface AiUsage {
   ai: string;
@@ -255,6 +261,8 @@ export interface AiUsage {
   resetCredits?: ResetCredits;
   /** 後端明確回報的額外使用額度；沒有回報為 undefined。 */
   extraUsage?: ExtraUsage;
+  /** Claude 的雲端工作階段點數；沒有回報為 undefined。 */
+  cloudCredits?: CloudCredits;
 }
 
 export interface UsageState {
