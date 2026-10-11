@@ -218,7 +218,18 @@ export class GitWorkbench {
   }
   private async fileDiff(root: string, relative: string, staged: boolean): Promise<GitFileDiff> {
     await this.safePath(root, relative);
-    const before = await this.fingerprint(root, relative);
+    const before = await this.fingerprint(root, relative).catch((error: unknown) => {
+      if (error instanceof AppError && error.code === 'too_large') return '';
+      throw error;
+    });
+    if (!before) {
+      const untracked = !staged && (await this.files(root)).some(file => file.path === relative && file.untracked);
+      const result = await git(root, untracked
+        ? ['diff', '--no-index', '--no-ext-diff', '--no-textconv', '--', '/dev/null', relative]
+        : ['--literal-pathspecs', 'diff', '--no-ext-diff', '--no-textconv', '--no-renames', ...(staged ? ['--cached', '-R'] : []), '--', relative], { maxBytes: 1024 * 1024 });
+      if (result.code !== 0 && !(untracked && result.code === 1)) throw new AppError('conflict', 'git_failed');
+      return { path: relative, staged, fingerprint: '', patch: result.stdout, hunks: [], selectable: false };
+    }
     let patch = await this.command(root, ['diff', '--no-ext-diff', '--no-textconv', '--no-renames', '--unified=3', ...(staged ? ['--cached', '-R'] : []), '--', relative]);
     if (!staged && !patch && (await this.files(root)).some(file => file.path === relative && file.untracked)) {
       const result = await git(root, ['diff', '--no-index', '--no-ext-diff', '--no-textconv', '--', '/dev/null', relative], { maxBytes: 2 * 1024 * 1024 });
@@ -230,6 +241,51 @@ export class GitWorkbench {
   }
   async diff(project: string, task: string | undefined, relative: string, staged: boolean): Promise<GitFileDiff> {
     return this.locked(project, task, false, root => this.fileDiff(root, relative, staged));
+  }
+  async diffContents(project: string, task: string | undefined, relative: string, mode: string): Promise<{ before: string; after: string; truncated: boolean; binary: boolean }> {
+    if (!['working', 'staged', 'copy'].includes(mode) || mode === 'copy' && !task || relative.length > 1000) throw new AppError('bad_request');
+    return this.locked(project, task, false, async root => {
+      await this.safePath(root, relative);
+      const cap = 1024 * 1024;
+      let truncated = false;
+      const blob = async (ref: string | null): Promise<string> => {
+        const entries = split(await this.command(root, ref === null ? ['ls-files', '--stage', '-z', '--', relative] : ['ls-tree', '-z', ref, '--', relative]));
+        const entry = entries.find(item => item.slice(item.indexOf('\t') + 1) === relative && (ref !== null || /^[0-9]+ [a-f0-9]+ 0\t/.test(item)));
+        if (!entry) return '';
+        const match = /^(\d+) (?:blob )?([a-f0-9]+)/.exec(entry);
+        if (!match || !['100644', '100755'].includes(match[1]!)) throw new AppError('forbidden', 'git_workbench_path');
+        const size = Number((await this.command(root, ['cat-file', '-s', match[2]!])).trim());
+        if (size > cap) { truncated = true; return ''; }
+        const result = await git(root, ['cat-file', 'blob', match[2]!], { maxBytes: cap });
+        if (result.truncated) { truncated = true; return ''; }
+        if (result.code !== 0) throw new AppError('conflict', 'git_failed');
+        return result.stdout;
+      };
+      const working = async (): Promise<string> => {
+        const handle = await fs.open(path.join(root, relative), 'r').catch((error: NodeJS.ErrnoException) => { if (error.code === 'ENOENT') return null; throw error; });
+        if (!handle) return '';
+        try {
+          const stat = await handle.stat();
+          if (!stat.isFile()) throw new AppError('forbidden', 'git_workbench_path');
+          if (stat.size > cap) { truncated = true; return ''; }
+          const buffer = Buffer.alloc(cap + 1);
+          const { bytesRead } = await handle.read(buffer, 0, buffer.length, 0);
+          if (bytesRead > cap) { truncated = true; return ''; }
+          return buffer.subarray(0, bytesRead).toString('utf8');
+        } finally { await handle.close(); }
+      };
+      let before: string; let after: string;
+      if (mode === 'staged') {
+        before = await blob(null); after = await hasCommits(root) ? await blob('HEAD') : '';
+      } else if (mode === 'copy') {
+        const { main } = await this.location(project, task);
+        const head = (await this.command(root, ['rev-parse', 'HEAD'])).trim();
+        const base = (await this.command(main, ['merge-base', 'HEAD', head])).trim();
+        before = await blob(base); after = await working();
+      } else { before = await blob(null); after = await working(); }
+      const binary = before.includes('\0') || after.includes('\0');
+      return { before: truncated || binary ? '' : before, after: truncated || binary ? '' : after, truncated, binary };
+    });
   }
   async stageLines(project: string, task: string | undefined, relative: string, staged: boolean, fingerprint: string, lines: number[]): Promise<void> {
     return this.locked(project, task, true, async root => {

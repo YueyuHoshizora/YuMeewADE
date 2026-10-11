@@ -4,6 +4,7 @@ import { t } from '../i18n/index.ts';
 import { area, button, confirmModal, el, field, input, modal, row, select, toast, type ViewContext } from './dom.ts';
 import { taskComparisonButton } from './task-comparison.ts';
 import { githubPullRequestPanel } from './github.ts';
+import { sideDiff } from './side-diff.ts';
 
 export function gitWorkbenchButton(context: ViewContext, project: string, task?: string): HTMLElement {
   return button(t('workbench.title'), async () => {
@@ -37,7 +38,7 @@ export function gitWorkbenchButton(context: ViewContext, project: string, task?:
         content.closest('dialog')?.close();
       });
       apply.disabled = !diff.selectable;
-      modal(`${t(staged ? 'gitPrecision.reverseDiff' : 'gitPrecision.diff')}: ${path}`, content, apply);
+      modal(`${t(staged ? 'gitPrecision.reverseDiff' : 'gitPrecision.diff')}: ${path}`, sideDiff(content, { ...ids, path, mode: staged ? 'staged' : 'working' }), apply);
     };
     const refresh = async () => {
       const state = await request<GitWorkbenchStatus>(query('/api/git/status', ids));

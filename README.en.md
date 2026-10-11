@@ -55,6 +55,7 @@ Claude/Codex model lists and reasoning efforts come from their own caches, with 
 ## IDE, recovery and maintenance
 
 - **Git history**: the workbench provides paginated graph and file history, commit metadata/files/diffs and line blame; secret and out-of-scope paths are refused.
+- **Side-by-side diff**: task copies and Git file diffs offer read-only CodeMirror comparison with syntax highlighting, collapsed unchanged regions and synchronized scrolling. The preference persists; binary files or either version above 1 MiB retain unified diff. Use unified view for line reviews/staging.
 - **Stash/rebase**: save optionally untracked files, apply/pop/confirmed drop; conflicting cherry-picks abort automatically. Rebase refuses dirty trees and supports three-way resolution followed by continue/abort, never force-push.
 - **Command palette**: ⌘/Ctrl+Shift+P fuzzy-filters projects, tasks and available actions; ↑↓ selects, Enter runs, Esc closes. Change language/appearance, open scoped files/Git tools, or stop all AI runs after confirmation.
 - **Go to file**: ⌘/Ctrl+P on project/task pages searches files (up to 50 results). Enter `path:line` to reveal a one-based line in the editor.
@@ -215,6 +216,7 @@ New route groups (exact requests/responses in [`src/http/routes/`](src/http/rout
 | Execution/integrations | `POST /api/execution/{start,stop,preview,ide,terminal,debug}`; `GET /api/execution/{list,output}` |
 | Git | `GET /api/git/{status,pr-status}`; `POST /api/git/{stage,unstage,resolve,commit,fetch,branch,push,pr}` |
 | Git history | `GET /api/git/{history,commit-detail,blame}` |
+| Git comparison contents | `GET /api/git/diff-contents` (project, task?, path, mode: copy/working/staged; staged uses the unstage direction) |
 | Git stash/rebase | `GET /api/git/stashes`; `POST /api/git/{stash,rewrite}` |
 | GitHub PR review | `GET /api/git/pr-review?project=...&task=...` (task optional) |
 | GitHub Issues | `GET /api/git/issues?project=...&search=...`, `GET /api/git/issue?project=...&number=...`; `POST /api/git/issue-task` (project, number, title) |

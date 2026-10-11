@@ -21,6 +21,7 @@ import { aiLabel, effortLabel, localTime, modelLabel } from '../components/displ
 import { shouldSend } from '../components/composer.ts';
 import { stream } from '../components/stream.ts';
 import { parseDiff, type DiffLine } from '../components/diff.ts';
+import { sideDiff } from '../components/side-diff.ts';
 import { buildReviewPrompt, type ReviewItem } from '../components/review.ts';
 import { openFileBrowser } from '../components/files.ts';
 import { attachComposeInsert, attachMention } from '../components/mention.ts';
@@ -655,8 +656,8 @@ export function taskView(
   }
   let previewSerial = 0;
   let mergeLeftover: string[] = [];
-  async function openDiff(focusPath = '', load: () => Promise<{ diff: string; truncated: boolean }> = () => api.diff(project.id, task.id)): Promise<void> {
-    const diff = await load();
+  async function openDiff(focusPath = '', load?: () => Promise<{ diff: string; truncated: boolean }>): Promise<void> {
+    const diff = await (load ? load() : api.diff(project.id, task.id));
     const viewer = el('div', 'diff-viewer');
     const savedReviews = await reviewDrafts(project.id, task.id, diff.diff);
     if (!alive) return;
@@ -721,7 +722,7 @@ export function taskView(
         content.append(row);
         if (line.oldLine !== undefined || line.newLine !== undefined) attachReview(row, file.path, line);
       }
-      section.append(content);
+      section.append(load ? content : sideDiff(content, { project: project.id, task: task.id, path: file.path, mode: 'copy' }));
       viewer.append(section);
       if (focusPath && file.path === focusPath) focused = section;
     }

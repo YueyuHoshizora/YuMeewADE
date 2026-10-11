@@ -1,0 +1,53 @@
+import assert from 'node:assert/strict';
+import { promises as fs } from 'node:fs';
+import path from 'node:path';
+import { test } from 'node:test';
+import { ProjectLedger } from '../ledger/projects.ts';
+import { TaskLedger } from '../ledger/tasks.ts';
+import { withTmpWorkspace } from '../testing/tmp.ts';
+import { commitAll, gitOk } from './git.ts';
+import { GitWorkbench } from './workbench.ts';
+import { WorktreeService } from './worktree.ts';
+
+test('side diff reads index/worktree, reverse staged, missing files and copy merge-base', () => withTmpWorkspace(async ws => {
+  const projects = new ProjectLedger(ws); const tasks = new TaskLedger(ws);
+  await projects.create({ name: 'P' }); const root = ws.projectDir('P');
+  const file = path.join(root, 'file.ts');
+  await fs.writeFile(file, 'base\n'); await commitAll(root, 'base');
+  const service = new GitWorkbench({ ws, projects, tasks, isRunning: () => false });
+  await fs.writeFile(file, 'index\n'); await gitOk(root, ['add', '--', 'file.ts']); await fs.writeFile(file, 'working\n');
+  assert.deepEqual(await service.diffContents('P', undefined, 'file.ts', 'working'), { before: 'index\n', after: 'working\n', truncated: false, binary: false });
+  assert.deepEqual(await service.diffContents('P', undefined, 'file.ts', 'staged'), { before: 'index\n', after: 'base\n', truncated: false, binary: false });
+  await fs.rm(file);
+  assert.equal((await service.diffContents('P', undefined, 'file.ts', 'working')).after, '');
+  await fs.writeFile(path.join(root, 'new.txt'), 'new');
+  assert.deepEqual(await service.diffContents('P', undefined, 'new.txt', 'working'), { before: '', after: 'new', truncated: false, binary: false });
+  await gitOk(root, ['reset', '--hard', 'HEAD']);
+  const task = await tasks.create('P', { title: 'copy' });
+  const copies = new WorktreeService({ ws, projects, tasks, diffBytes: 100_000 }); const copy = await copies.prepare('P', task.id);
+  await fs.writeFile(path.join(copy, 'file.ts'), 'copy commit\n'); await commitAll(copy, 'copy');
+  await fs.writeFile(path.join(copy, 'file.ts'), 'copy working\n');
+  assert.deepEqual(await service.diffContents('P', task.id, 'file.ts', 'copy'), { before: 'base\n', after: 'copy working\n', truncated: false, binary: false });
+}));
+
+test('side diff caps either version, reports binary, rejects traversal/secrets/symlinks', () => withTmpWorkspace(async ws => {
+  const projects = new ProjectLedger(ws); const tasks = new TaskLedger(ws);
+  await projects.create({ name: 'P' }); const root = ws.projectDir('P');
+  const service = new GitWorkbench({ ws, projects, tasks, isRunning: () => false });
+  const file = path.join(root, 'large.txt');
+  await fs.writeFile(file, 'a'.repeat(1024 * 1024));
+  assert.equal((await service.diffContents('P', undefined, 'large.txt', 'working')).truncated, false);
+  await fs.appendFile(file, 'a');
+  assert.deepEqual(await service.diffContents('P', undefined, 'large.txt', 'working'), { before: '', after: '', truncated: true, binary: false });
+  const fallback = await service.diff('P', undefined, 'large.txt', false);
+  assert.equal(fallback.selectable, false);
+  assert.ok(Buffer.byteLength(fallback.patch) <= 1024 * 1024);
+  await commitAll(root, 'large'); await fs.writeFile(file, 'small');
+  assert.equal((await service.diffContents('P', undefined, 'large.txt', 'working')).truncated, true);
+  await fs.writeFile(path.join(root, 'binary'), Buffer.from([0, 1, 2]));
+  assert.deepEqual(await service.diffContents('P', undefined, 'binary', 'working'), { before: '', after: '', truncated: false, binary: true });
+  await fs.symlink(ws.root, path.join(root, 'escape'));
+  for (const relative of ['../outside', '/absolute', '.git/config', '.env', 'escape/file', 'escape', 'a\\b', 'a/../b']) await assert.rejects(service.diffContents('P', undefined, relative, 'working'));
+  await assert.rejects(service.diffContents('P', undefined, 'binary', 'unknown'));
+  await assert.rejects(service.diffContents('P', undefined, 'binary', 'copy'));
+}));

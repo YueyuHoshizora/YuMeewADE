@@ -33,6 +33,7 @@ export function registerWorkbenchRoutes(router: Router, app: App): void {
     return { task };
   });
   router.get('/api/git/diff', async ({ query }) => app.gitWorkbench.diff(reqString(query, 'project', 120), query.has('task') ? reqString(query, 'task', 120) : undefined, reqString(query, 'path', 1000), query.get('staged') === 'true'));
+  router.get('/api/git/diff-contents', async ({ query }) => app.gitWorkbench.diffContents(reqString(query, 'project', 120), query.has('task') ? reqString(query, 'task', 120) : undefined, reqString(query, 'path', 1000), reqString(query, 'mode', 20)));
   router.get('/api/git/conflict', async ({ query }) => app.gitWorkbench.conflict(reqString(query, 'project', 120), query.has('task') ? reqString(query, 'task', 120) : undefined, reqString(query, 'path', 1000)));
   router.get('/api/git/compare-options', async ({ query }) => (await app.tasks.list(reqString(query, 'project', 120))).filter(task => task.workdir || task.workspace === 'direct').map(task => ({ id: task.id, title: task.title })));
   router.get('/api/git/compare-tasks', async ({ query }) => app.gitWorkbench.compareTasks(reqString(query, 'project', 120), reqString(query, 'leftTask', 120), reqString(query, 'rightTask', 120)));

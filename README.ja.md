@@ -60,6 +60,7 @@ Claude／Codex のモデル一覧・推論強度は CLI キャッシュから取
 ## IDE・復元・メンテナンス
 
 - **Git 履歴**：ページ付きグラフとファイル履歴、コミット情報／ファイル／差分、行の blame を表示。秘密・範囲外パスは拒否します。
+- **左右差分**：作業コピーと Git ファイル差分に読み取り専用 CodeMirror 比較を追加。構文色分け、未変更領域の折りたたみ、同期スクロールと表示設定の保存に対応。バイナリや片方が 1 MiB 超の場合は統一差分を維持。行レビュー／ステージは統一表示で操作します。
 - **Stash／リベース**：未追跡ファイルも保存可能、適用／pop／確認削除。cherry-pick の競合は自動中止。リベースは dirty tree を拒否し、三者比較で解決後に続行・中止できます。強制 push は行いません。
 - **ツール承認**：Claude 安全モードでツール名、要約、一度だけ許可／拒否、任意のターン内許可を表示します。実行と引き継ぎ画面も承認待ちを表示します。既定120秒で拒否し、停止・やり直し・補足・終了・再起動で承認は残りません。ターン内許可は同名ツール全体への許可です。Codex exec／Grok single／agy print は既存の保護を維持し未対応を明示します。
 - **デスクトップウィンドウ復元**：位置、サイズ、最大化、全画面を userData に原子的に保存し、画面構成変更で画面外になったウィンドウを中央に戻します。
@@ -215,6 +216,7 @@ HTTP JSON と SSE を使い、デスクトップ版と Web 版で完全に共通
 | 実行／統合 | `POST /api/execution/{start,stop,preview,ide,terminal,debug}`；`GET /api/execution/{list,output}` |
 | Git | `GET /api/git/{status,pr-status}`；`POST /api/git/{stage,unstage,resolve,commit,fetch,branch,push,pr}` |
 | Git 履歴 | `GET /api/git/{history,commit-detail,blame}` |
+| Git 比較内容 | `GET /api/git/diff-contents`（project、task?、path、mode：copy／working／staged；staged はステージ解除方向） |
 | Git stash／リベース | `GET /api/git/stashes`；`POST /api/git/{stash,rewrite}` |
 | GitHub PR レビュー | `GET /api/git/pr-review?project=...&task=...`（task は省略可能） |
 | GitHub Issues | `GET /api/git/issues?project=...&search=...`、`GET /api/git/issue?project=...&number=...`；`POST /api/git/issue-task`（project、number、title） |

@@ -59,6 +59,7 @@ Claude／Codex 模型清單直接讀 CLI 自己的快取（`~/.codex/models_cach
 ## IDE、恢復與維護
 
 - **Git 歷史**：工作台提供分頁圖形歷史、檔案歷史、提交作者／訊息／檔案／差異及逐行 blame；拒絕機密與越界路徑。
+- **並排差異**：作業副本與 Git 逐檔差異可切換唯讀 CodeMirror 左右比較，語法上色、摺疊未變區段及同步捲動；記住顯示偏好，二進位或任一版本超過 1 MiB 時保留統一差異。逐行審查／暫存仍在統一檢視操作。
 - **Stash／變基**：可建立含未追蹤檔案的 stash、套用／pop／確認刪除；揀選衝突自動取消，變基拒絕 dirty tree，三方解決後繼續或取消，不強制推送。
 - **GitHub PR**：Git 工作台手動取得目前分支 PR 的 CI、審查決定、合併狀態、留言及程式碼討論；提供瀏覽器連結，不背景連網。最多 50 個檢查、30 筆審查／留言／討論，每討論 10 筆留言；需要已登入的 `gh`。
 - **GitHub Issues**：專案頁手動搜尋最多 30 筆未結 issue、查看本文（最多 10,000 字），從 issue 建立作業會預填標題與第一則指示草稿，不自動啟動 AI；作業以 `issue`／`issueUrl` 記錄並顯示連結。`PROJECT.md` 的 `issues` 是本地問題／風險清單，另行顯示，並非 GitHub issues。
@@ -220,6 +221,7 @@ HTTP JSON 加 SSE，桌面版與網頁版完全相同。型別定義在 [`src/sh
 | 執行／整合 | `POST /api/execution/start`、`/stop`、`/preview`、`/ide`、`/terminal`、`/debug`；`GET /api/execution/list`、`/output`（上述短路徑均接 `/api/execution`） |
 | Git | `GET /api/git/status`、`/api/git/pr-status`；`POST /api/git/{stage,unstage,resolve,commit,fetch,branch,push,pr}` |
 | Git 歷史 | `GET /api/git/{history,commit-detail,blame}` |
+| Git 並排內容 | `GET /api/git/diff-contents`（project、task?、path、mode：copy／working／staged；staged 為取消暫存方向） |
 | Git Stash／變基 | `GET /api/git/stashes`；`POST /api/git/{stash,rewrite}` |
 | GitHub PR 審查 | `GET /api/git/pr-review?project=...&task=...`（task 可省略） |
 | GitHub Issues | `GET /api/git/issues?project=...&search=...`、`GET /api/git/issue?project=...&number=...`；`POST /api/git/issue-task`（project、number、title） |

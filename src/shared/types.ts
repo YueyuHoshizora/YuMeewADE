@@ -690,6 +690,7 @@ export interface WorkflowPlan {
 
 export interface VerificationCheck { name: string; command: string }
 export interface VerificationStepResult extends Omit<VerifyResult, 'steps' | 'drifted'> { name: string; command: string }
+export interface GitDiffContents { before: string; after: string; truncated: boolean; binary: boolean }
 export interface EditorDocument extends FileView { revision: string; language: string; languageAvailable: boolean; readonly: boolean }
 export interface EditorLocation { path: string; line: number; character: number }
 export interface EditorDiagnostic { line: number; character: number; message: string; severity: number }
