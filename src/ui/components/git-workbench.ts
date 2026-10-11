@@ -3,6 +3,7 @@ import { query, request } from '../api.ts';
 import { t } from '../i18n/index.ts';
 import { area, button, confirmModal, el, field, input, link, modal, row, select, toast, type ViewContext } from './dom.ts';
 import { taskComparisonButton } from './task-comparison.ts';
+import { githubPullRequestPanel } from './github.ts';
 
 export function gitWorkbenchButton(context: ViewContext, project: string, task?: string): HTMLElement {
   return button(t('workbench.title'), async () => {
@@ -126,17 +127,7 @@ export function gitWorkbenchButton(context: ViewContext, project: string, task?:
       panel.append(field(t('workbench.remote'), remote), row(button(t('workbench.fetch'), () => mutate('fetch', { remote: remote.value })), button(t('workbench.push'), async () => {
         if (await confirmModal(t('workbench.push'), `${state.root}\n${state.branch} → ${remote.value}\n${t('workbench.confirmPush')}`, t('workbench.push'))) await mutate('push', { remote: remote.value, confirmed: true });
       })));
-      const prStatus = await request<GitPullRequestStatus>(query('/api/git/pr-status', ids));
-      panel.append(el('p', '', `${t('workbench.prStatus')}: ${prStatus.available ? '✓' : '✗'} / ${prStatus.authenticated ? '✓' : '✗'} / ${prStatus.repository ?? '—'}`));
-      const title = input(); const body = area(); const base = input('main'); const head = input(state.branch);
-      title.maxLength = 300; body.maxLength = 60_000;
-      const createPr = button(t('workbench.pr'), async () => {
-        if (!(await confirmModal(t('workbench.pr'), `${prStatus.repository}\n${head.value} → ${base.value}\n${title.value}\n${t('workbench.confirmPr')}`, t('workbench.pr')))) return;
-        const result = await mutate('pr', { title: title.value, body: body.value, base: base.value, head: head.value, confirmed: true });
-        if (result.url) { const anchor = link(result.url, result.url); anchor.target = '_blank'; anchor.rel = 'noopener noreferrer'; panel.append(anchor); }
-      });
-      createPr.disabled = !prStatus.available || !prStatus.authenticated || !prStatus.repository;
-      panel.append(field(t('common.title'), title), field(t('workbench.body'), body), field(t('workbench.base'), base), field(t('workbench.head'), head), createPr);
+      panel.append(githubPullRequestPanel(project, task, state.branch));
     };
     await refresh(); modal(t('workbench.title'), panel);
   });

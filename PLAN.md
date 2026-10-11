@@ -535,3 +535,4 @@ electron 44.7.0、vite 8.3.4、electron-builder 26.15.3、typescript 7.0.2、@ty
 - `yumeewade:compose-insert` 依 project／task 精確匹配已開啟作業輸入框；快速開始匹配 project 且 task 為空字串。取代目前選取、游標移到插入末端、保存草稿並聚焦，離開畫面移除 listener。
 - AI 入門使用 care health 的 CLI 可用性／App 登入狀態，四態呈現、固定官方文件與人工複製安裝指令；帳號引導重用既有新增 modal。首頁與新專案在無可用 AI 時提醒，依工作區可略過，不執行安裝。
 - GET `/api/care/log` 僅讀目前工作區固定 `.yumeewade/yumeewade.log`，拒絕 symlink，尾端 256 KiB／1000 行有界；套用 home／憑證欄位／Bearer／token-like 防禦遮蔽。Care 提供等級／文字篩選、刷新與複製；本機日誌既有堆疊可呈現，不聲稱完美去識別。
+- GitHub PR：Git 工作台只在使用者按下取得時連網，依目前分支查詢 PR、CI／checks、reviewDecision、mergeStateStatus、審查／留言／reviewThreads 及外部連結。上限 50 checks、30 reviews/comments/threads、每 thread 10 comments；無 gh／未登入明確顯示，所有路由沿用 `/api/git/` 信任門檻。

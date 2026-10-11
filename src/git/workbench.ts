@@ -307,4 +307,10 @@ export class GitWorkbench {
     if (!input.title.trim() || input.title.length > 300 || input.body.length > 60_000 || !branchName(input.base) || !branchName(input.head)) throw new AppError('bad_request', 'git_pr_invalid');
     return this.locked(project, task, true, async root => github(root, { action: 'create', ...input }, this.deps.ghCommand));
   }
+  async pullRequestReview(project: string, task?: string) {
+    return this.locked(project, task, false, async root => {
+      const branch = (await this.command(root, ['symbolic-ref', '--short', 'HEAD'])).trim();
+      return github(root, { action: 'review', branch }, this.deps.ghCommand);
+    });
+  }
 }

@@ -1,14 +1,17 @@
 import { findExecutable, minimalEnv, spawnCli, terminateTree } from './process.ts';
 import { AppError } from '../shared/errors.ts';
 import type { GitPullRequestStatus } from '../shared/types.ts';
+import type { GithubReviewStatus, GithubPullRequest, GithubComment } from '../shared/github.ts';
 
-type GithubInput = { action: 'status' } | { action: 'create'; title: string; body: string; base: string; head: string };
+type GithubInput = { action: 'status' } | { action: 'review'; branch: string } | { action: 'create'; title: string; body: string; base: string; head: string };
 export function github(root: string, input: { action: 'status' }, command?: string): Promise<GitPullRequestStatus>;
+export function github(root: string, input: { action: 'review'; branch: string }, command?: string): Promise<GithubReviewStatus>;
 export function github(root: string, input: Extract<GithubInput, { action: 'create' }>, command?: string): Promise<{ url: string }>;
-export async function github(root: string, input: GithubInput, command = 'gh'): Promise<GitPullRequestStatus | { url: string }> {
+export async function github(root: string, input: GithubInput, command = 'gh'): Promise<GitPullRequestStatus | GithubReviewStatus | { url: string }> {
   const env = { ...minimalEnv([]), GH_PROMPT_DISABLED: '1', GH_NO_UPDATE_NOTIFIER: '1' };
   const executable = await findExecutable(command, env);
   if (!executable) {
+    if (input.action === 'review') return { available: false, authenticated: false, repository: null, pr: null };
     if (input.action === 'status') return { available: false, authenticated: false, repository: null };
     throw new AppError('unavailable', 'gh_unavailable');
   }
@@ -25,6 +28,7 @@ export async function github(root: string, input: GithubInput, command = 'gh'): 
   };
   const authenticated = (await run(['auth', 'status'])).code === 0;
   if (!authenticated) {
+    if (input.action === 'review') return { available: true, authenticated: false, repository: null, pr: null };
     if (input.action === 'status') return { available: true, authenticated: false, repository: null };
     throw new AppError('unavailable', 'gh_auth_required');
   }
@@ -32,8 +36,38 @@ export async function github(root: string, input: GithubInput, command = 'gh'): 
   const repository = repoResult.code === 0 && /^[A-Za-z0-9_.-]+\/[A-Za-z0-9_.-]+$/.test(repoResult.stdout.trim()) ? repoResult.stdout.trim() : null;
   if (input.action === 'status') return { available: true, authenticated: true, repository };
   if (!repository) throw new AppError('bad_request', 'gh_remote_required');
+  if (input.action === 'review') {
+    const json = async (args: string[]): Promise<unknown> => {
+      const result = await run(args);
+      if (result.code !== 0) throw new AppError('conflict', 'gh_pr_failed');
+      try { return JSON.parse(result.stdout); } catch { throw new AppError('conflict', 'gh_pr_failed'); }
+    };
+    const list = await json(['pr', 'list', '--repo', repository, '--head', input.branch, '--state', 'all', '--limit', '1', '--json', 'number']);
+    if (!Array.isArray(list)) throw new AppError('conflict', 'gh_pr_failed');
+    if (!list.length) return { available: true, authenticated: true, repository, pr: null };
+    const number = object(list[0])['number'];
+    if (!Number.isSafeInteger(number) || (number as number) <= 0) throw new AppError('conflict', 'gh_pr_failed');
+    const value = await json(['pr', 'view', String(number), '--repo', repository, '--json', 'number,title,url,state,mergeStateStatus,reviewDecision,statusCheckRollup,reviews,comments', '--jq', '{number,title,url,state,mergeStateStatus,reviewDecision,statusCheckRollup:(.statusCheckRollup[:50]),reviews:(.reviews[-30:]|map({author,body:(.body[:4000]),url,state})),comments:(.comments[-30:]|map({author,body:(.body[:4000]),url}))}']);
+    const [owner, name] = repository.split('/');
+    const threads = await json(['api', 'graphql', '-f', `query=query($owner:String!,$name:String!,$number:Int!){repository(owner:$owner,name:$name){pullRequest(number:$number){reviewThreads(first:30){nodes{isResolved path line comments(first:10){nodes{author{login} body url}}}}}}}`, '-f', `owner=${owner}`, '-f', `name=${name}`, '-F', `number=${number}`, '--jq', '.data.repository.pullRequest.reviewThreads.nodes | map({isResolved,path,line,comments:{nodes:(.comments.nodes|map({author,body:(.body[:4000]),url}))}})']);
+    return { available: true, authenticated: true, repository, pr: parsePullRequest(value, threads) };
+  }
   const result = await run(['pr', 'create', '--repo', repository, '--title', input.title, '--body', input.body, '--base', input.base, '--head', input.head]);
   const url = result.stdout.trim();
   if (result.code !== 0 || !/^https:\/\/[^\s/]+\/[^\s]+\/pull\/\d+$/.test(url)) throw new AppError('conflict', 'gh_pr_failed');
   return { url };
+}
+
+function object(value: unknown): Record<string, unknown> { return value !== null && typeof value === 'object' && !Array.isArray(value) ? value as Record<string, unknown> : {}; }
+const text = (value: unknown, limit = 4000): string => typeof value === 'string' ? value.slice(0, limit) : '';
+const url = (value: unknown): string => { const s = text(value); return /^https:\/\/[^\s]+$/.test(s) ? s : ''; };
+function comments(value: unknown): GithubComment[] {
+  return (Array.isArray(value) ? value : []).slice(-30).map(item => { const v = object(item); return { author: text(object(v['author'])['login'], 200), body: text(v['body']), url: url(v['url']), state: text(v['state'], 100) }; });
+}
+export function parsePullRequest(value: unknown, threads: unknown): GithubPullRequest {
+  const v = object(value); const number = v['number'];
+  if (!Number.isSafeInteger(number) || (number as number) <= 0 || !url(v['url']) || !Array.isArray(threads)) throw new AppError('conflict', 'gh_pr_failed');
+  return { number: number as number, title: text(v['title'], 300), url: url(v['url']), state: text(v['state'], 100), mergeState: text(v['mergeStateStatus'], 100), reviewDecision: text(v['reviewDecision'], 100),
+    checks: (Array.isArray(v['statusCheckRollup']) ? v['statusCheckRollup'] : []).slice(0, 50).map(item => { const c = object(item); return { name: text(c['name'] ?? c['context'], 300), status: text(c['status'] ?? c['state'], 100), conclusion: text(c['conclusion'], 100) }; }),
+    reviews: comments(v['reviews']), comments: comments(v['comments']), threads: threads.slice(0, 30).map(item => { const tr = object(item); return { resolved: tr['isResolved'] === true, path: text(tr['path'], 1000), line: typeof tr['line'] === 'number' && Number.isSafeInteger(tr['line']) ? tr['line'] : null, comments: comments(object(tr['comments'])['nodes']).slice(0, 10) }; }) };
 }

@@ -20,6 +20,7 @@
 
 - **ファイル引用**：`@path`／`@path#L10-20`／`@path#L5` はタスクの作業ディレクトリ（直接作業はメインフォルダー）の本文を行番号付きで送信します。元の指示はそのまま保存し、引用の状態を表示します。秘密ファイル、バイナリ、範囲外のパスは除外し、解決できなくても送信を妨げません。行範囲は読み取り上限内の先頭部分から抽出し、上限を超える場合は切り詰めを表示します。
 - **エディターから指示へ**：`yumeewade:compose-insert` は一致するタスク／クイック開始入力欄のカーソル位置に引用を挿入（選択範囲は置換）し、下書きを保存してフォーカスします。他のプロジェクトやタスクには挿入しません。
+- **GitHub PR**：Git ワークベンチから現在のブランチの CI、レビュー判定、マージ状態、コメント、コードレビュー議論を手動取得します。ブラウザーリンク付きで、バックグラウンド通信は行いません。チェックは 50 件、レビュー／コメント／議論は 30 件、議論ごとのコメントは 10 件まで。ログイン済みの `gh` が必要です。
 - **左側のツリー**：プロジェクトの下にタスクを表示します。子タスクは `↳` で字下げし、分岐タスクには `⑂` を付けます。丸印の色は、赤＝AI 実行中、黄＝回答待ち、青＝完了確認待ち、紫＝完了、薄緑＝対応済み、灰＝未開始です。未読の結果には「未読」と表示します。コンテキストメニュー（⋯）では名前の変更、子タスク／分岐の追加、アーカイブができます。プロジェクトではピン留め、順序の変更（ドラッグでも可）、子プロジェクトの追加もできます。上部の検索欄（`/` または Ctrl/⌘+K）でプロジェクトとタスクを絞り込めます。
 - **あなたの番**：タイトルバーのボタンに「回答待ち」と「完了を確認」のタスク数を表示します。開いて「完了にする」か「続ける」を選べます。
 - **実行中パネル**：AI が実行中のとき、画面下のステータスバーに赤い「実行中 N」を表示します。開くと実行中のタスク（AI、モデル、経過時間）を一覧でき、そのタスクへ移動、個別停止、「すべて停止」ができます（タスク内の「停止」と同じで、そのタスクのキューも空になります）。
@@ -191,6 +192,7 @@ HTTP JSON と SSE を使い、デスクトップ版と Web 版で完全に共通
 | Git | `GET /api/git/{status,pr-status}`；`POST /api/git/{stage,unstage,resolve,commit,fetch,branch,push,pr}` |
 | Git 履歴 | `GET /api/git/{history,commit-detail,blame}` |
 | Git stash／リベース | `GET /api/git/stashes`；`POST /api/git/{stash,rewrite}` |
+| GitHub PR レビュー | `GET /api/git/pr-review?project=...&task=...`（task は省略可能） |
 | 審査／workflow | `GET /api/review/capabilities`；`POST /api/review/{run,stop}`；`GET /api/task/workflow`；`POST /api/task/workflow/{configure,start,stop,approve}` |
 | 背景／草稿 | `GET/POST /api/task/context`、`GET /api/task/handoff`；`GET/POST /api/chat/draft`、`GET /api/chat/draft-image` |
 | 維持管理 | `GET/POST /api/care/health`；`GET /api/care/{backups,diagnostics}`；`POST /api/care/backup`（includeExternal）、`/api/care/restore`（id、destination） |
