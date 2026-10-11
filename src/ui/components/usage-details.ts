@@ -19,6 +19,15 @@ function accountUsage(usage: AiUsage | undefined): HTMLElement {
     node.append(el('p', expired ? 'muted' : '', expired ? text : `${text} · ${t('usage.remaining', { percent: Math.max(0, Math.round(100 - window.usedPercent)) })}`));
   }
   if (usage.ai !== 'grok' && usage.prepaidCents !== undefined) node.append(el('p', '', prepaidLabel(usage.prepaidCents)));
+  if (usage.resetCredits) {
+    const credits = el('details', 'disclosure reset-credits');
+    credits.append(el('summary', '', t('usage.resetCredits', { count: usage.resetCredits.availableCount })));
+    for (const credit of usage.resetCredits.credits) {
+      const title = credit.title ?? t('usage.resetCreditDefault');
+      credits.append(el('p', 'muted', credit.expiresAt ? t('usage.resetCreditExpires', { title, expires: localTime(credit.expiresAt) }) : t('usage.resetCreditNoExpiry', { title })));
+    }
+    node.append(credits);
+  }
   if (usage.limited) node.append(el('p', 'usage-limited', t('usage.limited')));
   return node;
 }

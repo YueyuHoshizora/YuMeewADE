@@ -448,3 +448,7 @@ body { height: 100dvh; display: grid; grid-template-rows: 64px minmax(0, 1fr) au
 .git-files .git-file { flex: 1; min-width: 0; width: auto; }
 .git-revert { flex: none; padding: 1px 7px; opacity: .6; }
 .git-revert:hover { opacity: 1; }
+.reset-credits { margin: 8px 0; padding: 8px 12px; }
+.reset-credits > summary { cursor: pointer; }
+.reset-credits[open] > summary { margin-bottom: 8px; }
+.reset-credits > p { margin: 4px 0; }

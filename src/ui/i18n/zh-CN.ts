@@ -11,6 +11,7 @@ export const zhCN: Record<MessageKey, string> = {
   'usage.accountNotice': '底部只显示各 AI 的使用中账号。切换只影响下一次发送的指示，不会改变运行中的作业。支持查询的额度默认每 5 分钟更新，用尽与恢复时提醒；查询失败保留上次数据，并非实时额度。',
   'usage.refresh': '立即查询额度', 'usage.ready': '查询成功', 'usage.unavailable': '目前无法查询', 'usage.noData': '尚无额度数据；可手动查询或等待下次更新',
   'usage.prepaidBalance': '预付余额 {balance}',
+  'usage.resetCredits': '重置券 {count} 张', 'usage.resetCreditDefault': '重置券', 'usage.resetCreditExpires': '{title} · {expires} 到期', 'usage.resetCreditNoExpiry': '{title} · 不会到期',
   'usage.weeklyCredits': '每周额度', 'usage.monthlyCredits': '每月额度', 'usage.credits': '额度', 'usage.onDemand': '按量付费', 'usage.remaining': '剩余 {percent}%',
   'usage.averageSpeed': '{speed} 平均 tok/s', 'usage.measuredSpeed': '最近 CLI 回报的实际输出 token 总数除以测量时间区间的并集，测量保留 4 秒；没有测量时显示 —，不是实时生成速度。Claude 每条消息（含子代理）各自计时，连续消息分开保留；Codex／Grok 按完整回合（含等待与工具）；Gemini 以完成步骤快照累计，同一步骤重播不重复计算、修正值取代旧值。包含 CLI 回报的思考用量，不做估算。',
   'project.verify': '验证指令',
