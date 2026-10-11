@@ -6,6 +6,21 @@ export function registerWorkbenchRoutes(router: Router, app: App): void {
   router.get('/api/git/status', async ({ query }) => app.gitWorkbench.status(reqString(query, 'project', 120), query.has('task') ? reqString(query, 'task', 120) : undefined));
   router.get('/api/git/pr-status', async ({ query }) => app.gitWorkbench.pullRequestStatus(reqString(query, 'project', 120), query.has('task') ? reqString(query, 'task', 120) : undefined));
   router.get('/api/git/pr-review', async ({ query }) => app.gitWorkbench.pullRequestReview(reqString(query, 'project', 120), query.has('task') ? reqString(query, 'task', 120) : undefined));
+  router.get('/api/git/issues', async ({ query }) => app.gitWorkbench.issues(reqString(query, 'project', 120), query.has('search') ? reqString(query, 'search', 300) : ''));
+  router.get('/api/git/issue', async ({ query }) => {
+    const number = Number(reqString(query, 'number', 20));
+    if (!Number.isSafeInteger(number) || number <= 0) throw new AppError('bad_request', 'field_type', { field: 'number' });
+    return app.gitWorkbench.issue(reqString(query, 'project', 120), number);
+  });
+  router.post('/api/git/issue-task', async ({ body }) => {
+    const project = reqString(body, 'project', 120);
+    if (!Number.isSafeInteger(body.number) || (body.number as number) <= 0) throw new AppError('bad_request', 'field_type', { field: 'number' });
+    const issue = await app.gitWorkbench.issue(project, body.number as number);
+    const task = await app.tasks.create(project, { title: reqString(body, 'title', 300), issue: issue.number, issueUrl: issue.url });
+    await app.oplog.record({ action: 'github.issue-task', project, task: task.id });
+    app.changed(project, task.id);
+    return { task };
+  });
   router.get('/api/git/diff', async ({ query }) => app.gitWorkbench.diff(reqString(query, 'project', 120), query.has('task') ? reqString(query, 'task', 120) : undefined, reqString(query, 'path', 1000), query.get('staged') === 'true'));
   router.get('/api/git/conflict', async ({ query }) => app.gitWorkbench.conflict(reqString(query, 'project', 120), query.has('task') ? reqString(query, 'task', 120) : undefined, reqString(query, 'path', 1000)));
   router.get('/api/git/compare-options', async ({ query }) => (await app.tasks.list(reqString(query, 'project', 120))).filter(task => task.workdir || task.workspace === 'direct').map(task => ({ id: task.id, title: task.title })));

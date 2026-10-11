@@ -136,6 +136,8 @@ export interface Task {
   memo: string;
   /** 「## 下一步」第一行。 */
   next: string;
+  issue?: number;
+  issueUrl?: string;
 }
 
 export interface NewTaskInput {
@@ -150,6 +152,8 @@ export interface NewTaskInput {
   cli?: string;
   model?: string;
   effort?: string;
+  issue?: number;
+  issueUrl?: string;
 }
 
 export type TaskPatch = Partial<Pick<Task, 'title' | 'state' | 'phase' | 'role' | 'parent' | 'cli' | 'model' | 'effort' | 'question'>>;

@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import { promises as fs } from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
-import { github, parsePullRequest } from './github.ts';
+import { github, parseIssue, parsePullRequest } from './github.ts';
 
 const fixture = { number: 12, title: 'Fix', url: 'https://github.com/o/r/pull/12', state: 'OPEN', mergeStateStatus: 'BLOCKED', reviewDecision: 'CHANGES_REQUESTED', statusCheckRollup: [{ name: 'test', status: 'COMPLETED', conclusion: 'FAILURE' }, { context: 'legacy', state: 'SUCCESS' }], reviews: [{ author: { login: 'a' }, body: 'Please fix', state: 'CHANGES_REQUESTED' }], comments: [] };
 test('PR parsing keeps CI, reviews, bounded threads and rejects malformed responses', () => {
@@ -23,4 +23,9 @@ test('fake gh supports review, missing PR, unauthenticated, invalid JSON and sub
     }
     assert.equal((await github(dir, { action: 'review', branch: 'topic' }, path.join(dir, 'missing'))).available, false);
   } finally { await fs.rm(dir, { recursive: true, force: true }); }
+});
+
+test('issue parser rejects malformed identity and bounds body', () => {
+  assert.equal(parseIssue({ number: 3, title: 'Issue', body: 'x'.repeat(20000), url: 'https://github.com/o/r/issues/3' }).body.length, 10000);
+  for (const value of [{}, { number: -1 }, { number: 3, title: 'Issue', url: 'javascript:bad' }]) assert.throws(() => parseIssue(value));
 });

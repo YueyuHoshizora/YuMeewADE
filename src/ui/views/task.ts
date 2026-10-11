@@ -178,6 +178,12 @@ export function taskView(
       workflowButton(context, project.id, task.id),
       gitToggle
     ));
+  if (task.issue) {
+    const chip = task.issueUrl ? link(`#${task.issue}`, task.issueUrl, 'state-chip') : el('span', 'state-chip', `#${task.issue}`);
+    chip.setAttribute('aria-label', `${t('github.issue')} #${task.issue}`);
+    if (chip instanceof HTMLAnchorElement) { chip.target = '_blank'; chip.rel = 'noopener noreferrer'; }
+    header.append(chip);
+  }
   const transcript = el('div', 'transcript');
   transcript.setAttribute('role', 'region');
   transcript.setAttribute('aria-label', task.title);

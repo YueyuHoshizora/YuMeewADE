@@ -1,7 +1,7 @@
-import type { EditorDocument, GitWorkbenchStatus, GitPullRequestStatus, GitFileDiff, GitConflictView } from '../../shared/types.ts';
+import type { EditorDocument, GitWorkbenchStatus, GitFileDiff, GitConflictView } from '../../shared/types.ts';
 import { query, request } from '../api.ts';
 import { t } from '../i18n/index.ts';
-import { area, button, confirmModal, el, field, input, link, modal, row, select, toast, type ViewContext } from './dom.ts';
+import { area, button, confirmModal, el, field, input, modal, row, select, toast, type ViewContext } from './dom.ts';
 import { taskComparisonButton } from './task-comparison.ts';
 import { githubPullRequestPanel } from './github.ts';
 

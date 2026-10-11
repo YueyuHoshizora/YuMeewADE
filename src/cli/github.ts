@@ -1,13 +1,15 @@
 import { findExecutable, minimalEnv, spawnCli, terminateTree } from './process.ts';
 import { AppError } from '../shared/errors.ts';
 import type { GitPullRequestStatus } from '../shared/types.ts';
-import type { GithubReviewStatus, GithubPullRequest, GithubComment } from '../shared/github.ts';
+import type { GithubReviewStatus, GithubPullRequest, GithubComment, GithubIssue } from '../shared/github.ts';
 
-type GithubInput = { action: 'status' } | { action: 'review'; branch: string } | { action: 'create'; title: string; body: string; base: string; head: string };
+type GithubInput = { action: 'status' } | { action: 'review'; branch: string } | { action: 'issues'; search: string } | { action: 'issue'; number: number } | { action: 'create'; title: string; body: string; base: string; head: string };
 export function github(root: string, input: { action: 'status' }, command?: string): Promise<GitPullRequestStatus>;
 export function github(root: string, input: { action: 'review'; branch: string }, command?: string): Promise<GithubReviewStatus>;
+export function github(root: string, input: { action: 'issues'; search: string }, command?: string): Promise<GithubIssue[]>;
+export function github(root: string, input: { action: 'issue'; number: number }, command?: string): Promise<GithubIssue>;
 export function github(root: string, input: Extract<GithubInput, { action: 'create' }>, command?: string): Promise<{ url: string }>;
-export async function github(root: string, input: GithubInput, command = 'gh'): Promise<GitPullRequestStatus | GithubReviewStatus | { url: string }> {
+export async function github(root: string, input: GithubInput, command = 'gh'): Promise<GitPullRequestStatus | GithubReviewStatus | GithubIssue | GithubIssue[] | { url: string }> {
   const env = { ...minimalEnv([]), GH_PROMPT_DISABLED: '1', GH_NO_UPDATE_NOTIFIER: '1' };
   const executable = await findExecutable(command, env);
   if (!executable) {
@@ -36,6 +38,19 @@ export async function github(root: string, input: GithubInput, command = 'gh'): 
   const repository = repoResult.code === 0 && /^[A-Za-z0-9_.-]+\/[A-Za-z0-9_.-]+$/.test(repoResult.stdout.trim()) ? repoResult.stdout.trim() : null;
   if (input.action === 'status') return { available: true, authenticated: true, repository };
   if (!repository) throw new AppError('bad_request', 'gh_remote_required');
+  if (input.action === 'issues' || input.action === 'issue') {
+    if (input.action === 'issue' && (!Number.isSafeInteger(input.number) || input.number <= 0) || input.action === 'issues' && (input.search.length > 300 || input.search.includes('\0'))) throw new AppError('bad_request', 'field_type');
+    const args = input.action === 'issues'
+      ? ['issue', 'list', '--repo', repository, '--state', 'open', '--limit', '30', '--json', 'number,title,url', ...(input.search ? ['--search', input.search] : [])]
+      : ['issue', 'view', String(input.number), '--repo', repository, '--json', 'number,title,body,url', '--jq', '{number,title,body:(.body[:10000]),url}'];
+    const result = await run(args);
+    if (result.code !== 0) throw new AppError('conflict', 'gh_pr_failed');
+    let value: unknown;
+    try { value = JSON.parse(result.stdout); } catch { throw new AppError('conflict', 'gh_pr_failed'); }
+    if (input.action === 'issue') return parseIssue(value);
+    if (!Array.isArray(value)) throw new AppError('conflict', 'gh_pr_failed');
+    return value.slice(0, 30).map(parseIssue);
+  }
   if (input.action === 'review') {
     const json = async (args: string[]): Promise<unknown> => {
       const result = await run(args);
@@ -70,4 +85,10 @@ export function parsePullRequest(value: unknown, threads: unknown): GithubPullRe
   return { number: number as number, title: text(v['title'], 300), url: url(v['url']), state: text(v['state'], 100), mergeState: text(v['mergeStateStatus'], 100), reviewDecision: text(v['reviewDecision'], 100),
     checks: (Array.isArray(v['statusCheckRollup']) ? v['statusCheckRollup'] : []).slice(0, 50).map(item => { const c = object(item); return { name: text(c['name'] ?? c['context'], 300), status: text(c['status'] ?? c['state'], 100), conclusion: text(c['conclusion'], 100) }; }),
     reviews: comments(v['reviews']), comments: comments(v['comments']), threads: threads.slice(0, 30).map(item => { const tr = object(item); return { resolved: tr['isResolved'] === true, path: text(tr['path'], 1000), line: typeof tr['line'] === 'number' && Number.isSafeInteger(tr['line']) ? tr['line'] : null, comments: comments(object(tr['comments'])['nodes']).slice(0, 10) }; }) };
+}
+
+export function parseIssue(value: unknown): GithubIssue {
+  const v = object(value);
+  if (!Number.isSafeInteger(v['number']) || (v['number'] as number) <= 0 || !text(v['title'], 300).trim() || !/^https:\/\/[^\s/]+\/[^\s]+\/issues\/\d+$/.test(url(v['url']))) throw new AppError('conflict', 'gh_pr_failed');
+  return { number: v['number'] as number, title: text(v['title'], 300), body: text(v['body'], 10_000), url: url(v['url']) };
 }

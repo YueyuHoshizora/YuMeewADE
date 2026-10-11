@@ -182,6 +182,7 @@ QueueItem{ request, text, cli, model }                                   // .ai/
 Roles   { models, roles: { role: { main, backup, job } }, permissions }   // roles.yaml
 ```
 
+- GitHub issue 連結：作業 frontmatter 可選 `issue: <正整數>` 與 `issueUrl: <https URL>`；舊檔省略仍有效。`PROJECT.md` 的 `issues: [{text, level}]` 是人工維護的本地風險／待辦，不是 GitHub issues；專案畫面顯示它，遠端 issue 清單獨立且只在手動操作時取得。從 issue 建作業只預填標題及第一則指示，不自動執行 AI。
 - Task 狀態機：未開始 → 進行中 → 等待回覆 → 暫停 → 完成（狀態值入檔，UI 下拉選單同源）。
 - 併發保證：單一後端程序為唯一寫者；檔案寫入採「寫暫存檔後原子搬移」；JSONL 只追加不改寫。
 - 持久化：全部落地為檔案；重啟後對話、隊列、worktree 狀態皆可還原（與範圍外一致：無 DB）。
@@ -536,3 +537,4 @@ electron 44.7.0、vite 8.3.4、electron-builder 26.15.3、typescript 7.0.2、@ty
 - AI 入門使用 care health 的 CLI 可用性／App 登入狀態，四態呈現、固定官方文件與人工複製安裝指令；帳號引導重用既有新增 modal。首頁與新專案在無可用 AI 時提醒，依工作區可略過，不執行安裝。
 - GET `/api/care/log` 僅讀目前工作區固定 `.yumeewade/yumeewade.log`，拒絕 symlink，尾端 256 KiB／1000 行有界；套用 home／憑證欄位／Bearer／token-like 防禦遮蔽。Care 提供等級／文字篩選、刷新與複製；本機日誌既有堆疊可呈現，不聲稱完美去識別。
 - GitHub PR：Git 工作台只在使用者按下取得時連網，依目前分支查詢 PR、CI／checks、reviewDecision、mergeStateStatus、審查／留言／reviewThreads 及外部連結。上限 50 checks、30 reviews/comments/threads、每 thread 10 comments；無 gh／未登入明確顯示，所有路由沿用 `/api/git/` 信任門檻。
+- GitHub Issues：手動搜尋最多 30 筆 open issues，本文上限 10,000 字，從 issue 建立作業並預填可編輯的標題／第一指示草稿，寫入 `issue`／`issueUrl`；不自動送出。專案頁同時顯示 PROJECT.md 人工維護的本地 issues（text／level），不混淆遠端清單；路由同 PR 信任門檻。

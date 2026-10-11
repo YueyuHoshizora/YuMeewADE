@@ -15,6 +15,7 @@ import { projectTrustButton } from '../components/project-trust.ts';
 import { confirmUsageRound } from '../components/usage-history.ts';
 import { attachComposeInsert } from '../components/mention.ts';
 import { onboardingBanner } from '../components/onboarding.ts';
+import { githubIssuesButton } from '../components/github-issues.ts';
 
 async function startWithBudget(context: ViewContext, input: StartInput): Promise<void> {
   const { task } = await request<{ task: Task }>('/api/start/prepare', input);
@@ -178,10 +179,16 @@ export function projectView(context: ViewContext, project: ProjectView, params: 
       }, 'danger'),
       archiveButton(context, project.id),
       gitWorkbenchButton(context, project.id),
+      githubIssuesButton(context, project.id),
       verificationConfigButton(context, project.id),
       projectTrustButton(project.id),
     );
     overview.append(header, actions, disclosure(t('project.notes'), markdown(project.description + '\n\n' + project.notes)));
+    if (project.issues.length) {
+      const localIssues = el('div', 'form');
+      for (const issue of project.issues) localIssues.append(el('p', '', `${issue.level ? `[${issue.level}] ` : ''}${issue.text}`));
+      overview.append(disclosure(t('github.localIssues'), localIssues));
+    }
     const rules = area('', t('project.rulesPlaceholder'));
     rules.rows = 12;
     rules.maxLength = 20000;

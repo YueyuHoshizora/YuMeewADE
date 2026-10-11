@@ -14,6 +14,7 @@ The workflow draws on [kieiken/project-hub](https://github.com/kieiken/project-h
 
 ## Interface and workflow
 - **GitHub PR**: manually load the current branch PR's CI, review decision, merge state, comments and review threads in the Git workbench. Browser links are provided; no background network requests. Limited to 50 checks and 30 reviews/comments/threads, 10 comments per thread; requires authenticated `gh`.
+- **GitHub Issues**: manually search up to 30 open issues and read bodies (up to 10,000 characters). Creating a task prefills its title and first instruction draft without starting AI; `issue` / `issueUrl` persist the linked issue chip. `PROJECT.md`'s `issues` is a separate displayed list of local problems/risks, not GitHub issues.
 
 - **Windowed long conversations**: only messages near the viewport are mounted, with cached variable heights. Streaming updates only new text/rows; loading older pages preserves the reading position, bottom following and message actions. Tool events are grouped in batches of 24 to bound expanded DOM size. Tab reaches messages/actions; ↑/↓ on a message wrapper moves to its neighbor. Browser Find covers mounted content only; use app search or conversation export for the full history.
 - **Terminal tabs**: run multiple PTYs per task; add, rename, or close tabs. Closing a running tab requires confirmation and stops its processes. `limits.concurrentRuns`, owner capabilities, and five-minute lost-owner cleanup remain enforced.
@@ -193,6 +194,7 @@ New route groups (exact requests/responses in [`src/http/routes/`](src/http/rout
 | Git history | `GET /api/git/{history,commit-detail,blame}` |
 | Git stash/rebase | `GET /api/git/stashes`; `POST /api/git/{stash,rewrite}` |
 | GitHub PR review | `GET /api/git/pr-review?project=...&task=...` (task optional) |
+| GitHub Issues | `GET /api/git/issues?project=...&search=...`, `GET /api/git/issue?project=...&number=...`; `POST /api/git/issue-task` (project, number, title) |
 | Review/workflows | `GET /api/review/capabilities`; `POST /api/review/{run,stop}`; `GET /api/task/workflow`; `POST /api/task/workflow/{configure,start,stop,approve}` |
 | Context/drafts | `GET/POST /api/task/context`, `GET /api/task/handoff`; `GET/POST /api/chat/draft`, `GET /api/chat/draft-image` |
 | Care | `GET/POST /api/care/health`; `GET /api/care/{backups,diagnostics}`; `POST /api/care/backup` (includeExternal), `/api/care/restore` (id, destination) |

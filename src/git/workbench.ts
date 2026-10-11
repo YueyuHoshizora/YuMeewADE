@@ -313,4 +313,10 @@ export class GitWorkbench {
       return github(root, { action: 'review', branch }, this.deps.ghCommand);
     });
   }
+  async issues(project: string, search: string) {
+    return this.locked(project, undefined, false, root => github(root, { action: 'issues', search }, this.deps.ghCommand));
+  }
+  async issue(project: string, number: number) {
+    return this.locked(project, undefined, false, root => github(root, { action: 'issue', number }, this.deps.ghCommand));
+  }
 }
