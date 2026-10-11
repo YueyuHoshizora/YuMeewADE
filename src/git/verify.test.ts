@@ -8,6 +8,7 @@ import type { Workspace } from '../ledger/workspace.ts';
 import { parseConfig } from '../shared/config.ts';
 import { withTmpWorkspace } from '../testing/tmp.ts';
 import { VerifyService } from './verify.ts';
+import { gitOk } from './git.ts';
 
 async function setup(ws: Workspace, verify: string, limits = '', isRunning = () => false) {
   const projects = new ProjectLedger(ws);
@@ -114,15 +115,87 @@ test('verify shutdown stops running children', () => withTmpWorkspace(async ws =
 test('verify status keeps the latest result per task until invalidated', () => withTmpWorkspace(async ws => {
   const { service, projects, task } = await setup(ws, nodeCommand('process.exit(0)'));
   try {
-    assert.equal(service.status('P', task.id), null);
+    assert.equal(await service.status('P', task.id), null);
     await service.run('P', task.id);
-    assert.equal(service.status('P', task.id)?.ok, true);
+    assert.equal((await service.status('P', task.id))?.ok, true);
     await projects.update('P', { verify: nodeCommand('process.exit(3)') });
     await service.run('P', task.id);
-    const failed = service.status('P', task.id);
+    const failed = await service.status('P', task.id);
     assert.equal(failed?.ok, false); assert.equal(failed?.exitCode, 3);
-    assert.equal(service.status('P', 'other-task'), null);
+    assert.equal(await service.status('P', 'other-task'), null);
     service.invalidate('P', task.id);
-    assert.equal(service.status('P', task.id), null);
+    assert.equal(await service.status('P', task.id), null);
+  } finally { await service.stopAll(); }
+}));
+
+test('external tracked, untracked and ignored edits and command changes invalidate passing verification', () => withTmpWorkspace(async ws => {
+  const { service, projects, task } = await setup(ws, nodeCommand('process.exit(0)'));
+  const project = await projects.get('P');
+  const dir = projects.bodyPath(project);
+  try {
+    await fs.writeFile(path.join(dir, 'input.txt'), 'before');
+    await gitOk(dir, ['add', 'input.txt']);
+    await gitOk(dir, ['commit', '-m', 'verification input']);
+    await service.run('P', task.id);
+    assert.equal((await service.status('P', task.id))?.ok, true);
+    await fs.writeFile(path.join(dir, 'input.txt'), 'after');
+    assert.equal(await service.status('P', task.id), null);
+    await service.run('P', task.id);
+    await fs.writeFile(path.join(dir, 'untracked.txt'), 'new');
+    assert.equal(await service.status('P', task.id), null);
+    await service.run('P', task.id);
+    await fs.writeFile(path.join(dir, '.env'), 'CANARY=changed');
+    assert.equal(await service.status('P', task.id), null);
+    await service.run('P', task.id);
+    await gitOk(dir, ['commit', '--allow-empty', '-m', 'new HEAD']);
+    assert.equal(await service.status('P', task.id), null);
+    await service.run('P', task.id);
+    await projects.update('P', { verify: nodeCommand('process.exit(1)') });
+    assert.equal(await service.status('P', task.id), null);
+  } finally { await service.stopAll(); }
+}));
+
+test('editing during verification cannot produce a green aggregate', () => withTmpWorkspace(async ws => {
+  const { service, projects, task } = await setup(ws, nodeCommand('require(\'node:fs\').writeFileSync(\'ready\',\'yes\')'));
+  try {
+    const result = await service.run('P', task.id);
+    assert.equal(result.ok, false);
+    assert.equal(result.drifted, true);
+    assert.equal(await service.status('P', task.id), null);
+    assert.equal(await fs.readFile(path.join(projects.bodyPath(await projects.get('P')), 'ready'), 'utf8'), 'yes');
+  } finally { await service.stopAll(); }
+}));
+
+test('named checks retain each result and one failure fails the aggregate and merge gate', () => withTmpWorkspace(async ws => {
+  const { service, projects, task } = await setup(ws, nodeCommand('process.exit(0)'));
+  try {
+    await projects.update('P', { requireVerification: true, checks: [
+      { name: 'types', command: nodeCommand('process.exit(0)') },
+      { name: 'tests', command: nodeCommand('process.exit(4)') },
+    ] });
+    await assert.rejects(service.requireCurrentPass('P', task.id), { status: 409 });
+    const failed = await service.run('P', task.id);
+    assert.equal(failed.ok, false); assert.equal(failed.exitCode, 4);
+    assert.deepEqual(failed.steps?.map(step => [step.name, step.ok]), [['types', true], ['tests', false]]);
+    await assert.rejects(service.requireCurrentPass('P', task.id), { status: 409 });
+    await projects.update('P', { checks: [{ name: 'types', command: nodeCommand('process.exit(0)') }] });
+    await service.run('P', task.id);
+    await service.requireCurrentPass('P', task.id);
+    await fs.writeFile(path.join(projects.bodyPath(await projects.get('P')), 'external'), 'changed');
+    await assert.rejects(service.requireCurrentPass('P', task.id), { status: 409 });
+    await projects.update('P', { requireVerification: false });
+    await service.requireCurrentPass('P', task.id);
+  } finally { await service.stopAll(); }
+}));
+
+test('a transient input edit restored to identical bytes still invalidates verification', () => withTmpWorkspace(async ws => {
+  const { service, projects, task } = await setup(ws, nodeCommand("const fs=require('node:fs');fs.writeFileSync('transient.txt','changed');fs.writeFileSync('transient.txt','original')"));
+  const file = path.join(projects.bodyPath(await projects.get('P')), 'transient.txt');
+  await fs.writeFile(file, 'original');
+  try {
+    const result = await service.run('P', task.id);
+    assert.equal(await fs.readFile(file, 'utf8'), 'original');
+    assert.equal(result.ok, false); assert.equal(result.drifted, true);
+    assert.equal(await service.status('P', task.id), null);
   } finally { await service.stopAll(); }
 }));
