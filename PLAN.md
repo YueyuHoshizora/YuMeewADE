@@ -559,3 +559,4 @@ electron 44.7.0、vite 8.3.4、electron-builder 26.15.3、typescript 7.0.2、@ty
 - MCP 管理以目前 App 帳號隔離 CLI config 為唯一寫入目標，四個 CLI help 已確認 mcp；user scope stdio／HTTP，Claude／Grok 加 SSE，Codex headers 用原生 TOML。CLI templates 可停用，輸入／輸出有界、env/header 值不回傳或記錄、刪除人工確認、假 CLI 測試隔離與持久化。
 - Git 遠端管理：fetch／push URL 列表、名稱與 URL 白名單驗證、新增／改名／set-url／確認移除；本地分支改名與 `-d` 安全刪除，`-D` 必須另行二次確認，拒絕現行及 live 作業 `ym/<task>` 分支；沿用 `/api/git/` 信任閘門與有界／逾時 Git helper。
 - 作業副本與 Git 逐檔差異加入唯讀 CodeMirror MergeView 並排切換，重用語言上色、摺疊未變區段、單一同步捲動容器與 localStorage 偏好；`GET /api/git/diff-contents` 沿用信任閘門、路徑／symlink／機密驗證，每版本上限 1 MiB，二進位／超大回旗標並保留統一差異。副本以主線 merge-base 為基底，working 以 index 為基底，staged 使用 index→HEAD 的取消暫存方向。
+- 專案範圍的前往檔案／檔案瀏覽：`GET /api/task/files` 與 `/api/task/file` 在 `task` 省略或空字串時使用專案主資料夾；保留機密排除、50 筆結果、256 KiB 讀取與 realpath 防逃逸。兩路由在執行 Git 前檢查專案信任，受限專案拒絕；作業範圍維持副本語意。

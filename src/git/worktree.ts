@@ -89,6 +89,7 @@ export class WorktreeService {
   }
   /** 檔案檢視／@ 提及的根：有副本用副本，否則用主資料夾（AI 開始時會看到的內容）。 */
   private async viewRoot(project: string, task: string): Promise<string> {
+    if (!task) return this.projects.bodyPath(await this.projects.get(project));
     const { repo, dir } = await this.copy(project, task);
     return dir && await pathExists(path.join(dir, '.git')) ? dir : repo;
   }

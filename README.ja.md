@@ -24,6 +24,7 @@
 - **GitHub Issues**：未解決 issue を手動検索（最大 30 件）、本文を表示（最大 10,000 文字）。タスク作成時にタイトルと最初の指示の下書きを入力済みにし、AI は自動実行しません。`issue`／`issueUrl` を保存してタスクにリンクを表示します。`PROJECT.md` の `issues` はローカルの問題／リスクで、GitHub issues とは別に表示します。
 - **コマンドパレット**：⌘/Ctrl+Shift+P でプロジェクト、タスク、利用可能な操作をあいまい検索。↑↓ で選択、Enter で実行、Esc で閉じます。言語／外観の変更、現在の範囲のファイル／Git ツール、確認付きの AI 全停止に対応します。
 - **ファイルへ移動**：プロジェクト／タスクで ⌘/Ctrl+P を押してファイルを検索（最大 50 件）。`パス:行` を入力し Enter を押すと、エディターで指定行（1 起算）を開きます。
+- **プロジェクトのファイル範囲**：プロジェクト画面ではメインフォルダー、タスク画面では作業コピーを検索・閲覧します。ファイル API の `task` は省略／空文字が可能です。秘密除外、検索50件、読み取り256 KiB、範囲外パス拒否を維持し、制限付きプロジェクトの検索・読み取りは拒否します。
 - **ショートカット説明**：入力欄以外で `?`、または ⌘/Ctrl+/ を押すと、ナビゲーション、候補、保存、送信、端末のキー操作を表示。既存のショートカットや送信規則は変わりません。
 - **タスクの期限とタグ**：詳細作成フォームとタスク下部で日付とカンマ区切りのタグを編集できます。ツリーと一覧では未完了タスクの期限超過を表示します。
 - **タスクテンプレート**：タスクのタイトル・手順・最初の指示をプロジェクト `.ai/templates/*.md` またはワークスペース `templates/*.md` に保存し、新規タスクを作成できます。指示は編集可能な下書きのみ、削除は確認必須です。API：`GET /api/task/templates`、`POST /api/task/template/{save,create,delete}`。
@@ -193,7 +194,7 @@ HTTP JSON と SSE を使い、デスクトップ版と Web 版で完全に共通
 | `POST /api/upload`、`GET /api/upload`、`GET /api/attachment` | 画像アップロード、プレビュー、会話の添付ファイル |
 | `GET /api/task/preview`、`GET /api/task/diff`、`POST /api/task/merge`、`/api/task/merge-exclusion`、`/api/task/copyclear` | 作業コピー |
 | `GET /api/task/merged`、`POST /api/task/unmerge` | メインフォルダの最新コミットがこのタスクのマージ（`YuMeewADE-Task:` トレーラー）ならそのハッシュを返す。マージの取り消し：メインフォルダをマージ前に戻し、ブランチと作業コピーを再作成してタスクを進行中に戻す。新しいコミットや未コミットの内容があると 409 |
-| `GET /api/task/files?project=&task=&q=`、`GET /api/task/file?project=&task=&path=` | 読み取り専用のファイル閲覧と `@ファイル名` メンション：ファイル名検索（最大 50 件、`.env*` などのローカル秘密ファイルは除外）と 1 ファイルの読み取り（先頭 256 KB。パスは一覧内かつ解決後もコピー内であること。バイナリは内容なし） |
+| `GET /api/task/files?project=&task=&q=`、`GET /api/task/file?project=&task=&path=` | 読み取り専用閲覧と `@ファイル名` メンション：`task` 省略／空文字はメインフォルダー、それ以外はタスクの閲覧ルートを使用。制限付きプロジェクトは403。秘密を除外して最大50件検索、先頭256 KiBを読み取り、一覧内かつ解決後もルート内のパスのみ許可。バイナリは内容なし |
 | `POST /api/task/revert-file` | `{project, task, path}`：1 ファイルをメインフォルダから分岐した時点の状態に戻す（既存ファイルは元の内容に、新規追加は削除）。パスは現在変更のあるファイルであること（なければ 404）。AI 実行中は 409 |
 | `POST /api/task/verify` | 台帳の全検証を実行し `{ok, exitCode, timedOut, ms, output, truncated, steps, drifted}` を返す。排他実行 |
 | `GET /api/task/verify?project=&task=` | 現内容 fingerprint が一致すると `{ok, exitCode, timedOut, at, steps, drifted}`、それ以外は `null`。メモリのみ |

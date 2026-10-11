@@ -1,6 +1,6 @@
 import type { App } from '../../server/app.ts';
 import { AppError } from '../../shared/errors.ts';
-import { Router, reqString } from '../router.ts';
+import { Router, reqString, optString } from '../router.ts';
 
 export function registerGitRoutes(router: Router, app: App): void {
   router.get('/api/task/preview', async ({ query }) => app.worktree.preview(reqString(query, 'project', 120), reqString(query, 'task', 120)));
@@ -27,14 +27,20 @@ export function registerGitRoutes(router: Router, app: App): void {
     return result;
   });
   router.get('/api/task/files', async ({ query }) => {
+    const project = reqString(query, 'project', 120);
+    await app.trust.assertExecutable(project);
     const needle = (query.get('q') ?? '').toLowerCase().slice(0, 200);
-    const all = await app.worktree.listFiles(reqString(query, 'project', 120), reqString(query, 'task', 120));
+    const all = await app.worktree.listFiles(project, optString(query, 'task', 120) ?? '');
     const base = (file: string) => file.slice(file.lastIndexOf('/') + 1).toLowerCase();
     const hits = needle ? all.filter(file => file.toLowerCase().includes(needle)) : all;
     hits.sort((a, b) => Number(!base(a).startsWith(needle)) - Number(!base(b).startsWith(needle)) || a.length - b.length || a.localeCompare(b));
     return { files: hits.slice(0, 50), total: hits.length };
   });
-  router.get('/api/task/file', async ({ query }) => app.worktree.readFile(reqString(query, 'project', 120), reqString(query, 'task', 120), reqString(query, 'path', 1000)));
+  router.get('/api/task/file', async ({ query }) => {
+    const project = reqString(query, 'project', 120);
+    await app.trust.assertExecutable(project);
+    return app.worktree.readFile(project, optString(query, 'task', 120) ?? '', reqString(query, 'path', 1000));
+  });
   router.post('/api/task/revert-file', async ({ body }) => {
     const project = reqString(body, 'project', 120);
     const task = reqString(body, 'task', 120);

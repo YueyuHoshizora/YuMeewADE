@@ -82,7 +82,7 @@ export function openGoToFile(context: ViewContext): boolean {
   if (!scope || !project || (scope.task && !project.tasks.some(task => task.id === scope.task))) return false;
   picker(t('palette.gotoFile'), async value => {
     const parsed = fileQuery(value);
-    const found = await request<{ files: string[]; total: number }>(query('/api/task/files', { ...scope, q: parsed.path }));
+    const found = await request<{ files: string[]; total: number }>(query('/api/task/files', { project: scope.project, ...(scope.task ? { task: scope.task } : {}), q: parsed.path }));
     return [
       ...found.files.map(path => ({ label: path, action: () => window.dispatchEvent(new CustomEvent('yumeewade:open-file', { detail: { ...scope, path, ...(parsed.line ? { line: parsed.line } : {}) } })) })),
     ];

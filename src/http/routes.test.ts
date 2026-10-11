@@ -16,6 +16,64 @@ async function setup() {
   return { server, project, task };
 }
 
+test('project-scope files use the external main folder and retain file and trust boundaries', async () => {
+  const s = await startTestServer();
+  try {
+    const root = path.join(s.dir, 'main-folder');
+    await fs.mkdir(root);
+    await gitOk(root, ['init', '-q']);
+    const p = (await s.api('POST', '/api/project/new', { name: 'External', body: root })).json as Project;
+    await fs.writeFile(path.join(root, 'source.txt'), 'main folder\n');
+    await fs.writeFile(path.join(root, 'large.txt'), 'x'.repeat(300 * 1024));
+    await fs.writeFile(path.join(root, '.env'), 'private');
+    await fs.writeFile(path.join(root, '.npmrc'), 'private');
+    await fs.writeFile(path.join(s.dir, 'outside.txt'), 'outside');
+    await fs.symlink(path.join(s.dir, 'outside.txt'), path.join(root, 'escape.txt'));
+    await gitOk(root, ['add', '.env', '.npmrc', 'source.txt', 'large.txt', 'escape.txt']);
+    await Promise.all(Array.from({ length: 55 }, (_, n) => fs.writeFile(path.join(root, `entry-${n}.txt`), 'entry')));
+    for (const taskQuery of ['', '&task=']) {
+      const suffix = `?project=${p.id}${taskQuery}`;
+      const list = await s.api('GET', `/api/task/files${suffix}`);
+      assert.equal(list.status, 200);
+      const files = list.json as { files: string[]; total: number };
+      assert.equal(files.files.length, 50);
+      assert.equal(files.total, 58);
+      assert.ok(files.files.every(file => file !== '.env' && file !== '.npmrc'));
+      const found = await s.api('GET', `/api/task/files${suffix}&q=SOURCE`);
+      assert.deepEqual(found.json, { files: ['source.txt'], total: 1 });
+      const read = await s.api('GET', `/api/task/file${suffix}&path=source.txt`);
+      assert.equal(read.status, 200);
+      assert.ok(read.json && typeof read.json === 'object' && 'text' in read.json);
+      assert.equal(read.json.text, 'main folder\n');
+      const large = await s.api('GET', `/api/task/file${suffix}&path=large.txt`);
+      assert.ok(large.json && typeof large.json === 'object' && 'truncated' in large.json && 'text' in large.json && typeof large.json.text === 'string');
+      assert.equal(large.json.truncated, true);
+      assert.equal(large.json.text.length, 256 * 1024);
+      for (const file of ['.env', '.npmrc', '../outside.txt', 'escape.txt']) {
+        const denied = await s.api('GET', `/api/task/file${suffix}&path=${encodeURIComponent(file)}`);
+        assert.equal(denied.status, 404);
+        assert.ok(denied.json && typeof denied.json === 'object' && 'detail' in denied.json);
+        assert.equal(denied.json.detail, 'file_missing');
+      }
+    }
+    // The browser passes no task for scope recovery and document reads.
+    assert.equal((await s.api('GET', `/api/editor/scope?project=${p.id}`)).status, 200);
+    const document = await s.api('GET', `/api/editor/file?project=${p.id}&path=source.txt`);
+    assert.equal(document.status, 200);
+    assert.ok(document.json && typeof document.json === 'object' && 'text' in document.json);
+    assert.equal(document.json.text, 'main folder\n');
+    assert.equal((await s.api('GET', `/api/task/files?project=${p.id}&task=${'x'.repeat(121)}`)).status, 400);
+    const trust = await s.app.trust.view(p.id);
+    await s.app.trust.update(p.id, { state: 'restricted', overrides: {}, revision: trust.revision, confirmed: true });
+    for (const route of [`/api/task/files?project=${p.id}`, `/api/task/file?project=${p.id}&task=&path=source.txt`]) {
+      const denied = await s.api('GET', route);
+      assert.equal(denied.status, 403);
+      assert.ok(denied.json && typeof denied.json === 'object' && 'detail' in denied.json);
+      assert.equal(denied.json.detail, 'project_restricted');
+    }
+  } finally { await s.close(); }
+});
+
 test('state, completion approval and step hash continuation', async () => {
   const { server: s, project: p, task: t } = await setup();
   const ids = { project: p.id, task: t.id };

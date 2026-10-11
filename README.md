@@ -65,6 +65,7 @@ Claude／Codex 模型清單直接讀 CLI 自己的快取（`~/.codex/models_cach
 - **GitHub Issues**：專案頁手動搜尋最多 30 筆未結 issue、查看本文（最多 10,000 字），從 issue 建立作業會預填標題與第一則指示草稿，不自動啟動 AI；作業以 `issue`／`issueUrl` 記錄並顯示連結。`PROJECT.md` 的 `issues` 是本地問題／風險清單，另行顯示，並非 GitHub issues。
 - **命令面板**：⌘/Ctrl+Shift+P 模糊搜尋專案、作業與可用操作；↑↓ 選擇、Enter 執行、Esc 關閉。可切換語言／外觀、開啟目前範圍的檔案與 Git 工作台；停止全部 AI 先要求確認。
 - **前往檔案**：在專案／作業按 ⌘/Ctrl+P，透過既有檔案搜尋顯示最多 50 筆結果；輸入 `路徑:行號` 可定位到指定行（行號從 1 起算），Enter 開啟編輯器。
+- **專案檔案範圍**：前往檔案與檔案瀏覽在專案頁使用主資料夾，作業頁仍使用工作副本。檔案 API 的 `task` 可省略或留空；機密排除、50 筆搜尋／256 KiB 讀取上限與根目錄防逃逸不變，受限專案拒絕搜尋及讀取。
 - **快捷鍵說明**：非輸入狀態按 `?`，或隨時按 ⌘/Ctrl+/，顯示全域導航、面板、檔案儲存、輸入建議、對話送出與終端鍵盤操作；不改變原本 `/`、⌘K、⌘⇧F 或輸入框規則。
 - **工具核准**：Claude 安全模式提供工具名稱、摘要、允許一次／拒絕與本輪允許此工具；執行面板與「交給你嚕」顯示等待核准。預設 120 秒逾時拒絕；停止、重做、補充、關閉與重啟不保留授權。本輪允許是同名工具的廣泛授權，不是同一命令授權。Codex exec／Grok single／agy print 保留既有保護並明示未支援。
 - **桌面視窗恢復**：在 userData 原子保存視窗位置、大小、最大化與全螢幕；螢幕配置改變時將離屏視窗置中。
@@ -198,7 +199,7 @@ HTTP JSON 加 SSE，桌面版與網頁版完全相同。型別定義在 [`src/sh
 | `POST /api/upload`、`GET /api/upload`、`GET /api/attachment` | 圖片上傳、預覽、對話附件 |
 | `GET /api/task/preview`、`GET /api/task/diff`、`POST /api/task/merge`、`/api/task/merge-exclusion`、`/api/task/copyclear` | 工作副本 |
 | `GET /api/task/merged`、`POST /api/task/unmerge` | 主資料夾最新 commit 若是該作業的合併（`YuMeewADE-Task:` 標記）就回其 hash；撤銷合併：主資料夾回到合併前、重建分支與副本、作業回到進行中。之後有新 commit 或未提交內容時回 409 |
-| `GET /api/task/files?project=&task=&q=`、`GET /api/task/file?project=&task=&path=` | 唯讀檔案瀏覽與 `@檔名` 提及：依檔名搜尋（最多 50 筆，不含 `.env*` 等本機機密檔）、讀取單一檔案（前 256 KB；路徑必須在清單內且解析後仍在副本內，二進位檔不回內容） |
+| `GET /api/task/files?project=&task=&q=`、`GET /api/task/file?project=&task=&path=` | 唯讀檔案瀏覽與 `@檔名` 提及：`task` 省略／空字串使用主資料夾，否則使用作業檢視根目錄；受限專案回 403。檔名搜尋最多 50 筆且排除本機機密；讀取前 256 KiB，路徑須在清單內且 realpath 仍在根目錄內，二進位不回內容 |
 | `POST /api/task/revert-file` | `{project, task, path}`：把單一檔案還原成與主資料夾分岔時的樣子（原有檔案取回原內容、新增的檔案刪除）；路徑必須是目前有變更的檔案，否則 404；AI 執行中回 409 |
 | `POST /api/task/verify` | 執行台帳的全部具名檢查；回 `{ok, exitCode, timedOut, ms, output, truncated, steps, drifted}`；互斥執行 |
 | `GET /api/task/verify?project=&task=` | 目前內容指紋仍相符時回 `{ok, exitCode, timedOut, at, steps, drifted}`，否則 `null`；僅存記憶體 |
