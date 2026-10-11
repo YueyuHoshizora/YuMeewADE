@@ -29,7 +29,7 @@ export function quotaLabel(label: string): string {
     case 'monthly credits': return t('usage.monthlyCredits');
     case 'credits': return t('usage.credits');
     case 'on-demand': return t('usage.onDemand');
-    default: return label;
+    default: return label.replace(/ · Weekly Limit Remaining$/, '');
   }
 }
 export function localTime(value: string): string {
