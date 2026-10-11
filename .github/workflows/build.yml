@@ -20,6 +20,7 @@ jobs:
           node-version: 24
           cache: npm
       - run: npm ci
+      - run: npm run patch:build-deps
       - run: npm run typecheck
       - run: npm test
       - run: npm run build
@@ -38,14 +39,22 @@ jobs:
           node-version: 24
           cache: npm
       - run: npm ci
+      - run: npm run patch:build-deps
       - name: Install Linux desktop smoke dependencies
         if: runner.os == 'Linux'
         run: sudo apt-get update && sudo apt-get install -y xvfb xauth dbus-x11 gnome-keyring libsecret-1-0 libgtk-3-0 libnss3 libasound2t64
       - run: npm run build
-      # 未簽名產物（PLAN.md 假設 7）；--publish never 避免 electron-builder 嘗試發佈
-      - run: npx electron-builder --config electron-builder.yml --publish never
+      # Credentials are optional; absent credentials must never be described as official signing.
+      - run: node scripts/package-signing.ts
         env:
-          CSC_IDENTITY_AUTO_DISCOVERY: 'false'
+          CSC_LINK: ${{ runner.os == 'macOS' && secrets.MAC_CSC_LINK || '' }}
+          CSC_KEY_PASSWORD: ${{ secrets.MAC_CSC_KEY_PASSWORD }}
+          CSC_NAME: ${{ secrets.MAC_CSC_NAME }}
+          APPLE_ID: ${{ secrets.APPLE_ID }}
+          APPLE_APP_SPECIFIC_PASSWORD: ${{ secrets.APPLE_APP_SPECIFIC_PASSWORD }}
+          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+          WIN_CSC_LINK: ${{ runner.os == 'Windows' && secrets.WIN_CSC_LINK || '' }}
+          WIN_CSC_KEY_PASSWORD: ${{ secrets.WIN_CSC_KEY_PASSWORD }}
       - name: Launch installed and portable artifacts (macOS / Windows)
         if: runner.os != 'Linux'
         run: node scripts/artifact-smoke.ts release
@@ -78,6 +87,10 @@ jobs:
         with:
           path: artifacts
           merge-multiple: true
+      - name: Generate artifact checksums and optional publisher signature
+        run: node scripts/update-metadata.ts artifacts
+        env:
+          UPDATE_SIGNING_PRIVATE_KEY: ${{ secrets.UPDATE_SIGNING_PRIVATE_KEY }}
       - run: node scripts/release.ts
         env:
           GH_TOKEN: ${{ github.token }}

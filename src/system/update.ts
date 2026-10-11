@@ -1,4 +1,4 @@
-// 檢查 GitHub 發行頁有沒有比目前更新的版本；只通知，不自動下載或安裝（安裝檔未簽名，由使用者自己確認）。
+// Release discovery never executes files; controlled download and trust verification live in update-download.ts.
 import type { UpdateAsset, UpdateInfo } from '../shared/types.ts';
 
 const SEMVER = /^v?(\d+)\.(\d+)\.(\d+)(?:-([0-9A-Za-z.-]+))?(?:\+[0-9A-Za-z.-]+)?$/;
@@ -26,6 +26,7 @@ interface RawAsset { name: string; url: string; size: number }
 
 /** 只留下適合本機作業系統與架構的檔案，並標出是安裝版還是免安裝版。 */
 export function pickAssets(assets: RawAsset[], platform: NodeJS.Platform, arch: string): UpdateAsset[] {
+  if (arch !== 'x64' && arch !== 'arm64') return [];
   const wantArm = arch === 'arm64';
   const found: UpdateAsset[] = [];
   for (const asset of assets) {
@@ -42,23 +43,27 @@ export function pickAssets(assets: RawAsset[], platform: NodeJS.Platform, arch: 
 
 /** 取得最新的正式發行（草稿與預發行不在 /releases/latest 內）。任何失敗或內容不合預期都回 null。 */
 export async function fetchLatestRelease(repo: string, platform: NodeJS.Platform = process.platform, arch: string = process.arch, fetcher: typeof fetch = fetch): Promise<UpdateInfo | null> {
+  if (!/^[A-Za-z0-9_-]+\/[A-Za-z0-9_.-]+$/.test(repo)) return null;
   try {
     const res = await fetcher(`https://api.github.com/repos/${repo}/releases/latest`, {
       signal: AbortSignal.timeout(10_000),
       headers: { accept: 'application/vnd.github+json', 'user-agent': 'YuMeewADE-update-check' },
     });
     if (!res.ok) return null;
-    const body = await res.json() as { tag_name?: unknown; html_url?: unknown; body?: unknown; draft?: unknown; prerelease?: unknown; assets?: unknown };
+    const chunks: Uint8Array[] = []; let bytes = 0;
+    if (!res.body) return null;
+    for await (const chunk of res.body) { bytes += chunk.length; if (bytes > 1024 * 1024) return null; chunks.push(chunk); }
+    const body = JSON.parse(Buffer.concat(chunks).toString('utf8')) as { tag_name?: unknown; html_url?: unknown; body?: unknown; draft?: unknown; prerelease?: unknown; assets?: unknown };
     if (body.draft === true || body.prerelease === true || typeof body.tag_name !== 'string' || typeof body.html_url !== 'string') return null;
     const parsed = parse(body.tag_name);
     if (!parsed) return null;
     // 連結只收發行倉庫自己的 https 位址，避免回應被竄改後把使用者導去別處。
     const prefix = `https://github.com/${repo}/`;
-    if (!body.html_url.startsWith(prefix)) return null;
+    if (body.html_url !== `${prefix}releases/tag/${encodeURIComponent(body.tag_name)}`) return null;
     const raw: RawAsset[] = [];
     if (Array.isArray(body.assets)) {
       for (const item of body.assets as { name?: unknown; browser_download_url?: unknown; size?: unknown }[]) {
-        if (typeof item?.name === 'string' && typeof item.browser_download_url === 'string' && item.browser_download_url.startsWith(prefix) && typeof item.size === 'number') {
+        if (typeof item?.name === 'string' && /^[A-Za-z0-9_. -]{1,180}$/.test(item.name) && !item.name.includes('..') && typeof item.browser_download_url === 'string' && item.browser_download_url === `${prefix}releases/download/${encodeURIComponent(body.tag_name)}/${encodeURIComponent(item.name)}` && typeof item.size === 'number' && Number.isSafeInteger(item.size) && item.size > 0 && item.size <= 2 * 1024 ** 3) {
           raw.push({ name: item.name, url: item.browser_download_url, size: item.size });
         }
       }

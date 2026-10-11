@@ -18,7 +18,7 @@ if (process.argv[1] && import.meta.url === pathToFileURL(path.resolve(process.ar
   const tag = process.env['GITHUB_REF_NAME'];
   if (!tag?.startsWith('v')) throw new Error('Release requires a v* tag');
   const root = 'artifacts';
-  const files = (await readdir(root, { recursive: true })).filter((file) => /\.(?:dmg|zip|exe|AppImage|deb)$/.test(file)).sort().map((file) => path.join(root, file));
+  const files = (await readdir(root, { recursive: true })).filter((file) => /\.(?:dmg|zip|exe|AppImage|deb)$/.test(file) || file === 'update-integrity.json').sort().map((file) => path.join(root, file));
   if (!files.length) throw new Error('No release artifacts downloaded');
   const notes = releaseNotes(await readFile('CHANGELOG.md', 'utf8'), tag);
   const temporary = await mkdtemp(path.join(tmpdir(), 'yumeewade-release-'));
