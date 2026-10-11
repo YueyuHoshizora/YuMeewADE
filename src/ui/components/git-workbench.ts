@@ -1,4 +1,4 @@
-import type { EditorDocument, GitWorkbenchStatus, GitFileDiff, GitConflictView } from '../../shared/types.ts';
+import type { EditorDocument, GitWorkbenchStatus, GitFileDiff, GitConflictView, GitRemote } from '../../shared/types.ts';
 import { query, request } from '../api.ts';
 import { t } from '../i18n/index.ts';
 import { area, button, confirmModal, el, field, input, modal, row, select, toast, type ViewContext } from './dom.ts';
@@ -123,6 +123,24 @@ export function gitWorkbenchButton(context: ViewContext, project: string, task?:
       const branch = input(); branch.maxLength = 200;
       const existing = select(state.branches.map(name => ({ value: name, label: name })), state.branch);
       panel.append(field(t('workbench.branch'), branch), row(button(t('workbench.create'), () => mutate('branch', { name: branch.value, create: true })), existing, button(t('workbench.switch'), () => mutate('branch', { name: existing.value, create: false }))));
+      panel.append(row(button(t('gitRemote.rename'), () => mutate('manage-branch', { action: 'rename', name: existing.value, newName: branch.value })), ...[false, true].map(force => button(t(force ? 'gitRemote.force' : 'gitRemote.delete'), async () => {
+        if (!await confirmModal(t('gitRemote.delete'), existing.value, t('gitRemote.delete'))) return;
+        if (force && !await confirmModal(t('gitRemote.force'), `${existing.value}\n${t('gitRemote.forceConfirm')}`, t('gitRemote.force'))) return;
+        await mutate('manage-branch', { action: 'delete', name: existing.value, force, confirmed: true, forceConfirmed: force });
+      }))));
+      const remoteName = input(); remoteName.maxLength = 100;
+      const remoteUrl = input(); remoteUrl.maxLength = 2048;
+      panel.append(field(t('workbench.remote'), remoteName), field(t('gitRemote.url'), remoteUrl), button(t('gitRemote.add'), () => mutate('remote', { action: 'add', name: remoteName.value, url: remoteUrl.value })));
+      for (const entry of await request<GitRemote[]>(query('/api/git/remotes', ids))) {
+        const newName = input(entry.name); newName.maxLength = 100;
+        const fetchUrl = input(entry.fetchUrls[0] ?? ''); fetchUrl.maxLength = 2048;
+        const pushUrl = input(entry.pushUrls[0] ?? ''); pushUrl.maxLength = 2048;
+        const group = el('section', 'form');
+        group.append(el('h3', '', entry.name), el('pre', '', `${t('gitRemote.fetchUrl')}: ${entry.fetchUrls.join('\n')}\n${t('gitRemote.pushUrl')}: ${entry.pushUrls.join('\n')}`), field(t('workbench.remote'), newName), button(t('gitRemote.rename'), () => mutate('remote', { action: 'rename', name: entry.name, newName: newName.value })), field(t('gitRemote.fetchUrl'), fetchUrl), button(t('gitRemote.setUrl'), () => mutate('remote', { action: 'set-url', name: entry.name, url: fetchUrl.value })), field(t('gitRemote.pushUrl'), pushUrl), button(t('gitRemote.setUrl'), () => mutate('remote', { action: 'set-url', name: entry.name, url: pushUrl.value, push: true })), button(t('gitRemote.remove'), async () => {
+          if (await confirmModal(t('gitRemote.remove'), entry.name, t('gitRemote.remove'))) await mutate('remote', { action: 'remove', name: entry.name, confirmed: true });
+        }));
+        panel.append(group);
+      }
       const remote = select(state.remotes.map(name => ({ value: name, label: name })), state.remotes[0]);
       panel.append(field(t('workbench.remote'), remote), row(button(t('workbench.fetch'), () => mutate('fetch', { remote: remote.value })), button(t('workbench.push'), async () => {
         if (await confirmModal(t('workbench.push'), `${state.root}\n${state.branch} → ${remote.value}\n${t('workbench.confirmPush')}`, t('workbench.push'))) await mutate('push', { remote: remote.value, confirmed: true });

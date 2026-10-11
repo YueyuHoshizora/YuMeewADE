@@ -70,6 +70,7 @@ Claude/Codex model lists and reasoning efforts come from their own caches, with 
 - **Project memory**: beside project rules, list/read/preview/create/edit and confirm deletion of `.ai/memory/` notes including `INDEX.md`. Whitelisted `.md` names only, 256 KiB per file/200 files, no symlink following. Save/delete check content revisions; newer AI edits return 409. Copy your edits before reloading.
   Saving/deleting is blocked while project AI runs; reading and editing drafts remain available.
 - **MCP management**: Settings manages all four AIs in the active App account’s isolated user scope, never original CLI/project config. Supports stdio command, one argument per line, KEY=value env, HTTP URL and Name: value headers; Claude/Grok also support SSE. Only env/header keys are shown after save; removal requires confirmation. MCP programs execute with your permissions.
+- **Remotes/branches**: list fetch/push URLs; add, rename, set URLs and confirm remote removal. Rename local branches; delete with safe `-d`, or `-D` after a separate second confirmation. Current and live-task `ym/<task>` branches cannot be deleted. URLs allow https/ssh/git/file and scp syntax only.
 - **Archive recovery**: preview impact before archiving/restoring projects or tasks. Forced archive retains the branch and original working-copy recovery snapshot, including untracked/ignored/secret files and deletions. Restore rebuilds the worktree and refuses existing destinations. `.yumeewade/recovery/` is private, not a public Git backup or a complete backup of an external main folder.
   After successful restoration, that recovery generation is retained but no longer eligible for replay on a later archive; original bytes remain available without overwriting subsequently merged content.
   Restoration involving checkout must satisfy saved trust and the current root; refusal rolls back ledger restoration and never automatically trusts an archived project. Direct-task ledger restoration without checkout remains available.
@@ -217,6 +218,7 @@ New route groups (exact requests/responses in [`src/http/routes/`](src/http/rout
 | Git stash/rebase | `GET /api/git/stashes`; `POST /api/git/{stash,rewrite}` |
 | GitHub PR review | `GET /api/git/pr-review?project=...&task=...` (task optional) |
 | GitHub Issues | `GET /api/git/issues?project=...&search=...`, `GET /api/git/issue?project=...&number=...`; `POST /api/git/issue-task` (project, number, title) |
+| Git remotes/branches | `GET /api/git/remotes`; `POST /api/git/{remote,manage-branch}` |
 | Review/workflows | `GET /api/review/capabilities`; `POST /api/review/{run,stop}`; `GET /api/task/workflow`; `POST /api/task/workflow/{configure,start,stop,approve}` |
 | Context/drafts | `GET/POST /api/task/context`, `GET /api/task/handoff`; `GET/POST /api/chat/draft`, `GET /api/chat/draft-image` |
 | Care | `GET/POST /api/care/health`; `GET /api/care/{backups,diagnostics}`; `POST /api/care/backup` (includeExternal), `/api/care/restore` (id, destination) |

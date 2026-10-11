@@ -4,6 +4,17 @@ import { Router, reqString } from '../router.ts';
 
 export function registerWorkbenchRoutes(router: Router, app: App): void {
   router.get('/api/git/status', async ({ query }) => app.gitWorkbench.status(reqString(query, 'project', 120), query.has('task') ? reqString(query, 'task', 120) : undefined));
+  router.get('/api/git/remotes', async ({ query }) => app.gitWorkbench.remotes(reqString(query, 'project', 120), query.has('task') ? reqString(query, 'task', 120) : undefined));
+  for (const operation of ['remote', 'manage-branch'] as const) router.post(`/api/git/${operation}`, async ({ body }) => {
+    const project = reqString(body, 'project', 120); const task = body.task === undefined ? undefined : reqString(body, 'task', 120);
+    for (const key of ['push', 'force', 'confirmed', 'forceConfirmed']) if (body[key] !== undefined && typeof body[key] !== 'boolean') throw new AppError('bad_request');
+    const action = reqString(body, 'action', 30); const name = reqString(body, 'name', operation === 'remote' ? 100 : 200);
+    const newName = body.newName === undefined ? undefined : reqString(body, 'newName', operation === 'remote' ? 100 : 200);
+    if (operation === 'remote') await app.gitWorkbench.remote(project, task, action, name, { ...(newName === undefined ? {} : { newName }), ...(body.url === undefined ? {} : { url: reqString(body, 'url', 2048) }), push: body.push === true, confirmed: body.confirmed === true });
+    else await app.gitWorkbench.manageBranch(project, task, action, name, { ...(newName === undefined ? {} : { newName }), force: body.force === true, confirmed: body.confirmed === true, forceConfirmed: body.forceConfirmed === true });
+    await app.oplog.record({ action: `git.${operation}.${action}`, project, ...(task ? { task } : {}) });
+    app.changed(project, task); return { ok: true };
+  });
   router.get('/api/git/pr-status', async ({ query }) => app.gitWorkbench.pullRequestStatus(reqString(query, 'project', 120), query.has('task') ? reqString(query, 'task', 120) : undefined));
   router.get('/api/git/pr-review', async ({ query }) => app.gitWorkbench.pullRequestReview(reqString(query, 'project', 120), query.has('task') ? reqString(query, 'task', 120) : undefined));
   router.get('/api/git/issues', async ({ query }) => app.gitWorkbench.issues(reqString(query, 'project', 120), query.has('search') ? reqString(query, 'search', 300) : ''));

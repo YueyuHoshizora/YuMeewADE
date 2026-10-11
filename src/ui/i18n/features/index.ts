@@ -29,6 +29,7 @@ import * as preview from './preview.ts';
 import * as editorEvents from './editor-events.ts';
 import * as memoryMcp from './memory-mcp.ts';
 import * as mcpManagement from './mcp-management.ts';
+import * as gitRemotes from './git-remotes.ts';
 
 export const featureZhTW = {
   ...archive.featureZhTW,
@@ -63,6 +64,7 @@ export const featureZhTW = {
   ...editorEvents.featureZhTW,
   ...memoryMcp.featureZhTW,
   ...mcpManagement.featureZhTW,
+  ...gitRemotes.featureZhTW,
 };
 export const featureZhCN = {
   ...archive.featureZhCN,
@@ -97,6 +99,7 @@ export const featureZhCN = {
   ...editorEvents.featureZhCN,
   ...memoryMcp.featureZhCN,
   ...mcpManagement.featureZhCN,
+  ...gitRemotes.featureZhCN,
 };
 export const featureEn = {
   ...archive.featureEn,
@@ -131,6 +134,7 @@ export const featureEn = {
   ...editorEvents.featureEn,
   ...memoryMcp.featureEn,
   ...mcpManagement.featureEn,
+  ...gitRemotes.featureEn,
 };
 export const featureJa = {
   ...archive.featureJa,
@@ -165,6 +169,7 @@ export const featureJa = {
   ...editorEvents.featureJa,
   ...memoryMcp.featureJa,
   ...mcpManagement.featureJa,
+  ...gitRemotes.featureJa,
 };
 export const featureDe = {
   ...archive.featureDe,
@@ -199,6 +204,7 @@ export const featureDe = {
   ...editorEvents.featureDe,
   ...memoryMcp.featureDe,
   ...mcpManagement.featureDe,
+  ...gitRemotes.featureDe,
 };
 export const featureFr = {
   ...archive.featureFr,
@@ -233,6 +239,7 @@ export const featureFr = {
   ...editorEvents.featureFr,
   ...memoryMcp.featureFr,
   ...mcpManagement.featureFr,
+  ...gitRemotes.featureFr,
 };
 export const featureIt = {
   ...archive.featureIt,
@@ -267,4 +274,5 @@ export const featureIt = {
   ...editorEvents.featureIt,
   ...memoryMcp.featureIt,
   ...mcpManagement.featureIt,
+  ...gitRemotes.featureIt,
 };

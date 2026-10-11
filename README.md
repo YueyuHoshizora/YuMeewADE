@@ -74,6 +74,7 @@ Claude／Codex 模型清單直接讀 CLI 自己的快取（`~/.codex/models_cach
 - **專案記憶**：專案頁規則旁可列出、閱讀、預覽、新增、編輯與確認刪除 `.ai/memory/`（含 `INDEX.md`）。僅白名單 `.md` 名稱、每檔 256 KiB／最多 200 檔，不跟隨 symlink；儲存與刪除核對內容 revision，AI 已寫入新內容時回 409，先複製編輯再重新載入。
   專案 AI 執行中暫停儲存／刪除，仍可閱讀及保留編輯草稿。
 - **MCP 管理**：設定頁依目前 App 帳號管理四個 AI 的隔離 user scope，不改原 CLI／專案設定。stdio command／逐行 args／KEY=value env、HTTP URL／Name: value headers；Claude／Grok 另支援 SSE。新增後僅顯示 env/header 鍵、不回傳值，移除需確認。MCP 程式會以你的權限執行。
+- **遠端／分支管理**：列出 fetch／push URLs，新增、改名、設定 URL 與確認移除遠端；本地分支改名、安全 `-d` 刪除及二次確認的 `-D`。現行分支與未封存作業的 `ym/<task>` 分支不可刪除；URL 僅接受 https／ssh／git／file 與 scp 格式。
 - **封存恢復**：先預覽影響，再封存／還原專案或作業。強制封存保留分支及原工作副本恢復快照，含未追蹤、ignored、機密檔與刪除狀態；還原重建 worktree，拒絕覆蓋現有目的地。`.yumeewade/recovery/` 為私有資料，不是可公開的 Git 備份，也不是外部主資料夾的完整備份。
   成功還原後，該代快照移入保留區，不再套用到日後的封存；原始資料仍保留，不會覆蓋後續已合併的內容。
   還原涉及 checkout 仍須符合原保存信任及目前 root，拒絕則回滾，不自動信任封存專案；不涉及 checkout 的直接作業台帳還原仍可使用。
@@ -222,6 +223,7 @@ HTTP JSON 加 SSE，桌面版與網頁版完全相同。型別定義在 [`src/sh
 | Git Stash／變基 | `GET /api/git/stashes`；`POST /api/git/{stash,rewrite}` |
 | GitHub PR 審查 | `GET /api/git/pr-review?project=...&task=...`（task 可省略） |
 | GitHub Issues | `GET /api/git/issues?project=...&search=...`、`GET /api/git/issue?project=...&number=...`；`POST /api/git/issue-task`（project、number、title） |
+| Git 遠端／分支 | `GET /api/git/remotes`；`POST /api/git/{remote,manage-branch}` |
 | 審查／流程 | `GET /api/review/capabilities`；`POST /api/review/run`、`/api/review/stop`；`GET /api/task/workflow`；`POST /api/task/workflow/{configure,start,stop,approve}` |
 | 背景／草稿 | `GET/POST /api/task/context`、`GET /api/task/handoff`；`GET/POST /api/chat/draft`、`GET /api/chat/draft-image` |
 | 維護 | `GET/POST /api/care/health`；`GET /api/care/backups`、`/api/care/diagnostics`；`POST /api/care/backup`（includeExternal）、`/api/care/restore`（id、destination） |

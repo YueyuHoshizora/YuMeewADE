@@ -713,6 +713,9 @@ export interface GitWorkbenchStatus {
   root: string; location: 'main' | 'task'; branch: string; upstream: string | null;
   ahead: number; behind: number; files: GitWorkbenchFile[]; branches: string[]; remotes: string[];
 }
+export interface GitRemote {
+  name: string; fetchUrls: string[]; pushUrls: string[];
+}
 export interface GitPullRequestStatus { available: boolean; authenticated: boolean; repository: string | null }
 export interface ReviewInput { ai: string; model?: string; effort?: string; text: string }
 export interface ReviewResult { request: string; text: string; ai: string; session?: string; ok: boolean; asks?: Ask[]; approved: boolean; structured: boolean; snapshot?: ReviewSnapshot }

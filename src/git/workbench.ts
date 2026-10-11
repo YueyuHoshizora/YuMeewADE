@@ -7,7 +7,7 @@ import { parseHunks, selectedPatch } from './precision.ts';
 import type { Workspace } from '../ledger/workspace.ts';
 import type { ProjectLedger } from '../ledger/projects.ts';
 import type { TaskLedger } from '../ledger/tasks.ts';
-import type { GitWorkbenchStatus, GitWorkbenchFile, GitPullRequestStatus } from '../shared/types.ts';
+import type { GitWorkbenchStatus, GitWorkbenchFile, GitPullRequestStatus, GitRemote } from '../shared/types.ts';
 import { AppError } from '../shared/errors.ts';
 import { withFileLocks } from '../shared/fsx.ts';
 import { git, hasCommits, isLocalSecret } from './git.ts';
@@ -15,6 +15,15 @@ import { github } from '../cli/github.ts';
 
 const split = (text: string) => text.split('\0').filter(Boolean);
 const branchName = (value: string) => /^[A-Za-z0-9][A-Za-z0-9._/-]{0,199}$/.test(value) && !value.includes('..') && !value.endsWith('/') && !value.endsWith('.lock');
+const managementName = (value: string, max: number) => typeof value === 'string' && value.length <= max && /^[A-Za-z0-9][A-Za-z0-9._/-]*$/.test(value) && !value.includes('..') && !value.includes('//') && value.split('/').every(part => !!part && !part.startsWith('.') && !part.endsWith('.') && !part.endsWith('.lock'));
+const remoteUrl = (value: string) => {
+  if (typeof value !== 'string' || !value || value.length > 2048 || /[\s\x00-\x1f\x7f]/u.test(value)) return false;
+  if (/^[A-Za-z0-9._-]+@[A-Za-z0-9.-]+:.+$/.test(value)) return true;
+  try {
+    const url = new URL(value);
+    return ['https:', 'ssh:', 'git:', 'file:'].includes(url.protocol) && (url.protocol === 'file:' ? !!url.pathname && !url.username && !url.password : !!url.hostname);
+  } catch { return false; }
+};
 export class GitWorkbench {
   private readonly deps: { ws: Workspace; projects: ProjectLedger; tasks: TaskLedger; isRunning: (project: string, task: string) => boolean; ghCommand?: string };
   constructor(deps: { ws: Workspace; projects: ProjectLedger; tasks: TaskLedger; isRunning: (project: string, task: string) => boolean; ghCommand?: string }) { this.deps = deps; }
@@ -66,6 +75,43 @@ export class GitWorkbench {
       const upstream = upstreamResult.code === 0 ? upstreamResult.stdout.trim() : null;
       const counts = upstream ? (await this.command(root, ['rev-list', '--left-right', '--count', 'HEAD...@{upstream}'])).trim().split(/\s+/).map(Number) : [0, 0];
       return { root, location: task ? 'task' : 'main', branch, upstream, ahead: counts[0] ?? 0, behind: counts[1] ?? 0, files: await this.files(root), branches: (await this.command(root, ['for-each-ref', '--format=%(refname:short)', 'refs/heads/'])).trim().split('\n').filter(Boolean), remotes: (await this.command(root, ['remote'])).trim().split('\n').filter(Boolean) };
+    });
+  }
+  async remotes(project: string, task?: string): Promise<GitRemote[]> {
+    return this.locked(project, task, false, async root => {
+      const names = (await this.command(root, ['remote'])).trim().split('\n').filter(Boolean);
+      if (names.length > 100) throw new AppError('too_large');
+      return Promise.all(names.map(async name => ({
+        name,
+        fetchUrls: (await this.command(root, ['remote', 'get-url', '--all', name])).trim().split('\n').filter(Boolean),
+        pushUrls: (await this.command(root, ['remote', 'get-url', '--push', '--all', name])).trim().split('\n').filter(Boolean),
+      })));
+    });
+  }
+  async remote(project: string, task: string | undefined, action: string, name: string, options: { newName?: string; url?: string; push?: boolean; confirmed?: boolean }): Promise<void> {
+    if (!managementName(name, 100) || !['add', 'rename', 'set-url', 'remove'].includes(action)) throw new AppError('bad_request');
+    if (action === 'rename' && !managementName(options.newName ?? '', 100)) throw new AppError('bad_request');
+    if ((action === 'add' || action === 'set-url') && !remoteUrl(options.url ?? '')) throw new AppError('bad_request');
+    if (action === 'remove' && options.confirmed !== true) throw new AppError('bad_request', 'git_confirm_required');
+    return this.locked(project, task, true, async root => {
+      await this.command(root, ['remote', action, ...(action === 'set-url' && options.push ? ['--push'] : []), name, ...(action === 'rename' ? [options.newName!] : action === 'add' || action === 'set-url' ? [options.url!] : [])]);
+    });
+  }
+  async manageBranch(project: string, task: string | undefined, action: string, name: string, options: { newName?: string; force?: boolean; confirmed?: boolean; forceConfirmed?: boolean }): Promise<void> {
+    if (!managementName(name, 200) || !['rename', 'delete'].includes(action) || action === 'rename' && !managementName(options.newName ?? '', 200)) throw new AppError('bad_request', 'git_branch_invalid');
+    if (action === 'delete' && (options.confirmed !== true || options.force && options.forceConfirmed !== true)) throw new AppError('bad_request', 'git_confirm_required');
+    return this.locked(project, task, true, async root => {
+      // Live task names are ledger-owned: renaming would sever the same ownership as deletion.
+      if ((await this.deps.tasks.list(project)).some(item => name === `ym/${item.id}`)) throw new AppError('conflict', 'git_workbench_path');
+      await this.command(root, ['show-ref', '--verify', `refs/heads/${name}`]);
+      if (action === 'delete') {
+        const current = (await this.command(root, ['symbolic-ref', '--quiet', '--short', 'HEAD']).catch(() => '')).trim();
+        if (name === current) throw new AppError('conflict', 'git_workbench_path');
+        await this.command(root, ['branch', options.force ? '-D' : '-d', '--', name]);
+      } else {
+        if ((await this.deps.tasks.list(project)).some(item => options.newName === `ym/${item.id}`)) throw new AppError('conflict', 'git_workbench_path');
+        await this.command(root, ['branch', '-m', '--', name, options.newName!]);
+      }
     });
   }
   private async safePath(root: string, relative: string, allowSecret = false): Promise<void> {
@@ -284,16 +330,16 @@ export class GitWorkbench {
       await this.command(root, create ? ['switch', '-c', name] : ['switch', name]);
     });
   }
-  private async remote(root: string, name: string): Promise<void> {
-    if (!/^[A-Za-z0-9][A-Za-z0-9._-]{0,99}$/.test(name) || !(await this.command(root, ['remote'])).split('\n').includes(name)) throw new AppError('bad_request', 'git_remote_invalid');
+  private async validateRemote(root: string, name: string): Promise<void> {
+    if (!managementName(name, 100) || !(await this.command(root, ['remote'])).split('\n').includes(name)) throw new AppError('bad_request', 'git_remote_invalid');
   }
   async fetch(project: string, task: string | undefined, remote: string): Promise<void> {
-    return this.locked(project, task, true, async root => { await this.remote(root, remote); await this.command(root, ['fetch', '--', remote]); });
+    return this.locked(project, task, true, async root => { await this.validateRemote(root, remote); await this.command(root, ['fetch', '--', remote]); });
   }
   async push(project: string, task: string | undefined, remote: string, confirmed: boolean): Promise<void> {
     if (!confirmed) throw new AppError('bad_request', 'git_confirm_required');
     return this.locked(project, task, true, async root => {
-      await this.remote(root, remote);
+      await this.validateRemote(root, remote);
       const branch = (await this.command(root, ['symbolic-ref', '--short', 'HEAD'])).trim();
       if (!branchName(branch)) throw new AppError('bad_request', 'git_branch_invalid');
       await this.command(root, ['push', '--set-upstream', '--', remote, `refs/heads/${branch}:refs/heads/${branch}`]);

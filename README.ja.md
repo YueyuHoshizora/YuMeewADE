@@ -70,6 +70,7 @@ Claude／Codex のモデル一覧・推論強度は CLI キャッシュから取
 - **プロジェクトメモリ**：ルールの隣で `.ai/memory/`（`INDEX.md` 含む）の一覧・閲覧・プレビュー・追加・編集・確認付き削除ができます。許可された `.md` 名のみ、1 ファイル 256 KiB／200 ファイル、symlink は追跡しません。保存・削除は内容 revision を確認し、AI の新しい編集があれば 409。編集をコピーしてから再読み込みしてください。
   プロジェクト AI の実行中は保存・削除を拒否します。閲覧と編集の下書きは引き続き利用できます。
 - **MCP 管理**：現在の App アカウントの隔離 user scope に四つの AI を管理し、元の CLI／プロジェクト設定は変更しません。stdio コマンド、1 行 1 引数、KEY=value env、HTTP URL と Name: value headers に対応し、Claude／Grok は SSE も利用できます。保存後は env/header のキーのみ表示し、削除は確認必須です。MCP プログラムはあなたの権限で実行します。
+- **リモート／ブランチ管理**：fetch／push URL 一覧、追加・名前変更・URL設定・確認付きリモート削除。本地ブランチの名前変更、安全な `-d` 削除、別の再確認後の `-D` に対応。現在のブランチと未アーカイブの `ym/<task>` は削除不可。URL は https／ssh／git／file と scp 形式のみ。
 - **アーカイブ復元**：プロジェクト／タスクへの影響をプレビューしてからアーカイブ・復元できます。強制アーカイブはブランチと元の作業コピーの復元スナップショットを保持し、未追跡・ignored・秘密ファイルと削除状態も保存します。復元は worktree を再作成し、既存の保存先を上書きしません。`.yumeewade/recovery/` は非公開資料であり、公開 Git バックアップや外部メインフォルダー全体のバックアップではありません。
   復元が成功した世代は保持領域へ移し、後のアーカイブには再適用しません。元のデータは残し、後からマージした内容を上書きしません。
   checkout を伴う復元は保存済み信頼と現在の root を満たす必要があり、拒否時は台帳復元をロールバックします。アーカイブ済みプロジェクトを自動で信頼しません。checkout のない直接タスクの台帳復元は利用できます。
@@ -217,6 +218,7 @@ HTTP JSON と SSE を使い、デスクトップ版と Web 版で完全に共通
 | Git stash／リベース | `GET /api/git/stashes`；`POST /api/git/{stash,rewrite}` |
 | GitHub PR レビュー | `GET /api/git/pr-review?project=...&task=...`（task は省略可能） |
 | GitHub Issues | `GET /api/git/issues?project=...&search=...`、`GET /api/git/issue?project=...&number=...`；`POST /api/git/issue-task`（project、number、title） |
+| Git リモート／ブランチ | `GET /api/git/remotes`；`POST /api/git/{remote,manage-branch}` |
 | 審査／workflow | `GET /api/review/capabilities`；`POST /api/review/{run,stop}`；`GET /api/task/workflow`；`POST /api/task/workflow/{configure,start,stop,approve}` |
 | 背景／草稿 | `GET/POST /api/task/context`、`GET /api/task/handoff`；`GET/POST /api/chat/draft`、`GET /api/chat/draft-image` |
 | 維持管理 | `GET/POST /api/care/health`；`GET /api/care/{backups,diagnostics}`；`POST /api/care/backup`（includeExternal）、`/api/care/restore`（id、destination） |

@@ -209,3 +209,50 @@ test('stash SHA防過期、drop確認、cherry-pick衝突回滾與rebase繼續�
   assert.equal((await workbench.status('P')).files.length, 0);
   await assert.rejects(workbench.rewrite('P', undefined, 'abort', '', true));
 }));
+
+test('遠端新增、改名、fetch/push URL及移除驗證與確認', () => withTmpWorkspace(async ws => {
+  const projects = new ProjectLedger(ws); const tasks = new TaskLedger(ws); await projects.create({ name: 'P' });
+  const workbench = new GitWorkbench({ ws, projects, tasks, isRunning: () => false });
+  for (const name of ['', '-x', 'a..b', 'a//b', 'a/.b', 'a.lock/x', 'a.', 'a/', 'x'.repeat(101)]) await assert.rejects(workbench.remote('P', undefined, 'add', name, { url: 'https://example.com/repo' }));
+  for (const url of ['', 'http://example.com/repo', 'ext::evil', '/tmp/repo', 'https://example.com/a b', 'ssh://host/\nfoo', 'https://', 'x'.repeat(2049)]) await assert.rejects(workbench.remote('P', undefined, 'add', 'origin', { url }));
+  for (const url of ['https://example.com/repo', 'ssh://git@example.com/repo', 'git://example.com/repo', `file://${ws.root}/repo`, 'git@example.com:org/repo']) {
+    await workbench.remote('P', undefined, 'add', 'origin', { url });
+    assert.deepEqual(await workbench.remotes('P'), [{ name: 'origin', fetchUrls: [url], pushUrls: [url] }]);
+    await workbench.remote('P', undefined, 'remove', 'origin', { confirmed: true });
+  }
+  await workbench.remote('P', undefined, 'add', 'origin', { url: 'https://example.com/fetch' });
+  await assert.rejects(workbench.remote('P', undefined, 'rename', 'origin', { newName: 'bad..name' }));
+  await workbench.remote('P', undefined, 'rename', 'origin', { newName: 'upstream' });
+  await workbench.remote('P', undefined, 'set-url', 'upstream', { url: 'ssh://git@example.com/fetch' });
+  await workbench.remote('P', undefined, 'set-url', 'upstream', { url: 'git@example.com:push', push: true });
+  assert.deepEqual(await workbench.remotes('P'), [{ name: 'upstream', fetchUrls: ['ssh://git@example.com/fetch'], pushUrls: ['git@example.com:push'] }]);
+  await assert.rejects(workbench.remote('P', undefined, 'remove', 'upstream', {}));
+  await workbench.remote('P', undefined, 'remove', 'upstream', { confirmed: true });
+  assert.deepEqual(await workbench.remotes('P'), []);
+}));
+
+test('本地分支改名、合併安全刪除、強制雙確認及現行／live作業保護', () => withTmpWorkspace(async ws => {
+  const projects = new ProjectLedger(ws); const tasks = new TaskLedger(ws); await projects.create({ name: 'P' });
+  const root = ws.projectDir('P'); const workbench = new GitWorkbench({ ws, projects, tasks, isRunning: () => false });
+  await fs.writeFile(path.join(root, 'branch.txt'), 'base'); await commitAll(root, 'base');
+  const current = (await workbench.status('P')).branch;
+  await gitOk(root, ['branch', 'merged']);
+  await workbench.manageBranch('P', undefined, 'rename', 'merged', { newName: 'renamed' });
+  assert.ok((await workbench.status('P')).branches.includes('renamed'));
+  await assert.rejects(workbench.manageBranch('P', undefined, 'rename', 'renamed', { newName: 'bad//name' }));
+  await assert.rejects(workbench.manageBranch('P', undefined, 'delete', 'renamed', {}));
+  await workbench.manageBranch('P', undefined, 'delete', 'renamed', { confirmed: true });
+  assert.ok(!(await workbench.status('P')).branches.includes('renamed'));
+  await assert.rejects(workbench.manageBranch('P', undefined, 'delete', current, { confirmed: true, force: true, forceConfirmed: true }));
+  const task = await tasks.create('P', { title: 'live' }); await gitOk(root, ['branch', `ym/${task.id}`]);
+  await assert.rejects(workbench.manageBranch('P', undefined, 'delete', `ym/${task.id}`, { confirmed: true, force: true, forceConfirmed: true }));
+  await tasks.archive('P', task.id);
+  await workbench.manageBranch('P', undefined, 'delete', `ym/${task.id}`, { confirmed: true });
+  await gitOk(root, ['checkout', '-b', 'unmerged']); await fs.writeFile(path.join(root, 'branch.txt'), 'topic'); await commitAll(root, 'topic');
+  await gitOk(root, ['checkout', current]);
+  await assert.rejects(workbench.manageBranch('P', undefined, 'delete', 'unmerged', { confirmed: true }));
+  await assert.rejects(workbench.manageBranch('P', undefined, 'delete', 'unmerged', { confirmed: true, force: true }));
+  assert.ok((await workbench.status('P')).branches.includes('unmerged'));
+  await workbench.manageBranch('P', undefined, 'delete', 'unmerged', { confirmed: true, force: true, forceConfirmed: true });
+  assert.ok(!(await workbench.status('P')).branches.includes('unmerged'));
+}));
