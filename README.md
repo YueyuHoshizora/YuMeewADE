@@ -99,6 +99,7 @@ Claude／Codex 模型清單直接讀 CLI 自己的快取（`~/.codex/models_cach
   - Node 除錯支援工作根內的平面本機 Source Map v3、持久化 revision 綁定的條件斷點、編輯器 gutter 與 source stack 定位。條件僅支援變數／屬性／literal 比較，在目標行程中執行，getter 可能有副作用；Watch 僅讀變數／屬性路徑，不呼叫 getter 或任意 evaluate。遠端／indexed map、機密與越界來源皆拒絕。
 - **整合設定**：`config.yaml` 的 `execution.ide`／`terminal`／`browser` 各為 `{command, args}`；argv 支援 `{cwd}`、`{url}`、`{command}` 替換。IDE 開資料夾需要 `{cwd}`，IDE debug 需要 `{url}`；自訂 terminal 需要 `{cwd}`，帶指令時也需 `{command}`。外部工具需自行安裝，指令以你的權限執行。
 - **Git**：status／PR、staged diff、綁定實際版本的逐檔／hunk／選取行 stage／unstage、base／ours／theirs 三方衝突與人工合併文字、commit、fetch 及 branch 操作。手動 commit 預設執行 hooks，bypass 必須明確確認。Push 須確認且禁止 force；PR 須確認及已登入 `gh`。不自動 push／發 PR，fetch／push／PR 是網路操作。
+- **GitHub 回饋作業**：PR 討論／issue 可轉為連結來源的本機作業與可編輯草稿，不自動送 AI。人工確認後才透過 `gh` 回覆、解決／重開 thread 或回寫 issue 狀態；PR 綁定 repository、穩定 comment／thread ID 與 head OID，過期 revision 或新 HEAD 拒絕寫回。
 - **獨立唯讀審查**：不借用寫作 session 或 full-access 旗標。Codex 使用原生 read-only sandbox，僅 Darwin／Linux；Claude 僅允許 Read／Glob／Grep，**是 CLI 工具政策，不是 OS 沙箱**。Grok／Gemini 或不符受限設定的 provider 明確拒絕，不以提示詞冒充安全隔離。CLI 本身仍是受信任的本機程式。
   結構化 `schema:1` JSON 審查持久化內容／HEAD 綁定的快照與 findings，含嚴重性、證據及生命週期歷史。人工 resolved／dismissed 必須附證據，不製造 AI 核准；可選合併門檻要求目前內容明確核准且沒有未解重大發現。
 - **角色與流程**：僅角色選取的主 CLI 在開始前不可用時，才用明確 backup；手動選擇不回退，執行失敗不換 AI。持久化 workflow 支援相依、角色／審查步驟與人工關卡，人工證據為非空字串。逐步重跑保留歷次結果並使該步及下游檢查點失效；作業比較使用兩個實際工作樹，列出有界檔案／內容差異。相依須完成且人工確認；重啟中斷後暫停，不自動恢復授權。
@@ -233,6 +234,7 @@ HTTP JSON 加 SSE，桌面版與網頁版完全相同。型別定義在 [`src/sh
 | 編輯設定／同步 | `GET/POST /api/editor/settings`；`GET /api/editor/preferences`；`POST /api/editor/{revisions,merge}` |
 | 測試／驗證歷史 | `GET /api/task/tests`、`/api/task/verify/history`；`POST /api/task/tests/{configure,run}` |
 | 終端恢復／source 除錯 | `POST /api/terminal/recovery/{init,list,bind,claim}`；`POST /api/debugger/{source-breakpoint,source-breakpoint/delete,watch}` |
+| GitHub 回饋作業 | `POST /api/git/feedback-task`；`GET /api/git/linked-feedback`；`POST /api/git/feedback-{draft,refresh,reply,resolve,unresolve,update,close}` |
 | 真正送出背景 | `GET /api/task/context/manifest?project=&task=&request=` |
 | 執行／整合 | `POST /api/execution/start`、`/stop`、`/preview`、`/ide`、`/terminal`、`/debug`；`GET /api/execution/list`、`/output`（上述短路徑均接 `/api/execution`） |
 | Git | `GET /api/git/status`、`/api/git/pr-status`；`POST /api/git/{stage,unstage,resolve,commit,fetch,branch,push,pr}` |

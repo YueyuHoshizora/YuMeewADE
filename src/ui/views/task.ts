@@ -37,6 +37,7 @@ import { workflowButton } from '../components/workflows.ts';
 import { confirmUsageRound } from '../components/usage-history.ts';
 import { projectTrustButton } from '../components/project-trust.ts';
 import { testExplorerButton, verificationHistoryButton } from '../components/test-explorer.ts';
+import { githubLinkedFeedbackPanel } from '../components/github-feedback.ts';
 
 export function taskView(
   context: ViewContext,
@@ -258,6 +259,9 @@ export function taskView(
     storeLocal(draftKey, draft.value);
     resizeDraft();
   };
+  header.append(githubLinkedFeedbackPanel(context, project.id, task.id, value => {
+    draft.value = value; storeLocal(draftKey, value); resizeDraft(); draft.focus();
+  }));
   const disposeComposeInsert = attachComposeInsert(draft, project.id, task.id);
   const initialPick = readLocal(
     pickKey,

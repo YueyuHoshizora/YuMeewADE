@@ -170,7 +170,7 @@ export function gitWorkbenchButton(context: ViewContext, project: string, task?:
       panel.append(field(t('workbench.remote'), remote), row(button(t('workbench.fetch'), () => mutate('fetch', { remote: remote.value })), button(t('workbench.push'), async () => {
         if (await confirmModal(t('workbench.push'), `${state.root}\n${state.branch} → ${remote.value}\n${t('workbench.confirmPush')}`, t('workbench.push'))) await mutate('push', { remote: remote.value, confirmed: true });
       })));
-      panel.append(githubPullRequestPanel(project, task, state.branch));
+      panel.append(githubPullRequestPanel(project, task, state.branch, context));
     };
     await refresh(); modal(t('workbench.title'), panel);
   });

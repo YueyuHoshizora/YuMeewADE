@@ -94,6 +94,7 @@ Claude／Codex のモデル一覧・推論強度は CLI キャッシュから取
   - Node デバッグは作業 root 内の平面ローカル Source Map v3、revision付き永続条件 breakpoint、エディター gutter、source stack 移動に対応します。変数／属性／literal 比較条件は対象プロセスで実行され、getter に副作用があり得ます。Watch は getter や任意 evaluate を呼びません。remote／indexed map、機密・範囲外ソースは拒否します。
 - **統合設定**：`config.yaml` の `execution.ide`／`terminal`／`browser` は `{command, args}`、argv 内で `{cwd}`／`{url}`／`{command}` を置換します。IDE フォルダーには `{cwd}`、IDE debug には `{url}` が必要。カスタム端末には `{cwd}`、コマンド指定時には `{command}` も必要です。外部ツールは自分でインストールし、指示は自分の権限で実行します。
 - **Git**：status／PR 状態、staged diff、実際の revision に結び付いたファイル／hunk／選択行 stage／unstage、base／ours／theirs 3方向競合表示と手動マージ文、commit、fetch、branch 操作。手動 commit は既定で hooks を実行し、bypass は明示確認が必要です。Push は確認必須・force 禁止、PR は確認とログイン済み `gh` が必要です。自動 push／PR は行わず、fetch／push／PR は外部通信です。
+- **GitHub フィードバックタスク**：PR 討論／issue を出典付きローカルタスクと編集可能な草稿へ変換し、AIへ自動送信しません。`gh` の返信、thread 解決／再開、issue状態更新は明示確認が必須です。repository、安定 comment／thread ID、head OID を検証し、古い revision／新 HEAD には書き戻しません。
 - **独立した読み取り専用審査**：書き込み session／full-access 旗標を流用しません。Codex は Darwin／Linux のみネイティブ read-only sandbox、Claude は Read／Glob／Grep のみの **CLI ツールポリシーで、OS sandbox ではありません**。Grok／Gemini や有効な制限設定のない provider は明確に拒否し、プロンプトだけを隔離保証にしません。CLI 自体は信頼するローカルプログラムです。
   構造化 `schema:1` JSON 審査は内容／HEAD に結び付く snapshot と、重大度・証拠・ライフサイクル履歴付き findings を保存します。手動 resolved／dismissed は証拠必須で、AI 承認を作りません。任意のマージ関門は現在の内容への明示承認と未解決重大指摘なしを要求します。
 - **役割／workflow**：役割が選んだ主 CLI が開始前に利用不可の場合だけ明示 backup を選びます。手動指定は回避せず、実行失敗後に AI を切り替えません。永続 workflow は依存、役割／審査ステップ、人間の関門に対応し、人工証拠は空でない文字列です。ステップ再実行は過去の試行を残して当該／後続の checkpoint を無効化します。タスク比較は2つの実際の作業ツリーから有界ファイル／内容差分を表示します。依存は完了と人工承認が必要で、再起動後は停止し許可を自動更新しません。
@@ -227,6 +228,7 @@ HTTP JSON と SSE を使い、デスクトップ版と Web 版で完全に共通
 | 編集設定／同期 | `GET/POST /api/editor/settings`；`GET /api/editor/preferences`；`POST /api/editor/{revisions,merge}` |
 | テスト／検証履歴 | `GET /api/task/tests`、`/api/task/verify/history`；`POST /api/task/tests/{configure,run}` |
 | 端末復元／sourceデバッグ | `POST /api/terminal/recovery/{init,list,bind,claim}`；`POST /api/debugger/{source-breakpoint,source-breakpoint/delete,watch}` |
+| GitHub フィードバック | `POST /api/git/feedback-task`；`GET /api/git/linked-feedback`；`POST /api/git/feedback-{draft,refresh,reply,resolve,unresolve,update,close}` |
 | 送信背景manifest | `GET /api/task/context/manifest?project=&task=&request=` |
 | 実行／統合 | `POST /api/execution/{start,stop,preview,ide,terminal,debug}`；`GET /api/execution/{list,output}` |
 | Git | `GET /api/git/{status,pr-status}`；`POST /api/git/{stage,unstage,resolve,commit,fetch,branch,push,pr}` |

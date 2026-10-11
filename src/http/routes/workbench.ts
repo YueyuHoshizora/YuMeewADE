@@ -1,8 +1,47 @@
 import type { App } from '../../server/app.ts';
 import { AppError } from '../../shared/errors.ts';
 import { Router, reqString } from '../router.ts';
+import { TaskLinkedFeedback } from '../../ledger/task-linked-feedback.ts';
+import type { GithubFeedbackRemote, LinkedFeedback } from '../../shared/github.ts';
 
 export function registerWorkbenchRoutes(router: Router, app: App): void {
+  const feedback = new TaskLinkedFeedback(app.ws, app.tasks);
+  const busy = (project: string, task?: string) => { if (app.taskBusy(project, task)) throw new AppError('conflict', 'workflow_busy'); };
+  const text = (body: Record<string, unknown>, key: string, max: number): string => {
+    const value = body[key]; if (typeof value !== 'string' || value.length > max || value.includes('\0')) throw new AppError('bad_request', 'field_type', { field: key }); return value;
+  };
+  const refreshed = (value: LinkedFeedback, remote: GithubFeedbackRemote): LinkedFeedback => ({ ...value, resolved: remote.thread?.resolved ?? false, state: remote.issue?.state ?? '', headOid: remote.headOid });
+  router.get('/api/git/linked-feedback', async ({ query }) => feedback.get(reqString(query, 'project', 120), reqString(query, 'task', 120)));
+  router.post('/api/git/feedback-task', async ({ body }) => {
+    const project = reqString(body, 'project', 120); await app.trust.assertExecutable(project); busy(project);
+    if (!Number.isSafeInteger(body.number) || (body.number as number) <= 0) throw new AppError('bad_request', 'field_type');
+    const repository = reqString(body, 'repository', 200), threadId = reqString(body, 'threadId', 200), commentId = reqString(body, 'commentId', 200);
+    const draft = text(body, 'draft', app.config.limits.promptChars);
+    const remote = await app.gitWorkbench.githubFeedback(project, { action: 'feedback-read', repository, number: body.number as number, threadId, kind: 'thread' });
+    const thread = remote.thread, source = thread?.comments.find(comment => comment.id === commentId);
+    if (!thread || !source || !source.url || new URL(source.url).pathname !== `/${repository}/pull/${body.number}`) throw new AppError('conflict', 'gh_pr_failed');
+    busy(project);
+    const task = await app.tasks.create(project, { title: reqString(body, 'title', 300) });
+    const linked = await feedback.create(project, task.id, { repository, kind: 'thread', number: body.number as number, url: source.url, threadId, commentId, path: thread.path, line: thread.line, source: source.body, draft, resolved: thread.resolved, state: '', headOid: remote.headOid });
+    await app.oplog.record({ action: 'github.feedback-task', project, task: task.id }); app.changed(project, task.id);
+    return { task, feedback: linked };
+  });
+  for (const operation of ['draft', 'refresh', 'reply', 'resolve', 'unresolve', 'update', 'close'] as const) router.post(`/api/git/feedback-${operation}`, async ({ body }) => {
+    const project = reqString(body, 'project', 120), task = reqString(body, 'task', 120); busy(project, task);
+    if (operation !== 'draft') await app.trust.assertExecutable(project);
+    if (!['draft', 'refresh'].includes(operation) && body.confirmed !== true) throw new AppError('bad_request', 'git_confirm_required');
+    const result = await feedback.change(project, task, reqString(body, 'revision', 100), async current => {
+      busy(project, task);
+      if (operation === 'draft') return { ...current, draft: text(body, 'draft', app.config.limits.promptChars) };
+      const input = { repository: current.repository, number: current.number, threadId: current.threadId, kind: current.kind };
+      const remote = operation === 'refresh'
+        ? await app.gitWorkbench.githubFeedback(project, { action: 'feedback-read', ...input })
+        : await app.gitWorkbench.githubFeedback(project, { action: 'feedback-write', ...input, operation, headOid: current.headOid, expectedResolved: current.resolved, expectedState: current.state, body: body.body === undefined ? '' : text(body, 'body', 10000), title: body.title === undefined ? '' : text(body, 'title', 300), confirmed: true });
+      return refreshed(current, remote);
+    });
+    await app.oplog.record({ action: `github.feedback-${operation}`, project, task }); app.changed(project, task);
+    return result;
+  });
   router.get('/api/git/status', async ({ query }) => app.gitWorkbench.status(reqString(query, 'project', 120), query.has('task') ? reqString(query, 'task', 120) : undefined));
   router.get('/api/git/remotes', async ({ query }) => app.gitWorkbench.remotes(reqString(query, 'project', 120), query.has('task') ? reqString(query, 'task', 120) : undefined));
   for (const operation of ['remote', 'manage-branch'] as const) router.post(`/api/git/${operation}`, async ({ body }) => {
@@ -25,12 +64,18 @@ export function registerWorkbenchRoutes(router: Router, app: App): void {
   });
   router.post('/api/git/issue-task', async ({ body }) => {
     const project = reqString(body, 'project', 120);
+    await app.trust.assertExecutable(project); busy(project);
     if (!Number.isSafeInteger(body.number) || (body.number as number) <= 0) throw new AppError('bad_request', 'field_type', { field: 'number' });
     const issue = await app.gitWorkbench.issue(project, body.number as number);
+    const status = await app.gitWorkbench.pullRequestStatus(project);
+    if (!status.repository || new URL(issue.url).pathname !== `/${status.repository}/issues/${issue.number}`) throw new AppError('conflict', 'gh_pr_failed');
+    const draft = body.draft === undefined ? `${issue.title}\n${issue.url}\n\n${issue.body}`.slice(0, app.config.limits.promptChars) : text(body, 'draft', app.config.limits.promptChars);
+    busy(project);
     const task = await app.tasks.create(project, { title: reqString(body, 'title', 300), issue: issue.number, issueUrl: issue.url });
+    const linked = await feedback.create(project, task.id, { repository: status.repository, kind: 'issue', number: issue.number, url: issue.url, threadId: '', commentId: '', path: '', line: null, source: issue.body, draft, resolved: false, state: issue.state, headOid: '' });
     await app.oplog.record({ action: 'github.issue-task', project, task: task.id });
     app.changed(project, task.id);
-    return { task };
+    return { task, feedback: linked };
   });
   router.get('/api/git/diff', async ({ query }) => app.gitWorkbench.diff(reqString(query, 'project', 120), query.has('task') ? reqString(query, 'task', 120) : undefined, reqString(query, 'path', 1000), query.get('staged') === 'true'));
   router.get('/api/git/diff-contents', async ({ query }) => app.gitWorkbench.diffContents(reqString(query, 'project', 120), query.has('task') ? reqString(query, 'task', 120) : undefined, reqString(query, 'path', 1000), reqString(query, 'mode', 20)));

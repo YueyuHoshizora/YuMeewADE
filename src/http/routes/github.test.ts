@@ -5,6 +5,7 @@ import path from 'node:path';
 import os from 'node:os';
 import { startTestServer } from '../../testing/server.ts';
 import type { Task } from '../../shared/types.ts';
+import type { LinkedFeedback } from '../../shared/github.ts';
 
 test('fake gh issues list/search/detail/task persist linkage; trust and bad numbers reject', async () => {
   const bin = await fs.mkdtemp(path.join(os.tmpdir(), 'github-http-')); const oldPath = process.env['PATH'];
@@ -25,5 +26,53 @@ test('fake gh issues list/search/detail/task persist linkage; trust and bad numb
     const trust = await s.app.trust.view('P'); await s.app.trust.update('P', { state: 'restricted', overrides: {}, revision: trust.revision, confirmed: true });
     for (const endpoint of ['issues', 'issue?number=3', 'pr-review']) assert.equal((await s.api('GET', `/api/git/${endpoint}${endpoint.includes('?') ? '&' : '?'}project=P`)).status, 403);
     assert.equal((await s.api('POST', '/api/git/issue-task', { project: 'P', number: 3, title: 'blocked' })).status, 403);
+  } finally { await s.close(); if (oldPath === undefined) delete process.env['PATH']; else process.env['PATH'] = oldPath; await fs.rm(bin, { recursive: true, force: true }); }
+});
+
+test('feedback task saves provenance and draft without AI; confirmed remote actions refresh and reject stale revisions', async () => {
+  const bin = await fs.mkdtemp(path.join(os.tmpdir(), 'github-feedback-http-')), oldPath = process.env['PATH'];
+  const log = path.join(bin, 'calls.jsonl'), state = path.join(bin, 'remote.json');
+  await fs.writeFile(state, JSON.stringify({ resolved: false, head: 'a'.repeat(40) }));
+  await fs.writeFile(path.join(bin, 'gh'), `#!${process.execPath}
+const fs=require('node:fs');const a=process.argv.slice(2);fs.appendFileSync(${JSON.stringify(log)},JSON.stringify(a)+'\\n');
+if(a[0]==='auth')process.exit(0);if(a[0]==='repo'){console.log('o/r');process.exit(0)}
+if(a[0]!=='api'||a[1]!=='graphql'||!a.includes('id=PRRT_1'))process.exit(8);
+const q=a.find(v=>v.startsWith('query='));const s=JSON.parse(fs.readFileSync(${JSON.stringify(state)},'utf8'));
+if(q.startsWith('query=query')){console.log(JSON.stringify({id:'PRRT_1',isResolved:s.resolved,path:'a.ts',line:5,pullRequest:{number:12,url:'https://github.com/o/r/pull/12',headRefOid:s.head,repository:{nameWithOwner:'o/r'}},comments:{nodes:[{id:'PRRC_1',body:'Fix boundary',author:{login:'human'},url:'https://github.com/o/r/pull/12#discussion_r1'}]}}));process.exit(0)}
+if(q.includes('addPullRequestReviewThreadReply')){console.log('{"data":{"addPullRequestReviewThreadReply":{"comment":{"id":"PRRC_2"}}}}');process.exit(0)}
+const key=q.includes('unresolveReviewThread')?'unresolveReviewThread':'resolveReviewThread';s.resolved=key==='resolveReviewThread';fs.writeFileSync(${JSON.stringify(state)},JSON.stringify(s));console.log(JSON.stringify({data:{[key]:{thread:{id:'PRRT_1',isResolved:s.resolved}}}}));
+`, { mode: 0o700 });
+  process.env['PATH'] = `${bin}${path.delimiter}${oldPath ?? ''}`;
+  const s = await startTestServer();
+  try {
+    await s.app.projects.create({ name: 'P' });
+    const source = { project: 'P', repository: 'o/r', number: 12, threadId: 'PRRT_1', commentId: 'PRRC_1', title: 'Review fix', draft: 'Edited initial draft' };
+    assert.equal((await s.api('POST', '/api/git/feedback-task', { ...source, repository: 'other/r' })).status, 409);
+    assert.equal((await s.api('POST', '/api/git/feedback-task', { ...source, commentId: 'missing' })).status, 409);
+    const created = await s.api('POST', '/api/git/feedback-task', source); assert.equal(created.status, 200);
+    const result = created.json as { task: Task; feedback: LinkedFeedback };
+    const task = result.task.id; let linked = result.feedback;
+    assert.equal(linked.draft, source.draft); assert.equal(linked.path, 'a.ts'); assert.equal(linked.line, 5);
+    assert.equal(linked.commentId, 'PRRC_1'); assert.equal(linked.source, 'Fix boundary');
+    const stored = JSON.parse(await fs.readFile(path.join(s.app.ws.projectDir('P'), '.ai', 'task-linked-feedback', `${task}.json`), 'utf8')) as typeof linked;
+    assert.deepEqual(stored, linked); assert.equal(s.app.runner.isBusy(), false);
+    assert.equal((await fs.readFile(log, 'utf8')).includes('query=mutation'), false);
+    const ids = { project: 'P', task };
+    assert.equal((await s.api('POST', '/api/git/feedback-reply', { ...ids, revision: linked.revision, body: 'Reply' })).status, 400);
+    assert.equal((await s.api('POST', '/api/git/feedback-resolve', { ...ids, revision: 'stale', confirmed: true })).status, 409);
+    const changedDraft = await s.api('POST', '/api/git/feedback-draft', { ...ids, revision: linked.revision, draft: '' }); assert.equal(changedDraft.status, 200);
+    linked = changedDraft.json as typeof linked; assert.equal(linked.draft, '');
+    await fs.writeFile(state, JSON.stringify({ resolved: false, head: 'b'.repeat(40) }));
+    assert.equal((await s.api('POST', '/api/git/feedback-resolve', { ...ids, revision: linked.revision, confirmed: true })).status, 409);
+    linked = (await s.api('POST', '/api/git/feedback-refresh', { ...ids, revision: linked.revision })).json as typeof linked;
+    assert.equal(linked.headOid, 'b'.repeat(40));
+    const resolved = await s.api('POST', '/api/git/feedback-resolve', { ...ids, revision: linked.revision, confirmed: true }); assert.equal(resolved.status, 200);
+    linked = resolved.json as typeof linked; assert.equal(linked.resolved, true);
+    const unresolve = await s.api('POST', '/api/git/feedback-unresolve', { ...ids, revision: linked.revision, confirmed: true }); assert.equal(unresolve.status, 200);
+    linked = unresolve.json as typeof linked; assert.equal(linked.resolved, false);
+    const trust = await s.app.trust.view('P'); await s.app.trust.update('P', { state: 'restricted', overrides: {}, revision: trust.revision, confirmed: true });
+    assert.equal((await s.api('POST', '/api/git/feedback-reply', { ...ids, revision: linked.revision, body: 'Blocked', confirmed: true })).status, 403);
+    const mutations = (await fs.readFile(log, 'utf8')).trim().split('\n').map(v => JSON.parse(v) as string[]).filter(call => call.some(arg => arg.startsWith('query=mutation')));
+    assert.equal(mutations.length, 2);
   } finally { await s.close(); if (oldPath === undefined) delete process.env['PATH']; else process.env['PATH'] = oldPath; await fs.rm(bin, { recursive: true, force: true }); }
 });

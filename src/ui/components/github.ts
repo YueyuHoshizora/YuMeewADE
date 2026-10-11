@@ -1,9 +1,9 @@
-import type { GithubReviewStatus } from '../../shared/github.ts';
+import type { GithubReviewStatus, Task } from '../../shared/types.ts';
 import { query, request } from '../api.ts';
 import { t } from '../i18n/index.ts';
-import { area, button, confirmModal, el, field, input, link, row } from './dom.ts';
+import { area, button, confirmModal, el, field, input, link, modal, row, storeLocal, taskHash, type ViewContext } from './dom.ts';
 
-export function githubPullRequestPanel(project: string, task: string | undefined, branch: string): HTMLElement {
+export function githubPullRequestPanel(project: string, task: string | undefined, branch: string, context: ViewContext): HTMLElement {
   const ids = { project, ...(task ? { task } : {}) };
   const panel = el('section', 'form'); const result = el('div', 'form');
   const openLink = (label: string, url: string) => { const anchor = link(label, url); anchor.target = '_blank'; anchor.rel = 'noopener noreferrer'; return anchor; };
@@ -25,7 +25,20 @@ export function githubPullRequestPanel(project: string, task: string | undefined
       result.append(el('h4', '', t('github.threads')));
       for (const thread of pr.threads) {
         result.append(el('p', '', `${thread.resolved ? '✓' : '○'} ${thread.path}:${thread.line ?? ''}`));
-        for (const comment of thread.comments) result.append(el('p', '', comment.author), el('pre', '', comment.body), ...(comment.url ? [openLink(t('github.open'), comment.url)] : []));
+        for (const comment of thread.comments) {
+          result.append(el('p', '', comment.author), el('pre', '', comment.body), ...(comment.url ? [openLink(t('github.open'), comment.url)] : []));
+          if (thread.id && comment.id && comment.url) result.append(button(t('feedback.create'), () => {
+            const title = input(`${pr.title}: ${thread.path}`.slice(0, 300)); title.maxLength = 300;
+            const draft = area(`${status.repository} PR #${pr.number}\n${thread.id} / ${comment.id}\n${thread.path}:${thread.line ?? ''}\n${comment.url}\n\n${comment.body}`.slice(0, context.state.limits.promptChars)); draft.maxLength = context.state.limits.promptChars; draft.rows = 12;
+            const content = el('div', 'form'); content.append(field(t('common.title'), title), field(t('github.instruction'), draft), el('p', '', t('feedback.noAi')));
+            modal(t('feedback.create'), content, button(t('feedback.create'), async () => {
+              const created = await request<{ task: Task }>('/api/git/feedback-task', { project, repository: status.repository, number: pr.number, threadId: thread.id, commentId: comment.id, title: title.value, draft: draft.value });
+              storeLocal(`yumeewade.draft.${project}/${created.task.id}`, draft.value);
+              content.closest('dialog')?.close(); panel.closest('dialog')?.close();
+              await context.refresh(); location.hash = taskHash(project, created.task.id);
+            }));
+          }));
+        }
       }
     }
     const title = input(); title.maxLength = 300; const body = area(); body.maxLength = 60_000; const base = input('main'); const head = input(branch);

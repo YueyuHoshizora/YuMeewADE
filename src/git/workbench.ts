@@ -12,6 +12,7 @@ import { AppError } from '../shared/errors.ts';
 import { withFileLocks } from '../shared/fsx.ts';
 import { git, hasCommits, isLocalSecret } from './git.ts';
 import { github } from '../cli/github.ts';
+import type { GithubFeedbackInput } from '../shared/github.ts';
 
 const split = (text: string) => text.split('\0').filter(Boolean);
 const branchName = (value: string) => /^[A-Za-z0-9][A-Za-z0-9._/-]{0,199}$/.test(value) && !value.includes('..') && !value.endsWith('/') && !value.endsWith('.lock');
@@ -420,5 +421,8 @@ export class GitWorkbench {
   }
   async issue(project: string, number: number) {
     return this.locked(project, undefined, false, root => github(root, { action: 'issue', number }, this.deps.ghCommand));
+  }
+  async githubFeedback(project: string, input: GithubFeedbackInput) {
+    return this.locked(project, undefined, input.action === 'feedback-write', root => github(root, input, this.deps.ghCommand));
   }
 }

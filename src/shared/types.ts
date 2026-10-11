@@ -14,6 +14,7 @@ export type * from './context-budget.ts';
 export type * from './editor-preferences.ts';
 export type * from './terminal-recovery.ts';
 export type * from './test-explorer.ts';
+export type * from './github.ts';
 
 // ---- 列舉值（寫進台帳檔案的原值；UI 依值翻譯顯示） ----
 

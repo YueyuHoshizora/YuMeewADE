@@ -38,6 +38,7 @@ import * as taskBulk from './task-bulk.ts';
 import * as terminalRecovery from './terminal-recovery.ts';
 import * as testExplorer from './test-explorer.ts';
 import * as debuggerExtensions from './debugger-extensions.ts';
+import * as githubFeedback from './github-feedback.ts';
 import * as contextBudget from './context-budget.ts';
 import * as ideWorkbench from './ide-workbench.ts';
 
@@ -83,6 +84,7 @@ export const featureZhTW = {
   ...terminalRecovery.featureZhTW,
   ...testExplorer.featureZhTW,
   ...debuggerExtensions.featureZhTW,
+  ...githubFeedback.featureZhTW,
   ...contextBudget.featureZhTW,
   ...ideWorkbench.featureZhTW,
 };
@@ -128,6 +130,7 @@ export const featureZhCN = {
   ...terminalRecovery.featureZhCN,
   ...testExplorer.featureZhCN,
   ...debuggerExtensions.featureZhCN,
+  ...githubFeedback.featureZhCN,
   ...contextBudget.featureZhCN,
   ...ideWorkbench.featureZhCN,
 };
@@ -173,6 +176,7 @@ export const featureEn = {
   ...terminalRecovery.featureEn,
   ...testExplorer.featureEn,
   ...debuggerExtensions.featureEn,
+  ...githubFeedback.featureEn,
   ...contextBudget.featureEn,
   ...ideWorkbench.featureEn,
 };
@@ -218,6 +222,7 @@ export const featureJa = {
   ...terminalRecovery.featureJa,
   ...testExplorer.featureJa,
   ...debuggerExtensions.featureJa,
+  ...githubFeedback.featureJa,
   ...contextBudget.featureJa,
   ...ideWorkbench.featureJa,
 };
@@ -263,6 +268,7 @@ export const featureDe = {
   ...terminalRecovery.featureDe,
   ...testExplorer.featureDe,
   ...debuggerExtensions.featureDe,
+  ...githubFeedback.featureDe,
   ...contextBudget.featureDe,
   ...ideWorkbench.featureDe,
 };
@@ -308,6 +314,7 @@ export const featureFr = {
   ...terminalRecovery.featureFr,
   ...testExplorer.featureFr,
   ...debuggerExtensions.featureFr,
+  ...githubFeedback.featureFr,
   ...contextBudget.featureFr,
   ...ideWorkbench.featureFr,
 };
@@ -353,6 +360,7 @@ export const featureIt = {
   ...terminalRecovery.featureIt,
   ...testExplorer.featureIt,
   ...debuggerExtensions.featureIt,
+  ...githubFeedback.featureIt,
   ...contextBudget.featureIt,
   ...ideWorkbench.featureIt,
 };
