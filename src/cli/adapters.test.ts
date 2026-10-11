@@ -6,7 +6,6 @@ import { ClaudeCliProvider, claudeArgs, claudeOauthQuota, claudeQuota, createCla
 import { CodexCliProvider, codexAppServerQuota, codexArgs, codexQuota, createCodexParser, fetchCodexQuota, readCodexQuota } from './codex.ts';
 import { captureCommand, redactArgs } from './process.ts';
 import { MockCliProvider } from './mock.ts';
-import { createProviders } from './providers.ts';
 import type { CliEvent } from './provider.ts';
 import { promises as fs } from 'node:fs';
 import http from 'node:http';
@@ -184,7 +183,6 @@ test('Mock：可設定文字、工具、問題；數字建構子與延遲停止'
   assert.deepEqual(await slow.done, { ok: false, stopped: true });
   const numeric = new MockCliProvider(0).send({ prompt: 'test', cwd: '/w' }, () => undefined);
   assert.equal((await numeric.done).ok, true);
-  assert.deepEqual(Object.keys(createProviders(DEFAULT_CONFIG)), ['claude', 'codex', 'mock']);
 });
 
 test('captureCommand：捕捉輸出、退出失敗與 timeout', async () => {
@@ -253,27 +251,66 @@ test('claude：rate_limit_event 轉成額度窗口，舊版單一窗口與被拒
   assert.equal(claudeQuota({ status: 'allowed' }), null);
 });
 
-test('claude：串流中逐段估算輸出 token，訊息結束時以實際用量補差額', () => {
+test('claude：只測量實際累計 output_tokens；文字分塊、思考估算與重複回報不加總', () => {
+  for (const chunks of [['abcdefgh'], ['a', 'bc', 'defgh']]) {
+    let clock = 0;
+    const events: CliEvent[] = [];
+    const feed = createClaudeParser(ev => events.push(ev), () => clock);
+    const event = (value: Record<string, unknown>) => feed({ type: 'stream_event', event: value });
+    event({ type: 'message_start', message: { usage: { output_tokens: 1 } } });
+    clock = 500;
+    event({ type: 'content_block_delta', delta: { type: 'thinking_delta', thinking: '', estimated_tokens: 9000 } });
+    for (const text of chunks) event({ type: 'content_block_delta', delta: { type: 'text_delta', text } });
+    assert.equal(events.filter(ev => ev.type === 'tokens').length, 0);
+    clock = 2000;
+    event({ type: 'message_delta', usage: { output_tokens: 160, thinking_tokens: 100 } });
+    clock = 3000;
+    event({ type: 'message_delta', usage: { output_tokens: 160 } });
+    event({ type: 'message_delta', usage: { output_tokens: NaN } });
+    event({ type: 'message_delta', usage: { output_tokens: -1 } });
+    clock = 4000;
+    event({ type: 'message_delta', usage: { output_tokens: 200 } });
+    event({ type: 'message_stop' });
+    const tokens = events.filter(ev => ev.type === 'tokens');
+    assert.equal(tokens.length, 2);
+    assert.deepEqual(tokens.map(({ runId: _, ...sample }) => sample), [
+      { type: 'tokens', count: 160, spanMs: 2000, at: 2000 },
+      { type: 'tokens', count: 200, spanMs: 4000, at: 4000 },
+    ]);
+    clock = 5000;
+    event({ type: 'message_start' });
+    clock = 6000;
+    event({ type: 'message_delta', usage: { output_tokens: 20 } });
+    feed({ type: 'result', subtype: 'success', usage: { input_tokens: 1, output_tokens: 220 } });
+    event({ type: 'message_delta', usage: { output_tokens: 300 } });
+    assert.equal(events.filter(ev => ev.type === 'tokens').length, 3);
+  }
+});
+
+test('codex：實際 output_tokens／整回合耗時；無開始、零耗時、失敗與無效計數不估算', () => {
   let clock = 0;
   const events: CliEvent[] = [];
-  const feed = createClaudeParser(ev => events.push(ev), () => clock);
-  const delta = (at: number, d: Record<string, unknown>, index = 0) => { clock = at; feed({ type: 'stream_event', event: { type: 'content_block_delta', index, delta: d } }); };
-  feed({ type: 'stream_event', event: { type: 'message_start', message: { usage: { output_tokens: 1 } } } });
-  // 不公開的思考：thinking 為空，estimated_tokens 是這段的增量（2026-10-10 claude 2.1.296 實測，加總≈實際 thinking_tokens）。
-  delta(500, { type: 'thinking_delta', thinking: '', estimated_tokens: 50 });
-  delta(800, { type: 'thinking_delta', thinking: '', estimated_tokens: 100 });
-  delta(1000, { type: 'thinking_delta', thinking: '貓貓' }, 1);
-  delta(1500, { type: 'signature_delta', signature: 'x'.repeat(400) });
-  delta(2000, { type: 'text_delta', text: 'abcdefgh' }, 2);
-  delta(2500, { type: 'input_json_delta', partial_json: '{"a":1}' }, 3);
+  const feed = createCodexParser(ev => events.push(ev), () => clock);
+  feed({ type: 'turn.completed', usage: { output_tokens: 500 } });
+  feed({ type: 'turn.started' });
+  feed({ type: 'turn.completed', usage: { output_tokens: 500 } });
+  feed({ type: 'turn.started' });
+  clock = 2000;
+  feed({ type: 'item.completed', item: { type: 'reasoning', text: 'not tokens' } });
+  feed({ type: 'item.completed', item: { type: 'agent_message', text: 'not tokenized' } });
+  feed({ type: 'turn.completed', usage: { output_tokens: 100, reasoning_output_tokens: 40 } });
   clock = 3000;
-  feed({ type: 'stream_event', event: { type: 'message_delta', usage: { output_tokens: 160 } } });
-  // 中日韓字 1 token／字、其他 4 字元／token；簽章不算輸出。差額攤回整則訊息的時間。
-  assert.deepEqual(events.filter(ev => ev.type === 'tokens'), [
-    { type: 'tokens', count: 50 }, { type: 'tokens', count: 100 },
-    { type: 'tokens', count: 2 }, { type: 'tokens', count: 2 }, { type: 'tokens', count: 1.75 },
-    { type: 'tokens', count: 4.25, spanMs: 3000 },
-  ]);
+  feed({ type: 'turn.completed', usage: { output_tokens: 100 } });
+  assert.deepEqual(events.filter(ev => ev.type === 'tokens').map(({ runId: _, ...sample }) => sample),
+    [{ type: 'tokens', count: 100, spanMs: 2000, at: 2000 }]);
+  for (const output of [NaN, Infinity, -1]) {
+    feed({ type: 'turn.started' }); clock += 1000;
+    feed({ type: 'turn.completed', usage: { output_tokens: output } });
+  }
+  feed({ type: 'turn.started' }); clock += 1000;
+  feed({ type: 'turn.failed', error: { message: 'stopped' } });
+  feed({ type: 'turn.completed', usage: { output_tokens: 100 } });
+  assert.equal(events.filter(ev => ev.type === 'tokens').length, 1);
 });
 
 test('codex：rate_limits 依窗口長度命名、回報已達上限', () => {
@@ -328,7 +365,6 @@ test('turn usage is exact, optional, and independent of live tokens', async () =
     { type: 'usage', usage: { input: 7, output: 6, cached: 5 } },
     { type: 'usage', usage: { input: 70, output: 60, cached: 50 } },
   ]);
-  assert.ok(events.some(e => e.type === 'tokens'));
   const codex = collect(createCodexParser, [
     ...CODEX_LINES,
     { type: 'turn.completed', usage: { input_tokens: 9, cached_input_tokens: 2, output_tokens: 8 } },
@@ -364,6 +400,28 @@ test('Codex app-server 額度回應轉成窗口（5h／7d、重置時間、達�
   const limited = codexAppServerQuota({ rateLimits: { ...snapshot, rateLimitReachedType: 'primary' }, rateLimitsByLimitId: null }, 'T');
   assert.equal(limited?.limited, true);
   assert.equal(codexAppServerQuota({}, 'T'), null);
+});
+
+test('Codex 重置券：只收可用券、依到期日排序，null 到期代表不會到期，格式錯誤整體忽略', () => {
+  const snapshot = { primary: { usedPercent: 100, windowDurationMins: 10080, resetsAt: 1791948586 }, rateLimitReachedType: 'rate_limit_reached' };
+  const credit = (status: string, expiresAt: number | null, title: string | null = 'Full reset') => ({ id: 'opaque-id', resetType: 'codexRateLimits', status, grantedAt: 1, expiresAt, title, description: 'x' });
+  const quota = codexAppServerQuota({
+    rateLimits: snapshot,
+    rateLimitResetCredits: { availableCount: 3, credits: [credit('available', 1794007502), credit('redeemed', 1792000000), credit('available', 1792700953), credit('available', null, null)] },
+  }, 'T');
+  assert.deepEqual(quota?.resetCredits, {
+    availableCount: 3,
+    credits: [
+      { title: 'Full reset', expiresAt: new Date(1792700953_000).toISOString() },
+      { title: 'Full reset', expiresAt: new Date(1794007502_000).toISOString() },
+      { title: null, expiresAt: null },
+    ],
+  });
+  // 只有張數沒有明細（背景輪詢）：張數照帶，明細為空。
+  assert.deepEqual(codexAppServerQuota({ rateLimits: snapshot, rateLimitResetCredits: { availableCount: 2, credits: null } }, 'T')?.resetCredits, { availableCount: 2, credits: [] });
+  for (const bad of [null, 'x', { availableCount: -1 }, { availableCount: 1.5 }, { credits: [] }]) {
+    assert.equal(codexAppServerQuota({ rateLimits: snapshot, rateLimitResetCredits: bad }, 'T')?.resetCredits, undefined);
+  }
 });
 
 test('即時額度查詢：走 initialize → rateLimits/read 取得回應，錯誤或逾時都 reject', async () => {

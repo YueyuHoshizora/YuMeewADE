@@ -15,6 +15,7 @@ import type { WorktreeService } from '../git/worktree.ts';
 import type { ChatEvent, VerifyResult } from '../shared/types.ts';
 import { HISTORY_PAGE } from '../shared/types.ts';
 import { promises as fs } from 'node:fs';
+import path from 'node:path';
 import { registerChatRoutes } from '../http/routes/chat.ts';
 import type { Ctx, Handler, Router } from '../http/router.ts';
 import type { App } from '../server/app.ts';
@@ -30,10 +31,37 @@ async function setup(ws: Workspace, options: MockOptions = {}, runSeconds = 600)
   const restored: string[] = []; let checkpointCount = 0;
   const ranges: string[][] = [];
   const forks: string[] = [];
-  const runner = new ChatRunner({ ws, store, projects, tasks, settings, completion, oplog: new OpLog(ws), roles: () => loadRoles(ws.rolesFile), providers: { mock, claude: mock, codex: mock }, limits: { concurrentRuns: 2, queueLength: 3, handoffChars: 60000, imagesPerSend: 10, runSeconds }, worktree: { prepare: async () => ws.projectDir('P'), checkpoint: async () => String(++checkpointCount).padStart(40, '0'), restore: async (_p: string, _t: string, sha: string) => { restored.push(sha); }, finishTurn: async (_p: string, _t: string, start: string) => start.endsWith('1') ? { after: 'f'.repeat(40), changes: { files: 2, added: 3, removed: 1 } } : { after: 'e'.repeat(40) }, rangeDiff: async (_p: string, _t: string, from: string, to: string) => { ranges.push([from, to]); return { diff: 'd', truncated: false }; }, prepareFrom: async (_p: string, _t: string, sha: string) => { forks.push(sha); return ws.projectDir('P'); } } as unknown as WorktreeService, publish: (_p, _t, ev) => events.push(ev), watching: () => watching, onChanged: () => {}, onUsage: () => {} });
+  const usageAccounts: string[] = [];
+  const runner = new ChatRunner({ ws, store, projects, tasks, settings, completion, oplog: new OpLog(ws), roles: () => loadRoles(ws.rolesFile), providers: { mock, claude: mock, codex: mock }, limits: { concurrentRuns: 2, queueLength: 3, handoffChars: 60000, imagesPerSend: 10, runSeconds }, worktree: { bodyPath: async () => ws.projectDir('P'), prepare: async () => ws.projectDir('P'), checkpoint: async () => String(++checkpointCount).padStart(40, '0'), restore: async (_p: string, _t: string, sha: string) => { restored.push(sha); }, finishTurn: async (_p: string, _t: string, start: string) => start.endsWith('1') ? { after: 'f'.repeat(40), changes: { files: 2, added: 3, removed: 1 } } : { after: 'e'.repeat(40) }, rangeDiff: async (_p: string, _t: string, from: string, to: string) => { ranges.push([from, to]); return { diff: 'd', truncated: false }; }, prepareFrom: async (_p: string, _t: string, sha: string) => { forks.push(sha); return ws.projectDir('P'); } } as unknown as WorktreeService, publish: (_p, _t, ev) => events.push(ev), watching: () => watching, onChanged: () => {}, onUsage: (_ai, _event, account) => { usageAccounts.push(account); } });
   const send = (text: string, extra: Partial<Parameters<ChatRunner['send']>[0]> = {}) => runner.send({ project: 'P', task: task.id, text, ...extra });
-  return { runner, store, tasks, task, send, calls, events, completion, restored, ranges, forks, watch: () => { watching = true; } };
+  return { runner, store, settings, tasks, task, send, calls, events, usageAccounts, completion, restored, ranges, forks, mock, watch: () => { watching = true; } };
 }
+test('standalone CLI reports preserve resumable conversation state on success and failure', () => withTmpWorkspace(async ws => {
+  const s = await setup(ws);
+  await s.send('start conversation');
+  await s.runner.whenIdle();
+  const before = await s.store.readMeta('P', s.task.id);
+  const expected = { sessions: before.sessions, models: before.models, seen: before.seen, accounts: before.accounts };
+  let succeeds = true;
+  Object.assign(s.mock, {
+    resolveCommand: async (text: string) => ({ text, native: true, standalone: true }),
+    send: (_opts: SendOptions, onEvent: (ev: import('../cli/provider.ts').CliEvent) => void) => {
+      onEvent(succeeds ? { type: 'result', text: 'Available quota: 81%' } : { type: 'error', reason: 'report unavailable' });
+      return { stop: () => undefined, done: Promise.resolve({ ok: succeeds, stopped: false }) };
+    },
+  });
+  for (const success of [true, false]) {
+    succeeds = success;
+    await s.send('/usage');
+    await s.runner.whenIdle();
+    const after = await s.store.readMeta('P', s.task.id);
+    assert.deepEqual({ sessions: after.sessions, models: after.models, seen: after.seen, accounts: after.accounts }, expected);
+    const reply = (await s.store.readLog('P', s.task.id)).at(-1);
+    assert.ok(reply?.role === 'assistant');
+    if (success) assert.equal(reply.text, 'Available quota: 81%');
+    else assert.equal(reply.error, 'cli_failed');
+  }
+}));
 test('超過單輪時間上限就停止並標記 timeout，不自動接續隊列', () => withTmpWorkspace(async ws => {
   const s = await setup(ws, { chunkMs: 5 }, 0.05);
   await s.send('stuck [slow]');
@@ -428,3 +456,58 @@ for (const [name, autoFix, text, instruction] of [
     assert.equal(s.verified.length, 0);
   }));
 }
+
+test('profile switches isolate sessions and failed switches retain the previous binding', () => withTmpWorkspace(async (ws, dir) => {
+  const s = await setup(ws);
+  const configDir = path.join(dir, 'profile');
+  await fs.mkdir(configDir);
+  const added = await s.settings.addAccount('codex', 'Other', configDir);
+  const account = added.accounts.codex![0]!;
+  await s.settings.update({ activeAccounts: { codex: 'default' } });
+  await s.send('default first'); await s.runner.whenIdle();
+  const original = await s.store.readMeta('P', s.task.id);
+  await s.settings.update({ activeAccounts: { codex: account.id } });
+  await s.send('failed switch [fail]'); await s.runner.whenIdle();
+  assert.equal(s.calls[1]!.resumeId, undefined);
+  assert.equal(s.calls[1]!.configDir, undefined);
+  assert.deepEqual(await s.store.readMeta('P', s.task.id), original);
+  await s.settings.update({ activeAccounts: { codex: 'default' } });
+  await s.send('default continued'); await s.runner.whenIdle();
+  assert.equal(s.calls[2]!.resumeId, original.sessions.codex);
+  await s.settings.update({ activeAccounts: { codex: account.id } });
+  await s.send('other first'); await s.runner.whenIdle();
+  assert.equal(s.calls[3]!.resumeId, undefined);
+  assert.match(s.calls[3]!.prompt, /default first/u);
+  const other = await s.store.readMeta('P', s.task.id);
+  assert.equal(other.accounts?.codex, account.id);
+  await s.send('other continued'); await s.runner.whenIdle();
+  assert.equal(s.calls[4]!.resumeId, other.sessions.codex);
+  await s.settings.update({ activeAccounts: { codex: 'default' } });
+  await s.send('back to default'); await s.runner.whenIdle();
+  assert.equal(s.calls[5]!.resumeId, undefined);
+  assert.equal(s.calls[5]!.configDir, undefined);
+  assert.equal(s.calls[5]!.accountId, 'default');
+}));
+
+test('changing active profile during a run only affects the next send', () => withTmpWorkspace(async (ws, dir) => {
+  const s = await setup(ws, { chunkMs: 3, events: [{ type: 'tokens', runId: 'sample', count: 4, spanMs: 100, at: 100 }] });
+  const target = path.join(dir, 'profile');
+  const configDir = path.join(dir, 'profile-alias');
+  await fs.mkdir(target); await fs.symlink(target, configDir);
+  const account = (await s.settings.addAccount('claude', 'Other', configDir)).accounts.claude![0]!;
+  assert.equal(account.configDir, configDir);
+  await assert.rejects(s.settings.addAccount('claude', 'Duplicate target', target), { code: 'conflict' });
+  await s.settings.update({ activeAccounts: { claude: 'default' } });
+  await s.send('old run [slow]', { ai: 'claude' });
+  await s.settings.update({ activeAccounts: { claude: account.id } });
+  await s.runner.whenIdle();
+  assert.deepEqual(s.usageAccounts, ['default']);
+  assert.equal(s.calls[0]!.accountId, 'default');
+  assert.equal(s.calls[0]!.configDir, undefined);
+  assert.equal((await s.store.readMeta('P', s.task.id)).accounts?.claude, 'default');
+  await s.send('new run', { ai: 'claude' }); await s.runner.whenIdle();
+  assert.equal(s.calls[1]!.accountId, account.id);
+  assert.equal(s.calls[1]!.configDir, undefined);
+  assert.equal(s.calls[1]!.resumeId, undefined);
+  assert.deepEqual(s.usageAccounts, ['default', account.id]);
+}));

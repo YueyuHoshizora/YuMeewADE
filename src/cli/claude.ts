@@ -1,11 +1,12 @@
 // Claude stream-json adapter；工具與問題獨立於回答文字。
 import type { CliCommandConfig } from '../shared/config.ts';
-import { promises as fs } from 'node:fs';
-import os from 'node:os';
-import path from 'node:path';
+import { randomUUID } from 'node:crypto';
 import type { Ask, QuotaWindow, TurnUsage } from '../shared/types.ts';
-import { captureCommand, findExecutable, minimalEnv, runLineProcess } from './process.ts';
+import { findExecutable, minimalEnv, runLineProcess } from './process.ts';
+import { readClaudeToken } from './claude-credentials.ts';
 import type { CliEvent, CliProvider, CliRun, SendOptions } from './provider.ts';
+import { claudeCommands, slashName } from './commands.ts';
+import { AppError } from '../shared/errors.ts';
 
 export function claudeArgs(cfg: CliCommandConfig, opts: SendOptions): string[] {
   const args = [...((opts.fullAccess ?? cfg.fullAccess) ? cfg.fullAccessArgs : cfg.safeArgs), ...cfg.baseArgs];
@@ -13,16 +14,8 @@ export function claudeArgs(cfg: CliCommandConfig, opts: SendOptions): string[] {
   if (opts.effort) args.push('--effort', opts.effort);
   if (opts.resumeId) args.push('--resume', opts.resumeId);
   for (const d of opts.addDirs ?? []) args.push('--add-dir', d);
+  if (opts.slashCommand) args.push('--append-system-prompt', opts.prompt);
   return args;
-}
-
-/**
- * 串流中途 CLI 不給 token 數，只能從文字估：中日韓字約 1 token／字，其餘約 4 字元／token。
- * 每則訊息結束時 message_delta 給實際 output_tokens，差額再補回，所以長期總量是準的。
- */
-function estimateTokens(text: string): number {
-  const cjk = text.match(/[\p{Script=Han}\p{Script=Hiragana}\p{Script=Katakana}\p{Script=Hangul}]/gu)?.length ?? 0;
-  return cjk + (text.length - cjk) / 4;
 }
 
 /** `rate_limit_event.rate_limit_info` → 額度窗口；utilization 為 0–1、resetsAt 為秒。認不得的格式回 null。 */
@@ -49,7 +42,6 @@ export function claudeQuota(info: unknown): { windows: QuotaWindow[]; limited: b
 }
 
 const OAUTH_USAGE_URL = 'https://api.anthropic.com/api/oauth/usage';
-const KEYCHAIN_SERVICE = 'Claude Code-credentials';
 const USAGE_WINDOWS: Record<string, string> = { five_hour: '5h', seven_day: '7d', seven_day_opus: '7d opus', seven_day_sonnet: '7d sonnet' };
 
 /** `/api/oauth/usage` 的回應（utilization 已是 0–100 百分比、resets_at 為 ISO）→ 額度窗口；只收已知的窗口，未知欄位忽略。 */
@@ -58,7 +50,7 @@ export function claudeOauthQuota(body: unknown): { windows: QuotaWindow[]; limit
   const windows: QuotaWindow[] = [];
   for (const [key, label] of Object.entries(USAGE_WINDOWS)) {
     const w = (body as Record<string, unknown>)[key];
-    if (!w || typeof w !== 'object' || !('utilization' in w) || typeof w.utilization !== 'number') continue;
+    if (!w || typeof w !== 'object' || !('utilization' in w) || typeof w.utilization !== 'number' || !Number.isFinite(w.utilization)) continue;
     const resets = 'resets_at' in w && typeof w.resets_at === 'string' ? Date.parse(w.resets_at) : NaN;
     windows.push({
       label,
@@ -69,34 +61,12 @@ export function claudeOauthQuota(body: unknown): { windows: QuotaWindow[]; limit
   return windows.length ? { windows, limited: windows.some(w => w.usedPercent >= 100) } : null;
 }
 
-/** 讀 Claude Code 自己存的 OAuth 憑證（使用者 2026-10-11 同意只為查額度而讀）：macOS 鑰匙圈，其餘平台／讀不到時讀 `.credentials.json`。 */
-async function readClaudeToken(env: NodeJS.ProcessEnv): Promise<string> {
-  const texts: string[] = [];
-  if (process.platform === 'darwin') {
-    const out = await captureCommand({ command: 'security', args: ['find-generic-password', '-s', KEYCHAIN_SERVICE, '-w'], env, timeoutMs: 5000 });
-    if (out.ok) texts.push(out.stdout);
-  }
-  try { texts.push(await fs.readFile(path.join(env['CLAUDE_CONFIG_DIR'] || path.join(os.homedir(), '.claude'), '.credentials.json'), 'utf8')); }
-  catch { /* 沒有檔案就只剩鑰匙圈。 */ }
-  for (const text of texts) {
-    try {
-      const oauth = (JSON.parse(text) as { claudeAiOauth?: { accessToken?: unknown; expiresAt?: unknown } }).claudeAiOauth;
-      if (typeof oauth?.accessToken !== 'string') continue;
-      // 過期的 token 不重新整理（那是 CLI 的事，CLI 下次執行會更新）；回報讓上層退回回合中的額度。
-      if (typeof oauth.expiresAt === 'number' && oauth.expiresAt <= Date.now()) throw new Error('claude credentials expired');
-      return oauth.accessToken;
-    } catch (err) {
-      if (err instanceof Error && err.message === 'claude credentials expired') throw err;
-    }
-  }
-  throw new Error('claude credentials not found');
-}
-
 /** 向 Anthropic 查帳號目前的 5 小時／7 天用量；憑證只用於這個請求，不寫日誌。 */
 export async function fetchClaudeQuota(env: NodeJS.ProcessEnv, timeoutMs = 15_000, url = OAUTH_USAGE_URL, readToken = readClaudeToken): Promise<{ type: 'quota'; windows: QuotaWindow[]; limited: boolean; at: string } | null> {
   const token = await readToken(env);
   const res = await fetch(url, {
     headers: { Authorization: `Bearer ${token}`, 'anthropic-beta': 'oauth-2025-04-20' },
+    redirect: 'error',
     signal: AbortSignal.timeout(timeoutMs),
   });
   if (!res.ok) throw new Error(`usage endpoint ${res.status}`);
@@ -123,11 +93,10 @@ function parseUsage(value: unknown): TurnUsage | undefined {
 export function createClaudeParser(onEvent: (ev: CliEvent) => void, now: () => number = Date.now): (obj: Record<string, unknown>) => void {
   let streamed = '';
   let sawStream = false;
-  let sessionSent = false;
-  /** 本則訊息開始的時間與已估算的 token 數；結束時以實際用量校正。 */
-  let generating: number | null = null;
-  let estimated = 0;
-  let messageUsage: Record<string, unknown> = {};
+  let sessionId = '';
+  const runId = randomUUID();
+  let sampleIndex = 0;
+  const messages = new Map<string, { runId: string; started: number; usage: Record<string, unknown>; output: number }>();
   const tools = new Set<string>();
   const handleTool = (block: Record<string, unknown>) => {
     const name = block['name'];
@@ -162,8 +131,8 @@ export function createClaudeParser(onEvent: (ev: CliEvent) => void, now: () => n
   };
   return (obj) => {
     const sid = obj['session_id'];
-    if (!sessionSent && typeof sid === 'string' && sid) {
-      sessionSent = true;
+    if (obj['parent_tool_use_id'] == null && typeof sid === 'string' && sid && sid !== sessionId) {
+      sessionId = sid;
       onEvent({ type: 'session', id: sid });
     }
     switch (obj['type']) {
@@ -171,40 +140,37 @@ export function createClaudeParser(onEvent: (ev: CliEvent) => void, now: () => n
         const ev = obj['event'];
         if (!ev || typeof ev !== 'object') return;
         const e = ev as Record<string, unknown>;
+        // Nested agent streams can interleave with the main stream; each has its own message clock.
+        const key = typeof obj['parent_tool_use_id'] === 'string' ? obj['parent_tool_use_id'] : '';
         if (e['type'] === 'message_start') {
           sawStream = false;
-          // 從訊息開始算：估算與實際的差額要攤回整則訊息的時間，才不會在結尾擠成尖峰。
-          generating = now();
-          estimated = 0;
           const message = e['message'];
           const usage = message && typeof message === 'object' && 'usage' in message ? message.usage : undefined;
-          messageUsage = usage && typeof usage === 'object' ? usage as Record<string, unknown> : {};
+          messages.set(key, {
+            runId: `${runId}:${++sampleIndex}`, started: now(), output: -1,
+            usage: usage && typeof usage === 'object' ? { ...usage as Record<string, unknown> } : {},
+          });
         }
         if (e['type'] === 'message_delta') {
           const value = e['usage'];
-          const usage = parseUsage(value && typeof value === 'object' ? { ...messageUsage, ...value } : value);
+          const sample = messages.get(key);
+          if (sample && value && typeof value === 'object') Object.assign(sample.usage, value);
+          const usage = parseUsage(sample?.usage ?? value);
           if (usage) onEvent({ type: 'usage', usage });
+          const exact = value && typeof value === 'object' && 'output_tokens' in value ? value.output_tokens : undefined;
+          const at = now();
+          const spanMs = sample ? at - sample.started : 0;
+          // output_tokens 是本訊息累計，已包含思考與工具輸入；不另外加 thinking_tokens。
+          if (sample && typeof exact === 'number' && Number.isFinite(exact) && exact >= 0 && exact > sample.output &&
+              Number.isFinite(spanMs) && spanMs > 0) {
+            sample.output = exact;
+            onEvent({ type: 'tokens', runId: sample.runId, count: exact, spanMs, at });
+          }
         }
-        if (e['type'] === 'message_delta' && generating !== null) {
-          const usage = e['usage'];
-          const exact = usage && typeof usage === 'object' && 'output_tokens' in usage && typeof usage.output_tokens === 'number' ? usage.output_tokens : null;
-          if (exact !== null && exact !== estimated) onEvent({ type: 'tokens', count: exact - estimated, spanMs: now() - generating });
-          generating = null;
-          estimated = 0;
-        }
+        if (e['type'] === 'message_stop') messages.delete(key);
         if (e['type'] === 'content_block_delta') {
           const delta = e['delta'];
           if (!delta || typeof delta !== 'object') return;
-          // 思考內容不公開時 thinking 是空字串，CLI 改附這段思考的估算 token 數（增量，非累計；加總與實際 thinking_tokens 相符）。
-          // 其餘從文字估：思考與工具參數也是輸出 token；signature_delta 不是。
-          const count = 'estimated_tokens' in delta && typeof delta.estimated_tokens === 'number' ? delta.estimated_tokens
-            : estimateTokens('text' in delta && typeof delta.text === 'string' ? delta.text
-              : 'thinking' in delta && typeof delta.thinking === 'string' ? delta.thinking
-              : 'partial_json' in delta && typeof delta.partial_json === 'string' ? delta.partial_json : '');
-          if (count > 0 && generating !== null) {
-            estimated += count;
-            onEvent({ type: 'tokens', count });
-          }
           if ('type' in delta && delta.type === 'text_delta' && 'text' in delta && typeof delta.text === 'string') {
             sawStream = true;
             streamed += delta.text;
@@ -232,6 +198,7 @@ export function createClaudeParser(onEvent: (ev: CliEvent) => void, now: () => n
         return;
       }
       case 'result': {
+        messages.clear();
         const usage = parseUsage(obj['usage']);
         if (usage) onEvent({ type: 'usage', usage });
         const isError = obj['is_error'] === true || (typeof obj['subtype'] === 'string' && obj['subtype'] !== 'success');
@@ -250,16 +217,31 @@ export class ClaudeCliProvider implements CliProvider {
   private readonly cfg: CliCommandConfig;
   private readonly env: NodeJS.ProcessEnv;
 
-  constructor(cfg: CliCommandConfig, envPassthrough: string[]) {
+  constructor(cfg: CliCommandConfig, envPassthrough: string[], env?: NodeJS.ProcessEnv) {
     this.cfg = cfg;
     this.dangerous = cfg.fullAccess;
-    this.env = minimalEnv(envPassthrough);
+    this.env = env ?? minimalEnv(envPassthrough);
   }
 
   async available(): Promise<boolean> { return (await findExecutable(this.cfg.command, this.env)) !== null; }
 
   /** 帳號目前的 5 小時／7 天用量（讀 CLI 存的 OAuth 憑證查詢）；失敗由呼叫端記日誌，額度仍會隨回合中的 rate_limit_event 更新。 */
-  quota(): Promise<Extract<CliEvent, { type: 'quota' }> | null> { return fetchClaudeQuota(this.env); }
+  quota(configDir?: string): Promise<Extract<CliEvent, { type: 'quota' }> | null> {
+    return fetchClaudeQuota(configDir ? { ...this.env, CLAUDE_CONFIG_DIR: configDir } : this.env);
+  }
+
+  commands(cwd: string, configDir?: string) {
+    return claudeCommands(this.cfg.command, [...this.cfg.baseArgs, '--input-format', 'stream-json'], cwd,
+      configDir ? { ...this.env, CLAUDE_CONFIG_DIR: configDir } : this.env);
+  }
+
+  async resolveCommand(text: string, cwd: string, configDir?: string) {
+    const name = slashName(text);
+    if (!name || !(await this.commands(cwd, configDir)).some(command => command.name === name)) {
+      throw new AppError('bad_request', 'slash_unsupported');
+    }
+    return { text: text.trimStart(), native: true };
+  }
 
   send(opts: SendOptions, onEvent: (ev: CliEvent) => void): CliRun {
     const imagePrompt = opts.images?.length ? `\n\n# 圖片附件\n請用 Read 工具查看以下圖片：\n${opts.images.join('\n')}` : '';
@@ -268,7 +250,7 @@ export class ClaudeCliProvider implements CliProvider {
     const run = runLineProcess(
       {
         command: this.cfg.command, args: claudeArgs(this.cfg, opts),
-        cwd: opts.cwd, env: this.env, prompt: opts.prompt + imagePrompt, label: 'claude',
+        cwd: opts.cwd, env: opts.configDir ? { ...this.env, CLAUDE_CONFIG_DIR: opts.configDir } : this.env, prompt: opts.slashCommand ?? opts.prompt + imagePrompt, label: 'claude',
       },
       createClaudeParser(ev => {
         if (ev.type === 'result') completed = true;

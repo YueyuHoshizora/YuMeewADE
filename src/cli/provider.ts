@@ -1,6 +1,6 @@
 // CLI 對話契約；核心只認這個介面，工具摘要不混入回答文字。
 
-import type { Ask, QuotaWindow, TurnUsage } from '../shared/types.ts';
+import type { Ask, QuotaWindow, ResetCredits, SlashCommand, TurnUsage } from '../shared/types.ts';
 
 export interface SendOptions {
   /** 完整提示（含前言、交接包、使用者指示）。 */
@@ -16,6 +16,14 @@ export interface SendOptions {
   fullAccess?: boolean;
   /** 已保存的圖片絕對路徑。 */
   images?: string[];
+  /** 本輪固定的帳戶；省略＝default。執行中切換不改變這一輪。 */
+  accountId?: string;
+  /** 額外帳戶的 CLI 設定目錄；省略＝繼承 CLI 預設。 */
+  configDir?: string;
+  /** 原生 slash 的完整文字；prompt 此時作為系統前言，不混入指令。 */
+  slashCommand?: string;
+  /** CLI 的獨立唯讀報告，不推進或清除模型對話狀態。 */
+  standalone?: boolean;
 }
 
 export type CliEvent =
@@ -26,10 +34,10 @@ export type CliEvent =
   | { type: 'usage'; usage: TurnUsage }
   | { type: 'tool'; text: string }
   | { type: 'asks'; asks: Ask[] }
-  /** 帳號額度（CLI 回報；at＝資料時間 ISO）。 */
-  | { type: 'quota'; windows: QuotaWindow[]; limited: boolean; at: string }
-  /** 剛輸出的 token 數（串流中為估算）；spanMs＝這些 token 平均分布在過去多少毫秒（校正用），省略＝就在此刻。 */
-  | { type: 'tokens'; count: number; spanMs?: number }
+  /** 帳號額度（CLI 或 API 回報；at＝資料時間 ISO；prepaidCents＝明確回報的預付美元分餘額；resetCredits＝明確回報的重置券）。 */
+  | { type: 'quota'; windows: QuotaWindow[]; limited: boolean; at: string; prepaidCents?: number; resetCredits?: ResetCredits }
+  /** CLI 實測輸出用量／耗時；runId 識別一則訊息或完整回合，同一量測累計值取代舊樣本，不同訊息獨立保留。 */
+  | { type: 'tokens'; runId: string; count: number; spanMs: number; at: number }
   /** 內部原因，只進日誌，不對外。 */
   | { type: 'error'; reason: string };
 
@@ -52,6 +60,9 @@ export interface CliProvider {
   readonly dangerous: boolean;
   available(): Promise<boolean>;
   send(opts: SendOptions, onEvent: (ev: CliEvent) => void): CliRun;
-  /** 不送指示、從 CLI 本機紀錄讀最近一次額度；沒有可讀紀錄回 null。 */
-  quota?(): Promise<Extract<CliEvent, { type: 'quota' }> | null>;
+  commands?(cwd: string, configDir?: string): Promise<SlashCommand[]>;
+  /** 原生回傳原文；自訂模板回傳展開後的提示。未知指令必須拒絕。 */
+  resolveCommand?(text: string, cwd: string, configDir?: string): Promise<{ text: string; native: boolean; standalone?: boolean }>;
+  /** 不送指示，查指定設定目錄的帳號額度；沒有資料回 null。 */
+  quota?(configDir?: string): Promise<Extract<CliEvent, { type: 'quota' }> | null>;
 }

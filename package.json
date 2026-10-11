@@ -1,8 +1,8 @@
 {
   "name": "yumeewade",
-  "version": "1.0.1",
+  "version": "1.1.0",
   "description": "跨平台 AI 專案協作 App：台帳、作業、AI 對話同畫面管理",
-  "license": "Apache-2.0",
+  "license": "GPL-3.0-only",
   "author": "Yueyu Hoshizora",
   "private": true,
   "type": "module",

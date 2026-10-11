@@ -1,10 +1,12 @@
 import type { AppState } from '../../shared/types.ts';
-import { t } from '../i18n/index.ts';
+import { getLocale, t } from '../i18n/index.ts';
 import type { MessageKey } from '../i18n/zh-TW.ts';
 
 export function aiLabel(name: string): string {
   if (name === 'claude') return 'Claude';
   if (name === 'codex') return 'Codex';
+  if (name === 'grok') return 'Grok';
+  if (name === 'gemini') return 'Gemini';
   return name === '人' ? t('ai.human') : name;
 }
 export function modelLabel(state: AppState, ai: string, model = ''): string {
@@ -15,8 +17,20 @@ export function effortLabel(effort = ''): string {
   return effort;
 }
 export function sourceLabel(source: string): string {
-  if (['cli-cache', 'cli', 'builtin'].includes(source)) return t(`source.${source}` as MessageKey);
+  if (['cli-cache', 'cli', 'builtin', 'unavailable'].includes(source)) return t(`source.${source}` as MessageKey);
   return source;
+}
+export function prepaidLabel(cents: number): string {
+  return t('usage.prepaidBalance', { balance: new Intl.NumberFormat(getLocale(), { style: 'currency', currency: 'USD' }).format(cents / 100) });
+}
+export function quotaLabel(label: string): string {
+  switch (label) {
+    case '7d credits': return t('usage.weeklyCredits');
+    case 'monthly credits': return t('usage.monthlyCredits');
+    case 'credits': return t('usage.credits');
+    case 'on-demand': return t('usage.onDemand');
+    default: return label.replace(/ · Weekly Limit Remaining$/, '');
+  }
 }
 export function localTime(value: string): string {
   if (!value) return '—';

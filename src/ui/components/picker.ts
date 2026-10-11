@@ -18,6 +18,7 @@ export function aiPicker(state: AppState, initial: AiPick, onChange?: (pick: AiP
     });
     model.replaceChildren(...models.map(m => { const o = el('option', '', m.label); o.value = m.id; return o; }));
     if (keep && !models.some(m => m.id === keep)) { const option = el('option', '', keep); option.value = keep; model.append(option); }
+    if (!model.options.length && ai.value !== '人') { const option = el('option', '', t('ai.default')); option.value = ''; model.append(option); }
     model.value = keep || models[0]?.id || ''; if (!model.value) model.selectedIndex = 0;
     model.disabled = ai.value === '人'; fillEfforts();
   }

@@ -15,7 +15,6 @@ export function settingsView(context: ViewContext, redraw: () => void): View {
     getTheme(),
   );
   theme.onchange = () => setTheme(theme.value as Theme);
-  const tools = input(); tools.type = 'checkbox'; tools.checked = readLocal('yumeewade.tools', false); tools.onchange = () => storeLocal('yumeewade.tools', tools.checked);
   const enter = input(); enter.type = 'checkbox'; enter.checked = readLocal('yumeewade.enterToSend', false); enter.onchange = () => storeLocal('yumeewade.enterToSend', enter.checked);
   const notifications = input(); notifications.type = 'checkbox'; notifications.checked = readLocal('yumeewade.notifications', true);
   notifications.onchange = () => { storeLocal('yumeewade.notifications', notifications.checked); if (notifications.checked && 'Notification' in window && Notification.permission === 'default') void run(async () => { await Notification.requestPermission(); }); };
@@ -28,7 +27,7 @@ export function settingsView(context: ViewContext, redraw: () => void): View {
     if (!await confirmModal(t('settings.rootConfirmTitle'), t('settings.rootConfirm', { root: value }), t('settings.rootApply'))) return;
     await api.workspace(value); await context.refresh(); redraw(); toast(t('settings.rootChanged'));
   });
-  node.append(card(t('settings.general'), field(t('settings.language'), language), field(t('settings.theme'), theme), field(t('settings.tools'), tools), field(t('settings.enterToSend'), enter), field(t('settings.notifications'), notifications), permission, field(t('settings.root'), root), row(...pickRoot, applyRoot), el('p', 'muted', t('settings.rootHint'))));
+  node.append(card(t('settings.general'), field(t('settings.language'), language), field(t('settings.theme'), theme), field(t('settings.enterToSend'), enter), field(t('settings.notifications'), notifications), permission, field(t('settings.root'), root), row(...pickRoot, applyRoot), el('p', 'muted', t('settings.rootHint'))));
   const initial = aiPicker(state, state.settings.initial); node.append(card(t('settings.initial'), initial.node, button(t('common.save'), async () => { await api.settings({ initial: initial.value() }); await context.refresh(); toast(t('common.saved')); }, 'primary')));
   const aiSection = card(t('settings.ais'));
   for (const info of state.ais.filter(ai => ai.name !== 'mock')) {

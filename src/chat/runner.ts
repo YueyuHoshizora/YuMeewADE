@@ -22,6 +22,8 @@ import { buildHandoff, buildPreamble, buildPrompt } from './prompt.ts';
 import { ChatStore, type ChatMeta } from './store.ts';
 import { attachImages } from './attachments.ts';
 import { parseAsk } from './ask.ts';
+import { slashName } from '../cli/commands.ts';
+import { pathExists } from '../shared/fsx.ts';
 
 export interface RunnerDeps {
   ws: Workspace;
@@ -47,7 +49,7 @@ export interface RunnerDeps {
   verify?: (project: string, task: string) => Promise<VerifyResult>;
   onChanged(project?: string, task?: string): void;
   /** CLI 回報的帳號額度／輸出 token（帳號層級，不寫進對話）。 */
-  onUsage(ai: string, ev: Extract<CliEvent, { type: 'quota' | 'tokens' }>): void;
+  onUsage(ai: string, ev: Extract<CliEvent, { type: 'quota' | 'tokens' }>, accountId: string): void;
 }
 interface Slot {
   busy: Busy | null;
@@ -185,6 +187,17 @@ export class ChatRunner extends EventEmitter {
     return { rows: rows.slice(start, end), start };
   }
 
+  async commands(p: string, t: string | undefined, ai: string) {
+    if (ai !== 'claude' && ai !== 'codex' && ai !== 'grok' && ai !== 'gemini') throw new AppError('bad_request', 'cli_unsupported');
+    const task = t === undefined ? undefined : await this.deps.tasks.get(p, t);
+    const cwd = task && task.workspace !== 'direct' && task.workdir && await pathExists(task.workdir)
+      ? task.workdir : await this.deps.worktree.bodyPath(p);
+    const provider = this.deps.providers[ai];
+    // Chats always run on the App's default slot; switching an account copies its credentials there.
+    if (!provider?.commands || !await provider.available()) return [];
+    return provider.commands(cwd);
+  }
+
   send(input: SendInput): Promise<SendResult> {
     return this.lock(input.project, input.task, () => this.sendLocked(input));
   }
@@ -218,13 +231,27 @@ export class ChatRunner extends EventEmitter {
     const settings = await this.deps.settings.get();
     const pick = resolveLaunch(await this.deps.roles(), task, {
       ...(chosen.ai ? { cli: chosen.ai } : {}),
-      ...(chosen.model ? { model: chosen.model } : {}),
-      ...(chosen.effort ? { effort: chosen.effort } : {}),
+      ...(chosen.model !== undefined ? { model: chosen.model } : {}),
+      ...(chosen.effort !== undefined ? { effort: chosen.effort } : {}),
     }, settings.initial);
     const provider = this.deps.providers[pick.cli];
     if (!provider) throw new AppError('bad_request', 'cli_unsupported');
+    const accountId = settings.activeAccounts[pick.cli] ?? 'default';
     if (!await provider.available()) throw new AppError('bad_request', 'cli_unavailable');
     if (this.shuttingDown) throw new AppError('unavailable');
+    // Validate before queuing or interrupting a running turn; never bury control commands in prose.
+    const name = slashName(chosen.text);
+    const commandCwd = name
+      ? task.workspace !== 'direct' && task.workdir && await pathExists(task.workdir)
+        ? task.workdir : await this.deps.worktree.bodyPath(p)
+      : '';
+    let command: { text: string; native: boolean; standalone?: boolean } | undefined;
+    if (name) {
+      if (!provider.resolveCommand || chosen.answer || (s.busy && chosen.mode !== 'queue')) {
+        throw new AppError('bad_request', 'slash_unsupported');
+      }
+      command = await provider.resolveCommand(chosen.text, commandCwd);
+    }
     const item: QueueItem = {
       id: randomUUID(), text: chosen.text, ai: pick.cli,
       model: pick.model, effort: pick.effort, at: new Date().toISOString(),
@@ -257,6 +284,7 @@ export class ChatRunner extends EventEmitter {
     };
     try {
       const cwd = await this.deps.worktree.prepare(p, t);
+      if (command && cwd !== commandCwd) command = await provider.resolveCommand!(chosen.text, cwd);
       const checkpoint = await this.deps.worktree.checkpoint(p, t);
       const images = await attachImages(this.deps.ws, p, t, chosen.images ?? [], this.deps.limits.imagesPerSend);
       if (this.shuttingDown) throw new AppError('unavailable');
@@ -271,7 +299,8 @@ export class ChatRunner extends EventEmitter {
       }
       const prior = await this.deps.store.readLog(p, t);
       const meta = await this.deps.store.readMeta(p, t);
-      const resumeId = item.ai !== 'codex' || meta.models[item.ai] === item.model
+      const sameAccount = (meta.accounts?.[item.ai] ?? 'default') === accountId;
+      const resumeId = sameAccount && (item.ai !== 'codex' || meta.models[item.ai] === item.model)
         ? meta.sessions[item.ai] : undefined;
       const roles = await this.deps.roles();
       const project = await this.deps.projects.get(p);
@@ -306,9 +335,12 @@ export class ChatRunner extends EventEmitter {
       this.deps.onChanged(p, t);
       await this.deps.store.writeMeta(p, t, meta);
       s.finished = this.execute(p, t, item, provider, meta, {
-        prompt: buildPrompt({ preamble, handoff, text: item.text, images }), cwd,
-        ...(resumeId ? { resumeId } : {}), model: pick.model, effort: pick.effort,
+        prompt: buildPrompt({ preamble, handoff, text: command ? (command.native ? '' : command.text) : item.text, images }), cwd,
+        ...(command?.native ? { slashCommand: command.text } : {}),
+        ...(command?.standalone ? { standalone: true } : resumeId ? { resumeId } : {}),
+        model: pick.model, effort: pick.effort,
         fullAccess: settings.fullAccess[item.ai] ?? provider.dangerous,
+        accountId,
         addDirs: [path.join(this.deps.ws.projectDir(p), '.ai')], images,
       }, checkpoint);
       this.trackQueuedRun(p, t, s);
@@ -397,6 +429,7 @@ export class ChatRunner extends EventEmitter {
     const previousSeen = meta.seen[item.ai];
     const previousSession = meta.sessions[item.ai];
     const previousModel = meta.models[item.ai];
+    const previousAccount = meta.accounts?.[item.ai];
     try {
       if (this.shuttingDown) throw new AppError('unavailable');
       const run = provider.send(opts, ev => {
@@ -410,7 +443,7 @@ export class ChatRunner extends EventEmitter {
           error = 'cli_failed';
           log.warn('CLI 回覆失敗', { project: p, task: t });
         } else if (ev.type === 'asks') asks.push(...ev.asks);
-        else if (ev.type === 'quota' || ev.type === 'tokens') this.deps.onUsage(item.ai, ev);
+        else if (ev.type === 'quota' || ev.type === 'tokens') this.deps.onUsage(item.ai, ev, opts.accountId ?? 'default');
         else if (ev.type === 'tool') {
           const row: ChatRow = {
             at: new Date().toISOString(), role: 'event', ai: item.ai,
@@ -458,7 +491,13 @@ export class ChatRunner extends EventEmitter {
           delete meta.sessions[item.ai];
           delete meta.models[item.ai];
         }
-      } else {
+      } else if (!opts.standalone) {
+        if ((meta.accounts?.[item.ai] ?? 'default') !== (opts.accountId ?? 'default')) {
+          delete meta.sessions[item.ai];
+          delete meta.models[item.ai];
+          delete meta.seen[item.ai];
+        }
+        meta.accounts = { ...meta.accounts, [item.ai]: opts.accountId ?? 'default' };
         if (sid) {
           meta.sessions[item.ai] = sid;
           meta.models[item.ai] = item.model ?? '';
@@ -488,6 +527,8 @@ export class ChatRunner extends EventEmitter {
       else meta.sessions[item.ai] = previousSession;
       if (opts.resumeId || previousModel === undefined) delete meta.models[item.ai];
       else meta.models[item.ai] = previousModel;
+      if (previousAccount === undefined) { if (meta.accounts) delete meta.accounts[item.ai]; }
+      else meta.accounts = { ...meta.accounts, [item.ai]: previousAccount };
       try { await this.deps.store.writeMeta(p, t, meta); }
       catch (cleanupError) { log.error('對話收尾失敗', cleanupError, { project: p, task: t }); }
       if (!persisted) {

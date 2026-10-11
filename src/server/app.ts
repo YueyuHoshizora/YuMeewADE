@@ -8,6 +8,7 @@ import { ChatStore } from '../chat/store.ts';
 import { cleanupUploads } from '../chat/attachments.ts';
 import type { CliProvider } from '../cli/provider.ts';
 import { createProviders } from '../cli/providers.ts';
+import type { CredentialAccounts } from '../cli/accounts.ts';
 import { WorktreeService } from '../git/worktree.ts';
 import { VerifyService } from '../git/verify.ts';
 import { RateLimiter } from '../http/ratelimit.ts';
@@ -24,17 +25,16 @@ import { loadRoles } from '../roles/roles.ts';
 import type { Config } from '../shared/config.ts';
 import { AppError } from '../shared/errors.ts';
 import { log } from '../shared/log.ts';
-import type { AppState, ChatEvent, Roles } from '../shared/types.ts';
+import type { AppState, ChatEvent, Roles, UsageState } from '../shared/types.ts';
 import { buildState, type StateSnapshot } from '../state/state.ts';
 
 const pkg = createRequire(import.meta.url)('../../package.json') as { version: string };
 
-/** 向 CLI 重新查額度的間隔；額度在終端機或其他裝置上也會變。 */
-const USAGE_POLL_MS = 120_000;
-
 export interface AppOptions {
   /** 測試用：取代真實 CLI。 */
   providers?: Record<string, CliProvider>;
+  /** App 層級的加密憑證，跨工作區沿用；測試可直接注入 providers。 */
+  accounts?: CredentialAccounts;
   /** 測試用：AI 模型快取所在的家目錄（預設 os.homedir()）。 */
   home?: string;
   /** 切換工作區；由 CoreHost 提供（它才能換掉整個 App）。 */
@@ -42,6 +42,9 @@ export interface AppOptions {
   /** CoreHost 持有的即時連線；切換工作區時沿用，網頁不必斷線重連。沒給就自建並在 close 時關閉。 */
   sse?: SseHub;
 }
+
+/** OAuth 需要使用者在瀏覽器操作，給 5 分鐘。 */
+const LOGIN_TIMEOUT_MS = 5 * 60_000;
 
 export class App {
   readonly config: Config;
@@ -60,6 +63,7 @@ export class App {
   readonly runner: ChatRunner;
   readonly usage: UsageBoard;
   private readonly providers: Record<string, CliProvider>;
+  private readonly accounts: CredentialAccounts | undefined;
   readonly sse: SseHub;
   readonly sendLimiter: RateLimiter;
   readonly relocate: (root: string) => Promise<string>;
@@ -75,24 +79,42 @@ export class App {
   private stateFlight: { generation: number; promise: Promise<StateSnapshot> } | null = null;
 
   constructor(config: Config, options: AppOptions = {}) {
+    if (!options.providers && !options.accounts) throw new Error('Credential storage is required');
+    this.accounts = options.accounts;
     this.config = config;
     this.relocate = options.relocate ?? (() => Promise.reject(new AppError('conflict', 'relocate_busy')));
     this.ws = new Workspace(config.workspace.root);
     this.projects = new ProjectLedger(this.ws);
     this.tasks = new TaskLedger(this.ws);
     this.completion = new CompletionStore(this.ws);
-    this.settings = new SettingsStore(this.ws, config);
+    this.settings = new SettingsStore(this.ws, config, async (ai, directory) => {
+      if (this.accounts) await this.captureCredentials(ai, directory);
+    }, async (ai, directory) => {
+      if (!this.accounts) throw new AppError('unavailable', 'credentials_unavailable');
+      const cli = this.config.cli[ai as 'claude' | 'codex' | 'grok' | 'gemini'];
+      if (!cli.loginArgs.length) throw new AppError('bad_request', 'cli_unsupported');
+      try { await this.accounts.login(ai, directory, cli.command, cli.loginArgs, LOGIN_TIMEOUT_MS); }
+      catch { throw new AppError('unavailable', 'login_failed'); }
+    }, ai => {
+      if (!this.accounts) throw new AppError('unavailable', 'credentials_unavailable');
+      return this.accounts.newProfileDirectory(ai);
+    }, async (ai, directory) => {
+      if (this.accounts) {
+        try { await this.accounts.activate(ai, directory); }
+        catch { throw new AppError('unavailable', 'credentials_unavailable'); }
+      }
+    });
     this.order = new OrderStore(this.ws);
     this.oplog = new OpLog(this.ws);
     this.worktree = new WorktreeService({ ws: this.ws, projects: this.projects, tasks: this.tasks, diffBytes: config.limits.diffBytes });
     this.verify = new VerifyService({ ws: this.ws, projects: this.projects, tasks: this.tasks, config, isRunning: (project, task) => this.runner.isRunning(project, task) });
-    this.ai = new AiCatalog({ config, ws: this.ws, settings: this.settings, ...(options.home ? { home: options.home } : {}) });
+    this.ai = new AiCatalog({ config, ws: this.ws, settings: this.settings, ...(options.home ? { home: options.home } : {}), ...(options.accounts ? { accounts: options.accounts } : {}) });
     this.store = new ChatStore(this.ws);
     this.ownsSse = !options.sse;
     this.sse = options.sse ?? new SseHub(config.limits.sseConnections, config.limits.heartbeatSeconds * 1000);
     this.sendLimiter = new RateLimiter(config.limits.sendPerMinute);
     this.usage = new UsageBoard(usage => this.sse.publish(GLOBAL, { event: 'usage', data: usage }));
-    this.providers = options.providers ?? createProviders(config);
+    this.providers = options.providers ?? createProviders(config, options.accounts!);
     this.runner = new ChatRunner({
       ws: this.ws,
       store: this.store,
@@ -109,7 +131,7 @@ export class App {
       publish: (project, task, ev) => this.sse.publish(taskKey(project, task), ev),
       watching: (project, task) => this.sse.watching(taskKey(project, task)),
       onChanged: (project, task) => this.changed(project, task),
-      onUsage: (ai, ev) => this.usage.record(ai, ev),
+      onUsage: (ai, ev, account) => this.usage.record(ai, ev, account),
     });
     // AI 一開始動手，之前的驗證結果就不再代表目前的檔案。
     this.runner.on('event', (project: string, task: string, ev: ChatEvent) => { if (ev.event === 'busy') this.verify.invalidate(project, task); });
@@ -117,6 +139,16 @@ export class App {
 
   async init(): Promise<void> {
     await this.ws.init();
+    if (this.accounts) {
+      const settings = await this.settings.get();
+      for (const ai of ['claude', 'codex', 'grok', 'gemini']) {
+        // The CLI's own default login is never read; only accounts added through OAuth are imported.
+        for (const directory of (settings.accounts[ai] ?? []).map(account => account.configDir)) {
+          try { await this.captureCredentials(ai, directory); }
+          catch { log.warn('帳號憑證尚未匯入', { ai }); }
+        }
+      }
+    }
     await this.store.recoverInterrupted();
     await cleanupUploads(this.ws, this.store);
     this.uploadTimer = setInterval(() => {
@@ -128,8 +160,19 @@ export class App {
     this.uploadTimer.unref();
     this.watcher = new LedgerWatcher(this.ws, (project, task) => this.changed(project, task));
     await this.watcher.start();
-    // 向各 CLI 查帳號目前額度（Codex 走 app-server，失敗退回本機紀錄）；不擋啟動，查到會以 usage 事件推給客戶端，之後定期更新。
-    void this.usage.poll(this.providers, USAGE_POLL_MS);
+    // 帳戶查詢不擋啟動；每輪重新讀設定，新增／移除的帳戶即時生效。
+    void this.usage.poll(this.providers, this.config.limits.usagePollSeconds * 1000, async () => (await this.settings.get()).accounts);
+  }
+
+  async refreshUsage(): Promise<UsageState> {
+    await this.usage.load(this.providers, (await this.settings.get()).accounts);
+    return this.usage.snapshot();
+  }
+
+  private async captureCredentials(ai: string, directory?: string): Promise<void> {
+    if (!this.accounts) throw new AppError('unavailable', 'credentials_unavailable');
+    try { await this.accounts.import(ai, directory); }
+    catch { throw new AppError('unavailable', 'credentials_unavailable'); }
   }
 
   /** 每次讀檔：roles.yaml 可手改，不快取。 */

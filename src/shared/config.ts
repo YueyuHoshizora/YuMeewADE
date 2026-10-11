@@ -16,14 +16,20 @@ export interface CliCommandConfig {
   fullAccessArgs: string[];
   /** fullAccess 關閉時改用的權限旗標。 */
   safeArgs: string[];
-  /** 查詢帳號即時額度的子命令（Codex：app-server）；空陣列＝該 CLI 沒有，只靠回合中的回報。 */
+  /** 查詢帳號額度的子命令（Codex：app-server）；直接使用 API 的 adapter 不需要子命令。 */
   quotaArgs: string[];
+  /** 新增帳號時在獨立設定資料夾內執行的 OAuth 登入子命令（由 CLI 自行開啟瀏覽器）。 */
+  loginArgs: string[];
+  /** 唯讀命令清單查詢（Gemini：print /help）。 */
+  commandsArgs: string[];
+  /** 獨立唯讀 slash 執行旗標；命令文字作為最後一個參數。 */
+  slashArgs: string[];
 }
 
 export interface Config {
   server: { host: string; port: number };
   workspace: { root: string };
-  cli: { claude: CliCommandConfig; codex: CliCommandConfig; envPassthrough: string[] };
+  cli: { claude: CliCommandConfig; codex: CliCommandConfig; grok: CliCommandConfig; gemini: CliCommandConfig; envPassthrough: string[] };
   limits: {
     bodyBytes: number;
     promptChars: number;
@@ -39,6 +45,7 @@ export interface Config {
     verifySeconds: number;
     verifyOutputBytes: number;
     runSeconds: number;
+    usagePollSeconds: number;
   };
   /** 實際採用的設定檔路徑；null＝全部用預設值。 */
   source: string | null;
@@ -56,6 +63,9 @@ export const DEFAULT_CONFIG: Config = {
       // 只自動接受檔案編輯；執行指令會被拒
       safeArgs: ['--permission-mode', 'acceptEdits'],
       quotaArgs: [],
+      loginArgs: ['auth', 'login'],
+      commandsArgs: [],
+      slashArgs: [],
     },
     codex: {
       command: 'codex',
@@ -65,6 +75,34 @@ export const DEFAULT_CONFIG: Config = {
       // 工作目錄沙箱內可改檔與執行指令，不詢問
       safeArgs: ['-s', 'workspace-write', '-c', 'approval_policy="never"'],
       quotaArgs: ['app-server'],
+      loginArgs: ['login', '-c', 'cli_auth_credentials_store="file"'],
+      commandsArgs: [],
+      slashArgs: [],
+    },
+    grok: {
+      command: 'grok',
+      baseArgs: ['--output-format', 'streaming-json'],
+      fullAccess: true,
+      fullAccessArgs: ['--always-approve'],
+      // 需要互動核准的操作直接拒絕，不讓無頭回合等待輸入。
+      safeArgs: ['--permission-mode', 'dontAsk'],
+      quotaArgs: [],
+      loginArgs: ['login', '--oauth'],
+      commandsArgs: [],
+      slashArgs: [],
+    },
+    // Google 官方後繼：Antigravity CLI（agy）。提示經 stdin 的 stream-json 傳入，沒有 argv 外洩。
+    gemini: {
+      command: 'agy',
+      baseArgs: ['--output-format', 'stream-json', '--input-format', 'stream-json', '--print='],
+      fullAccess: true,
+      fullAccessArgs: ['--dangerously-skip-permissions'],
+      // 只自動接受檔案編輯；其他操作不讓無頭回合等待互動核准。
+      safeArgs: ['--mode', 'accept-edits'],
+      quotaArgs: ['-p', '/usage', '--output-format', 'json'],
+      loginArgs: [],
+      commandsArgs: ['-p', '/help', '--output-format', 'json'],
+      slashArgs: ['--output-format', 'json', '--print'],
     },
     envPassthrough: [],
   },
@@ -83,6 +121,7 @@ export const DEFAULT_CONFIG: Config = {
     verifySeconds: 600,
     verifyOutputBytes: 65_536,
     runSeconds: 7_200,
+    usagePollSeconds: 60,
   },
   source: null,
 };
@@ -150,12 +189,12 @@ const LEGACY_BASE_ARGS: Record<'claude' | 'codex', string> = {
   codex: JSON.stringify(['exec', '--json', '--skip-git-repo-check', '-s', 'workspace-write', '-c', 'approval_policy="never"']),
 };
 
-function cliSection(map: YamlMap, name: 'claude' | 'codex'): CliCommandConfig {
+function cliSection(map: YamlMap, name: 'claude' | 'codex' | 'grok' | 'gemini'): CliCommandConfig {
   const s = section(map, name);
   const d = DEFAULT_CONFIG.cli[name];
   const where = `cli.${name}`;
   let baseArgs = strList(s, 'baseArgs', d.baseArgs, where);
-  if (JSON.stringify(baseArgs) === LEGACY_BASE_ARGS[name]) baseArgs = d.baseArgs;
+  if ((name === 'claude' || name === 'codex') && JSON.stringify(baseArgs) === LEGACY_BASE_ARGS[name]) baseArgs = d.baseArgs;
   // 0.1 版的 dangerous／dangerousArgs 是自動複製的範本值，不代表使用者選擇，略過
   return {
     command: str(s, 'command', d.command, where),
@@ -164,6 +203,9 @@ function cliSection(map: YamlMap, name: 'claude' | 'codex'): CliCommandConfig {
     fullAccessArgs: strList(s, 'fullAccessArgs', d.fullAccessArgs, where),
     safeArgs: strList(s, 'safeArgs', d.safeArgs, where),
     quotaArgs: strList(s, 'quotaArgs', d.quotaArgs, where),
+    loginArgs: strList(s, 'loginArgs', d.loginArgs, where),
+    commandsArgs: strList(s, 'commandsArgs', d.commandsArgs, where),
+    slashArgs: strList(s, 'slashArgs', d.slashArgs, where),
   };
 }
 
@@ -186,6 +228,8 @@ export function parseConfig(text: string, source: string | null): Config {
     cli: {
       claude: cliSection(cli, 'claude'),
       codex: cliSection(cli, 'codex'),
+      grok: cliSection(cli, 'grok'),
+      gemini: cliSection(cli, 'gemini'),
       envPassthrough: strList(cli, 'envPassthrough', d.cli.envPassthrough, 'cli'),
     },
     limits: {
@@ -203,6 +247,7 @@ export function parseConfig(text: string, source: string | null): Config {
       verifySeconds: int(limits, 'verifySeconds', L.verifySeconds, 'limits'),
       verifyOutputBytes: int(limits, 'verifyOutputBytes', L.verifyOutputBytes, 'limits'),
       runSeconds: int(limits, 'runSeconds', L.runSeconds, 'limits'),
+      usagePollSeconds: int(limits, 'usagePollSeconds', L.usagePollSeconds, 'limits'),
     },
     source,
   };

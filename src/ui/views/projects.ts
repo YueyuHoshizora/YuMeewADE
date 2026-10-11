@@ -1,4 +1,4 @@
-import { AUTO_FIX_MAX, type NewTaskInput, type ProjectView } from '../../shared/types.ts';
+import { AUTO_FIX_MAX, type NewTaskInput, type ProjectView, type SlashCommand } from '../../shared/types.ts';
 import { api, query, request } from '../api.ts';
 import { t } from '../i18n/index.ts';
 import { attachments } from '../components/attachments.ts';
@@ -7,6 +7,7 @@ import { markdown } from '../components/markdown.ts';
 import { area, button, card, confirmModal, disclosure, el, field, input, lines, link, projectHash, readLocal, row, run, select, storeLocal, taskHash, toast, type View, type ViewContext } from '../components/dom.ts';
 import { localTime } from '../components/display.ts';
 import { shouldSend } from '../components/composer.ts';
+import { attachSlashCommands } from '../components/slash-menu.ts';
 
 declare global { interface Window { yumeewade?: { desktop: true; platform: string; pickFolder: () => Promise<string | null>; setBadge: (count: number) => void; focus: () => void }; } }
 
@@ -141,16 +142,22 @@ export function projectView(context: ViewContext, project: ProjectView, params: 
   renderOverview(); node.append(overview);
   const draftKey = `yumeewade.quick.${project.id}`; const draft = area(readLocal<string>(draftKey, ''), `${t('project.quickPlaceholder')} · ${t(readLocal('yumeewade.enterToSend', false) ? 'chat.hintEnter' : 'chat.hintModifier')}`); draft.maxLength = context.state.limits.promptChars;
   draft.oninput = () => storeLocal(draftKey, draft.value);
-  const pick = aiPicker(context.state, project.startPick ?? context.state.settings.initial); const upload = attachments(project.id, context.state.limits, draft);
+  const pick = aiPicker(context.state, project.startPick ?? context.state.settings.initial, () => slashCommands.refresh()); const upload = attachments(project.id, context.state.limits, draft);
+  const slashCommands = attachSlashCommands(draft, () => JSON.stringify([
+    pick.value().ai, context.state.settings.activeAccounts, context.state.settings.accounts, project.bodyPath,
+  ]), async () => (await request<{ commands: SlashCommand[] }>(
+    query('/api/chat/commands', { project: project.id, ai: pick.value().ai }),
+  )).commands);
   const start = button(t('project.start'), async () => { await upload.ready(); if (!draft.value.trim() && !upload.ids().length) return;
     const result = await api.start({ project: project.id, text: draft.value.trim(), ...pick.value(), images: upload.ids() }); storeLocal(draftKey, ''); upload.clear(); draft.value = ''; await context.refresh(); location.hash = taskHash(project.id, result.task.id);
   }, 'primary');
   draft.onkeydown = e => { if (shouldSend(e, readLocal('yumeewade.enterToSend', false))) { e.preventDefault(); start.click(); } };
-  node.append(card(t('project.quick'), draft, upload.node, row(pick.node, start)), detailedTaskForm(context, project, params));
-  return { node, dispose: upload.dispose, update: state => {
+  node.append(card(t('project.quick'), slashCommands.node, draft, upload.node, row(pick.node, start)), detailedTaskForm(context, project, params));
+  return { node, dispose: () => { slashCommands.dispose(); upload.dispose(); }, update: state => {
     context.state = state;
     const next = state.projects.find(p => p.id === project.id);
     if (!next) { location.hash = '#/turn'; return; }
     if (JSON.stringify(next) !== JSON.stringify(project)) { project = next; renderOverview(); }
+    slashCommands.refresh();
   } };
 }
