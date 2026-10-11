@@ -18,6 +18,7 @@ import * as trustedUpdates from './trusted-updates.ts';
 import * as terminal from './terminal.ts';
 import * as gitManage from './git.ts';
 import * as mention from './mention.ts';
+import * as onboarding from './onboarding.ts';
 
 export const featureZhTW = {
   ...archive.featureZhTW,
@@ -40,6 +41,7 @@ export const featureZhTW = {
   ...terminal.featureZhTW,
   ...gitManage.featureZhTW,
   ...mention.featureZhTW,
+  ...onboarding.featureZhTW,
 };
 export const featureZhCN = {
   ...archive.featureZhCN,
@@ -62,6 +64,7 @@ export const featureZhCN = {
   ...terminal.featureZhCN,
   ...gitManage.featureZhCN,
   ...mention.featureZhCN,
+  ...onboarding.featureZhCN,
 };
 export const featureEn = {
   ...archive.featureEn,
@@ -84,6 +87,7 @@ export const featureEn = {
   ...terminal.featureEn,
   ...gitManage.featureEn,
   ...mention.featureEn,
+  ...onboarding.featureEn,
 };
 export const featureJa = {
   ...archive.featureJa,
@@ -106,6 +110,7 @@ export const featureJa = {
   ...terminal.featureJa,
   ...gitManage.featureJa,
   ...mention.featureJa,
+  ...onboarding.featureJa,
 };
 export const featureDe = {
   ...archive.featureDe,
@@ -128,6 +133,7 @@ export const featureDe = {
   ...terminal.featureDe,
   ...gitManage.featureDe,
   ...mention.featureDe,
+  ...onboarding.featureDe,
 };
 export const featureFr = {
   ...archive.featureFr,
@@ -150,6 +156,7 @@ export const featureFr = {
   ...terminal.featureFr,
   ...gitManage.featureFr,
   ...mention.featureFr,
+  ...onboarding.featureFr,
 };
 export const featureIt = {
   ...archive.featureIt,
@@ -172,4 +179,5 @@ export const featureIt = {
   ...terminal.featureIt,
   ...gitManage.featureIt,
   ...mention.featureIt,
+  ...onboarding.featureIt,
 };

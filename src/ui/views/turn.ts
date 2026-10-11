@@ -2,9 +2,11 @@ import { request } from '../api.ts';
 import { t } from '../i18n/index.ts';
 import { needsReply } from '../components/tree.ts';
 import { button, el, link, row, taskHash, type View, type ViewContext } from '../components/dom.ts';
+import { onboardingBanner } from '../components/onboarding.ts';
 
 export function turnView(context: ViewContext): View {
   const node = el('div', 'page'); const tabs = el('div', 'tabs'); const list = el('div', 'turn-list'); const hint = el('p', 'muted'); let selected: 'reply' | 'confirm' = 'reply';
+  node.append(onboardingBanner(context));
   function render(): void {
     const items = context.state.projects.flatMap(project => project.tasks.map(task => ({ project, task })));
     const reply = items.filter(({ task }) => needsReply(task)); const confirm = items.filter(({ task }) => task.confirm && !needsReply(task));

@@ -14,6 +14,7 @@ import { gitWorkbenchButton } from '../components/git-workbench.ts';
 import { projectTrustButton } from '../components/project-trust.ts';
 import { confirmUsageRound } from '../components/usage-history.ts';
 import { attachComposeInsert } from '../components/mention.ts';
+import { onboardingBanner } from '../components/onboarding.ts';
 
 async function startWithBudget(context: ViewContext, input: StartInput): Promise<void> {
   const { task } = await request<{ task: Task }>('/api/start/prepare', input);
@@ -91,6 +92,7 @@ export function openProjectView(context: ViewContext): View {
 
 export function newProjectView(context: ViewContext, params: URLSearchParams): View {
   const node = el('div', 'page'); const name = input(); name.required = true; name.maxLength = 60;
+  node.append(onboardingBanner(context));
   const first = area(); first.maxLength = context.state.limits.promptChars; const description = area(); description.maxLength = 400;
   const phases = area(t('project.defaultPhases')); const body = input(); const related: string[] = [];
   const parent = select([{ value: '', label: t('common.none') }, ...context.state.projects.map(p => ({ value: p.id, label: p.name }))], params.get('parent') ?? '');

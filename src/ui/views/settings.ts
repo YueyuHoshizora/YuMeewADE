@@ -7,6 +7,7 @@ import { aiLabel, localTime, sourceLabel } from '../components/display.ts';
 import { getTheme, setTheme, type Theme } from '../theme.ts';
 import { carePanel } from '../components/care.ts';
 import { archiveButton } from '../components/archive.ts';
+import { cliGuidance } from '../components/onboarding.ts';
 
 export function settingsView(context: ViewContext, redraw: () => void): View {
   const { state } = context; const node = el('div', 'page settings-page'); node.append(el('h1', '', t('nav.settings')));
@@ -31,6 +32,7 @@ export function settingsView(context: ViewContext, redraw: () => void): View {
   });
   node.append(card(t('settings.general'), field(t('settings.language'), language), field(t('settings.theme'), theme), field(t('settings.enterToSend'), enter), field(t('settings.notifications'), notifications), permission, field(t('settings.root'), root), row(...pickRoot, applyRoot), el('p', 'muted', t('settings.rootHint'))));
   node.append(carePanel(context), archiveButton(context));
+  node.append(cliGuidance(context));
   const initial = aiPicker(state, state.settings.initial); node.append(card(t('settings.initial'), initial.node, button(t('common.save'), async () => { await api.settings({ initial: initial.value() }); await context.refresh(); toast(t('common.saved')); }, 'primary')));
   const aiSection = card(t('settings.ais'));
   for (const info of state.ais.filter(ai => ai.name !== 'mock')) {

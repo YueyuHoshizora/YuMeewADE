@@ -36,12 +36,13 @@ function accountUsage(usage: AiUsage | undefined): HTMLElement {
 }
 
 /** Read live UI state only; quota queries remain owned by the core scheduler. */
-export function openUsageDetails(getState: () => AppState, getUsage: () => UsageState, refresh: () => Promise<void>, selectedAi?: string): void {
+export function openUsageDetails(getState: () => AppState, getUsage: () => UsageState, refresh: () => Promise<void>, selectedAi?: string, addAccount = false): void {
   const dialog = el('dialog', 'modal usage-details');
   const title = el('h2', '', t('usage.details')); title.id = 'usage-details-title';
   dialog.setAttribute('aria-labelledby', title.id);
   const accounts = el('div', 'usage-accounts');
   const add = el('details', 'disclosure'); add.append(el('summary', '', t('usage.addAccount')));
+  add.open = addAccount;
   const provider = el('select');
   for (const ai of ['claude', 'codex', 'grok', 'gemini']) { const option = el('option', '', aiLabel(ai)); option.value = ai; provider.append(option); }
   provider.value = selectedAi === 'codex' || selectedAi === 'grok' || selectedAi === 'gemini' ? selectedAi : 'claude';
