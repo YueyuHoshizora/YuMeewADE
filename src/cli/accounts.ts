@@ -105,6 +105,10 @@ export class CredentialAccounts {
     const key = JSON.stringify([configDir === undefined ? 'default' : 'profile', source, provider === 'grok' ? path.resolve(authSource) : '']);
     return { ai: provider, source, key, authSource, runtime: path.join(this.root, provider, createHash('sha256').update(key).digest('hex')) };
   }
+  hasStored(ai: string, configDir?: string): boolean {
+    const profile = this.profile(ai, configDir);
+    return this.vault.has(profile.ai, profile.key);
+  }
 
   private serial<T>(profile: Profile, operation: () => Promise<T>, releasing = false): Promise<T> {
     if (this.closed && !releasing) return Promise.reject(new Error(FAILURE));
@@ -379,6 +383,8 @@ export class CredentialAccounts {
     const base = factory(this.env);
     return {
       name: ai, dangerous: config.fullAccess,
+      supportsReadonly: base.supportsReadonly === true,
+      ...(base.readonlyEnforcement ? { readonlyEnforcement: base.readonlyEnforcement } : {}),
       available: () => base.available(),
       quota: async (configDir) => {
         if (ai === 'gemini') return this.withEnv(ai, configDir, env => factory(env).quota!(env['HOME']));

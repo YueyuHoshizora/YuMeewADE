@@ -7,9 +7,10 @@ import { readClaudeToken } from './claude-credentials.ts';
 import type { CliEvent, CliProvider, CliRun, SendOptions } from './provider.ts';
 import { claudeCommands, slashName } from './commands.ts';
 import { AppError } from '../shared/errors.ts';
+import { readonlyConfigured, reviewArgs } from './readonly.ts';
 
 export function claudeArgs(cfg: CliCommandConfig, opts: SendOptions): string[] {
-  const args = [...((opts.fullAccess ?? cfg.fullAccess) ? cfg.fullAccessArgs : cfg.safeArgs), ...cfg.baseArgs];
+  const args = opts.readonly ? reviewArgs('claude', cfg, opts) : [...((opts.fullAccess ?? cfg.fullAccess) ? cfg.fullAccessArgs : cfg.safeArgs), ...cfg.baseArgs];
   if (opts.model) args.push('--model', opts.model);
   if (opts.effort) args.push('--effort', opts.effort);
   if (opts.resumeId) args.push('--resume', opts.resumeId);
@@ -297,6 +298,8 @@ export function createClaudeParser(onEvent: (ev: CliEvent) => void, now: () => n
 export class ClaudeCliProvider implements CliProvider {
   readonly name = 'claude';
   readonly dangerous: boolean;
+  readonly readonlyEnforcement = 'tool-allowlist' as const;
+  get supportsReadonly(): boolean { return readonlyConfigured('claude', this.cfg); }
   private readonly cfg: CliCommandConfig;
   private readonly env: NodeJS.ProcessEnv;
 

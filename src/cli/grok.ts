@@ -9,6 +9,7 @@ import { log } from '../shared/log.ts';
 import { findExecutable, minimalEnv, runLineProcess } from './process.ts';
 import type { CliEvent, CliProvider, CliRun, RunOutcome, SendOptions } from './provider.ts';
 import { fetchGrokQuota } from './grok-quota.ts';
+import { refuseReview } from './readonly.ts';
 
 /** GROK_HOME owns config/sessions; auth and leader overrides must not escape an extra profile. */
 export function grokEnv(env: NodeJS.ProcessEnv, configDir?: string): NodeJS.ProcessEnv {
@@ -124,6 +125,7 @@ export async function grokPromptBlocks(opts: SendOptions): Promise<Record<string
 export class GrokCliProvider implements CliProvider {
   readonly name = 'grok';
   readonly dangerous: boolean;
+  readonly supportsReadonly = false;
   private readonly cfg: CliCommandConfig;
   private readonly env: NodeJS.ProcessEnv;
   private readonly managed: boolean;
@@ -138,6 +140,7 @@ export class GrokCliProvider implements CliProvider {
     return fetchGrokQuota(configDir, this.env);
   }
   send(opts: SendOptions, onEvent: (ev: CliEvent) => void): CliRun {
+    refuseReview(opts);
     let stopped = false;
     let run: CliRun | undefined;
     const done = (async (): Promise<RunOutcome> => {

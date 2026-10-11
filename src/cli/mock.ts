@@ -3,6 +3,7 @@
 // 提示含 [slow] 時每段間隔拉長（測停止）；含 [fail] 時中途回 error 並非 0 結束。
 
 import type { CliEvent, CliProvider, CliRun, RunOutcome, SendOptions } from './provider.ts';
+import { refuseReview } from './readonly.ts';
 
 export interface MockOptions {
   chunkMs?: number;
@@ -15,6 +16,7 @@ export interface MockOptions {
 export class MockCliProvider implements CliProvider {
   readonly name = 'mock';
   readonly dangerous = false;
+  readonly supportsReadonly = false;
   private readonly chunkMs: number;
   private readonly options: MockOptions;
   private counter = 0;
@@ -29,6 +31,7 @@ export class MockCliProvider implements CliProvider {
   }
 
   send(opts: SendOptions, onEvent: (ev: CliEvent) => void): CliRun {
+    refuseReview(opts);
     const { promise, resolve } = Promise.withResolvers<RunOutcome>();
     const userLine = opts.prompt.trimEnd().split('\n').at(-1) ?? '';
     const resumed = opts.resumeId ? `（續聊 ${opts.resumeId}）` : '';

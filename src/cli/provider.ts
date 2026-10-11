@@ -14,6 +14,8 @@ export interface SendOptions {
   addDirs?: string[];
   /** 本輪權限；省略時使用 config 的預設。 */
   fullAccess?: boolean;
+  /** Independent review policy. Providers must reject unsupported/reused sessions. */
+  readonly?: boolean;
   /** 已保存的圖片絕對路徑。 */
   images?: string[];
   /** 本輪固定的帳戶；省略＝default。執行中切換不改變這一輪。 */
@@ -58,6 +60,9 @@ export interface CliProvider {
   readonly name: string;
   /** 目前設定下是否會附上危險旗標。 */
   readonly dangerous: boolean;
+  /** False/absent means review is refused, not silently downgraded. */
+  readonly supportsReadonly?: boolean;
+  readonly readonlyEnforcement?: 'native-sandbox' | 'tool-allowlist';
   available(): Promise<boolean>;
   send(opts: SendOptions, onEvent: (ev: CliEvent) => void): CliRun;
   commands?(cwd: string, configDir?: string): Promise<SlashCommand[]>;

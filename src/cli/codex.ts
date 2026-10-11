@@ -11,6 +11,7 @@ import { findExecutable, minimalEnv, runLineProcess, terminateTree } from './pro
 import type { CliEvent, CliProvider, CliRun, SendOptions } from './provider.ts';
 import { codexPrompts, expandCodexPrompt, slashName } from './commands.ts';
 import { AppError } from '../shared/errors.ts';
+import { readonlyConfigured, reviewArgs } from './readonly.ts';
 
 type QuotaEvent = Extract<CliEvent, { type: 'quota' }>;
 
@@ -20,9 +21,9 @@ const ROLLOUT_TAIL_BYTES = 512 * 1024;
 const LATEST_ROLLOUTS = 5;
 
 export function codexArgs(cfg: CliCommandConfig, opts: SendOptions): string[] {
-  const args = [...cfg.baseArgs];
-  // exec 子命令後放權限旗標；baseArgs 可由設定檔調整。
-  args.splice(args[0] === 'exec' ? 1 : 0, 0, ...((opts.fullAccess ?? cfg.fullAccess) ? cfg.fullAccessArgs : cfg.safeArgs));
+  const args = opts.readonly ? reviewArgs('codex', cfg, opts) : [...cfg.baseArgs];
+  // Review is independent of ordinary base and permission flags.
+  if (!opts.readonly) args.splice(args[0] === 'exec' ? 1 : 0, 0, ...((opts.fullAccess ?? cfg.fullAccess) ? cfg.fullAccessArgs : cfg.safeArgs));
   if (opts.model) args.push('-m', opts.model);
   if (opts.effort) args.push('-c', `model_reasoning_effort=${JSON.stringify(opts.effort)}`);
   for (const image of opts.images ?? []) args.push('-i', image);
@@ -314,6 +315,8 @@ export function createCodexParser(onEvent: (ev: CliEvent) => void, now: () => nu
 export class CodexCliProvider implements CliProvider {
   readonly name = 'codex';
   readonly dangerous: boolean;
+  readonly readonlyEnforcement = 'native-sandbox' as const;
+  get supportsReadonly(): boolean { return readonlyConfigured('codex', this.cfg) && (process.platform === 'darwin' || process.platform === 'linux'); }
   private readonly cfg: CliCommandConfig;
   private readonly env: NodeJS.ProcessEnv;
   private readonly home: string;
@@ -346,6 +349,7 @@ export class CodexCliProvider implements CliProvider {
   }
 
   send(opts: SendOptions, onEvent: (ev: CliEvent) => void): CliRun {
+    if (opts.readonly && !this.supportsReadonly) throw new AppError('bad_request', 'cli_unsupported');
     let completed = false;
     let failed = false;
     let thread = opts.resumeId;

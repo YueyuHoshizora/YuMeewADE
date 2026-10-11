@@ -10,6 +10,7 @@ import { captureCommand, findExecutable, minimalEnv, runLineProcess } from './pr
 import type { CliEvent, CliProvider, CliRun, RunOutcome, SendOptions } from './provider.ts';
 import { AppError } from '../shared/errors.ts';
 import { normalizeCommands, slashName } from './commands.ts';
+import { refuseReview } from './readonly.ts';
 
 export function geminiArgs(cfg: CliCommandConfig, opts: SendOptions): string[] {
   const args = [...((opts.fullAccess ?? cfg.fullAccess) ? cfg.fullAccessArgs : cfg.safeArgs), ...cfg.baseArgs];
@@ -132,6 +133,7 @@ export function geminiQuota(value: unknown, at = new Date().toISOString()): Extr
 export class GeminiCliProvider implements CliProvider {
   readonly name = 'gemini';
   readonly dangerous: boolean;
+  readonly supportsReadonly = false;
   private readonly cfg: CliCommandConfig;
   private readonly env: NodeJS.ProcessEnv;
   constructor(cfg: CliCommandConfig, envPassthrough: string[], env?: NodeJS.ProcessEnv) {
@@ -175,6 +177,7 @@ export class GeminiCliProvider implements CliProvider {
     } finally { await fs.rm(cwd, { recursive: true, force: true }); }
   }
   send(opts: SendOptions, onEvent: (ev: CliEvent) => void): CliRun {
+    refuseReview(opts);
     const name = opts.slashCommand ? slashName(opts.slashCommand) : null;
     if (opts.slashCommand && (!this.cfg.slashArgs.length || !name || opts.slashCommand.trim() !== `/${name}`)) {
       const reason = 'Gemini slash command is unavailable';
