@@ -12,7 +12,7 @@ export const ja: Record<MessageKey, string> = {
   'usage.refresh': '利用枠を今すぐ取得', 'usage.ready': '取得成功', 'usage.unavailable': '現在取得できません', 'usage.noData': '利用枠データはまだありません。手動で取得するか次の更新をお待ちください',
   'usage.prepaidBalance': 'プリペイド残高 {balance}',
   'usage.weeklyCredits': '週間利用枠', 'usage.monthlyCredits': '月間利用枠', 'usage.credits': '利用枠', 'usage.onDemand': '従量課金', 'usage.remaining': '残り {percent}%',
-  'usage.averageSpeed': '{speed} 平均 tok/s', 'usage.measuredSpeed': '直近の CLI が報告した実際の出力 token 合計を計測区間の和集合の長さで割り、計測を 4 秒間保持します。未計測は — で表示し、リアルタイムの生成速度ではありません。Claude は各メッセージの時間、Codex／Grok は待機・ツールを含むターン全体の時間です。CLI が報告する思考用量を含み、推定はしません。',
+  'usage.averageSpeed': '{speed} 平均 tok/s', 'usage.measuredSpeed': '直近の CLI が報告した実際の出力 token 合計を計測区間の和集合の長さで割り、計測を 4 秒間保持します。未計測は — で表示し、リアルタイムの生成速度ではありません。Claude は各メッセージ（交錯するサブエージェントを含む）を個別に計測し、連続するメッセージは上書きせず保持します。Codex／Grok は待機・ツールを含むターン全体です。Gemini は完了したステップのスナップショットを累計し、同じステップの再送は二重計上せず、修正値は旧値を置き換えます。CLI が報告する思考用量を含み、推定はしません。',
   'project.verify': '検証コマンド',
   'project.verifyHint': '作業の worktree で実行（例：npm test）。PROJECT.md に保存されます。',
   'project.autoFix': '検証失敗時の自動修正', 'project.autoFixHint': 'AI が指示を終えると上の検証コマンドを自動実行し、失敗したら出力を同じ AI に返します。ここで設定した回数まで繰り返します。検証コマンドの設定が必要で、新しい指示を出すとカウントはリセットされます。', 'project.autoFixOff': 'オフ', 'project.autoFixTimes': '最大 {n} 回',

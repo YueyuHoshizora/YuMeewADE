@@ -11,7 +11,7 @@ export const zhTW = {
   'usage.refresh': '立即查詢額度', 'usage.ready': '查詢成功', 'usage.unavailable': '目前無法查詢', 'usage.noData': '尚無額度資料；可手動查詢或等待下次更新',
   'usage.prepaidBalance': '預付餘額 {balance}',
   'usage.weeklyCredits': '每週額度', 'usage.monthlyCredits': '每月額度', 'usage.credits': '額度', 'usage.onDemand': '隨用隨付', 'usage.remaining': '剩餘 {percent}%',
-  'usage.averageSpeed': '{speed} 平均 tok/s', 'usage.measuredSpeed': '最近 CLI 回報的實際輸出 token 總數除以量測時間區間的聯集，量測保留 4 秒；沒有量測時顯示 —，不是即時生成速度。Claude 採每則訊息耗時；Codex／Grok 採完整回合（含等待與工具）。包含 CLI 回報的思考用量，不做估算。',
+  'usage.averageSpeed': '{speed} 平均 tok/s', 'usage.measuredSpeed': '最近 CLI 回報的實際輸出 token 總數除以量測時間區間的聯集，量測保留 4 秒；沒有量測時顯示 —，不是即時生成速度。Claude 每則訊息（含子代理）各自計時，連續訊息分開保留；Codex／Grok 採完整回合（含等待與工具）；Gemini 以完成步驟快照累計，同一步驟重播不重複計算、修正值取代舊值。包含 CLI 回報的思考用量，不做估算。',
   'project.verify': '驗證指令',
   'project.verifyHint': '在作業的工作副本執行（例如 npm test）；指令儲存在 PROJECT.md。',
   'project.autoFix': '驗證失敗自動修正', 'project.autoFixHint': 'AI 做完一則指示後自動跑上面的驗證指令；失敗就把輸出交回同一個 AI，最多重試設定的次數。需要先填驗證指令；你下新指示會重新計數。', 'project.autoFixOff': '關閉', 'project.autoFixTimes': '最多 {n} 次',

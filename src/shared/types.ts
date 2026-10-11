@@ -227,7 +227,7 @@ export interface AiUsage {
 
 export interface UsageState {
   ais: AiUsage[];
-  /** 最近量測的輸出速率（訊息／回合平均）；尚無有效量測時為 null。 */
+  /** 最近量測的輸出速率（各訊息／回合／步驟快照的加權平均）；尚無有效量測時為 null。 */
   tokensPerSecond: number | null;
 }
 
