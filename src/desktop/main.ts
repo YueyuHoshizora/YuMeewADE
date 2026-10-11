@@ -11,11 +11,21 @@ import { probe, waitForCore } from './probe.ts';
 import { acceptsFrame, validBadgeCount } from './policy.ts';
 import { stopOwnedCore } from './shutdown.ts';
 import { configureSecretApplication, createSecretRequestHandler } from './secret-service.ts';
+import { reportArtifactSmoke } from './artifact-smoke.ts';
 
 const HERE = path.dirname(fileURLToPath(import.meta.url));
 const APP_ROOT = path.join(HERE, '..', '..');
 const SERVER_ENTRY = path.join(HERE, '..', 'server', 'main.js');
 const PRELOAD = path.join(HERE, 'preload.cjs');
+// CI 只能對實際打包產物啟用；所有應用程式資料都留在腳本建立的暫存目錄。
+const artifactSmoke = process.env['YUMEEWADE_ARTIFACT_SMOKE'];
+if (artifactSmoke) {
+  if (!app.isPackaged || !path.isAbsolute(artifactSmoke)) throw new Error('Invalid artifact smoke environment');
+  const profile = path.join(artifactSmoke, 'profile');
+  mkdirSync(profile, { recursive: true, mode: 0o700 });
+  app.setPath('appData', profile);
+  app.setPath('userData', path.join(profile, 'config'));
+}
 // Preserve existing packaged configuration while giving secrets one cross-mode identity.
 const CONFIG_DIRECTORY = app.getPath('userData');
 
@@ -56,7 +66,10 @@ async function ensureConfigPath(): Promise<string> {
 }
 
 async function startCore(host: string, port: number): Promise<void> {
-  if (await probe(host, port)) return; // 已有核心在跑，直接用
+  if (await probe(host, port)) {
+    if (artifactSmoke) throw new Error('Artifact smoke cannot reuse an existing core');
+    return; // 已有核心在跑，直接用
+  }
   if (quitting) return;
   core = utilityProcess.fork(SERVER_ENTRY, [], {
     env: { ...process.env, YUMEEWADE_SECRET_PARENT: '1' },
@@ -108,7 +121,9 @@ function createWindow(url: string): BrowserWindow {
     if (/^https?:/.test(target)) void shell.openExternal(target);
     return { action: 'deny' };
   });
-  void win.loadURL(url);
+  if (artifactSmoke) {
+    void win.loadURL(url).then(() => reportArtifactSmoke(win, artifactSmoke, origin)).catch(() => app.exit(1));
+  } else void win.loadURL(url);
   return win;
 }
 
@@ -130,6 +145,7 @@ app.on('window-all-closed', () => app.quit());
 if (primaryInstance) app
   .whenReady()
   .then(async () => {
+    if (artifactSmoke) await fs.writeFile(path.join(artifactSmoke, 'process.json'), JSON.stringify({ pid: process.pid }), { mode: 0o600, flag: 'wx' });
     ipcMain.handle('pick-folder', async (event) => {
       const win = mainWindow;
       if (!win || event.sender !== win.webContents || !acceptsFrame(event.senderFrame?.url, coreOrigin)) return null;

@@ -38,11 +38,20 @@ jobs:
           node-version: 24
           cache: npm
       - run: npm ci
+      - name: Install Linux desktop smoke dependencies
+        if: runner.os == 'Linux'
+        run: sudo apt-get update && sudo apt-get install -y xvfb xauth dbus-x11 gnome-keyring libsecret-1-0 libgtk-3-0 libnss3 libasound2t64
       - run: npm run build
       # 未簽名產物（PLAN.md 假設 7）；--publish never 避免 electron-builder 嘗試發佈
       - run: npx electron-builder --config electron-builder.yml --publish never
         env:
           CSC_IDENTITY_AUTO_DISCOVERY: 'false'
+      - name: Launch installed and portable artifacts (macOS / Windows)
+        if: runner.os != 'Linux'
+        run: node scripts/artifact-smoke.ts release
+      - name: Launch extracted deb and AppImage with encrypted isolated keyring
+        if: runner.os == 'Linux'
+        run: xvfb-run -a node scripts/artifact-smoke.ts release
       - uses: actions/upload-artifact@v4
         with:
           name: yumeewade-${{ matrix.os }}
