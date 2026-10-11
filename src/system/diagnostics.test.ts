@@ -32,7 +32,7 @@ test('care backup and restore enter exclusive reservation and reject busy before
     await assert.rejects(care.restore('bad-id', path.join(temporary, 'restore')), /busy/);
     assert.equal(reservations, 2);
     await assert.rejects(fs.access(path.join(temporary, 'private')));
-    care.close(); await assert.rejects(async () => care.backup(true));
+    await care.close(); await assert.rejects(async () => care.backup(true));
   } finally { await fs.rm(temporary, { recursive: true, force: true }); }
 });
 
@@ -51,6 +51,28 @@ test('diagnostics writes a real private export with no state secrets', async () 
     assert.equal((await fs.stat(file)).mode & 0o777, 0o600);
     assert.deepEqual(await fs.readFile(file), bytes);
     assert.equal(JSON.parse(bytes.toString()).format, 1);
-    care.close();
+    await care.close();
+  } finally { await fs.rm(temporary, { recursive: true, force: true }); }
+});
+
+test('scheduled failure is persisted, notified once and shutdown stops scheduling', { timeout: 10000 }, async () => {
+  const temporary = await fs.mkdtemp(path.join(os.tmpdir(), 'care-schedule-'));
+  try {
+    const ws = new Workspace(path.join(temporary, 'workspace')); await ws.init();
+    const directory = path.join(temporary, 'private');
+    const options = { ws, config: { ...DEFAULT_CONFIG, workspace: { root: ws.root } }, catalog: { list: async () => [] }, settings: { get: async () => settings }, version: '1.0.0', privateDirectory: directory, loginState: async () => 'unknown' as const, counts: async () => ({ projects: 0, tasks: 0, running: 0 }), reserve: async <T>(_work: () => Promise<T>): Promise<T> => { throw new Error('private busy details'); } };
+    const initial = new CareService(options); await initial.init();
+    await assert.rejects(initial.setSchedule({ enabled: true, intervalHours: 0, retention: 10, includeExternal: true }));
+    await initial.setSchedule({ enabled: true, intervalHours: 1, retention: 2, includeExternal: true }); await initial.close();
+    const scheduleFile = path.join(directory, (await fs.readdir(directory)).find(name => name.startsWith('schedule-'))!);
+    const fixture = JSON.parse(await fs.readFile(scheduleFile, 'utf8')); fixture.nextAttempt = new Date(Date.now() - 1000).toISOString(); await fs.writeFile(scheduleFile, JSON.stringify(fixture));
+    const notified = Promise.withResolvers<void>(); let notifications = 0;
+    const service = new CareService({ ...options, notifyBackupFailure: () => { notifications++; notified.resolve(); } }); await service.init();
+    await notified.promise; await service.close();
+    const stored = JSON.parse(await fs.readFile(scheduleFile, 'utf8'));
+    assert.equal(stored.lastFailure, 'care_backup_invalid'); assert.equal(stored.running, false); assert.equal(stored.lastSuccess, null);
+    assert.ok(Date.parse(stored.nextAttempt) > Date.now()); assert.equal(notifications, 1);
+    assert.doesNotMatch(await fs.readFile(scheduleFile, 'utf8'), /private busy details/);
+    await assert.rejects(service.backup(true), { detail: 'care_closed' });
   } finally { await fs.rm(temporary, { recursive: true, force: true }); }
 });

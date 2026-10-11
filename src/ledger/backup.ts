@@ -8,6 +8,8 @@ import { isInside, withFileLocks, writeJson } from '../shared/fsx.ts';
 import { AppError } from '../shared/errors.ts';
 import { git } from '../git/git.ts';
 import type { CareBackup } from '../shared/types.ts';
+import type { CareCapacity } from '../shared/backup-types.ts';
+import { encryptSnapshot, receiveEncrypted, decryptSnapshot } from './portable-backup.ts';
 
 interface Manifest { format: 1; id: string; createdAt: string; root: string; originalRoot: string; external: { project: string; source: string; originalSource: string; folder: string }[]; complete: boolean; fingerprint: string }
 const excluded = (name: string) => /^(credentials\.sqlite(?:[-.].*)?|credentials\.key|master\.key|core\.lock|cli-accounts|auth\.json|\.credentials\.json|\.device-keys\.json|antigravity-oauth-token)$/i.test(name);
@@ -18,6 +20,7 @@ const inside = (root: string, file: string) => root === file || isInside(root, f
 export class BackupService {
   private readonly ws: Workspace;
   private readonly directory: string;
+  private readonly active = new Set<string>();
   constructor(ws: Workspace, directory: string) { this.ws = ws; this.directory = directory; }
   private async privateRoot(): Promise<string> {
     await fs.mkdir(this.directory, { recursive: true, mode: 0o700 });
@@ -31,18 +34,87 @@ export class BackupService {
     const result: CareBackup[] = [];
     for (const id of await fs.readdir(directory)) {
       if (!/^[0-9a-f-]{36}$/.test(id)) continue;
-      const manifest = await this.manifest(id);
-      result.push({ id, createdAt: manifest.createdAt, complete: manifest.complete, externalCount: manifest.external.length, containsSecrets: true });
+      try {
+        const manifest = await this.manifest(id);
+        result.push({ id, createdAt: manifest.createdAt, complete: manifest.complete, externalCount: manifest.external.length, containsSecrets: true, bytes: await treeBytes(path.join(directory, id)) });
+      } catch { continue; }
     }
     return result.sort((a, b) => b.createdAt.localeCompare(a.createdAt));
+  }
+  async capacity(): Promise<CareCapacity> {
+    const directory = await this.privateRoot(); const disk = await fs.statfs(directory);
+    const entries = await this.list();
+    return { usedBytes: await treeBytes(directory), availableBytes: disk.bavail * disk.bsize, totalBytes: disk.blocks * disk.bsize, backups: entries.length };
+  }
+  async delete(id: string, confirmation: string): Promise<void> {
+    if (confirmation !== id || this.active.has(id)) throw fail('care_backup_invalid');
+    this.active.add(id);
+    try { await this.manifest(id); }
+    catch (error) { this.active.delete(id); throw error; }
+    try { await fs.rm(path.join(await this.privateRoot(), id), { recursive: true }); }
+    finally { this.active.delete(id); }
+  }
+  async retain(count: number): Promise<void> {
+    if (!Number.isInteger(count) || count < 1 || count > 1000) throw fail('care_backup_invalid');
+    const complete: CareBackup[] = [];
+    const root = await fs.realpath(this.ws.root);
+    for (const entry of await this.list()) {
+      if (!entry.complete) continue;
+      try {
+        const manifest = await this.manifest(entry.id); if (manifest.root !== root) continue;
+        const folder = path.join(await this.privateRoot(), entry.id);
+        const unique = manifest.external.filter((e, i, all) => all.findIndex(x => x.source === e.source) === i);
+        if (await fingerprint([path.join(folder, 'workspace'), ...unique.map(e => path.join(folder, 'external', e.folder))]) === manifest.fingerprint) complete.push(entry);
+      } catch { continue; }
+    }
+    for (const entry of complete.slice(count)) {
+      if (this.active.has(entry.id)) continue;
+      this.active.add(entry.id);
+      try {
+        const manifest = await this.manifest(entry.id); const folder = path.join(await this.privateRoot(), entry.id);
+        const unique = manifest.external.filter((e, i, all) => all.findIndex(x => x.source === e.source) === i);
+        let intact = false;
+        try { intact = await fingerprint([path.join(folder, 'workspace'), ...unique.map(e => path.join(folder, 'external', e.folder))]) === manifest.fingerprint; } catch { continue; }
+        if (intact) await fs.rm(folder, { recursive: true });
+      } finally { this.active.delete(entry.id); }
+    }
+  }
+  async export(id: string, password: string, consume: (file: string) => Promise<void>): Promise<void> {
+    if (this.active.has(id)) throw fail('care_backup_invalid');
+    this.active.add(id);
+    let temporary = '';
+    try {
+      const manifest = await this.manifest(id); if (!manifest.complete) throw fail('care_external_required');
+      const directory = await this.privateRoot(); temporary = await fs.mkdtemp(path.join(directory, '.export-'));
+      const file = path.join(temporary, 'portable.ymae'); await encryptSnapshot(path.join(directory, id), file, password); await consume(file);
+    } finally { if (temporary) await fs.rm(temporary, { recursive: true, force: true }); this.active.delete(id); }
+  }
+  async import(input: AsyncIterable<Uint8Array>, password: string, destination: string): Promise<{ root: string }> {
+    const directory = await this.privateRoot(); const temporary = await fs.mkdtemp(path.join(directory, '.import-'));
+    let imported = '';
+    try {
+      const encrypted = path.join(temporary, 'encrypted'); const plain = path.join(temporary, 'plain'); const unpacked = path.join(temporary, 'unpacked');
+      await receiveEncrypted(input, encrypted); await decryptSnapshot(encrypted, plain, unpacked, password);
+      const manifestPath = path.join(unpacked, 'manifest.json');
+      const stat = await fs.lstat(manifestPath);
+      if (!stat.isFile() || stat.size > 1024 * 1024) throw fail('care_backup_invalid');
+      const value: unknown = JSON.parse(await fs.readFile(manifestPath, 'utf8'));
+      if (!value || typeof value !== 'object') throw fail('care_backup_invalid');
+      const manifest = value as Manifest; manifest.id = randomUUID();
+      await fs.unlink(manifestPath); await writeJson(manifestPath, manifest); await fs.chmod(manifestPath, 0o600);
+      imported = manifest.id; await fs.rename(unpacked, path.join(directory, imported));
+      return await this.restore(imported, destination);
+    } finally { if (imported) await fs.rm(path.join(directory, imported), { recursive: true, force: true }); await fs.rm(temporary, { recursive: true, force: true }); }
   }
   private async manifest(id: string): Promise<Manifest> {
     if (!/^[0-9a-f-]{36}$/.test(id)) throw fail('care_backup_invalid');
     const directory = await this.privateRoot();
     const folder = path.join(directory, id);
     if ((await fs.lstat(folder)).isSymbolicLink()) throw fail('care_backup_invalid');
-    const value = JSON.parse(await fs.readFile(path.join(folder, 'manifest.json'), 'utf8')) as Manifest;
-    if (value.format !== 1 || value.id !== id || typeof value.root !== 'string' || !path.isAbsolute(value.root) || typeof value.originalRoot !== 'string' || !path.isAbsolute(value.originalRoot) || typeof value.complete !== 'boolean' || !Array.isArray(value.external) || value.external.some(e => !e || typeof e.folder !== 'string' || !/^[0-9]+$/.test(e.folder) || typeof e.source !== 'string' || !path.isAbsolute(e.source) || typeof e.originalSource !== 'string' || !path.isAbsolute(e.originalSource))) throw fail('care_backup_invalid');
+    const manifestFile = path.join(folder, 'manifest.json'); const stat = await fs.lstat(manifestFile);
+    if (!stat.isFile() || stat.size > 1024 * 1024) throw fail('care_backup_invalid');
+    const value = JSON.parse(await fs.readFile(manifestFile, 'utf8')) as Manifest;
+    if (!value || value.format !== 1 || value.id !== id || typeof value.createdAt !== 'string' || !Number.isFinite(Date.parse(value.createdAt)) || typeof value.fingerprint !== 'string' || !/^[0-9a-f]{64}$/.test(value.fingerprint) || typeof value.root !== 'string' || !path.isAbsolute(value.root) || typeof value.originalRoot !== 'string' || !path.isAbsolute(value.originalRoot) || typeof value.complete !== 'boolean' || !Array.isArray(value.external) || value.external.length > 10000 || value.external.some(e => !e || typeof e.project !== 'string' || typeof e.folder !== 'string' || !/^[0-9]+$/.test(e.folder) || typeof e.source !== 'string' || !path.isAbsolute(e.source) || typeof e.originalSource !== 'string' || !path.isAbsolute(e.originalSource))) throw fail('care_backup_invalid');
     return value;
   }
   async create(includeExternal: boolean): Promise<CareBackup> {
@@ -78,17 +150,22 @@ export class BackupService {
         await writeJson(path.join(pending, 'manifest.json'), manifest);
         await fs.chmod(path.join(pending, 'manifest.json'), 0o600);
         await fs.rename(pending, folder);
-        return { id, createdAt: manifest.createdAt, complete: manifest.complete, externalCount: external.length, containsSecrets: true };
+        return { id, createdAt: manifest.createdAt, complete: manifest.complete, externalCount: external.length, containsSecrets: true, bytes: await treeBytes(folder) };
       } catch (error) { await fs.rm(pending, { recursive: true, force: true }); throw error; }
     });
   }
   async restore(id: string, destination: string): Promise<{ root: string }> {
+    if (this.active.has(id)) throw fail('care_backup_invalid');
+    this.active.add(id);
+    try { return await this.restoreSnapshot(id, destination); } finally { this.active.delete(id); }
+  }
+  private async restoreSnapshot(id: string, destination: string): Promise<{ root: string }> {
     const manifest = await this.manifest(id);
     if (!manifest.complete) throw fail('care_external_required');
     if (!path.isAbsolute(destination) || /[\0\r\n]/.test(destination)) throw fail('care_backup_invalid');
     const parent = await fs.realpath(path.dirname(destination));
     const root = path.join(parent, path.basename(destination));
-    if (inside(this.ws.root, root) || inside(await this.privateRoot(), root)) throw fail('care_backup_invalid');
+    if (inside(await fs.realpath(this.ws.root), root) || inside(await this.privateRoot(), root)) throw fail('care_backup_invalid');
     try { await fs.mkdir(root, { mode: 0o700 }); } catch (error) { if ((error as NodeJS.ErrnoException).code === 'EEXIST') throw fail('care_destination_exists'); throw error; }
     const folder = path.join(await this.privateRoot(), id);
     const unique = manifest.external.filter((e, i, all) => all.findIndex(x => x.source === e.source) === i);
@@ -212,4 +289,14 @@ async function fingerprint(roots: string[]): Promise<string> {
   };
   for (let index = 0; index < roots.length; index++) await walk(roots[index]!, String(index));
   return hash.digest('hex');
+}
+
+async function treeBytes(file: string): Promise<number> {
+  const stat = await fs.lstat(file).catch(error => { if ((error as NodeJS.ErrnoException).code === 'ENOENT') return null; throw error; });
+  if (!stat) return 0;
+  if (!stat.isDirectory()) return stat.size;
+  let bytes = 0;
+  const names = await fs.readdir(file).catch(error => { if ((error as NodeJS.ErrnoException).code === 'ENOENT') return [] as string[]; throw error; });
+  for (const name of names) bytes += await treeBytes(path.join(file, name));
+  return bytes;
 }

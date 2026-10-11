@@ -1,6 +1,7 @@
 // 路由與請求閘門：Host／Origin 檢查、請求體上限、JSON 解析、對外 generic 錯誤。
 
 import type { IncomingMessage, ServerResponse } from 'node:http';
+import { Readable } from 'node:stream';
 import { AppError } from '../shared/errors.ts';
 import { log } from '../shared/log.ts';
 
@@ -11,6 +12,8 @@ export interface Ctx {
   body: Record<string, unknown>;
   /** postRaw 路由的原始請求體；其他路由為空 Buffer。 */
   raw: Buffer;
+  /** postStream 路由的有上限串流；不把大型加密備份載入記憶體。 */
+  stream?: Readable;
   ip: string;
 }
 
@@ -69,6 +72,18 @@ export async function readRawBody(req: IncomingMessage, limit: number): Promise<
   return Buffer.concat(chunks, size);
 }
 
+function boundedBody(req: IncomingMessage, limit: number): Readable {
+  return Readable.from((async function* () {
+    let size = 0;
+    for await (const chunk of req) {
+      const bytes = Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk as Uint8Array);
+      size += bytes.length;
+      if (size > limit) throw new AppError('too_large');
+      yield bytes;
+    }
+  })());
+}
+
 export async function readJsonBody(req: IncomingMessage, limit: number): Promise<Record<string, unknown>> {
   const raw = await readRawBody(req, limit);
   if (raw.length === 0) return {};
@@ -85,9 +100,10 @@ export async function readJsonBody(req: IncomingMessage, limit: number): Promise
 const EMPTY: Buffer = Buffer.alloc(0);
 
 export class Router {
-  private readonly routes: Record<string, { handler: Handler; rawLimit?: number }> = {};
+  private readonly routes: Record<string, { handler: Handler; rawLimit?: number; streamLimit?: number }> = {};
   private readonly opts: RouterOptions;
   private mutationGuard?: (path: string, work: () => Promise<unknown>) => Promise<unknown>;
+  private requestGuard?: (path: string, ctx: Ctx) => Promise<void>;
 
   constructor(opts: RouterOptions) {
     this.opts = opts;
@@ -95,6 +111,10 @@ export class Router {
 
   setMutationGuard(guard: (path: string, work: () => Promise<unknown>) => Promise<unknown>): void {
     this.mutationGuard = guard;
+  }
+
+  setRequestGuard(guard: (path: string, ctx: Ctx) => Promise<void>): void {
+    this.requestGuard = guard;
   }
 
   get(path: string, handler: Handler): void {
@@ -110,6 +130,12 @@ export class Router {
     this.routes[`POST ${path}`] = { handler, rawLimit: limit };
   }
 
+  /** 大型二進位輸入串流仍受來源檢查、寫入閘門與位元組上限保護。 */
+  postStream(path: string, limit: number, handler: Handler): void {
+    if (!Number.isSafeInteger(limit) || limit <= 0) throw new Error('Invalid stream limit');
+    this.routes[`POST ${path}`] = { handler, streamLimit: limit };
+  }
+
   /** 回 true 代表已處理（含錯誤回應）；false 代表不是 API 路徑。 */
   async handle(req: IncomingMessage, res: ServerResponse): Promise<boolean> {
     const url = new URL(req.url ?? '/', 'http://localhost');
@@ -120,11 +146,16 @@ export class Router {
       if (!route) throw new AppError('not_found');
       let body: Record<string, unknown> = {};
       let raw = EMPTY;
+      let stream: Readable | undefined;
       if (req.method === 'POST') {
-        if (route.rawLimit !== undefined) raw = await readRawBody(req, route.rawLimit);
+        if (route.streamLimit !== undefined) {
+          if (Number(req.headers['content-length'] ?? 0) > route.streamLimit) throw new AppError('too_large');
+          stream = boundedBody(req, route.streamLimit);
+        } else if (route.rawLimit !== undefined) raw = await readRawBody(req, route.rawLimit);
         else body = await readJsonBody(req, this.opts.bodyBytes);
       }
-      const invoke = async () => route.handler({ req, res, query: url.searchParams, body, raw, ip: req.socket.remoteAddress ?? '' });
+      const ctx: Ctx = { req, res, query: url.searchParams, body, raw, ...(stream ? { stream } : {}), ip: req.socket.remoteAddress ?? '' };
+      const invoke = async () => { await this.requestGuard?.(url.pathname, ctx); return route.handler(ctx); };
       const result = req.method === 'POST' && this.mutationGuard ? await this.mutationGuard(url.pathname, invoke) : await invoke();
       if (result !== undefined && !res.headersSent) sendJson(res, 200, result);
     } catch (err) {

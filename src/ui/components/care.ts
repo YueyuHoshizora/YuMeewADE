@@ -1,4 +1,4 @@
-import type { CareBackup, CareHealth } from '../../shared/types.ts';
+import type { CareBackup, CareHealth, CareCapacity, CareLifecycle } from '../../shared/types.ts';
 import { api, request } from '../api.ts';
 import { t } from '../i18n/index.ts';
 import { button, card, confirmModal, el, field, input, modal, readLocal, row, storeLocal, type ViewContext } from './dom.ts';
@@ -8,6 +8,30 @@ export function carePanel(context: ViewContext): HTMLElement {
   const network = input(); network.type = 'checkbox';
   const external = input(); external.type = 'checkbox'; external.checked = true;
   const backups = el('div'); const destination = input('', t('care.destination'));
+  const capacity = el('p'); const scheduleStatus = el('p'); scheduleStatus.setAttribute('aria-live', 'polite');
+  const password = input(); password.type = 'password'; password.autocomplete = 'new-password';
+  const file = input(); file.type = 'file'; file.accept = '.ymae,application/octet-stream';
+  const enabled = input(); enabled.type = 'checkbox';
+  const interval = input('24'); interval.type = 'number'; interval.min = '1'; interval.max = '8760';
+  const retention = input('10'); retention.type = 'number'; retention.min = '1'; retention.max = '1000';
+  const passwordHeaders = () => {
+    const bytes = new TextEncoder().encode(password.value);
+    if (password.value.length < 12 || bytes.length > 1024) throw new Error(t('care.passwordRule'));
+    let text = ''; for (const byte of bytes) text += String.fromCharCode(byte);
+    return { 'X-Backup-Password': btoa(text) };
+  };
+  const binary = async (url: string, body: BodyInit, headers: Record<string, string>): Promise<Response> => {
+    try {
+      const response = await fetch(url, { method: 'POST', headers, body });
+      if (!response.ok) { const value = await response.json() as { detail?: string }; throw new Error(value.detail ? t(`detail.${value.detail}` as Parameters<typeof t>[0]) : t('care.transferFailed')); }
+      return response;
+    } finally { password.value = ''; }
+  };
+  const showSchedule = (value: CareLifecycle) => {
+    enabled.checked = value.schedule.enabled; interval.value = String(value.schedule.intervalHours); retention.value = String(value.schedule.retention);
+    scheduleStatus.textContent = `${t('care.lastSuccess')}: ${value.lastSuccess ?? t('care.unknown')} · ${t('care.nextAttempt')}: ${value.nextAttempt ?? t('care.no')}${value.lastFailure ? ` · ${t('care.scheduleFailed')}` : ''}`;
+    scheduleStatus.className = value.lastFailure ? 'warning' : '';
+  };
   const yes = (value: boolean) => t(value ? 'care.yes' : 'care.no');
   const show = (health: CareHealth) => {
     status.replaceChildren(...[
@@ -24,13 +48,25 @@ export function carePanel(context: ViewContext): HTMLElement {
   });
   const refresh = async () => {
     const entries = (await request<{ backups: CareBackup[] }>('/api/care/backups')).backups;
+    const disk = await request<CareCapacity>('/api/care/capacity');
+    capacity.textContent = `${t('care.capacity')}: ${disk.usedBytes.toLocaleString()} / ${disk.availableBytes.toLocaleString()} ${t('care.bytesAvailable')}`;
+    showSchedule(await request<CareLifecycle>('/api/care/schedule'));
     backups.replaceChildren(...entries.map(backup => row(
-      el('span', '', `${backup.createdAt} · ${t(backup.complete ? 'care.complete' : 'care.partial')} · ${backup.externalCount}`),
+      el('span', '', `${backup.createdAt} · ${t(backup.complete ? 'care.complete' : 'care.partial')} · ${backup.externalCount} · ${backup.bytes.toLocaleString()}`),
       button(t('care.restore'), async () => {
         if (!await confirmModal(t('care.restore'), t('care.restoreConfirm'))) return;
         const restored = await request<{ root: string }>('/api/care/restore', { id: backup.id, destination: destination.value.trim() });
         const open = button(t('care.open'), async () => { await api.workspace(restored.root); await context.refresh(); location.hash = '#/'; });
         modal(t('care.restore'), el('p', '', restored.root), open);
+      }),
+      button(t('care.delete'), async () => {
+        if (!await confirmModal(t('care.delete'), `${t('care.deleteConfirm')} ${backup.id}`)) return;
+        await request('/api/care/delete', { id: backup.id, confirmation: backup.id }); await refresh();
+      }),
+      button(t('care.export'), async () => {
+        if (!await confirmModal(t('care.export'), t('care.secret'))) return;
+        const response = await binary('/api/care/export', JSON.stringify({ id: backup.id }), { ...passwordHeaders(), 'Content-Type': 'application/json' });
+        const url = URL.createObjectURL(await response.blob()); const link = el('a'); link.href = url; link.download = `${backup.id}.ymae`; link.click(); setTimeout(() => URL.revokeObjectURL(url), 60000);
       }),
     )));
   };
@@ -38,8 +74,23 @@ export function carePanel(context: ViewContext): HTMLElement {
   const panel = card(t('care.title'), el('p', '', t('care.risk')), field(t('care.network'), network), checked, status,
     el('p', '', t('care.scope')), el('p', 'warning', t('care.secret')), field(t('care.external'), external),
     button(t('care.backup'), async () => { if (!await confirmModal(t('care.backup'), t('care.secret'))) return; await request('/api/care/backup', { includeExternal: external.checked }); await refresh(); }),
-    button(t('care.list'), refresh), field(t('care.destination'), destination), backups,
+    button(t('care.list'), refresh), capacity, field(t('care.destination'), destination), backups,
+    field(t('care.password'), password), el('p', '', t('care.passwordRule')),
+    field(t('care.portableFile'), file), button(t('care.import'), async () => {
+      const selected = file.files?.[0]; if (!selected) return;
+      if (!await confirmModal(t('care.import'), t('care.restoreConfirm'))) return;
+      const response = await binary(`/api/care/import?destination=${encodeURIComponent(destination.value.trim())}`, selected, { ...passwordHeaders(), 'Content-Type': 'application/octet-stream' });
+      const restored = await response.json() as { root: string };
+      modal(t('care.import'), el('p', '', restored.root), button(t('care.open'), async () => { await api.workspace(restored.root); await context.refresh(); location.hash = '#/'; }));
+      file.value = ''; await refresh();
+    }),
+    field(t('care.schedule'), enabled), field(t('care.interval'), interval), field(t('care.retention'), retention),
+    button(t('care.saveSchedule'), async () => {
+      if (enabled.checked && !await confirmModal(t('care.schedule'), t('care.secret'))) return;
+      showSchedule(await request<CareLifecycle>('/api/care/schedule', { enabled: enabled.checked, intervalHours: Number(interval.value), retention: Number(retention.value), includeExternal: external.checked }));
+    }), scheduleStatus,
     el('p', '', t('care.diagnosticScope')), download);
+  void refresh().catch(() => { status.textContent = t('care.transferFailed'); });
   return panel;
 }
 export function careButton(context: ViewContext): HTMLElement { return button(t('care.title'), () => modal(t('care.title'), carePanel(context))); }

@@ -134,3 +134,64 @@ for (const symlink of [false, true]) test(`restore keeps existing External names
     assert.equal((await fs.stat(repo)).mode & 0o777, 0o700);
   } finally { await fs.rm(temporary, { recursive: true, force: true }); }
 });
+
+test('portable encrypted backups authenticate before restoring and exclude account credentials', async () => {
+  const temporary = await fs.mkdtemp(path.join(os.tmpdir(), 'care-portable-'));
+  try {
+    const ws = new Workspace(path.join(temporary, 'source')); await ws.init();
+    const projects = new ProjectLedger(ws); const tasks = new TaskLedger(ws);
+    await projects.create({ name: 'P' }); const task = await tasks.create('P', { title: 'portable' });
+    const workdir = await new WorktreeService({ ws, projects, tasks, diffBytes: 100000 }).prepare('P', task.id);
+    await fs.writeFile(path.join(workdir, 'dirty.txt'), 'secret dirty content');
+    await fs.writeFile(path.join(ws.root, '.env'), 'LOCAL_SECRET=preserved');
+    await fs.writeFile(path.join(ws.internalDir, 'credentials.sqlite'), 'excluded account');
+    await fs.symlink('.env', path.join(ws.root, 'local-link'));
+    const service = new BackupService(ws, path.join(temporary, 'private'));
+    const snapshot = await service.create(true); const password = 'correct horse battery staple';
+    const portable = path.join(temporary, 'portable.ymae');
+    await service.export(snapshot.id, password, async file => { await fs.copyFile(file, portable); });
+    const bytes = await fs.readFile(portable);
+    assert.equal(bytes.subarray(0, 8).toString(), 'YMAEBK01'); assert.equal(bytes.includes(Buffer.from('LOCAL_SECRET')), false);
+    const restored = await service.import((async function* () { for (let offset = 0; offset < bytes.length; offset += 31) yield bytes.subarray(offset, offset + 31); })(), password, path.join(temporary, 'restored'));
+    assert.equal(await fs.readFile(path.join(restored.root, '.env'), 'utf8'), 'LOCAL_SECRET=preserved');
+    assert.equal(await fs.readlink(path.join(restored.root, 'local-link')), '.env');
+    await assert.rejects(fs.access(path.join(restored.root, '.yumeewade', 'credentials.sqlite')));
+    const fresh = new Workspace(restored.root); const record = await new TaskLedger(fresh).get('P', task.id);
+    assert.equal(await fs.readFile(path.join(record.workdir, 'dirty.txt'), 'utf8'), 'secret dirty content');
+    await assert.rejects(service.import((async function* () { yield bytes; })(), 'incorrect password', path.join(temporary, 'wrong')));
+    const altered = Buffer.from(bytes); altered[altered.length - 1] = altered[altered.length - 1]! ^ 1;
+    await assert.rejects(service.import((async function* () { yield altered; })(), password, path.join(temporary, 'tampered')));
+    await assert.rejects(fs.access(path.join(temporary, 'wrong'))); await assert.rejects(fs.access(path.join(temporary, 'tampered')));
+    assert.deepEqual((await fs.readdir(path.join(temporary, 'private'))).sort(), [snapshot.id]);
+  } finally { await fs.rm(temporary, { recursive: true, force: true }); }
+});
+
+test('capacity, exact delete confirmation and retention preserve partial, corrupt and active snapshots', async () => {
+  const temporary = await fs.mkdtemp(path.join(os.tmpdir(), 'care-retention-'));
+  try {
+    const ws = new Workspace(path.join(temporary, 'source')); await ws.init();
+    const external = path.join(temporary, 'code'); await fs.mkdir(external);
+    await new ProjectLedger(ws).create({ name: 'P', body: external });
+    const service = new BackupService(ws, path.join(temporary, 'private'));
+    const partial = await service.create(false); const corrupt = await service.create(true);
+    await fs.writeFile(path.join(temporary, 'private', corrupt.id, 'workspace', 'roles.yaml'), 'altered');
+    const active = await service.create(true); const newest = await service.create(true);
+    for (const [index, entry] of [partial, corrupt, active, newest].entries()) {
+      const file = path.join(temporary, 'private', entry.id, 'manifest.json'); const manifest = JSON.parse(await fs.readFile(file, 'utf8'));
+      manifest.createdAt = new Date(index * 1000).toISOString(); await fs.writeFile(file, JSON.stringify(manifest));
+    }
+    assert.ok((await service.capacity()).usedBytes > 0);
+    await assert.rejects(service.delete(newest.id, 'wrong')); await assert.rejects(service.delete('../escape', '../escape'));
+    await service.export(active.id, 'a very secure password', async () => {
+      await service.retain(1); await assert.rejects(service.delete(active.id, active.id));
+      assert.ok((await service.list()).some(entry => entry.id === active.id));
+    });
+    await service.retain(1);
+    const remaining = await service.list();
+    assert.ok(remaining.some(entry => entry.id === partial.id));
+    assert.ok(remaining.some(entry => entry.id === corrupt.id));
+    assert.ok(remaining.some(entry => entry.id === newest.id));
+    assert.ok(!remaining.some(entry => entry.id === active.id));
+    await service.delete(partial.id, partial.id); assert.ok(!(await service.list()).some(entry => entry.id === partial.id));
+  } finally { await fs.rm(temporary, { recursive: true, force: true }); }
+});
