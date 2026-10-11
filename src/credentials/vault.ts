@@ -81,6 +81,7 @@ export class CredentialVault {
   private readonly select: StatementSync;
   private readonly upsert: StatementSync;
   private readonly deleteRecord: StatementSync;
+  private readonly presence: StatementSync;
 
   private constructor(db: DatabaseSync, protector: SecretProtector) {
     this.db = db;
@@ -88,6 +89,7 @@ export class CredentialVault {
     this.select = db.prepare('SELECT ciphertext FROM credentials WHERE provider = ? AND profile = ?');
     this.upsert = db.prepare('INSERT INTO credentials (provider, profile, ciphertext) VALUES (?, ?, ?) ON CONFLICT(provider, profile) DO UPDATE SET ciphertext = excluded.ciphertext');
     this.deleteRecord = db.prepare('DELETE FROM credentials WHERE provider = ? AND profile = ?');
+    this.presence = db.prepare('SELECT 1 FROM credentials WHERE provider = ? AND profile = ?');
   }
 
   static async open(directory: string, protector: SecretProtector): Promise<CredentialVault> {
@@ -126,6 +128,13 @@ export class CredentialVault {
   }
 
   private requireOpen(): void { if (!this.db) fail(); }
+
+  /** Presence only; onboarding must not decrypt or expose credential contents. */
+  has(provider: string, profile: string): boolean {
+    identity(provider, profile);
+    this.requireOpen();
+    return !!this.presence.get(provider, profile);
+  }
 
   async read(provider: string, profile: string): Promise<string | null> {
     try {
