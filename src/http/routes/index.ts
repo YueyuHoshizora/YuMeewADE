@@ -21,6 +21,7 @@ import { registerCareRoutes } from './care.ts';
 import { registerTrustRoutes } from './trust.ts';
 import { registerUsageHistoryRoutes } from './usage-history.ts';
 import { registerUpdateRoutes } from './update.ts';
+import { registerMemoryRoutes } from './memory.ts';
 
 export function registerRoutes(router: Router, app: App): void {
   const independentlyGuarded = new Set(['/api/care/backup', '/api/care/restore', '/api/care/export', '/api/care/import', '/api/care/delete', '/api/terminal/output', '/api/debugger/variables']);
@@ -53,4 +54,5 @@ export function registerRoutes(router: Router, app: App): void {
   registerTrustRoutes(router, app);
   registerUsageHistoryRoutes(router, app.usageHistory, () => app.usage.snapshot());
   registerUpdateRoutes(router, app.updateDownloads);
+  registerMemoryRoutes(router, app);
 }

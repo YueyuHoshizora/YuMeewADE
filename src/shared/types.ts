@@ -747,3 +747,4 @@ export interface TaskTemplate {
   steps: string[];
   instruction: string;
 }
+export interface MemoryFile { name: string; text: string; revision: string }

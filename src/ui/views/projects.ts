@@ -18,6 +18,7 @@ import { onboardingBanner } from '../components/onboarding.ts';
 import { githubIssuesButton } from '../components/github-issues.ts';
 import { metadataBadge, metadataFields } from '../components/task-metadata.ts';
 import { taskTemplates } from '../components/task-templates.ts';
+import { memoryPanel } from '../components/memory.ts';
 
 async function startWithBudget(context: ViewContext, input: StartInput): Promise<void> {
   const { task } = await request<{ task: Task }>('/api/start/prepare', input);
@@ -214,6 +215,7 @@ export function projectView(context: ViewContext, project: ProjectView, params: 
     });
     overview.append(rulesBox);
     overview.append(taskTemplates(context, project));
+    overview.append(memoryPanel(project.id));
     if (project.phases.length) {
       const road = el('div', 'phase-road');
       for (const [i, phase] of project.phases.entries()) road.append(el('div', `phase ${phase.name === project.currentPhase ? 'current' : ''} ${phase.state === '完成' ? 'complete' : ''}`, `${i + 1} · ${phase.name}`));

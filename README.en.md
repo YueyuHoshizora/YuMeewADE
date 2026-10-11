@@ -67,6 +67,8 @@ Claude/Codex model lists and reasoning efforts come from their own caches, with 
 - **Multiple windows**: new windows share the core and security settings, with independent saved state; relaunch focuses the latest window and closing the last window quits.
 - **Tray/menu bar**: Show, New window, running-task count and Quit; macOS uses a template icon and unavailable core state shows “—”.
 - **Renderer recovery**: crashes offer Reload/Quit, hangs offer Wait/Reload; bounded private logs rotate and there is no automatic restart loop.
+- **Project memory**: beside project rules, list/read/preview/create/edit and confirm deletion of `.ai/memory/` notes including `INDEX.md`. Whitelisted `.md` names only, 256 KiB per file/200 files, no symlink following. Save/delete check content revisions; newer AI edits return 409. Copy your edits before reloading.
+  Saving/deleting is blocked while project AI runs; reading and editing drafts remain available.
 - **Archive recovery**: preview impact before archiving/restoring projects or tasks. Forced archive retains the branch and original working-copy recovery snapshot, including untracked/ignored/secret files and deletions. Restore rebuilds the worktree and refuses existing destinations. `.yumeewade/recovery/` is private, not a public Git backup or a complete backup of an external main folder.
   After successful restoration, that recovery generation is retained but no longer eligible for replay on a later archive; original bytes remain available without overwriting subsequently merged content.
   Restoration involving checkout must satisfy saved trust and the current root; refusal rolls back ledger restoration and never automatically trusts an archived project. Direct-task ledger restoration without checkout remains available.
@@ -182,6 +184,7 @@ HTTP JSON plus SSE, identical in desktop and web versions. Types are defined in 
 | `POST /api/chat/fork` | `{project, task, request}`: branch a new (derived) task from just before that instruction; its working copy grows from the checkpoint and it carries over the earlier conversation without attachments. Returns the new task; 409 while running, 404 without a checkpoint |
 | `GET /api/chat/turn-diff?project=&task=&request=` | Diff of a single turn (checkpoint before it → checkpoint at its end); 404 without checkpoints |
 | `GET /api/project/rules?project=`、`POST /api/project/rules` | Read and write the project’s AI rules (`.ai/rules.md`, up to 20,000 characters; write `{project, text}`) |
+| `GET /api/project/memory?project=&name=`, `POST /api/project/memory`, `POST /api/project/memory/delete` | Omit name to list; reads return `{name,text,revision}`; save `{project,name,text,revision}` (null for creation); deletion requires revision and confirm=true |
 | `POST /api/upload`、`GET /api/upload`、`GET /api/attachment` | Image upload, preview, conversation attachments |
 | `GET /api/task/preview`、`GET /api/task/diff`、`POST /api/task/merge`、`/api/task/merge-exclusion`、`/api/task/copyclear` | Working copies |
 | `GET /api/task/merged`, `POST /api/task/unmerge` | Returns the hash when the main folder’s latest commit is this task’s merge (`YuMeewADE-Task:` trailer). Undo merge: the main folder goes back to before the merge, the branch and working copy are recreated and the task returns to in progress. 409 if newer commits or uncommitted content exist |

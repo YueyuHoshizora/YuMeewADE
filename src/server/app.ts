@@ -44,6 +44,7 @@ import { UsageHistory } from '../ai/usage-history.ts';
 import { TerminalService } from '../system/terminal.ts';
 import { DebuggerService } from '../system/debugger.ts';
 import { UpdateDownloads } from '../system/update-download.ts';
+import { MemoryLedger } from '../ledger/memory.ts';
 
 const pkg = createRequire(import.meta.url)('../../package.json') as { version: string };
 
@@ -93,6 +94,7 @@ export class App {
   readonly terminal: TerminalService;
   readonly debugger: DebuggerService;
   readonly updateDownloads: UpdateDownloads;
+  readonly memory: MemoryLedger;
   readonly mutations = new MutationGate();
   private readonly providers: Record<string, CliProvider>;
   private readonly accounts: CredentialAccounts | undefined;
@@ -117,6 +119,7 @@ export class App {
     this.relocate = options.relocate ?? (() => Promise.reject(new AppError('conflict', 'relocate_busy')));
     this.ws = new Workspace(config.workspace.root);
     this.projects = new ProjectLedger(this.ws);
+    this.memory = new MemoryLedger(this.ws);
     this.tasks = new TaskLedger(this.ws);
     this.completion = new CompletionStore(this.ws);
     this.settings = new SettingsStore(this.ws, config, async (ai, directory) => {

@@ -27,6 +27,7 @@ import * as tasks from './tasks.ts';
 import * as permissions from './permissions.ts';
 import * as preview from './preview.ts';
 import * as editorEvents from './editor-events.ts';
+import * as memoryMcp from './memory-mcp.ts';
 
 export const featureZhTW = {
   ...archive.featureZhTW,
@@ -59,6 +60,7 @@ export const featureZhTW = {
   ...permissions.featureZhTW,
   ...preview.featureZhTW,
   ...editorEvents.featureZhTW,
+  ...memoryMcp.featureZhTW,
 };
 export const featureZhCN = {
   ...archive.featureZhCN,
@@ -91,6 +93,7 @@ export const featureZhCN = {
   ...permissions.featureZhCN,
   ...preview.featureZhCN,
   ...editorEvents.featureZhCN,
+  ...memoryMcp.featureZhCN,
 };
 export const featureEn = {
   ...archive.featureEn,
@@ -123,6 +126,7 @@ export const featureEn = {
   ...permissions.featureEn,
   ...preview.featureEn,
   ...editorEvents.featureEn,
+  ...memoryMcp.featureEn,
 };
 export const featureJa = {
   ...archive.featureJa,
@@ -155,6 +159,7 @@ export const featureJa = {
   ...permissions.featureJa,
   ...preview.featureJa,
   ...editorEvents.featureJa,
+  ...memoryMcp.featureJa,
 };
 export const featureDe = {
   ...archive.featureDe,
@@ -187,6 +192,7 @@ export const featureDe = {
   ...permissions.featureDe,
   ...preview.featureDe,
   ...editorEvents.featureDe,
+  ...memoryMcp.featureDe,
 };
 export const featureFr = {
   ...archive.featureFr,
@@ -219,6 +225,7 @@ export const featureFr = {
   ...permissions.featureFr,
   ...preview.featureFr,
   ...editorEvents.featureFr,
+  ...memoryMcp.featureFr,
 };
 export const featureIt = {
   ...archive.featureIt,
@@ -251,4 +258,5 @@ export const featureIt = {
   ...permissions.featureIt,
   ...preview.featureIt,
   ...editorEvents.featureIt,
+  ...memoryMcp.featureIt,
 };
