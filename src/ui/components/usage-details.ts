@@ -2,7 +2,7 @@ import type { AiUsage, AppState, Settings, UsageState } from '../../shared/types
 import { api, request } from '../api.ts';
 import { getLocale, t } from '../i18n/index.ts';
 import { aiLabel, cloudCreditsLabel, extraUsageLabel, localDateTime, localTime, prepaidLabel, quotaLabel } from './display.ts';
-import { button, confirmModal, el, field, input, row, run } from './dom.ts';
+import { button, confirmModal, el, field, iconButton, input, row, run } from './dom.ts';
 
 function accountUsage(usage: AiUsage | undefined): HTMLElement {
   const node = el('div', 'account-quota');
@@ -77,7 +77,7 @@ export function openUsageDetails(getState: () => AppState, getUsage: () => Usage
   }); };
   add.append(el('p', 'muted', t('usage.accountHelp')), form);
   const reload = button(t('usage.refresh'), async () => { await request<UsageState>('/api/accounts/refresh', {}); await refresh(); render(); });
-  dialog.append(row(title, button(t('common.close'), () => dialog.close())), el('p', 'muted', t('usage.accountNotice')), reload, accounts, add);
+  dialog.append(row(title, iconButton('×', t('common.close'), () => dialog.close())), el('p', 'muted', t('usage.accountNotice')), reload, accounts, add);
   let previous = '';
   function render(): void {
     const state = getState(); const usage = getUsage();
