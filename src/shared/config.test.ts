@@ -90,3 +90,16 @@ test('limits.runSeconds 預設 2 小時，可覆寫，且必須是正整數', ()
   assert.equal(parseConfig('limits:\n  runSeconds: 90\n', null).limits.runSeconds, 90);
   for (const bad of ['0', '-5', '1.5', 'never']) assert.throws(() => parseConfig(`limits:\n  runSeconds: ${bad}\n`, null), ConfigError);
 });
+
+test('native integrations preserve argv and reject missing destinations or invalid configuration', () => {
+  const config = parseConfig("execution:\n  ide: { command: code, args: ['--wait', '{cwd}'] }\n  browser: { command: chromium, args: ['{url}'] }\n", null);
+  assert.deepEqual(config.execution.ide, { command: 'code', args: ['--wait', '{cwd}'] });
+  assert.deepEqual(config.execution.browser, { command: 'chromium', args: ['{url}'] });
+  for (const text of [
+    'execution:\n  surprise: {}\n',
+    'execution:\n  ide: { command: code, args: [] }\n',
+    "execution:\n  browser: { command: chromium, args: ['{cwd}'] }\n",
+    "execution:\n  terminal: { command: terminal, args: ['{cwd}'], shell: true }\n",
+    "execution:\n  ide: { command: code, args: [1, '{cwd}'] }\n",
+  ]) assert.throws(() => parseConfig(text, null), ConfigError);
+});

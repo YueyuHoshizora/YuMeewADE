@@ -16,6 +16,8 @@ export interface CliCommandConfig {
   fullAccessArgs: string[];
   /** fullAccess 關閉時改用的權限旗標。 */
   safeArgs: string[];
+  /** Dedicated review invocation; never combined with ordinary permission/base arguments. Empty disables review. */
+  readonlyArgs?: string[];
   /** 查詢帳號額度的子命令（Codex：app-server）；直接使用 API 的 adapter 不需要子命令。 */
   quotaArgs: string[];
   /** 新增帳號時在獨立設定資料夾內執行的 OAuth 登入子命令（由 CLI 自行開啟瀏覽器）。 */
@@ -26,11 +28,14 @@ export interface CliCommandConfig {
   slashArgs: string[];
 }
 
+export interface NativeToolConfig { command: string; args: string[] }
+
 export interface Config {
   server: { host: string; port: number };
   workspace: { root: string };
   /** 檢查 GitHub 發行頁有沒有新版本（只通知，不自動安裝）。 */
   update: { enabled: boolean; repo: string; checkHours: number };
+  execution: { ide?: NativeToolConfig; terminal?: NativeToolConfig; browser?: NativeToolConfig };
   cli: { claude: CliCommandConfig; codex: CliCommandConfig; grok: CliCommandConfig; gemini: CliCommandConfig; envPassthrough: string[] };
   limits: {
     bodyBytes: number;
@@ -57,6 +62,7 @@ export const DEFAULT_CONFIG: Config = {
   server: { host: '127.0.0.1', port: 4560 },
   workspace: { root: '~/Documents/YuMeewWorkspace' },
   update: { enabled: true, repo: 'YueyuHoshizora/YuMeewADE', checkHours: 6 },
+  execution: {},
   cli: {
     claude: {
       command: 'claude',
@@ -65,6 +71,7 @@ export const DEFAULT_CONFIG: Config = {
       fullAccessArgs: ['--dangerously-skip-permissions'],
       // 只自動接受檔案編輯；執行指令會被拒
       safeArgs: ['--permission-mode', 'acceptEdits'],
+      readonlyArgs: ['--restricted', '--safe-mode', '--tools', 'Read,Glob,Grep', '--allowedTools', 'Read,Glob,Grep', '--permission-mode', 'dontAsk', '--permission-prompts', 'none', '--strict-mcp-config', '--disable-slash-commands', '--no-session-persistence', '-p', '--output-format', 'stream-json', '--verbose', '--include-partial-messages'],
       quotaArgs: [],
       loginArgs: ['auth', 'login'],
       commandsArgs: [],
@@ -77,6 +84,7 @@ export const DEFAULT_CONFIG: Config = {
       fullAccessArgs: ['--dangerously-bypass-approvals-and-sandbox'],
       // 工作目錄沙箱內可改檔與執行指令，不詢問
       safeArgs: ['-s', 'workspace-write', '-c', 'approval_policy="never"'],
+      readonlyArgs: ['exec', '--json', '--skip-git-repo-check', '--sandbox', 'read-only', '-c', 'approval_policy="never"', '--ignore-user-config', '--ignore-rules', '--ephemeral'],
       quotaArgs: ['app-server'],
       loginArgs: ['login', '-c', 'cli_auth_credentials_store="file"'],
       commandsArgs: [],
@@ -89,6 +97,7 @@ export const DEFAULT_CONFIG: Config = {
       fullAccessArgs: ['--always-approve'],
       // 需要互動核准的操作直接拒絕，不讓無頭回合等待輸入。
       safeArgs: ['--permission-mode', 'dontAsk'],
+      readonlyArgs: [],
       quotaArgs: [],
       loginArgs: ['login', '--oauth'],
       commandsArgs: [],
@@ -102,6 +111,7 @@ export const DEFAULT_CONFIG: Config = {
       fullAccessArgs: ['--dangerously-skip-permissions'],
       // 只自動接受檔案編輯；其他操作不讓無頭回合等待互動核准。
       safeArgs: ['--mode', 'accept-edits'],
+      readonlyArgs: [],
       quotaArgs: ['-p', '/usage', '--output-format', 'json'],
       loginArgs: [],
       commandsArgs: ['-p', '/help', '--output-format', 'json'],
@@ -210,11 +220,32 @@ function cliSection(map: YamlMap, name: 'claude' | 'codex' | 'grok' | 'gemini'):
     fullAccess: bool(s, 'fullAccess', d.fullAccess, where),
     fullAccessArgs: strList(s, 'fullAccessArgs', d.fullAccessArgs, where),
     safeArgs: strList(s, 'safeArgs', d.safeArgs, where),
+    readonlyArgs: strList(s, 'readonlyArgs', d.readonlyArgs ?? [], where),
     quotaArgs: strList(s, 'quotaArgs', d.quotaArgs, where),
     loginArgs: strList(s, 'loginArgs', d.loginArgs, where),
     commandsArgs: strList(s, 'commandsArgs', d.commandsArgs, where),
     slashArgs: strList(s, 'slashArgs', d.slashArgs, where),
   };
+}
+
+function executionSection(map: YamlMap): Config['execution'] {
+  const source = section(map, 'execution');
+  const result: Config['execution'] = {};
+  for (const key of Object.keys(source)) if (!['ide', 'terminal', 'browser'].includes(key)) throw new ConfigError('execution 含未知欄位');
+  for (const key of ['ide', 'terminal', 'browser'] as const) {
+    if (source[key] === undefined) continue;
+    const tool = section(source, key);
+    if (Object.keys(tool).some(field => field !== 'command' && field !== 'args')) throw new ConfigError(`execution.${key} 含未知欄位`);
+    const command = str(tool, 'command', '', `execution.${key}`);
+    const args = strList(tool, 'args', [], `execution.${key}`);
+    const placeholder = key === 'browser' ? '{url}' : '{cwd}';
+    if (!command || command.includes('\0') || command.length > 8192 || args.length > 128
+      || args.some(arg => arg.includes('\0') || arg.length > 8192) || !args.some(arg => arg.includes(placeholder))) {
+      throw new ConfigError(`execution.${key} 指令或參數不合法，必須包含 ${placeholder}`);
+    }
+    result[key] = { command, args };
+  }
+  return result;
 }
 
 /** 把 YAML 內容套在預設值上並驗證。 */
@@ -239,6 +270,7 @@ export function parseConfig(text: string, source: string | null): Config {
       repo: repoName(str(update, 'repo', d.update.repo, 'update')),
       checkHours: int(update, 'checkHours', d.update.checkHours, 'update'),
     },
+    execution: executionSection(map),
     cli: {
       claude: cliSection(cli, 'claude'),
       codex: cliSection(cli, 'codex'),

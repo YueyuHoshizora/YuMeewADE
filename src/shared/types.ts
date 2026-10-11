@@ -67,6 +67,8 @@ export interface Project {
   notes: string;
   /** 驗證指令（在作業工作副本執行，例如 `npm test`）；空字串＝未設定。 */
   verify: string;
+  checks: VerificationCheck[];
+  requireVerification: boolean;
   /** 驗證失敗時最多自動請 AI 修正幾次（0＝關閉）；需要先設定驗證指令。 */
   autoFix: number;
 }
@@ -83,9 +85,11 @@ export interface NewProjectInput {
   body?: string;
   related?: string[];
   verify?: string;
+  checks?: VerificationCheck[];
+  requireVerification?: boolean;
 }
 
-export type ProjectPatch = Partial<Pick<Project, 'name' | 'status' | 'description' | 'parent' | 'body' | 'related' | 'verify' | 'autoFix'>> & { phases?: Phase[] };
+export type ProjectPatch = Partial<Pick<Project, 'name' | 'status' | 'description' | 'parent' | 'body' | 'related' | 'verify' | 'autoFix' | 'checks' | 'requireVerification'>> & { phases?: Phase[] };
 
 // ---- 作業 ----
 
@@ -526,6 +530,8 @@ export interface VerifyResult {
   output: string;
   /** 輸出超過上限，只保留尾段。 */
   truncated: boolean;
+  steps?: VerificationStepResult[];
+  drifted?: boolean;
 }
 
 /** 最近一次驗證的摘要（`GET /api/task/verify`）；沒有或已失效時 API 回 null。 */
@@ -534,6 +540,8 @@ export interface VerifyStatus {
   exitCode: number | null;
   timedOut: boolean;
   at: string;
+  steps?: VerificationStepResult[];
+  drifted?: boolean;
 }
 
 /** 另一個作業的副本也改了同樣的檔案（合併時容易互相衝突）。 */
@@ -628,4 +636,66 @@ export interface ApiError {
   /** 可翻譯的補充代碼（見 shared/errors.ts DETAIL_MESSAGES）。 */
   detail?: string;
   field?: string;
+}
+
+// ---- 明確啟動的角色流程與作業相依 ----
+export interface WorkflowStep { role: string; text: string; review: boolean }
+export interface WorkflowResult { role: string; ai: string; request: string; at: string; ok: boolean }
+export interface WorkflowPlan {
+  dependencies: string[];
+  steps: WorkflowStep[];
+  cursor: number;
+  state: 'ready' | 'running' | 'paused' | 'failed' | 'completed';
+  results: WorkflowResult[];
+  reason?: string;
+}
+
+export interface VerificationCheck { name: string; command: string }
+export interface VerificationStepResult extends Omit<VerifyResult, 'steps' | 'drifted'> { name: string; command: string }
+export interface EditorDocument extends FileView { revision: string; language: string; languageAvailable: boolean; readonly: boolean }
+export interface EditorLocation { path: string; line: number; character: number }
+export interface EditorDiagnostic { line: number; character: number; message: string; severity: number }
+export interface EditorLanguageResult { locations: EditorLocation[]; diagnostics: EditorDiagnostic[] }
+export interface ExecutionRequest { command: string; args?: string[]; kind?: 'command' | 'preview' | 'debug' }
+export interface ExecutionOutput { sequence: number; stream: 'stdout' | 'stderr'; text: string }
+export interface ExecutionRun {
+  id: string; project: string; task: string; kind: 'command' | 'preview' | 'debug'; command: string; args: string[];
+  status: 'running' | 'stopped' | 'failed' | 'exited'; startedAt: string; finishedAt?: string; exitCode: number | null;
+  timedOut: boolean; truncated: boolean; output: ExecutionOutput[]; sequence: number; inspectorUrl?: string;
+}
+
+export interface ArchiveEntry { key: string; project: string; task: string; name: string; archivedAt: number }
+export interface ArchivePreview { git: string[]; preserved: string[]; unavailable: string[] }
+export interface GitWorkbenchFile {
+  path: string; originalPath?: string; index: string; working: string;
+  staged: boolean; unstaged: boolean; untracked: boolean; conflict: boolean; secret: boolean;
+}
+export interface GitWorkbenchStatus {
+  root: string; location: 'main' | 'task'; branch: string; upstream: string | null;
+  ahead: number; behind: number; files: GitWorkbenchFile[]; branches: string[]; remotes: string[];
+}
+export interface GitPullRequestStatus { available: boolean; authenticated: boolean; repository: string | null }
+export interface ReviewInput { ai: string; model?: string; effort?: string; text: string }
+export interface ReviewResult { request: string; text: string; ai: string; session?: string; ok: boolean; asks?: Ask[] }
+export interface ReviewCapability { supported: boolean; enforcement: 'native-sandbox' | 'tool-allowlist' | 'unsupported' }
+export interface PinnedSource { path: string; start: number; end: number }
+export interface TaskContext { decisions: string; sources: PinnedSource[] }
+export interface ReviewDraft { path: string; oldLine?: number; newLine?: number; hash: string; code: string; comment: string }
+export interface HandoffPreview { text: string; rows: number[]; start: number | null; end: number | null; truncated: boolean }
+export interface ContextPreview { handoff: HandoffPreview; context: { text: string; truncated: boolean; sources: PinnedSource[] } }
+export interface CareBackup { id: string; createdAt: string; complete: boolean; externalCount: number; containsSecrets: true }
+export interface CareHealth {
+  checkedAt: string; node: string; electron: string | null;
+  git: { available: boolean; version: string }; writable: boolean; loopback: boolean;
+  boundToLoopback: boolean; network: 'not-tested' | 'reachable' | 'unreachable';
+  buildTrust: 'signed' | 'unsigned' | 'unknown';
+  clis: { name: string; available: boolean; version: string; fullAccess: boolean; configuredAccounts: number; loginState: 'stored' | 'missing' | 'unknown' }[];
+}
+export interface CareDiagnostics {
+  format: 1;
+  versions: { app: string; node: string; electron: string | null; git: string };
+  configuration: { loopbackOnly: boolean; workspace: string };
+  capabilities: { writable: boolean; loopback: boolean; git: boolean; signedBuild: boolean };
+  providers: { name: string; available: boolean; version: string; fullAccess: boolean; loginState: 'stored' | 'missing' | 'unknown' }[];
+  counts: { projects: number; tasks: number; running: number }; errorCodes: string[];
 }

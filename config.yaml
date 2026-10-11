@@ -27,6 +27,9 @@ cli:
     fullAccess: true
     fullAccessArgs: [--dangerously-skip-permissions]
     safeArgs: [--permission-mode, acceptEdits]       # 只自動接受改檔，執行指令會被拒
+    # Review is independent of fullAccess. Verified restricted tool allowlist only; not an OS sandbox.
+    # Empty/modified unverified profiles disable review rather than weaken it.
+    readonlyArgs: [--restricted, --safe-mode, --tools, 'Read,Glob,Grep', --allowedTools, 'Read,Glob,Grep', --permission-mode, dontAsk, --permission-prompts, none, --strict-mcp-config, --disable-slash-commands, --no-session-persistence, -p, --output-format, stream-json, --verbose, --include-partial-messages]
     loginArgs: [auth, login]                          # 新增帳號時的 OAuth 登入子命令
   codex:
     command: codex
@@ -35,6 +38,8 @@ cli:
     fullAccess: true
     fullAccessArgs: [--dangerously-bypass-approvals-and-sandbox]
     safeArgs: [-s, workspace-write, -c, 'approval_policy="never"']   # 工作目錄沙箱內可改檔與執行指令
+    # Native read-only sandbox; fresh ephemeral session, no user config/rules.
+    readonlyArgs: [exec, --json, --skip-git-repo-check, --sandbox, read-only, -c, 'approval_policy="never"', --ignore-user-config, --ignore-rules, --ephemeral]
     # 查帳號即時額度用的子命令（app-server：與 CLI 同一份後端資料）；留空則只讀本機紀錄的最後一筆。
     quotaArgs: [app-server]
     loginArgs: [login, -c, 'cli_auth_credentials_store="file"']   # 登入結果寫入 CODEX_HOME/auth.json 供匯入
@@ -45,6 +50,7 @@ cli:
     fullAccess: true
     fullAccessArgs: [--always-approve]
     safeArgs: [--permission-mode, dontAsk]  # 需核准的操作直接拒絕，不等待互動
+    readonlyArgs: []                     # Review refused: protection not verified
     quotaArgs: []                         # 額度直接向 Grok API 查詢，不啟動子命令
     loginArgs: [login, --oauth]
   gemini:
@@ -54,12 +60,19 @@ cli:
     fullAccess: true
     fullAccessArgs: [--dangerously-skip-permissions]
     safeArgs: [--mode, accept-edits]      # 只自動接受檔案編輯
+    readonlyArgs: []                     # Plan/terminal restrictions do not prove filesystem read-only
     quotaArgs: [-p, /usage, --output-format, json]  # 唯讀額度報告，不啟動模型回合
     loginArgs: []
     commandsArgs: [-p, /help, --output-format, json]  # CLI 回報可用的唯讀 slash 命令
     slashArgs: [--output-format, json, --print]       # 獨立執行，不混入對話提示
   # 子行程環境變數採白名單；除了內建的 PATH／HOME／LANG 等基本變數外，額外要放行的名稱寫在這裡
   envPassthrough: []
+
+# 外部工具使用 argv（不經 shell）；{cwd}／{url} 替換成目前副本路徑／經驗證的網址。
+# terminal 不設定時使用系統終端。IDE／debug browser 要設定本機已安裝的程式。
+execution: {}
+#  ide: { command: code, args: ['{cwd}'] }
+#  browser: { command: chromium, args: ['{url}'] }
 
 update:
   enabled: true                    # 定時檢查 GitHub 發行頁有沒有新版本（只通知，不自動安裝）
