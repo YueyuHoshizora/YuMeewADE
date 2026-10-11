@@ -42,6 +42,9 @@ export async function openProjectFromFolder(context: ViewContext): Promise<void>
   const found = context.state.projects.find(project => normalizePath(project.dir) === target) ?? context.state.projects.find(project => normalizePath(project.bodyPath) === target);
   if (found) { location.hash = projectHash(found.id); return; }
   const name = value.replace(/[\\/]+$/, '').split(/[\\/]/).at(-1) ?? '';
+  // 資料夾名稱與既有專案同名（含大小寫差異）時，建立必定失敗，直接開啟該專案。
+  const sameName = context.state.projects.find(project => [project.id, project.name].some(key => key.toLocaleLowerCase() === name.toLocaleLowerCase()));
+  if (sameName) { location.hash = projectHash(sameName.id); return; }
   if (!await confirmModal(t('project.adoptTitle'), t('project.adoptMessage', { name }), t('project.adoptAccept'))) return;
   try {
     const project = await api.createProject({ name, description: '', phases: lines(t('project.defaultPhases')), body: value, parent: '', related: [] });
