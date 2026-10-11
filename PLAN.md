@@ -553,3 +553,4 @@ electron 44.7.0、vite 8.3.4、electron-builder 26.15.3、typescript 7.0.2、@ty
 - 系統匣沿用 App 圖示（macOS template）；主行程每五秒從固定 loopback /api/state 取執行數，逾時／失敗顯示未知，不接觸憑證 IPC，退出取消查詢及銷毀圖示。
 - renderer 崩潰／無回應提供人工選擇恢復，單視窗同時最多一個對話框；userData/renderer-health.jsonl 僅保存時間、視窗、原因與 exitCode，1 MiB 輪替，不自動重啟。
 - 文件預覽：Markdown 編輯／預覽／分割以 180ms 防抖安全渲染目前未儲存 buffer；png／jpg／jpeg／gif／webp／svg 圖片檢視提供尺寸、大小、fit／100%。`GET /api/editor/image` 沿用 editor target 範圍／機密／symlink 防護與 20 MiB 上限，正確 MIME、nosniff、禁止腳本的 sandbox CSP；SVG 僅透過 `<img>` 顯示。
+- 編輯器事件連動：`yumeewade:open-file` 依 project／task 重用工作台並在分頁開啟 path、定位 1-based line；CodeMirror 原生 scrollIntoView 顯示游標。工具列及 Mod-Shift-L 將主要選取以檔案／行範圍 mention 派送至 `yumeewade:compose-insert`，保留編輯器開啟；沒有 task 時停用並提示，七語文字及純函式測試齊備。

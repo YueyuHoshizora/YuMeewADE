@@ -4,8 +4,24 @@ import { t } from '../i18n/index.ts';
 import { el, input, area, button, row, confirmModal, run } from './dom.ts';
 import { EditorContent } from './editor-engine.ts';
 import { FilePreview, isImage } from './file-preview.ts';
+import { selectionMention } from './editor-mention.ts';
+
+const browsers = new Map<string, { dialog: HTMLDialogElement; open: (path: string, line?: number) => Promise<void> }>();
+
+window.addEventListener('yumeewade:open-file', event => {
+  const detail = (event as CustomEvent<unknown>).detail;
+  if (!detail || typeof detail !== 'object') return;
+  const { project, task, path, line } = detail as Record<string, unknown>;
+  if (typeof project !== 'string' || !project || typeof task !== 'string' || typeof path !== 'string' || !path ||
+    (line !== undefined && (typeof line !== 'number' || !Number.isSafeInteger(line) || line < 1))) return;
+  openFileBrowser(project, task);
+  const browser = browsers.get(JSON.stringify([project, task]));
+  if (browser) void run(() => browser.open(path, line as number | undefined));
+});
 
 export function openFileBrowser(project: string, task: string): void {
+  const key = JSON.stringify([project, task]); const existing = browsers.get(key);
+  if (existing) { if (existing.dialog.open) existing.dialog.focus(); return; }
   const ids: Record<string, string> = { project, ...(task ? { task } : {}) }; let storageKey = ''; let persistenceEnabled = false;
   const buffers = new Map<string, EditorRecovery>(); const views: { path: string | undefined; content: EditorContent; preview: FilePreview; tabs: HTMLDivElement; node: HTMLDivElement }[] = [];
   const dialog = el('dialog', 'modal'); const results = el('div'); const output = el('div'); const panes = el('div'); panes.style.display = 'flex'; panes.style.gap = '1rem'; let focused = 0;
@@ -51,8 +67,9 @@ export function openFileBrowser(project: string, task: string): void {
     capture(index); const buffer = buffers.get(path); if (!buffer) return;
     const view = views[index]!; view.path = path; view.content.open(path, buffer.text); view.content.readOnly = isImage(path) || buffer.document.readonly || buffer.document.binary || buffer.document.truncated;
     view.preview.open(path, buffer.text, buffer.document.size);
-    const offset = line === undefined ? buffer.start : buffer.text.split('\n').slice(0, line).reduce((sum, text) => sum + text.length + 1, 0) + character;
-    view.content.setSelectionRange(offset, line === undefined ? buffer.end : offset); view.content.scrollTop = line === undefined ? buffer.top : line * 20; view.content.scrollLeft = buffer.left;
+    if (line === undefined) {
+      view.content.setSelectionRange(buffer.start, buffer.end); view.content.scrollTop = buffer.top; view.content.scrollLeft = buffer.left;
+    } else view.content.revealLine(line + 1, character);
     if (!isImage(path)) view.content.focus(); focused = index; refreshTabs();
     capture(index); schedulePersist();
     if (view.content.readOnly && !isImage(path)) output.replaceChildren(el('p', 'warning', buffer.document.binary ? t('files.binary') : buffer.document.truncated ? t('files.truncated') : t('detail.editor_readonly')));
@@ -96,10 +113,21 @@ export function openFileBrowser(project: string, task: string): void {
     };
     content.onscroll = () => { capture(index); schedulePersist(); };
     content.onselect = () => { capture(index); schedulePersist(); };
-    content.onkeydown = event => { if ((event.ctrlKey || event.metaKey) && event.key === 's') { event.preventDefault(); void run(save); } };
+    content.onkeydown = event => {
+      if (!(event.ctrlKey || event.metaKey)) return;
+      if (event.shiftKey && event.key.toLowerCase() === 'l' && task) { event.preventDefault(); sendSelection(); }
+      else if (!event.shiftKey && event.key.toLowerCase() === 's') { event.preventDefault(); void run(save); }
+    };
   }
   function current(): EditorRecovery | undefined { capture(focused); const path = views[focused]!.path; return path ? buffers.get(path) : undefined; }
   async function save(): Promise<void> { const buffer = current(); if (!buffer || !dirty(buffer)) return; const text = buffer.text; buffer.document = await request<EditorDocument>('/api/editor/save', { ...ids, path: buffer.document.path, text, revision: buffer.document.revision }); persist(); refreshTabs(); }
+  function sendSelection(): void {
+    if (!task) return;
+    const view = views[focused]!; if (!view.path) return;
+    const { doc, selection } = view.content.view.state; const primary = selection.main;
+    const text = selectionMention(view.path, doc.lineAt(primary.from).number, doc.lineAt(primary.to).number, primary.empty);
+    window.dispatchEvent(new CustomEvent('yumeewade:compose-insert', { detail: { project, task, text } }));
+  }
   async function pin(path: string, start: number, end: number, revision: string): Promise<void> {
     if (!task) return;
     const document = await request<EditorDocument>(query('/api/editor/file', { ...ids, path }));
@@ -218,25 +246,30 @@ export function openFileBrowser(project: string, task: string): void {
     } else { const first = buffers.keys().next().value; if (first) activate(first); }
   }
   pane();
+  const send = button(t('editorEvents.send'), sendSelection);
+  send.disabled = !task; send.title = t(task ? 'editorEvents.shortcut' : 'editorEvents.noTask');
   const actions = row(button(t('common.save'), save), button(t('ew.split'), () => { if (views.length < 2) { capture(focused); const path = views[focused]!.path; pane(); if (path) activate(path, 1); refreshTabs(); } }), ...(['definition', 'references', 'diagnostics', 'completion', 'hover', 'rename', 'format', 'codeActions'] as const).map(action => button(t(action === 'definition' || action === 'references' || action === 'diagnostics' ? `editor.${action}` : `ew.${action}`), () => language(action))), newName,
     button(t('ew.problems'), async () => { const problems = await request<EditorProblem[]>(query('/api/editor/problems', ids)); output.replaceChildren(...problems.map(problem => button(`${problem.path}:${problem.line + 1} ${problem.message}`, () => show(problem.path, problem.line, problem.character)))); }), ...(task ? [button(t('ew.pin'), async () => {
       const buffer = current(); if (!buffer) return;
       if (dirty(buffer)) throw new Error(t('ew.saveFirst'));
       await pin(buffer.document.path, buffer.text.slice(0, buffer.start).split('\n').length, buffer.text.slice(0, buffer.end).split('\n').length, buffer.document.revision);
     })] : []));
+  actions.append(send);
   const close = async () => { views.forEach((_, index) => capture(index)); persist(); dialog.close(); };
   filter.oninput = () => void run(load);
   const unload = (event: BeforeUnloadEvent) => { views.forEach((_, index) => capture(index)); persist(); if ([...buffers.values()].some(dirty)) { event.preventDefault(); event.returnValue = ''; } };
   window.addEventListener('beforeunload', unload); const navigate = () => void run(close); window.addEventListener('hashchange', navigate);
-  dialog.addEventListener('cancel', event => { event.preventDefault(); void run(close); }); dialog.addEventListener('close', () => { window.clearTimeout(persistenceTimer); views.forEach(view => { view.content.destroy(); view.preview.destroy(); }); window.removeEventListener('beforeunload', unload); window.removeEventListener('hashchange', navigate); dialog.remove(); }, { once: true });
+  dialog.addEventListener('cancel', event => { event.preventDefault(); void run(close); }); dialog.addEventListener('close', () => { browsers.delete(key); window.clearTimeout(persistenceTimer); views.forEach(view => { view.content.destroy(); view.preview.destroy(); }); window.removeEventListener('beforeunload', unload); window.removeEventListener('hashchange', navigate); dialog.remove(); }, { once: true });
   dialog.append(row(el('h2', '', t('files.title')), button(t('common.close'), close)), actions, row(pathInput, destination, ...(['createFile', 'createFolder', 'rename', 'delete'] as const).map(action => button(t(`ew.${action}`), () => mutate(action)))), row(sourceSearch, replacement, button(t('ew.search'), () => search(false)), button(t('ew.replacePreview'), () => search(true))), filter, results, panes, output);
   document.body.append(dialog);
-  void run(async () => {
+  const ready = (async () => {
     const { scope } = await request<{ scope: string }>(query('/api/editor/scope', ids));
     if (!dialog.isConnected) return;
     storageKey = `editor-recovery:v2:${scope}`;
     dialog.showModal(); await recover();
     if (!dialog.isConnected) return;
-    persistenceEnabled = true; await load();
-  });
+    persistenceEnabled = true;
+  })().catch(error => { dialog.dispatchEvent(new Event('close')); throw error; });
+  browsers.set(key, { dialog, open: async (path, line) => { await ready; if (dialog.isConnected) await show(path, line === undefined ? undefined : line - 1); } });
+  void run(async () => { await ready; await load(); });
 }

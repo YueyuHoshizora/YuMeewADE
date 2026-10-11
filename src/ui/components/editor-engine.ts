@@ -99,6 +99,11 @@ export class EditorContent {
   get selectionStart(): number { return this.view.state.selection.main.from; }
   get selectionEnd(): number { return this.view.state.selection.main.to; }
   setSelectionRange(start: number, end: number): void { const max = this.view.state.doc.length; this.view.dispatch({ selection: EditorSelection.single(Math.min(max, Math.max(0, start)), Math.min(max, Math.max(0, end))) }); }
+  revealLine(line: number, character = 0): void {
+    const doc = this.view.state.doc; const target = doc.line(Math.min(doc.lines, Math.max(1, line)));
+    const offset = Math.min(target.to, target.from + Math.max(0, character));
+    this.view.dispatch({ selection: EditorSelection.single(offset), effects: EditorView.scrollIntoView(offset, { y: 'center' }) });
+  }
   setRangeText(text: string, start: number, end: number, _mode: string): void { this.view.dispatch({ changes: { from: start, to: end, insert: text }, selection: { anchor: start + text.length } }); }
   get scrollTop(): number { return this.view.scrollDOM.scrollTop; } set scrollTop(value: number) { this.view.scrollDOM.scrollTop = value; }
   get scrollLeft(): number { return this.view.scrollDOM.scrollLeft; } set scrollLeft(value: number) { this.view.scrollDOM.scrollLeft = value; }
