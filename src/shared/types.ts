@@ -13,7 +13,7 @@ export const PHASE_STATES = ['未開始', '進行中', '完成'] as const;
 export type PhaseState = (typeof PHASE_STATES)[number];
 
 /** 能實際對話的 AI（mock 僅測試用，UI 不列出）。 */
-export const AI_NAMES = ['claude', 'codex', 'grok', 'mock'] as const;
+export const AI_NAMES = ['claude', 'codex', 'grok', 'gemini', 'mock'] as const;
 export type AiName = (typeof AI_NAMES)[number];
 
 export interface SlashCommand {

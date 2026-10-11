@@ -6,6 +6,7 @@ export function aiLabel(name: string): string {
   if (name === 'claude') return 'Claude';
   if (name === 'codex') return 'Codex';
   if (name === 'grok') return 'Grok';
+  if (name === 'gemini') return 'Gemini';
   return name === '人' ? t('ai.human') : name;
 }
 export function modelLabel(state: AppState, ai: string, model = ''): string {

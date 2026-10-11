@@ -7,7 +7,7 @@ import { parseYamlMap, YamlError, type YamlValue } from '../shared/yaml.ts';
 export { HUMAN } from '../shared/types.ts';
 export const EFFORTS = ['low', 'medium', 'high', 'xhigh', 'max'];
 function validateSlot(s: RoleSlot): void {
-  if (!s || !['claude', 'codex', 'grok', 'mock', HUMAN].includes(s.cli) || typeof s.model !== 'string' || typeof s.effort !== 'string' || (s.effort && !EFFORTS.includes(s.effort))) throw new AppError('bad_request', 'invalid_effort');
+  if (!s || !['claude', 'codex', 'grok', 'gemini', 'mock', HUMAN].includes(s.cli) || typeof s.model !== 'string' || typeof s.effort !== 'string' || (s.effort && !EFFORTS.includes(s.effort))) throw new AppError('bad_request', 'invalid_effort');
   if (s.cli === HUMAN && (s.model || s.effort)) throw new AppError('bad_request');
 }
 function slot(v: YamlValue | undefined, where: string): RoleSlot | undefined {

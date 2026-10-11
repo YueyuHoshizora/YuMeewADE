@@ -1,0 +1,101 @@
+import test from 'node:test';
+import assert from 'node:assert/strict';
+import { promises as fs } from 'node:fs';
+import os from 'node:os';
+import path from 'node:path';
+import { createGeminiParser, GeminiCliProvider, geminiArgs, geminiInput, geminiOutcome } from './gemini.ts';
+import { parseGeminiModels } from '../ai/catalog.ts';
+import type { CliEvent } from './provider.ts';
+import { DEFAULT_CONFIG } from '../shared/config.ts';
+
+const cfg = DEFAULT_CONFIG.cli.gemini;
+const step = (fields: Record<string, unknown>) => ({ event: 'step_update', step_update: { conversation_id: 'conv', ...fields } });
+
+test('stream-json steps become deltas, deduped tool labels, summed usage, and a successful result', () => {
+  const events: CliEvent[] = [];
+  let at = 100;
+  const parse = createGeminiParser(ev => events.push(ev), () => at);
+  parse({ event: 'init', conversation_id: 'conv', init: { tools: [] } });
+  parse(step({ step_index: 0, state: 'DONE', step_type: 'user_input' }));
+  at = 200;
+  parse(step({ step_index: 1, state: 'DONE', step_type: 'agent_response', usage: { input_tokens: 10, output_tokens: 5, cache_read_tokens: 2 } }));
+  parse(step({ step_index: 2, state: 'ACTIVE', step_type: 'tool', tool_name: 'run_command', tool_info: { name: 'run_command', parameters: { CommandLine: 'ls -la' } } }));
+  parse(step({ step_index: 2, state: 'ACTIVE', step_type: 'tool', tool_name: 'run_command', tool_info: { name: 'run_command', parameters: { CommandLine: 'ls -la' } } }));
+  parse(step({ step_index: 2, state: 'DONE', step_type: 'tool', tool_name: 'run_command', tool_info: { output: 'not answer' } }));
+  parse(step({ step_index: 3, state: 'ACTIVE', step_type: 'agent_response', text_delta: 'Hello ' }));
+  parse(step({ step_index: 3, state: 'ACTIVE', step_type: 'agent_response', text_delta: 'world' }));
+  at = 400;
+  parse(step({ step_index: 3, state: 'DONE', step_type: 'agent_response', text_delta: '\n', usage: { input_tokens: 20, output_tokens: 7 } }));
+  parse({ event: 'result', result: { conversation_id: 'conv', status: 'SUCCESS', response: 'Hello world\n', usage: { input_tokens: 999, output_tokens: 999 } } });
+  assert.deepEqual(events.filter(ev => ev.type === 'delta').map(ev => ev.text), ['Hello ', 'world', '\n']);
+  assert.deepEqual(events.filter(ev => ev.type === 'tool'), [{ type: 'tool', text: 'run_command: ls -la' }]);
+  assert.deepEqual(events.find(ev => ev.type === 'session'), { type: 'session', id: 'conv' });
+  assert.deepEqual(events.find(ev => ev.type === 'usage'), { type: 'usage', usage: { input: 30, output: 12, cached: 2 } });
+  assert.deepEqual(events.filter(ev => ev.type === 'result'), [{ type: 'result', text: 'Hello world\n' }]);
+  assert.deepEqual(events.filter(ev => ev.type === 'tokens').map(ev => ev.count), [5, 12]);
+});
+
+test('error results and missing conversation ids never become success', () => {
+  for (const result of [{ conversation_id: '', status: 'ERROR', error: 'empty prompt' }, { conversation_id: 'conv', status: 'CANCELLED' }, { conversation_id: '', status: 'SUCCESS', response: 'x' }]) {
+    const events: CliEvent[] = [];
+    createGeminiParser(ev => events.push(ev))({ event: 'result', result });
+    assert.equal(events.some(ev => ev.type === 'result' || ev.type === 'session'), false);
+    assert.equal(events.filter(ev => ev.type === 'error').length, 1);
+  }
+  assert.equal(geminiOutcome({ ok: true, stopped: false }, false, false).ok, false);
+  assert.equal(geminiOutcome({ ok: true, stopped: false }, true, true).ok, false);
+  assert.equal(geminiOutcome({ ok: true, stopped: false }, true, false).ok, true);
+});
+
+test('args honor permission mode, model, effort, resume and extra directories; the prompt only travels over stdin', () => {
+  const base = { prompt: 'secret prompt', cwd: '/w' };
+  assert.deepEqual(geminiArgs(cfg, { ...base, fullAccess: true }), [...cfg.fullAccessArgs, ...cfg.baseArgs]);
+  assert.deepEqual(geminiArgs(cfg, { ...base, fullAccess: false, model: 'm', effort: 'high', resumeId: 'c1', addDirs: ['/a', '/b'] }), [...cfg.safeArgs, ...cfg.baseArgs, '--model', 'm', '--effort', 'high', '--conversation', 'c1', '--add-dir', '/a', '--add-dir', '/b']);
+  assert.ok(!geminiArgs(cfg, base).join(' ').includes('secret prompt'));
+  const line = geminiInput({ ...base, images: ['/i/a.png'] });
+  assert.ok(line.endsWith('\n'));
+  const message = JSON.parse(line) as { event: string; message: { content: string } };
+  assert.equal(message.event, 'user');
+  assert.match(message.message.content, /secret prompt[\s\S]*\/i\/a\.png/u);
+});
+
+test('agy model list keeps id/label rows and skips status text and duplicates', () => {
+  assert.deepEqual(parseGeminiModels('Fetching available models...\ngemini-3.8-flash-high\tGemini 3.8 Flash (High)\ngemini-3.8-flash-high\tdup\nnot a row\n'), [
+    { id: 'gemini-3.8-flash-high', label: 'Gemini 3.8 Flash (High)', efforts: [], defaultEffort: '' },
+  ]);
+});
+
+test('provider runs the CLI end to end: stdin message in, conversation id and answer out, nonzero exit fails', async () => {
+  const dir = await fs.mkdtemp(path.join(os.tmpdir(), 'ym-gemini-'));
+  try {
+    const script = path.join(dir, 'agy');
+    await fs.writeFile(script, `#!/usr/bin/env node
+let input = '';
+process.stdin.on('data', d => { input += d; });
+process.stdin.on('end', () => {
+  const content = JSON.parse(input).message.content;
+  const fail = content.includes('[fail]');
+  process.stdout.write(JSON.stringify({ event: 'step_update', step_update: { step_type: 'agent_response', state: 'ACTIVE', step_index: 1, text_delta: 'echo:' + content } }) + '\\n');
+  process.stdout.write(JSON.stringify({ event: 'result', result: { conversation_id: process.argv.includes('--conversation') ? 'resumed' : 'fresh', status: 'SUCCESS', response: 'echo:' + content } }) + '\\n');
+  process.exit(fail ? 3 : 0);
+});
+`, { mode: 0o755 });
+    const provider = new GeminiCliProvider({ ...cfg, command: script }, [], { PATH: process.env['PATH'] ?? '' });
+    assert.equal(await provider.available(), true);
+    const run = async (prompt: string, resumeId?: string) => {
+      const events: CliEvent[] = [];
+      const outcome = await provider.send({ prompt, cwd: dir, ...(resumeId ? { resumeId } : {}) }, ev => events.push(ev)).done;
+      return { events, outcome };
+    };
+    const first = await run('hi');
+    assert.equal(first.outcome.ok, true);
+    assert.deepEqual(first.events.find(ev => ev.type === 'session'), { type: 'session', id: 'fresh' });
+    assert.deepEqual(first.events.find(ev => ev.type === 'result'), { type: 'result', text: 'echo:hi' });
+    assert.deepEqual((await run('hi', 'c')).events.find(ev => ev.type === 'session'), { type: 'session', id: 'resumed' });
+    const failed = await run('x [fail]');
+    assert.equal(failed.outcome.ok, false);
+    assert.equal(failed.events.some(ev => ev.type === 'error'), true);
+    const slash = await provider.send({ prompt: 'p', cwd: dir, slashCommand: '/x' }, () => undefined).done;
+    assert.equal(slash.ok, false);
+  } finally { await fs.rm(dir, { recursive: true, force: true }); }
+});

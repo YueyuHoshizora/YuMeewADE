@@ -46,6 +46,16 @@ cli:
     quotaArgs: []                         # 額度直接向 Grok API 查詢，不啟動子命令
   # 子行程環境變數採白名單；除了內建的 PATH／HOME／LANG 等基本變數外，額外要放行的名稱寫在這裡
   envPassthrough: []
+    loginArgs: [login, --oauth]
+  gemini:
+    command: agy                          # Google Antigravity CLI（Gemini 的官方後繼）；沿用 CLI 自己的登入
+    # 提示以 stream-json 的 user 訊息經 stdin 傳入，不出現在 argv。
+    baseArgs: [--output-format, stream-json, --input-format, stream-json, --print=]
+    fullAccess: true
+    fullAccessArgs: [--dangerously-skip-permissions]
+    safeArgs: [--mode, accept-edits]      # 只自動接受檔案編輯
+    quotaArgs: []
+    loginArgs: []
 
 limits:
   bodyBytes: 2097152       # JSON 請求體上限（2 MiB）

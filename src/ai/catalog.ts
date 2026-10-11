@@ -10,15 +10,16 @@ import { AppError } from '../shared/errors.ts';
 import { writeJson } from '../shared/fsx.ts';
 import type { AiInfo, ModelInfo, Settings } from '../shared/types.ts';
 
-type CatalogAi = 'claude' | 'codex' | 'grok';
+type CatalogAi = 'claude' | 'codex' | 'grok' | 'gemini';
 type ModelCache = Pick<AiInfo, 'models' | 'source' | 'refreshedAt'> & { profile?: string };
-const NAMES: CatalogAi[] = ['claude', 'codex', 'grok'];
+const NAMES: CatalogAi[] = ['claude', 'codex', 'grok', 'gemini'];
 const EFFORTS = ['low', 'medium', 'high', 'xhigh', 'max'];
 const BUILTIN: Record<CatalogAi, [string, string][]> = {
   claude: [['claude-opus-5-5', 'Opus 5.5'], ['claude-sonnet-5-5', 'Sonnet 5.5'], ['claude-fable-5-1', 'Fable 5.1'], ['claude-haiku-5-5', 'Haiku 5.5']],
   codex: [['gpt-6.1-sol', 'GPT-6.1-Sol'], ['gpt-6-astra', 'GPT-6-Astra']],
   grok: [],
 };
+  gemini: [],
 
 function object(value: unknown): Record<string, unknown> {
   return value !== null && typeof value === 'object' && !Array.isArray(value) ? value as Record<string, unknown> : {};
@@ -74,6 +75,19 @@ export function parseGrokModels(stdout: string, metadata: unknown): ModelInfo[] 
   return models;
 }
 async function json(file: string): Promise<unknown> {
+
+// `agy models` prints a status line then "id<TAB>label" rows; reasoning level is part of the model id.
+export function parseGeminiModels(stdout: string): ModelInfo[] {
+  const seen = new Set<string>();
+  const models: ModelInfo[] = [];
+  for (const line of stdout.replace(/\x1b\[[0-9;]*m/g, '').split(/\r?\n/)) {
+    const [id, label] = line.split('\t');
+    if (!id || !label || !/^[\w.-]+$/.test(id) || seen.has(id)) continue;
+    seen.add(id);
+    models.push({ id, label: label.trim() || id, efforts: [], defaultEffort: '' });
+  }
+  return models;
+}
   try { return JSON.parse(await fs.readFile(file, 'utf8')) as unknown; }
   catch (err) {
     if (err instanceof SyntaxError || ['ENOENT', 'ENOTDIR'].includes((err as NodeJS.ErrnoException).code ?? '')) return undefined;
@@ -133,6 +147,10 @@ export class AiCatalog {
     if (name === 'codex') {
       const result = await captureCommand({ command: this.config.cli[name].command, args: ['debug', 'models'], env: this.env(), timeoutMs: 120_000 });
       if (!result.ok) throw new AppError('unavailable', 'cli_unavailable', { field: name, cause: result.reason });
+    if (name === 'gemini') {
+      await this.loadGemini(true);
+      return this.get(name);
+    }
       try { models = parseModels(name, JSON.parse(result.stdout)); }
       catch (cause) { throw new AppError('internal', 'bad_json', { cause }); }
       if (!models.length) throw new AppError('internal', 'bad_json');
@@ -157,7 +175,7 @@ export class AiCatalog {
   }
 
   private name(ai: string): CatalogAi {
-    if (ai !== 'claude' && ai !== 'codex' && ai !== 'grok') throw new AppError('bad_request', 'cli_unsupported', { field: ai });
+    if (ai !== 'claude' && ai !== 'codex' && ai !== 'grok' && ai !== 'gemini') throw new AppError('bad_request', 'cli_unsupported', { field: ai });
     return ai;
   }
   private env(): NodeJS.ProcessEnv { return { ...minimalEnv(this.config.cli.envPassthrough), HOME: this.home }; }
@@ -192,7 +210,7 @@ export class AiCatalog {
     return { available: true, version: result.ok ? /\b\d+\.\d+\.\d+\b/.exec(result.stdout + '\n' + result.stderr)?.[0] ?? '' : '' };
   }
   private async localModels(ai: CatalogAi): Promise<ModelInfo[]> {
-    if (ai === 'grok') return [];
+    if (ai === 'grok' || ai === 'gemini') return [];
     if (ai === 'codex') return parseModels(ai, await json(path.join(this.home, '.codex', 'models_cache.json')));
     const dir = path.join(this.home, '.claude', 'cache', 'model-catalog');
     let files: string[];
@@ -203,6 +221,13 @@ export class AiCatalog {
     }
     const candidates = await Promise.all(files.map(async (file) => {
       try { const stat = await fs.stat(path.join(dir, file)); return { file, mtime: stat.isFile() ? stat.mtimeMs : -1 }; }
+  private async loadGemini(strict: boolean): Promise<void> {
+    const result = await captureCommand({ command: this.config.cli.gemini.command, args: ['models'], env: this.env(), timeoutMs: 120_000 });
+    const models = result.ok ? parseGeminiModels(result.stdout) : [];
+    if (strict && !result.ok) throw new AppError('unavailable', 'cli_unavailable', { field: 'gemini', cause: result.reason });
+    if (strict && !models.length) throw new AppError('internal', 'bad_json');
+    await this.persist('gemini', { models, source: models.length ? 'cli' : 'unavailable', refreshedAt: new Date().toISOString() });
+  }
       catch (err) { if ((err as NodeJS.ErrnoException).code === 'ENOENT') return { file, mtime: -1 }; throw err; }
     }));
     candidates.sort((a, b) => b.mtime - a.mtime || a.file.localeCompare(b.file));
@@ -232,6 +257,12 @@ export class AiCatalog {
     })();
     return this.initialized;
   }
+        if (name === 'gemini') {
+          const existing = savedCache(saved.gemini);
+          if (existing) this.cache.gemini = existing;
+          else { this.cache.gemini = { models: [], source: 'unavailable', refreshedAt: new Date().toISOString() }; await this.loadGemini(false).catch(() => undefined); }
+          continue;
+        }
   private persist(name: CatalogAi, value: ModelCache): Promise<void> {
     const write = this.writes.then(async () => {
       this.cache[name] = value;

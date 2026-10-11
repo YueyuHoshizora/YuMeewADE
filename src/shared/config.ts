@@ -23,7 +23,7 @@ export interface CliCommandConfig {
 export interface Config {
   server: { host: string; port: number };
   workspace: { root: string };
-  cli: { claude: CliCommandConfig; codex: CliCommandConfig; grok: CliCommandConfig; envPassthrough: string[] };
+  cli: { claude: CliCommandConfig; codex: CliCommandConfig; grok: CliCommandConfig; gemini: CliCommandConfig; envPassthrough: string[] };
   limits: {
     bodyBytes: number;
     promptChars: number;
@@ -79,6 +79,18 @@ export const DEFAULT_CONFIG: Config = {
     envPassthrough: [],
   },
   limits: {
+      loginArgs: ['login', '--oauth'],
+    },
+    // Google 官方後繼：Antigravity CLI（agy）。提示經 stdin 的 stream-json 傳入，沒有 argv 外洩。
+    gemini: {
+      command: 'agy',
+      baseArgs: ['--output-format', 'stream-json', '--input-format', 'stream-json', '--print='],
+      fullAccess: true,
+      fullAccessArgs: ['--dangerously-skip-permissions'],
+      // 只自動接受檔案編輯；其他操作不讓無頭回合等待互動核准。
+      safeArgs: ['--mode', 'accept-edits'],
+      quotaArgs: [],
+      loginArgs: [],
     bodyBytes: 2_097_152,
     promptChars: 100_000,
     sendPerMinute: 30,
@@ -161,7 +173,7 @@ const LEGACY_BASE_ARGS: Record<'claude' | 'codex', string> = {
   codex: JSON.stringify(['exec', '--json', '--skip-git-repo-check', '-s', 'workspace-write', '-c', 'approval_policy="never"']),
 };
 
-function cliSection(map: YamlMap, name: 'claude' | 'codex' | 'grok'): CliCommandConfig {
+function cliSection(map: YamlMap, name: 'claude' | 'codex' | 'grok' | 'gemini'): CliCommandConfig {
   const s = section(map, name);
   const d = DEFAULT_CONFIG.cli[name];
   const where = `cli.${name}`;
@@ -203,6 +215,7 @@ export function parseConfig(text: string, source: string | null): Config {
     limits: {
       bodyBytes: int(limits, 'bodyBytes', L.bodyBytes, 'limits'),
       promptChars: int(limits, 'promptChars', L.promptChars, 'limits'),
+      gemini: cliSection(cli, 'gemini'),
       sendPerMinute: int(limits, 'sendPerMinute', L.sendPerMinute, 'limits'),
       concurrentRuns: int(limits, 'concurrentRuns', L.concurrentRuns, 'limits'),
       sseConnections: int(limits, 'sseConnections', L.sseConnections, 'limits'),
