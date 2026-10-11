@@ -14,6 +14,7 @@ import { configureSecretApplication, createSecretRequestHandler } from './secret
 import { reportArtifactSmoke } from './artifact-smoke.ts';
 import { WindowStateStore } from './window-state.ts';
 import { installMenu } from './menu.ts';
+import { createTray } from './tray.ts';
 
 const HERE = path.dirname(fileURLToPath(import.meta.url));
 const APP_ROOT = path.join(HERE, '..', '..');
@@ -37,6 +38,7 @@ let shutdownComplete = false;
 let mainWindow: BrowserWindow | null = null;
 const windowSlots = new Map<BrowserWindow, number>();
 let coreOrigin = '';
+let disposeTray: (() => void) | undefined;
 mkdirSync(CONFIG_DIRECTORY, { recursive: true, mode: 0o700 });
 app.setPath('sessionData', CONFIG_DIRECTORY);
 const windowStates = new WindowStateStore(path.join(CONFIG_DIRECTORY, 'window-state.json'));
@@ -157,6 +159,7 @@ function createWindow(url: string): BrowserWindow {
 }
 
 app.on('before-quit', (event) => {
+  disposeTray?.(); disposeTray = undefined;
   if (shutdownComplete) return;
   const ownedCore = core;
   if (!ownedCore) { quitting = true; return; }
@@ -201,6 +204,7 @@ if (primaryInstance) app
     if (quitting) return;
     createWindow(url);
     installMenu(() => { if (!quitting) createWindow(url); });
+    disposeTray = createTray(app.isPackaged ? path.join(process.resourcesPath, 'icon.png') : path.join(APP_ROOT, 'build', 'icon.png'), coreOrigin, focusWindow, () => { if (!quitting) createWindow(url); });
     app.on('activate', () => {
       if (BrowserWindow.getAllWindows().length === 0) createWindow(url);
     });
