@@ -66,6 +66,7 @@ Claude/Codex model lists and reasoning efforts come from their own caches, with 
 - **Native menus**: project, settings, search and command-palette actions reach the shared UI; standard editing, zoom and help menus, with developer tools only in development.
 - **Multiple windows**: new windows share the core and security settings, with independent saved state; relaunch focuses the latest window and closing the last window quits.
 - **Tray/menu bar**: Show, New window, running-task count and Quit; macOS uses a template icon and unavailable core state shows “—”.
+- **Renderer recovery**: crashes offer Reload/Quit, hangs offer Wait/Reload; bounded private logs rotate and there is no automatic restart loop.
 - **Archive recovery**: preview impact before archiving/restoring projects or tasks. Forced archive retains the branch and original working-copy recovery snapshot, including untracked/ignored/secret files and deletions. Restore rebuilds the worktree and refuses existing destinations. `.yumeewade/recovery/` is private, not a public Git backup or a complete backup of an external main folder.
   After successful restoration, that recovery generation is retained but no longer eligible for replay on a later archive; original bytes remain available without overwriting subsequently merged content.
   Restoration involving checkout must satisfy saved trust and the current root; refusal rolls back ledger restoration and never automatically trusts an archived project. Direct-task ledger restoration without checkout remains available.

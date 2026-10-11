@@ -15,6 +15,7 @@ import { reportArtifactSmoke } from './artifact-smoke.ts';
 import { WindowStateStore } from './window-state.ts';
 import { installMenu } from './menu.ts';
 import { createTray } from './tray.ts';
+import { monitorRenderer } from './renderer-health.ts';
 
 const HERE = path.dirname(fileURLToPath(import.meta.url));
 const APP_ROOT = path.join(HERE, '..', '..');
@@ -41,7 +42,7 @@ let coreOrigin = '';
 let disposeTray: (() => void) | undefined;
 mkdirSync(CONFIG_DIRECTORY, { recursive: true, mode: 0o700 });
 app.setPath('sessionData', CONFIG_DIRECTORY);
-const windowStates = new WindowStateStore(path.join(CONFIG_DIRECTORY, 'window-state.json'));
+const windowStates = new WindowStateStore(path.join(app.getPath('appData'), 'yumeewade', 'window-state.json'));
 configureSecretApplication();
 const primaryInstance = app.requestSingleInstanceLock();
 if (!primaryInstance) app.quit();
@@ -118,6 +119,7 @@ function createWindow(url: string): BrowserWindow {
     },
   });
   windowSlots.set(win, slot);
+  monitorRenderer(win, () => quitting);
   if (saved.maximized) win.maximize();
   if (saved.fullscreen) win.setFullScreen(true);
   const saveState = (): void => {

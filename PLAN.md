@@ -551,3 +551,4 @@ electron 44.7.0、vite 8.3.4、electron-builder 26.15.3、typescript 7.0.2、@ty
 - 原生選單依 OS locale 提供七語系，自訂動作透過最小 preload 訂閱及 yumeewade:menu 事件交給共用 UI；不暴露任意 IPC 或憑證。
 - 多視窗共用同一 loopback 核心與 sandbox/contextIsolation；IPC 驗證來源視窗及 frame origin，最多 32 視窗，重啟聚焦最近視窗，全部關閉即退出。
 - 系統匣沿用 App 圖示（macOS template）；主行程每五秒從固定 loopback /api/state 取執行數，逾時／失敗顯示未知，不接觸憑證 IPC，退出取消查詢及銷毀圖示。
+- renderer 崩潰／無回應提供人工選擇恢復，單視窗同時最多一個對話框；userData/renderer-health.jsonl 僅保存時間、視窗、原因與 exitCode，1 MiB 輪替，不自動重啟。
