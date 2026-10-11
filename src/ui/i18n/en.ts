@@ -272,6 +272,7 @@ export const en: Record<MessageKey, string> = {
   'detail.sse_limit': 'Live connection limit reached',
   'detail.git_failed': 'Git operation failed; check the local log',
   'detail.worktree_not_git': 'Copy directory exists but is not a Git worktree',
+  'detail.worktree_wrong_branch': 'The copy is not on its task branch; archiving stopped so work is not saved onto another branch. Fix the copy’s branch first',
   'detail.worktree_dirty': 'Working copy has unsaved changes; merge or clean it up manually first',
   'detail.merge_while_running': 'Stop the running task before merging',
   'detail.rollback_while_running': 'Stop the running task before restoring',

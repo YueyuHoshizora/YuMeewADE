@@ -116,6 +116,7 @@ export const zhTW = {
   'detail.sse_limit': '即時連線數已達上限',
   'detail.git_failed': 'Git 操作失敗，請檢查本地日誌',
   'detail.worktree_not_git': '副本目錄已存在，但不是工作副本',
+  'detail.worktree_wrong_branch': '副本目前不在作業分支上，為避免成果誤存到別的分支，已停止封存；請先處理副本的分支',
   'detail.worktree_dirty': '副本有未儲存的變更，請先合併或手動整理',
   'detail.merge_while_running': '作業執行中，請先停止再合併',
   'detail.rollback_while_running': '作業執行中，請先停止再還原',

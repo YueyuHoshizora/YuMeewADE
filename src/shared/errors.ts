@@ -63,6 +63,7 @@ export const DETAIL_MESSAGES = {
   sse_limit: 'SSE 連線數已達上限',
   git_failed: 'git 指令失敗',
   worktree_not_git: '副本目錄已存在但不是 worktree',
+  worktree_wrong_branch: '副本不在作業分支上',
   worktree_dirty: '副本有未提交的變更，請先收編或手動清理',
   merge_while_running: '作業執行中，請先停止再收編',
   remove_while_running: '作業執行中，不能移除副本',

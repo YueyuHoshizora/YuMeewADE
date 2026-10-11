@@ -272,6 +272,7 @@ export const fr: Record<MessageKey, string> = {
   'detail.sse_limit': 'Limite de connexions en temps réel atteinte',
   'detail.git_failed': 'Échec de l’opération Git ; consulte le journal local',
   'detail.worktree_not_git': 'Le dossier de copie existe mais n’est pas un worktree Git',
+  'detail.worktree_wrong_branch': 'La copie n’est pas sur sa branche de tâche ; archivage arrêté pour ne pas enregistrer le travail sur une autre branche. Corrige d’abord la branche de la copie',
   'detail.worktree_dirty': 'La copie contient des modifications non enregistrées ; fusionne ou nettoie-la manuellement d’abord',
   'detail.merge_while_running': 'Arrête la tâche en cours avant de fusionner',
   'detail.rollback_while_running': 'Arrête la tâche en cours avant de restaurer',

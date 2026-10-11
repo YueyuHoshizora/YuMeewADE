@@ -272,6 +272,7 @@ export const ja: Record<MessageKey, string> = {
   'detail.sse_limit': 'リアルタイム接続数が上限に達しました',
   'detail.git_failed': 'Git 操作に失敗しました。ローカルログを確認してください',
   'detail.worktree_not_git': 'コピー先は存在しますが Git ワークツリーではありません',
+  'detail.worktree_wrong_branch': 'コピーがタスクのブランチにありません。成果が別のブランチに保存されないよう、アーカイブを中止しました。先にコピーのブランチを直してください',
   'detail.worktree_dirty': '作業コピーに未保存の変更があります。先にマージするか手動で整理してください',
   'detail.merge_while_running': '実行中のタスクを停止してからマージしてください',
   'detail.rollback_while_running': '実行中のタスクを停止してから戻してください',

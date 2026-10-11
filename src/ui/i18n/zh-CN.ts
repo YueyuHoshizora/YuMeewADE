@@ -272,6 +272,7 @@ export const zhCN: Record<MessageKey, string> = {
   'detail.sse_limit': '实时连接数已达上限',
   'detail.git_failed': 'Git 操作失败，请检查本地日志',
   'detail.worktree_not_git': '副本目录已存在，但不是工作副本',
+  'detail.worktree_wrong_branch': '副本当前不在作业分支上，为避免成果误存到别的分支，已停止封存；请先处理副本的分支',
   'detail.worktree_dirty': '副本有未保存的更改，请先合并或手动整理',
   'detail.merge_while_running': '任务运行中，请先停止再合并',
   'detail.rollback_while_running': '任务运行中，请先停止再还原',

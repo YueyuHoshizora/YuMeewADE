@@ -2,6 +2,13 @@
 
 本專案的版本紀錄。版本號採 [Semantic Versioning](https://semver.org/lang/zh-TW/)。
 
+## [Unreleased]
+
+### 修正
+
+- 強制封存時 `git worktree remove` 因目錄刪不乾淨（Directory not empty）而失敗：改由程式直接刪除並清掉登記；上次失敗留下的殘留副本也能再次強制封存完成。
+- 強制封存前先確認副本仍在作業分支（`ym/…`）上；若被切到別的分支（曾導致「封存前儲存」誤提交到 main），改為拒絕並回 409，不再提交。
+
 ## [1.0.1] - 2026-10-11
 
 ### 新增

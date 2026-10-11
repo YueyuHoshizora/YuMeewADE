@@ -272,6 +272,7 @@ export const it: Record<MessageKey, string> = {
   'detail.sse_limit': 'Limite di connessioni in tempo reale raggiunto',
   'detail.git_failed': 'Operazione Git non riuscita; controlla il registro locale',
   'detail.worktree_not_git': 'La cartella della copia esiste ma non è un worktree Git',
+  'detail.worktree_wrong_branch': 'La copia non è sul ramo dell’attività; archiviazione interrotta per non salvare il lavoro su un altro ramo. Correggi prima il ramo della copia',
   'detail.worktree_dirty': 'La copia contiene modifiche non salvate; prima uniscila o sistemala manualmente',
   'detail.merge_while_running': 'Interrompi l’attività in corso prima di unire',
   'detail.rollback_while_running': 'Interrompi l’attività in corso prima di ripristinare',

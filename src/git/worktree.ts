@@ -353,9 +353,22 @@ export class WorktreeService {
       if (record.workspace !== 'direct') {
         const target = dir || this.ws.worktreeDir(project, task);
         if (await pathExists(target)) {
-          await this.verifyFamily(repo, target);
-          await commitAll(target, `${record.title}（封存前儲存）`);
-          await gitOk(repo, ['worktree', 'remove', '--force', target]);
+          if (await deadGitfile(target)) {
+            // 上次移除到一半失敗：git 已丟掉副本登記，只剩殘留檔案（提交早在移除前完成）。
+            await fs.rm(target, { recursive: true, force: true, maxRetries: 3 });
+          } else {
+            await this.verifyFamily(repo, target);
+            // 副本的 HEAD 若不在作業分支（被 AI 或人切走），提交會落到別的分支（曾誤提交到 main），一律拒絕。
+            const head = await git(target, ['symbolic-ref', '--short', '-q', 'HEAD']);
+            if (head.stdout.trim() !== this.branch(task)) throw new AppError('conflict', 'worktree_wrong_branch');
+            await commitAll(target, `${record.title}（封存前儲存）`);
+            const removed = await git(repo, ['worktree', 'remove', '--force', target]);
+            if (removed.code !== 0) {
+              // git 刪目錄時偶爾因並行寫入（編輯器、建置程序）報 Directory not empty；登記已移除，改由我們收尾。
+              log.warn('git worktree remove 失敗，改以直接刪除收尾', { project, task, stderr: removed.stderr.slice(0, 500) });
+              await fs.rm(target, { recursive: true, force: true, maxRetries: 3 });
+            }
+          }
         }
         await git(repo, ['worktree', 'prune']);
       }
@@ -371,6 +384,12 @@ export class WorktreeService {
     if (record.workdir && await pathExists(record.workdir)) throw new AppError('conflict', 'worktree_exists');
     return this.tasks.update(project, task, { workdir: '' });
   }
+}
+/** 副本的 .git 檔所指的 gitdir 已不存在（git 已移除登記）。 */
+async function deadGitfile(dir: string): Promise<boolean> {
+  const text = await fs.readFile(path.join(dir, '.git'), 'utf8').catch(() => null);
+  const match = text === null ? null : /^gitdir:\s*(.+)$/m.exec(text);
+  return match !== null && !(await pathExists(path.resolve(dir, match[1]!.trim())));
 }
 function splitNull(value: string): string[] { return value.split('\0').filter(Boolean); }
 async function mergeHead(dir: string): Promise<string | null> {

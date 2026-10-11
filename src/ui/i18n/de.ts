@@ -272,6 +272,7 @@ export const de: Record<MessageKey, string> = {
   'detail.sse_limit': 'Limit für Echtzeitverbindungen erreicht',
   'detail.git_failed': 'Git-Aktion fehlgeschlagen; prüfe das lokale Protokoll',
   'detail.worktree_not_git': 'Kopierordner existiert, ist aber kein Git-Worktree',
+  'detail.worktree_wrong_branch': 'Die Kopie liegt nicht auf ihrem Aufgabenzweig; Archivierung gestoppt, damit keine Arbeit auf einem anderen Zweig landet. Zweig der Kopie zuerst korrigieren',
   'detail.worktree_dirty': 'Arbeitskopie enthält ungespeicherte Änderungen; zuerst mergen oder manuell bereinigen',
   'detail.merge_while_running': 'Laufende Aufgabe vor dem Merge stoppen',
   'detail.rollback_while_running': 'Laufende Aufgabe vor dem Zurücksetzen stoppen',

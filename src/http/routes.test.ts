@@ -92,6 +92,35 @@ test('force archive discards the copy but keeps its work on the task branch', as
   } finally { await s.close(); }
 });
 
+test('force archive finishes a copy whose git registration is already gone', async () => {
+  const { server: s, project: p, task: t } = await setup();
+  const ids = { project: p.id, task: t.id };
+  try {
+    const copy = await s.app.worktree.prepare(p.id, t.id);
+    const repo = await s.app.worktree.bodyPath(p.id);
+    await fs.rm(path.join(repo, '.git', 'worktrees'), { recursive: true, force: true });
+    assert.equal((await s.api('POST', '/api/task/archive', { ...ids, force: true })).status, 200);
+    assert.equal(await fs.access(copy).then(() => true, () => false), false);
+  } finally { await s.close(); }
+});
+
+test('force archive refuses a copy that was switched off its task branch', async () => {
+  const { server: s, project: p, task: t } = await setup();
+  const ids = { project: p.id, task: t.id };
+  try {
+    const copy = await s.app.worktree.prepare(p.id, t.id);
+    const repo = await s.app.worktree.bodyPath(p.id);
+    const main = (await gitOk(repo, ['rev-parse', 'HEAD'])).trim();
+    await gitOk(copy, ['checkout', '-q', '--detach']);
+    await fs.writeFile(path.join(copy, 'stray.txt'), 'x');
+    const refused = await s.api('POST', '/api/task/archive', { ...ids, force: true });
+    assert.equal(refused.status, 409);
+    assert.equal((refused.json as { detail?: string }).detail, 'worktree_wrong_branch');
+    assert.equal((await gitOk(repo, ['rev-parse', 'HEAD'])).trim(), main);
+    assert.equal(await fs.access(copy).then(() => true, () => false), true);
+  } finally { await s.close(); }
+});
+
 test('archive copy guards, missing copy clear, memo and read', async () => {
   const { server: s, project: p, task: t } = await setup();
   const ids = { project: p.id, task: t.id };
