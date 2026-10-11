@@ -57,7 +57,8 @@ export class UsageBoard {
     // 並行回合可能比帳號查詢的資料舊，不能倒退。
     if (current?.quotaAt && Date.parse(ev.at) < Date.parse(current.quotaAt)) return;
     const resetCredits = ev.resetCredits ?? current?.resetCredits;
-    this.items.set(key, { ai, account, status: 'ready', windows: ev.windows, limited: ev.limited, quotaAt: ev.at, ...(ev.prepaidCents !== undefined ? { prepaidCents: ev.prepaidCents } : {}), ...(resetCredits ? { resetCredits } : {}) });
+    const extraUsage = ev.extraUsage ?? current?.extraUsage;
+    this.items.set(key, { ai, account, status: 'ready', windows: ev.windows, limited: ev.limited, quotaAt: ev.at, ...(ev.prepaidCents !== undefined ? { prepaidCents: ev.prepaidCents } : {}), ...(resetCredits ? { resetCredits } : {}), ...(extraUsage ? { extraUsage } : {}) });
     this.onChange(this.snapshot());
   }
 

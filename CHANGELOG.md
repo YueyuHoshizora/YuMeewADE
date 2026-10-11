@@ -6,6 +6,7 @@
 
 ### 新增
 - 帳號詳情顯示重置券：張數與各券到期日。Codex 取自 app-server `rateLimitResetCredits`（只列可用券）；Claude 取自 `/api/oauth/usage?cedar_ember=1` 的 `cedar_ember.grants`（需帶 `claude-cli/<版本>` User-Agent，版本取自本機 `claude --version`，否則伺服器回「來源不符」而沒有資料）。
+- 帳號詳情顯示額外使用額度餘額（超出訂閱額度後的付費用量；三家統一為美元餘額，沒有時 $0.00）：Claude 取自用量端點 `extra_usage`（月上限－已用）、Codex 取自 app-server 的 `credits`（餘額／無上限）、Grok 取自帳單的 `onDemandCap`－`onDemandUsed`。
 
 ### 修正
 - 修正平均 tok/s：Claude 連續訊息不再互相覆蓋，主串流與子代理交錯輸出各自計時；Gemini 重複或修正的步驟快照不再重複累計或延長計時。速度仍是實際輸出 token 除以量測區間聯集，保留 4 秒，不是文字估算。

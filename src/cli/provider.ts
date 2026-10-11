@@ -1,6 +1,6 @@
 // CLI 對話契約；核心只認這個介面，工具摘要不混入回答文字。
 
-import type { Ask, QuotaWindow, ResetCredits, SlashCommand, TurnUsage } from '../shared/types.ts';
+import type { Ask, ExtraUsage, QuotaWindow, ResetCredits, SlashCommand, TurnUsage } from '../shared/types.ts';
 
 export interface SendOptions {
   /** 完整提示（含前言、交接包、使用者指示）。 */
@@ -35,7 +35,7 @@ export type CliEvent =
   | { type: 'tool'; text: string }
   | { type: 'asks'; asks: Ask[] }
   /** 帳號額度（CLI 或 API 回報；at＝資料時間 ISO；prepaidCents＝明確回報的預付美元分餘額；resetCredits＝明確回報的重置券）。 */
-  | { type: 'quota'; windows: QuotaWindow[]; limited: boolean; at: string; prepaidCents?: number; resetCredits?: ResetCredits }
+  | { type: 'quota'; windows: QuotaWindow[]; limited: boolean; at: string; prepaidCents?: number; resetCredits?: ResetCredits; extraUsage?: ExtraUsage }
   /** CLI 實測輸出用量／耗時；runId 識別一則訊息或完整回合，同一量測累計值取代舊樣本，不同訊息獨立保留。 */
   | { type: 'tokens'; runId: string; count: number; spanMs: number; at: number }
   /** 內部原因，只進日誌，不對外。 */

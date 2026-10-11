@@ -1,7 +1,7 @@
 // Claude stream-json adapter；工具與問題獨立於回答文字。
 import type { CliCommandConfig } from '../shared/config.ts';
 import { randomUUID } from 'node:crypto';
-import type { Ask, QuotaWindow, ResetCredit, ResetCredits, TurnUsage } from '../shared/types.ts';
+import type { Ask, ExtraUsage, QuotaWindow, ResetCredit, ResetCredits, TurnUsage } from '../shared/types.ts';
 import { captureCommand, findExecutable, minimalEnv, runLineProcess } from './process.ts';
 import { readClaudeToken } from './claude-credentials.ts';
 import type { CliEvent, CliProvider, CliRun, SendOptions } from './provider.ts';
@@ -89,6 +89,27 @@ export function claudeResetCredits(body: unknown, now = Date.now()): ResetCredit
   return { availableCount, credits };
 }
 
+function minorUnits(value: unknown): number | null {
+  return typeof value === 'number' && Number.isFinite(value) && value >= 0 ? value : null;
+}
+
+/**
+ * 用量端點的 `extra_usage` → 餘額＝月上限－已用（不低於 0）；金額單位為 `currency` 的最小單位（美元為 cents）。
+ * null／缺少（方案沒有）、未啟用或沒有上限都視為餘額 0；格式錯誤整體忽略。
+ */
+export function claudeExtraUsage(body: unknown): ExtraUsage | undefined {
+  if (!body || typeof body !== 'object') return undefined;
+  const extra = (body as Record<string, unknown>)['extra_usage'];
+  if (extra === null || extra === undefined) return { unlimited: false, currency: 'USD', balance: 0 };
+  if (typeof extra !== 'object') return undefined;
+  const e = extra as Record<string, unknown>;
+  if (typeof e['is_enabled'] !== 'boolean') return undefined;
+  const currency = typeof e['currency'] === 'string' && /^[A-Za-z]{3}$/.test(e['currency']) ? e['currency'].toUpperCase() : 'USD';
+  const limit = minorUnits(e['monthly_limit']);
+  const used = minorUnits(e['used_credits']) ?? 0;
+  return { unlimited: false, currency, balance: e['is_enabled'] && limit !== null ? Math.max(0, limit - used) : 0 };
+}
+
 const clientVersions = new Map<string, Promise<string | undefined>>();
 
 /** 本機 `claude --version` 的版本號（僅成功時快取），用於 User-Agent；取不到就回 undefined。 */
@@ -103,7 +124,7 @@ export function claudeClientVersion(command: string, env: NodeJS.ProcessEnv): Pr
 }
 
 /** 向 Anthropic 查帳號目前的 5 小時／7 天用量與重置券；憑證只用於這個請求，不寫日誌。 */
-export async function fetchClaudeQuota(env: NodeJS.ProcessEnv, timeoutMs = 15_000, url = OAUTH_USAGE_URL, readToken = readClaudeToken, clientVersion?: string): Promise<{ type: 'quota'; windows: QuotaWindow[]; limited: boolean; at: string; resetCredits?: ResetCredits } | null> {
+export async function fetchClaudeQuota(env: NodeJS.ProcessEnv, timeoutMs = 15_000, url = OAUTH_USAGE_URL, readToken = readClaudeToken, clientVersion?: string): Promise<{ type: 'quota'; windows: QuotaWindow[]; limited: boolean; at: string; resetCredits?: ResetCredits; extraUsage?: ExtraUsage } | null> {
   const token = await readToken(env);
   const res = await fetch(url, {
     headers: { Authorization: `Bearer ${token}`, 'anthropic-beta': 'oauth-2025-04-20', ...(clientVersion ? { 'User-Agent': `claude-cli/${clientVersion} (external, cli)` } : {}) },
@@ -114,7 +135,8 @@ export async function fetchClaudeQuota(env: NodeJS.ProcessEnv, timeoutMs = 15_00
   const body: unknown = await res.json();
   const quota = claudeOauthQuota(body);
   const resetCredits = claudeResetCredits(body);
-  return quota ? { type: 'quota', ...quota, at: new Date().toISOString(), ...(resetCredits ? { resetCredits } : {}) } : null;
+  const extraUsage = claudeExtraUsage(body);
+  return quota ? { type: 'quota', ...quota, at: new Date().toISOString(), ...(resetCredits ? { resetCredits } : {}), ...(extraUsage ? { extraUsage } : {}) } : null;
 }
 
 function parseUsage(value: unknown): TurnUsage | undefined {

@@ -1,7 +1,7 @@
 import type { AiUsage, AppState, Settings, UsageState } from '../../shared/types.ts';
 import { api, request } from '../api.ts';
 import { getLocale, t } from '../i18n/index.ts';
-import { aiLabel, localTime, prepaidLabel, quotaLabel } from './display.ts';
+import { aiLabel, extraUsageLabel, localTime, prepaidLabel, quotaLabel } from './display.ts';
 import { button, confirmModal, el, field, input, row, run } from './dom.ts';
 
 function accountUsage(usage: AiUsage | undefined): HTMLElement {
@@ -19,6 +19,7 @@ function accountUsage(usage: AiUsage | undefined): HTMLElement {
     node.append(el('p', expired ? 'muted' : '', expired ? text : `${text} · ${t('usage.remaining', { percent: Math.max(0, Math.round(100 - window.usedPercent)) })}`));
   }
   if (usage.ai !== 'grok' && usage.prepaidCents !== undefined) node.append(el('p', '', prepaidLabel(usage.prepaidCents)));
+  if (usage.extraUsage) node.append(el('p', '', extraUsageLabel(usage.extraUsage)));
   if (usage.resetCredits) {
     const credits = el('details', 'disclosure reset-credits');
     credits.append(el('summary', '', t('usage.resetCredits', { count: usage.resetCredits.availableCount })));

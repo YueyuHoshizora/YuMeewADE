@@ -26,6 +26,18 @@ test('額度只前進不倒退，每次變更都推送完整快照', () => {
   });
 });
 
+test('回合中的額度事件不帶額外使用額度時保留上次的，新查詢則取代', () => {
+  const board = new UsageBoard(() => {});
+  try {
+    const extra = (balance: number) => ({ unlimited: false, currency: 'USD', balance });
+    board.record('codex', { ...quota('2026-10-10T10:00:00Z', 40), extraUsage: extra(5) });
+    board.record('codex', quota('2026-10-10T10:05:00Z', 50));
+    assert.deepEqual(board.snapshot().ais[0]?.extraUsage, extra(5));
+    board.record('codex', { ...quota('2026-10-10T10:10:00Z', 50), extraUsage: extra(0) });
+    assert.deepEqual(board.snapshot().ais[0]?.extraUsage, extra(0));
+  } finally { board.close(); }
+});
+
 test('回合中的額度事件不帶重置券時保留帳號查詢的重置券，新查詢則取代', () => {
   const board = new UsageBoard(() => {});
   try {

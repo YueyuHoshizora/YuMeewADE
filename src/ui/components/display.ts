@@ -1,4 +1,4 @@
-import type { AppState } from '../../shared/types.ts';
+import type { AppState, ExtraUsage } from '../../shared/types.ts';
 import { getLocale, t } from '../i18n/index.ts';
 import type { MessageKey } from '../i18n/zh-TW.ts';
 
@@ -22,6 +22,15 @@ export function sourceLabel(source: string): string {
 }
 export function prepaidLabel(cents: number): string {
   return t('usage.prepaidBalance', { balance: new Intl.NumberFormat(getLocale(), { style: 'currency', currency: 'USD' }).format(cents / 100) });
+}
+/** 額外使用額度的一行文字；金額單位是幣別最小單位（cents），依幣別小數位換算。 */
+export function extraUsageLabel(extra: ExtraUsage): string {
+  const title = t('usage.extraTitle');
+  const format = (value: number): string => {
+    const money = new Intl.NumberFormat(getLocale(), { style: 'currency', currency: extra.currency });
+    return money.format(value / 10 ** (money.resolvedOptions().maximumFractionDigits ?? 2));
+  };
+  return `${title} · ${extra.unlimited ? t('usage.extraUnlimited') : t('usage.extraBalance', { amount: format(extra.balance) })}`;
 }
 export function quotaLabel(label: string): string {
   switch (label) {

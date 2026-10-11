@@ -222,6 +222,17 @@ export interface ResetCredits {
   credits: ResetCredit[];
 }
 
+/**
+ * 額外使用額度（超出訂閱額度後的付費用量）的「餘額」；三家統一為餘額，單位為 currency 的最小單位（USD 為 cents）。
+ * 後端沒回報、方案沒有這項或沒開啟時為 0。
+ */
+export interface ExtraUsage {
+  /** 無上限（Codex credits.unlimited）。 */
+  unlimited: boolean;
+  currency: string;
+  balance: number;
+}
+
 /** 各 AI 帳號的額度；只在記憶體，核心重啟後等下一次回報。 */
 export interface AiUsage {
   ai: string;
@@ -236,8 +247,10 @@ export interface AiUsage {
   quotaAt: string | null;
   /** API 明確回報的預付餘額（USD cents）；不由百分比推估。 */
   prepaidCents?: number;
-  /** 後端明確回報的重置券（目前只有 Codex）；沒有回報為 undefined。 */
+  /** 後端明確回報的重置券（Claude、Codex）；沒有回報為 undefined。 */
   resetCredits?: ResetCredits;
+  /** 後端明確回報的額外使用額度；沒有回報為 undefined。 */
+  extraUsage?: ExtraUsage;
 }
 
 export interface UsageState {

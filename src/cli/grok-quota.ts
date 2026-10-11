@@ -1,6 +1,7 @@
 // Official contracts: xai-org/grok-build xai-grok-shell/extensions/billing.rs,
 // xai-grok-env/lib.rs and xai-grok-login/config.rs. Never accept endpoint overrides.
 import { readGrokCredentials } from './grok-credentials.ts';
+import type { ExtraUsage } from '../shared/types.ts';
 import type { CliEvent } from './provider.ts';
 
 type QuotaEvent = Extract<CliEvent, { type: 'quota' }>;
@@ -45,12 +46,13 @@ export function grokBillingQuota(value: unknown, at = new Date().toISOString()):
   const windows = [{ label, usedPercent, resetsAt }];
   const cap = cents(config['onDemandCap']);
   const onDemandUsed = cents(config['onDemandUsed']);
+  const extraUsage: ExtraUsage = { unlimited: false, currency: 'USD', balance: cap !== undefined && onDemandUsed !== undefined ? Math.max(0, cap - onDemandUsed) : 0 };
   if (cap !== undefined && cap > 0 && onDemandUsed !== undefined) {
     windows.push({ label: 'on-demand', usedPercent: Math.min(100, onDemandUsed / cap * 100), resetsAt });
   }
   const prepaidCents = cents(config['prepaidBalance']);
   const limited = usedPercent >= 100 && !(prepaidCents !== undefined && prepaidCents > 0) && !(cap !== undefined && cap > 0 && onDemandUsed !== undefined && onDemandUsed < cap);
-  return { type: 'quota', windows, limited, at, ...(prepaidCents !== undefined ? { prepaidCents } : {}) };
+  return { type: 'quota', windows, limited, at, extraUsage, ...(prepaidCents !== undefined ? { prepaidCents } : {}) };
 }
 
 interface QuotaOptions {

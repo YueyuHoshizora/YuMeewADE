@@ -2,8 +2,8 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import { DEFAULT_CONFIG } from '../shared/config.ts';
-import { ClaudeCliProvider, claudeArgs, claudeOauthQuota, claudeQuota, claudeResetCredits, createClaudeParser, fetchClaudeQuota } from './claude.ts';
-import { CodexCliProvider, codexAppServerQuota, codexArgs, codexQuota, createCodexParser, fetchCodexQuota, readCodexQuota } from './codex.ts';
+import { ClaudeCliProvider, claudeArgs, claudeExtraUsage, claudeOauthQuota, claudeQuota, claudeResetCredits, createClaudeParser, fetchClaudeQuota } from './claude.ts';
+import { CodexCliProvider, codexAppServerQuota, codexArgs, codexExtraUsage, codexQuota, createCodexParser, fetchCodexQuota, readCodexQuota } from './codex.ts';
 import { captureCommand, redactArgs } from './process.ts';
 import { MockCliProvider } from './mock.ts';
 import type { CliEvent } from './provider.ts';
@@ -530,4 +530,23 @@ test('Claude 即時用量查詢：帶 Bearer 憑證與 beta 標頭，HTTP 錯誤
     server.close();
     await fs.rm(dir, { recursive: true, force: true });
   }
+});
+
+test('Claude extra_usage：餘額＝月上限－已用，缺幣別預設 USD，沒有／未啟用／沒上限都是 0，格式錯誤忽略', () => {
+  assert.deepEqual(claudeExtraUsage({ extra_usage: { is_enabled: true, monthly_limit: 5000, used_credits: 1234.5, utilization: 24.7, currency: 'eur' } }), { unlimited: false, currency: 'EUR', balance: 3765.5 });
+  assert.equal(claudeExtraUsage({ extra_usage: { is_enabled: true, monthly_limit: 100, used_credits: 300 } })?.balance, 0);
+  assert.equal(claudeExtraUsage({ extra_usage: { is_enabled: true, monthly_limit: null, used_credits: 5 } })?.balance, 0);
+  assert.equal(claudeExtraUsage({ extra_usage: { is_enabled: false, monthly_limit: 5000, used_credits: 0 } })?.balance, 0);
+  for (const none of [{ extra_usage: null }, {}]) assert.deepEqual(claudeExtraUsage(none), { unlimited: false, currency: 'USD', balance: 0 });
+  for (const bad of [{ extra_usage: { monthly_limit: 1 } }, { extra_usage: 5 }, null]) assert.equal(claudeExtraUsage(bad), undefined);
+});
+
+test('Codex credits：balance 是美元的十進位字串（換算成 cents），沒有數字的餘額視為 0', () => {
+  assert.deepEqual(codexExtraUsage({ hasCredits: true, unlimited: false, balance: '12.5' }), { unlimited: false, currency: 'USD', balance: 1250 });
+  assert.equal(codexExtraUsage({ hasCredits: false, unlimited: false, balance: '0' })?.balance, 0);
+  assert.equal(codexExtraUsage({ hasCredits: true, unlimited: true, balance: null })?.balance, 0);
+  assert.equal(codexExtraUsage({ hasCredits: true, unlimited: false, balance: 'abc' })?.balance, 0);
+  for (const bad of [null, 'x', { hasCredits: true }, { unlimited: false }]) assert.equal(codexExtraUsage(bad), undefined);
+  const quota = codexAppServerQuota({ rateLimits: { primary: { usedPercent: 10, windowDurationMins: 300, resetsAt: 1791948586 }, credits: { hasCredits: true, unlimited: false, balance: '3' } } }, 'T');
+  assert.equal(quota?.extraUsage?.balance, 300);
 });

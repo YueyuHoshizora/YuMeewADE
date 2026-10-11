@@ -9,7 +9,7 @@ const billing = (config: Record<string, unknown>) => ({ config });
 test('Grok current credit percent includes zero, exhaustion and restored quota', () => {
   for (const percent of [0, 4, 100, 25]) {
     const quota = grokBillingQuota(billing({ creditUsagePercent: percent, currentPeriod: { type: 'USAGE_PERIOD_TYPE_WEEKLY', end: '2026-10-18T08:00:00+08:00' } }), at);
-    assert.deepEqual(quota, { type: 'quota', windows: [{ label: '7d credits', usedPercent: percent, resetsAt: '2026-10-18T00:00:00.000Z' }], limited: percent === 100, at });
+    assert.deepEqual(quota, { type: 'quota', windows: [{ label: '7d credits', usedPercent: percent, resetsAt: '2026-10-18T00:00:00.000Z' }], limited: percent === 100, at, extraUsage: { unlimited: false, currency: 'USD', balance: 0 } });
   }
 });
 
@@ -46,6 +46,7 @@ test('Grok exact purchased balance and explicit on-demand cap preserve remaining
   const capped = grokBillingQuota(billing({ ...exhausted, onDemandCap: { val: 100 }, onDemandUsed: { val: 20 } }), at);
   assert.equal(capped?.windows[1]?.usedPercent, 20);
   assert.equal(capped?.limited, false);
+  assert.deepEqual(capped?.extraUsage, { unlimited: false, currency: 'USD', balance: 80 });
   assert.equal(grokBillingQuota(billing({ ...exhausted, onDemandCap: { val: 100 }, onDemandUsed: { val: 100 } }), at)?.limited, true);
   assert.equal(grokBillingQuota(billing({ ...exhausted, onDemandCap: { val: 100 } }), at)?.windows.length, 1);
   assert.equal(grokBillingQuota(billing({ ...exhausted, prepaidBalance: { val: '123' } }), at)?.prepaidCents, undefined);

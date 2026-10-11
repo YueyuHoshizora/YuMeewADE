@@ -11,6 +11,7 @@ export const ja: Record<MessageKey, string> = {
   'usage.accountNotice': 'フッターには各 AI の使用中アカウントだけを表示します。切り替えは次の指示から有効で、実行中の作業は変わりません。取得に対応した利用枠は既定で 5 分ごとに更新し、使い切った時と回復した時に通知します。取得失敗時は前回のデータを保持し、リアルタイムの値ではありません。',
   'usage.refresh': '利用枠を今すぐ取得', 'usage.ready': '取得成功', 'usage.unavailable': '現在取得できません', 'usage.noData': '利用枠データはまだありません。手動で取得するか次の更新をお待ちください',
   'usage.prepaidBalance': 'プリペイド残高 {balance}',
+  'usage.extraTitle': '追加利用枠', 'usage.extraUnlimited': '上限なし', 'usage.extraBalance': '残高 {amount}',
   'usage.resetCredits': 'リセット券 {count} 枚', 'usage.resetCreditDefault': 'リセット券', 'usage.resetCreditExpires': '{title} · {expires} に期限切れ', 'usage.resetCreditNoExpiry': '{title} · 期限なし',
   'usage.weeklyCredits': '週間利用枠', 'usage.monthlyCredits': '月間利用枠', 'usage.credits': '利用枠', 'usage.onDemand': '従量課金', 'usage.remaining': '残り {percent}%',
   'usage.averageSpeed': '{speed} 平均 tok/s', 'usage.measuredSpeed': '直近の CLI が報告した実際の出力 token 合計を計測区間の和集合の長さで割り、計測を 4 秒間保持します。未計測は — で表示し、リアルタイムの生成速度ではありません。Claude は各メッセージ（交錯するサブエージェントを含む）を個別に計測し、連続するメッセージは上書きせず保持します。Codex／Grok は待機・ツールを含むターン全体です。Gemini は完了したステップのスナップショットを累計し、同じステップの再送は二重計上せず、修正値は旧値を置き換えます。CLI が報告する思考用量を含み、推定はしません。',

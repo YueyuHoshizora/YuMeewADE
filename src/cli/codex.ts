@@ -5,7 +5,7 @@ import { promises as fs } from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import type { CliCommandConfig } from '../shared/config.ts';
-import type { QuotaWindow, ResetCredit, ResetCredits } from '../shared/types.ts';
+import type { ExtraUsage, QuotaWindow, ResetCredit, ResetCredits } from '../shared/types.ts';
 import { findExecutable, minimalEnv, runLineProcess, terminateTree } from './process.ts';
 import type { CliEvent, CliProvider, CliRun, SendOptions } from './provider.ts';
 import { codexPrompts, expandCodexPrompt, slashName } from './commands.ts';
@@ -72,6 +72,15 @@ export function codexResetCredits(value: unknown): ResetCredits | undefined {
   return { availableCount: count, credits };
 }
 
+/** app-server 的 `credits`（額外點數）：balance 是十進位字串、美元；格式不符的整體忽略；沒有餘額數字視為 0。 */
+export function codexExtraUsage(value: unknown): ExtraUsage | undefined {
+  if (!value || typeof value !== 'object') return undefined;
+  const c = value as Record<string, unknown>;
+  if (typeof c['hasCredits'] !== 'boolean' || typeof c['unlimited'] !== 'boolean') return undefined;
+  const balance = typeof c['balance'] === 'string' && /^\d+(\.\d+)?$/.test(c['balance']) ? Math.round(Number(c['balance']) * 100) : 0;
+  return { unlimited: c['unlimited'], currency: 'USD', balance };
+}
+
 /** app-server `account/rateLimits/read` 的回應（camelCase、同一份後端即時資料）→ 額度窗口與重置券；窗口沿用 rollout 的解析。 */
 export function codexAppServerQuota(result: unknown, at: string): QuotaEvent | null {
   if (!result || typeof result !== 'object') return null;
@@ -89,7 +98,8 @@ export function codexAppServerQuota(result: unknown, at: string): QuotaEvent | n
   }
   const quota = codexQuota(snake, at);
   const resetCredits = codexResetCredits(r['rateLimitResetCredits']);
-  return quota && resetCredits ? { ...quota, resetCredits } : quota;
+  const extraUsage = codexExtraUsage(s['credits']);
+  return quota ? { ...quota, ...(resetCredits ? { resetCredits } : {}), ...(extraUsage ? { extraUsage } : {}) } : null;
 }
 
 /** 即時額度查詢逾時；app-server 要連後端，網路差時不能卡住啟動或重新整理。 */
