@@ -540,3 +540,4 @@ electron 44.7.0、vite 8.3.4、electron-builder 26.15.3、typescript 7.0.2、@ty
 - GitHub Issues：手動搜尋最多 30 筆 open issues，本文上限 10,000 字，從 issue 建立作業並預填可編輯的標題／第一指示草稿，寫入 `issue`／`issueUrl`；不自動送出。專案頁同時顯示 PROJECT.md 人工維護的本地 issues（text／level），不混淆遠端清單；路由同 PR 信任門檻。
 - 命令面板：⌘/Ctrl+Shift+P，穩定排序的模糊篩選、原生 modal dialog／combobox／listbox、鍵盤選取；依路由列出檔案／Git／執行操作，支援所有專案作業、語言、外觀、封存清單與確認後停止全部 AI。
 - 前往檔案：專案／作業 ⌘/Ctrl+P 使用 `/api/task/files`，150ms debounce、過期查詢與選取失效處理；`path:line` 支援 1 起算正整數行號，以 `yumeewade:open-file` 事件傳給編輯器。
+- 快捷鍵說明：非輸入狀態 `?`／⌘/Ctrl+/ 開啟可存取原生 dialog；七語系列出現有全域、面板、編輯器儲存、樹狀清除、slash／mention 建議、composer IME／Enter 規則與終端轉送操作，不搶原有快捷鍵。

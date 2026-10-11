@@ -89,8 +89,28 @@ export function openGoToFile(context: ViewContext): boolean {
   }, 150);
   return true;
 }
+export function openShortcutHelp(): void {
+  active?.close();
+  const dialog = el('dialog', 'modal'); active = dialog;
+  dialog.setAttribute('role', 'dialog'); dialog.setAttribute('aria-label', t('palette.help'));
+  const shortcuts = [
+    ['⌘/Ctrl+Shift+P', t('palette.title')], ['⌘/Ctrl+P', t('palette.gotoFile')],
+    ['? · ⌘/Ctrl+/', t('palette.help')], ['/ · ⌘/Ctrl+K', t('palette.sidebar')],
+    ['⌘/Ctrl+Shift+F', t('search.title')], ['⌘/Ctrl+Enter · Enter · Shift+Enter', t('palette.send')],
+    ['↑↓ · Enter · Tab · Esc', t('palette.menuKeys')], ['Esc', t('palette.treeEsc')],
+    ['⌘/Ctrl+S', t('palette.save')], ['Ctrl · Enter · ↑↓←→', t('palette.terminal')],
+  ];
+  if (document.querySelector('.cm-editor')) shortcuts.push(['⌘/Ctrl+F · ⌘/Ctrl+Z · ⌘/Ctrl+Shift+Z · Ctrl+Y · Ctrl+Space · ⌘/Ctrl+Shift+L', t('palette.editorKeys')]);
+  dialog.append(row(el('h2', '', t('palette.help')), button(t('common.close'), () => dialog.close())), ...shortcuts.map(([keys, description]) => row(el('kbd', '', keys), el('span', '', description))));
+  dialog.addEventListener('close', () => { dialog.remove(); if (active === dialog) active = undefined; });
+  document.body.append(dialog); dialog.showModal();
+}
 export function paletteShortcut(event: KeyboardEvent, context: ViewContext): boolean {
   if (event.isComposing || event.keyCode === 229 || event.defaultPrevented) return false;
+  const typing = event.target instanceof Element && Boolean(event.target.closest('input,textarea,select,[contenteditable]'));
+  if (((event.ctrlKey || event.metaKey) && !event.altKey && event.key === '/') || (!typing && !event.ctrlKey && !event.metaKey && !event.altKey && event.key === '?')) {
+    event.preventDefault(); openShortcutHelp(); return true;
+  }
   if ((event.ctrlKey || event.metaKey) && event.shiftKey && event.key.toLowerCase() === 'p') { event.preventDefault(); openCommandPalette(context); return true; }
   if ((event.ctrlKey || event.metaKey) && !event.shiftKey && !event.altKey && event.key.toLowerCase() === 'p' && openGoToFile(context)) { event.preventDefault(); return true; }
   return false;
