@@ -2,6 +2,7 @@ import type { CareBackup, CareHealth, CareCapacity, CareLifecycle } from '../../
 import { api, request } from '../api.ts';
 import { t } from '../i18n/index.ts';
 import { button, card, confirmModal, el, field, input, modal, readLocal, row, storeLocal, type ViewContext } from './dom.ts';
+import { logViewer } from './log-viewer.ts';
 
 export function carePanel(context: ViewContext): HTMLElement {
   const status = el('div'); status.setAttribute('aria-live', 'polite');
@@ -90,6 +91,7 @@ export function carePanel(context: ViewContext): HTMLElement {
       showSchedule(await request<CareLifecycle>('/api/care/schedule', { enabled: enabled.checked, intervalHours: Number(interval.value), retention: Number(retention.value), includeExternal: external.checked }));
     }), scheduleStatus,
     el('p', '', t('care.diagnosticScope')), download);
+  panel.append(logViewer());
   void refresh().catch(() => { status.textContent = t('care.transferFailed'); });
   return panel;
 }

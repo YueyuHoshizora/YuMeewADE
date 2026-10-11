@@ -720,3 +720,5 @@ export interface CareDiagnostics {
   providers: { name: string; available: boolean; version: string; fullAccess: boolean; loginState: 'stored' | 'missing' | 'unknown' }[];
   counts: { projects: number; tasks: number; running: number }; errorCodes: string[];
 }
+
+export interface LogTail { text: string; truncated: boolean; }

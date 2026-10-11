@@ -5,6 +5,7 @@ import { createReadStream, promises as fs } from 'node:fs';
 import { pipeline } from 'node:stream/promises';
 import { PORTABLE_LIMIT } from '../../ledger/portable-backup.ts';
 import type { CareSchedule } from '../../shared/types.ts';
+import { readLogTail } from '../../shared/log.ts';
 
 function passwordHeader(headers: { [key: string]: string | string[] | undefined }): string {
   const value = headers['x-backup-password'];
@@ -15,6 +16,10 @@ function passwordHeader(headers: { [key: string]: string | string[] | undefined 
 }
 
 export function registerCareRoutes(router: Router, app: App): void {
+  router.get('/api/care/log', async ({ res }) => {
+    res.setHeader('Cache-Control', 'no-store');
+    return app.mutations.run(() => readLogTail(app.ws.root));
+  });
   router.get('/api/care/health', async () => app.mutations.run(() => app.care.health()));
   router.post('/api/care/health', async ({ body }) => {
     if (typeof body.network !== 'boolean') throw new AppError('bad_request');

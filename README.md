@@ -10,6 +10,7 @@
 > - 核心只監聽 `http://127.0.0.1:4560`，**沒有登入、沒有認證**。這是刻意的：它是單人本機工具，不是網頁服務。本機上的其他程序可以呼叫它。請勿改綁 `0.0.0.0`，也不要把 port 轉發到外部。
 > - **AI 預設擁有完整權限**：claude 以 `--dangerously-skip-permissions`、codex 以 `--dangerously-bypass-approvals-and-sandbox`、grok 以 `--always-approve` 啟動，會用你的帳號權限改檔與執行任何指令（與 project-hub 相同；使用者 2026-10-10 決定）。可以在「設定 → AI 工具 → 完整權限」逐一關閉。關閉後 claude 只自動接受改檔，codex 在工作目錄沙箱內執行，grok 以 `dontAsk` 拒絕需要核准的操作。
 > - CLI 管理 AI 費用與 OAuth 登入，App 不保證不產生費用。App **會保存並更新憑證**：透過 Electron `safeStorage` 的作業系統保護加密後，存入 App 私有目錄的 `credentials.sqlite`（Node `node:sqlite`），不在工作區。Linux 必須有受支援的 libsecret／KWallet；不可用時拒絕啟動，不退回明文。核心為 CLI 還原隔離帳號檔案，並保存刷新後憑證；額度僅送固定官方端點。憑證不回傳 App API／畫面／日誌，但隔離 CLI 檔案與恢復快照可能含機密，不能公開分享。
+> - 本機 `GET /api/care/log` 檢視器刻意允許本機使用者讀取既有日誌堆疊；只讀固定檔案且限制大小，沿用 loopback／Host／Origin 保護，無遠端認證。home 轉為 `~` 並防禦遮蔽憑證與 token-like 文字，但不能保證任意日誌無機密，複製或分享前務必人工檢查。
 
 ## 畫面與流程
 
@@ -49,6 +50,7 @@
   - 下方可以改狀態與階段、勾選步驟（`## 步驟` 清單）、留下備註。步驟全勾或 AI 自己寫了「完成」時，會進入「確認完成」，由人決定。
 - **設定**：語言（7 種）、Enter／⌘+Enter 送出、通知開關、工作區根目錄（可直接切換，寫回設定檔；桌面版可用「選擇…」挑資料夾）、新作業預設 AI、AI 工具（版本、重新取得模型、更新 CLI、完整權限開關）、選單顯示的模型與順序、角色分工（寫回 `roles.yaml`）、最近操作紀錄。
 - **AI 入門**：設定顯示 CLI 未安裝／已安裝但帳號未知／無帳號／已就緒；提供官方文件與可複製安裝指令（不自動安裝），無帳號直接開啟既有新增流程。首頁／新專案在無可用 AI 時提供可略過提醒。Antigravity 官方安裝：[文件](https://antigravity.google/docs/cli/install/)。
+- **本機核心日誌**：設定／Care 可檢視 `.yumeewade/yumeewade.log` 最後 256 KiB／1000 行，按等級與文字篩選、重新整理、複製。
 
 Claude／Codex 模型清單直接讀 CLI 自己的快取（`~/.codex/models_cache.json`、`~/.claude/cache/model-catalog/`），讀不到才用內建清單。Grok 清單來自目前帳號的 `grok models`，思考強度只補入同一帳號 `models_cache.json` 的已知能力；不猜模型或強度。初次查詢失敗不提供虛構清單，重新取得失敗保留該帳號先前的結果。
 
@@ -197,6 +199,7 @@ HTTP JSON 加 SSE，桌面版與網頁版完全相同。型別定義在 [`src/sh
 | 審查／流程 | `GET /api/review/capabilities`；`POST /api/review/run`、`/api/review/stop`；`GET /api/task/workflow`；`POST /api/task/workflow/{configure,start,stop,approve}` |
 | 背景／草稿 | `GET/POST /api/task/context`、`GET /api/task/handoff`；`GET/POST /api/chat/draft`、`GET /api/chat/draft-image` |
 | 維護 | `GET/POST /api/care/health`；`GET /api/care/backups`、`/api/care/diagnostics`；`POST /api/care/backup`（includeExternal）、`/api/care/restore`（id、destination） |
+| 核心日誌 | `GET /api/care/log`（固定尾端 256 KiB／1000 行，遮蔽後回傳 `{text,truncated}`，不接受檔案路徑） |
 
 錯誤回應為 `{error, message, detail?, field?}`：`detail` 是可翻譯的代碼，UI 依語言顯示；內部原因只進本地日誌。
 
