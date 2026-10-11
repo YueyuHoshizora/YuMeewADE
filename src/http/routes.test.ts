@@ -7,6 +7,7 @@ import { test } from 'node:test';
 import { startTestServer } from '../testing/server.ts';
 import type { AppState, Project, Settings, Task } from '../shared/types.ts';
 import { MockCliProvider } from '../cli/mock.ts';
+import { gitOk } from '../git/git.ts';
 
 async function setup() {
   const server = await startTestServer('', { providers: { mock: new MockCliProvider(5) } });
@@ -71,6 +72,23 @@ test('phase offer, continuation key, legacy fallback, order and pins', async () 
     assert.equal(result.projects.find((project) => project.id === p.id)!.pinned, true);
     assert.equal((await s.api('POST', '/api/pin', { project: p.id, pinned: 'true' })).status, 400);
     assert.equal((await s.api('GET', '/api/log?n=bad')).status, 400);
+  } finally { await s.close(); }
+});
+
+test('force archive discards the copy but keeps its work on the task branch', async () => {
+  const { server: s, project: p, task: t } = await setup();
+  const ids = { project: p.id, task: t.id };
+  try {
+    const copy = await s.app.worktree.prepare(p.id, t.id);
+    await fs.writeFile(path.join(copy, 'unmerged.txt'), 'keep me');
+    const refused = await s.api('POST', '/api/task/archive', { ...ids, force: 'yes' });
+    assert.equal(refused.status, 409);
+    assert.equal((refused.json as { detail?: string }).detail, 'archive_has_worktree');
+    assert.equal((await s.api('POST', '/api/task/archive', { ...ids, force: true })).status, 200);
+    assert.equal(await fs.access(copy).then(() => true, () => false), false);
+    const repo = await s.app.worktree.bodyPath(p.id);
+    assert.equal(await fs.readFile(path.join(repo, 'unmerged.txt'), 'utf8').catch(() => null), null);
+    assert.equal((await gitOk(repo, ['show', `${s.app.worktree.branch(t.id)}:unmerged.txt`])), 'keep me');
   } finally { await s.close(); }
 });
 

@@ -345,6 +345,24 @@ export class WorktreeService {
   async exclusion(project: string, task: string, excluded: boolean): Promise<Task> {
     return this.mutate(project, () => this.tasks.update(project, task, { mergeExcluded: excluded }));
   }
+  /** 強制封存前放棄副本：未提交的內容先存成作業分支（ym/…）上的 commit，再移除副本；分支保留，成果仍可取回，不合併進主資料夾。 */
+  async abandon(project: string, task: string): Promise<void> {
+    await this.mutate(project, async () => {
+      const { record, repo, dir } = await this.copy(project, task);
+      // 直接在主資料夾工作的作業，workdir 就是主資料夾本身，絕不能移除。
+      if (record.workspace !== 'direct') {
+        const target = dir || this.ws.worktreeDir(project, task);
+        if (await pathExists(target)) {
+          await this.verifyFamily(repo, target);
+          await commitAll(target, `${record.title}（封存前儲存）`);
+          await gitOk(repo, ['worktree', 'remove', '--force', target]);
+        }
+        await git(repo, ['worktree', 'prune']);
+      }
+      if (record.workdir) await this.tasks.update(project, task, { workdir: '' });
+      await new OpLog(this.ws).record({ action: 'abandon', project, task });
+    });
+  }
   async copyclear(project: string, task: string): Promise<Task> {
     return this.mutate(project, () => this.copyclearLocked(project, task));
   }

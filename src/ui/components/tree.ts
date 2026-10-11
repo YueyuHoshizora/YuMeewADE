@@ -1,7 +1,7 @@
 import type { AppState, ProjectView, TaskView } from '../../shared/types.ts';
 import { request } from '../api.ts';
 import { t } from '../i18n/index.ts';
-import { button, confirmModal, disclosure, el, input, link, projectHash, renameModal, run, taskHash, type ViewContext } from './dom.ts';
+import { archiveFlow, button, confirmModal, disclosure, el, input, link, projectHash, renameModal, run, taskHash, type ViewContext } from './dom.ts';
 import { filterTree } from './tree-filter.ts';
 
 const collapsed = new Set<string>(); const seenAttention = new Set<string>();
@@ -83,7 +83,7 @@ export function tree(context: ViewContext): HTMLElement {
       { label: t('common.rename'), action: async () => { const title = await renameModal(task.title); if (title) { await request('/api/task/update', { project: p.id, task: task.id, patch: { title } }); await refresh(); } } },
       { label: t('tree.subtask'), action: () => { location.hash = `${projectHash(p.id)}?parent=${encodeURIComponent(task.id)}#add`; } },
       { label: t('tree.newBranch'), action: () => { location.hash = `${projectHash(p.id)}?derived=${encodeURIComponent(task.id)}#add`; } },
-      { label: t('common.archive'), action: async () => { if (await confirmModal(t('common.archive'), t('common.confirmArchive', { name: task.title }), t('common.archive'))) { await request('/api/task/archive', { project: p.id, task: task.id }); await refresh(); } } },
+      { label: t('common.archive'), action: async () => { if (await archiveFlow('/api/task/archive', { project: p.id, task: task.id }, task.title, 'archive_has_worktree')) await refresh(); } },
     ]));
     wrap.append(line);
     if (task.kind === 'derived') wrap.append(el('div', 'branch-label', t('tree.branch', { source: p.tasks.find(t => t.id === task.derivedFrom)?.title ?? task.derivedFrom })));
@@ -129,7 +129,7 @@ export function tree(context: ViewContext): HTMLElement {
       { label: t(p.pinned ? 'tree.unpin' : 'tree.pin'), action: async () => { await request('/api/pin', { project: p.id, pinned: !p.pinned }); await refresh(); } },
       { label: t('tree.up'), action: () => move(p, -1) }, { label: t('tree.down'), action: () => move(p, 1) },
       { label: t('tree.subproject'), action: () => { location.hash = `#/new?parent=${encodeURIComponent(p.id)}`; } },
-      { label: t('common.archive'), action: async () => { if (await confirmModal(t('common.archive'), t('common.confirmArchive', { name: p.name }), t('common.archive'))) { await request('/api/project/archive', { project: p.id }); await refresh(); } } },
+      { label: t('common.archive'), action: async () => { if (await archiveFlow('/api/project/archive', { project: p.id }, p.name, 'archive_project_has_worktrees')) await refresh(); } },
     ]));
     wrap.append(line); const notices = badges(p, p.tasks); if (notices.childNodes.length) wrap.append(notices);
     const nest = el('div', 'tree-children');

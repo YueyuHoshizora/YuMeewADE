@@ -79,6 +79,8 @@ export const en: Record<MessageKey, string> = {
   'common.empty': 'No items yet',
   'common.saved': 'Saved',
   'common.confirmArchive': 'Archive “{name}”? Data will move to the archive, not be deleted.',
+  'common.forceArchive': 'Force archive',
+  'common.confirmForceArchive': '“{name}” still has an unmerged working copy. Force archive removes the copy without merging it; its changes are first saved as a commit on the task branch (ym/…). Force archive anyway?',
   'common.title': 'Title',
   'common.name': 'Name',
   'common.details': 'Details (optional)',

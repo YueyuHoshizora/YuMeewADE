@@ -79,6 +79,8 @@ export const zhCN: Record<MessageKey, string> = {
   'common.empty': '暂无项目',
   'common.saved': '已保存',
   'common.confirmArchive': '确定归档“{name}”？数据会移至归档区，不会删除。',
+  'common.forceArchive': '强制归档',
+  'common.confirmForceArchive': '“{name}”还有尚未合并的工作副本。强制归档会移除副本、不合并进主文件夹；副本内的更改会先保存为任务分支（ym/…）上的 commit 保留。确定要强制归档？',
   'common.title': '标题',
   'common.name': '名称',
   'common.details': '详细设置（选填）',

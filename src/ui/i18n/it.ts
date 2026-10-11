@@ -79,6 +79,8 @@ export const it: Record<MessageKey, string> = {
   'common.empty': 'Nessun elemento',
   'common.saved': 'Salvato',
   'common.confirmArchive': 'Archiviare «{name}»? I dati saranno spostati nell’archivio, non eliminati.',
+  'common.forceArchive': 'Forza archiviazione',
+  'common.confirmForceArchive': '«{name}» ha ancora una copia di lavoro non unita. Forzare l’archiviazione rimuove la copia senza unirla; le modifiche vengono prima salvate come commit sul branch dell’attività (ym/…). Forzare comunque?',
   'common.title': 'Titolo',
   'common.name': 'Nome',
   'common.details': 'Dettagli (facoltativi)',

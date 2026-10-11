@@ -79,6 +79,8 @@ export const de: Record<MessageKey, string> = {
   'common.empty': 'Noch keine Einträge',
   'common.saved': 'Gespeichert',
   'common.confirmArchive': '„{name}“ archivieren? Die Daten werden ins Archiv verschoben, nicht gelöscht.',
+  'common.forceArchive': 'Erzwungen archivieren',
+  'common.confirmForceArchive': '„{name}“ hat noch eine nicht gemergte Arbeitskopie. Erzwungenes Archivieren entfernt die Kopie ohne Merge; die Änderungen werden zuvor als Commit auf dem Aufgaben-Branch (ym/…) gesichert. Trotzdem erzwingen?',
   'common.title': 'Titel',
   'common.name': 'Name',
   'common.details': 'Details (optional)',

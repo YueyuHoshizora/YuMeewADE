@@ -4,7 +4,7 @@ import { t } from '../i18n/index.ts';
 import { attachments } from '../components/attachments.ts';
 import { aiPicker } from '../components/picker.ts';
 import { markdown } from '../components/markdown.ts';
-import { area, button, card, confirmModal, disclosure, el, field, input, lines, link, projectHash, readLocal, row, run, select, storeLocal, taskHash, toast, type View, type ViewContext } from '../components/dom.ts';
+import { archiveFlow, area, button, card, confirmModal, disclosure, el, field, input, lines, link, projectHash, readLocal, row, run, select, storeLocal, taskHash, toast, type View, type ViewContext } from '../components/dom.ts';
 import { localTime } from '../components/display.ts';
 import { shouldSend } from '../components/composer.ts';
 import { attachSlashCommands } from '../components/slash-menu.ts';
@@ -79,9 +79,7 @@ export function projectView(context: ViewContext, project: ProjectView, params: 
         await request('/api/project/update', { project: project.id, patch: { status: project.status === '完成' ? '進行中' : '完成' } }); await context.refresh();
       }),
       button(t('common.archive'), async () => {
-        if (await confirmModal(t('common.archive'), t('common.confirmArchive', { name: project.name }), t('common.archive'))) {
-          await request('/api/project/archive', { project: project.id }); await context.refresh(); location.hash = '#/turn';
-        }
+        if (await archiveFlow('/api/project/archive', { project: project.id }, project.name, 'archive_project_has_worktrees')) { await context.refresh(); location.hash = '#/turn'; }
       }, 'danger'),
     );
     overview.append(header, actions, disclosure(t('project.notes'), markdown(project.description + '\n\n' + project.notes)));

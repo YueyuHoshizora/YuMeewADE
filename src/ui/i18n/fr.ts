@@ -79,6 +79,8 @@ export const fr: Record<MessageKey, string> = {
   'common.empty': 'Aucun élément',
   'common.saved': 'Enregistré',
   'common.confirmArchive': 'Archiver « {name} » ? Les données seront déplacées dans les archives, sans être supprimées.',
+  'common.forceArchive': 'Forcer l’archivage',
+  'common.confirmForceArchive': '« {name} » a encore une copie de travail non fusionnée. Forcer l’archivage supprime la copie sans la fusionner ; ses modifications sont d’abord enregistrées dans un commit sur la branche de la tâche (ym/…). Forcer quand même ?',
   'common.title': 'Titre',
   'common.name': 'Nom',
   'common.details': 'Détails (facultatif)',

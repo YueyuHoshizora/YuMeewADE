@@ -79,6 +79,8 @@ export const ja: Record<MessageKey, string> = {
   'common.empty': '項目はありません',
   'common.saved': '保存しました',
   'common.confirmArchive': '「{name}」をアーカイブしますか？データはアーカイブへ移動し、削除されません。',
+  'common.forceArchive': '強制アーカイブ',
+  'common.confirmForceArchive': '「{name}」にはマージされていない作業コピーがあります。強制アーカイブはマージせずにコピーを削除します。変更は先にタスクブランチ（ym/…）のコミットとして保存されます。強制アーカイブしますか？',
   'common.title': 'タイトル',
   'common.name': '名前',
   'common.details': '詳細設定（任意）',
