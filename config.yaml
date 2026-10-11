@@ -82,6 +82,8 @@ update:
 limits:
   bodyBytes: 2097152       # JSON 請求體上限（2 MiB）
   promptChars: 100000      # 單則指示字數上限
+  mentionFileBytes: 65536   # @檔案每檔讀取上限（64 KiB）
+  mentionTotalBytes: 262144 # @檔案每次指示總讀取上限（256 KiB）
   sendPerMinute: 30        # 每來源每分鐘可送出的指示數
   concurrentRuns: 3        # 同時執行中的對話數
   sseConnections: 30       # SSE 連線數上限

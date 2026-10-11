@@ -350,6 +350,11 @@ export interface TurnChanges {
   removed: number;
 }
 
+export interface FileMention {
+  token: string; path: string; start?: number; end?: number;
+  status: 'resolved' | 'not-found' | 'truncated' | 'excluded' | 'binary';
+}
+
 export type ChatRow =
   | {
       at: string;
@@ -364,6 +369,7 @@ export type ChatRow =
       mode?: SendMode | 'answer';
       /** 附件圖片的絕對路徑。 */
       images?: string[];
+      mentions?: FileMention[];
       /** 這輪開始前工作副本的 commit（還原用）；沒有工作副本時不帶。 */
       checkpoint?: string;
     }

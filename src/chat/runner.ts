@@ -22,6 +22,7 @@ import { buildHandoff, buildPreamble, buildPrompt, inspectHandoff } from './prom
 import { buildTaskContext } from './context.ts';
 import { ChatStore, type ChatMeta } from './store.ts';
 import { attachImages } from './attachments.ts';
+import { parseMentions, resolveMentions } from './mentions.ts';
 import { parseAsk } from './ask.ts';
 import { slashName } from '../cli/commands.ts';
 import { pathExists } from '../shared/fsx.ts';
@@ -43,6 +44,8 @@ export interface RunnerDeps {
     handoffChars: number;
     imagesPerSend: number;
     runSeconds: number;
+    mentionFileBytes?: number;
+    mentionTotalBytes?: number;
   };
   publish(project: string, task: string, event: ChatEvent): void;
   watching(project: string, task: string): boolean;
@@ -385,6 +388,10 @@ export class ChatRunner extends EventEmitter {
       const selectedHistory = resumeId ? unseenRows(prior, meta, item.ai) : prior;
       const handoff = buildHandoff(selectedHistory, this.deps.limits.handoffChars, prior.length - selectedHistory.length);
       const taskContext = await buildTaskContext(this.deps.ws, p, t, cwd, this.deps.limits.handoffChars);
+      // Re-read unseen references for handoff, within the same budget; current instruction takes priority.
+      const references = await resolveMentions([item.text, ...selectedHistory.filter(r => r.role === 'user').map(r => r.text)].join('\n'), cwd, this.deps.limits);
+      const currentTokens = new Set(parseMentions(item.text).map(m => m.token));
+      const currentMentions = references.mentions.filter(m => currentTokens.has(m.token));
       assertActive();
       const user: ChatRow = {
         at: item.at, role: 'user', text: item.text, to: item.ai,
@@ -392,6 +399,7 @@ export class ChatRunner extends EventEmitter {
         ...(s.busy.mode ? { mode: s.busy.mode } : {}),
         ...(images.length ? { images } : {}),
         ...(checkpoint ? { checkpoint } : {}),
+        ...(currentMentions.length ? { mentions: currentMentions } : {}),
       };
       meta.running = {
         request: item.id, ai: item.ai, model: pick.model,
@@ -409,7 +417,7 @@ export class ChatRunner extends EventEmitter {
       this.deps.onChanged(p, t);
       await this.deps.store.writeMeta(p, t, meta);
       s.finished = this.execute(p, t, item, provider, meta, {
-        prompt: buildPrompt({ preamble, handoff, context: taskContext.text, text: command ? (command.native ? '' : command.text) : item.text, images }), cwd,
+        prompt: buildPrompt({ preamble, handoff, context: taskContext.text, references: references.text, text: command ? (command.native ? '' : command.text) : item.text, images }), cwd,
         ...(command?.native ? { slashCommand: command.text } : {}),
         ...(command?.standalone ? { standalone: true } : resumeId ? { resumeId } : {}),
         model: pick.model, effort: pick.effort,

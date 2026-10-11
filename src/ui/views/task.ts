@@ -433,6 +433,7 @@ export function taskView(
           `→ ${aiLabel(entry.to)} · ${modelLabel(context.state, entry.to, entry.model)} · ${effortLabel(entry.effort)}`
         ));
       if (entry.mode) metadata.append(el('span', 'mode-tag', t(`chat.mode.${entry.mode}`)));
+      for (const mention of entry.mentions ?? []) metadata.append(el('span', 'mode-tag', `@${mention.token} · ${t(`mention.${mention.status}`)}`));
       if (entry.checkpoint) {
         const undo = button(t('chat.rollback'), () => run(async () => {
           if (busy || !await confirmModal(t('chat.rollback'), t('chat.rollbackConfirm'), t('chat.rollback'))) return;

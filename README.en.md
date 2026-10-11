@@ -17,6 +17,7 @@ The workflow draws on [kieiken/project-hub](https://github.com/kieiken/project-h
 - **Terminal tabs**: run multiple PTYs per task; add, rename, or close tabs. Closing a running tab requires confirmation and stops its processes. `limits.concurrentRuns`, owner capabilities, and five-minute lost-owner cleanup remain enforced.
 - **Docked terminal**: open a terminal from the execution dialog. Toggle with the header button or Ctrl/⌘+`; drag the top edge (or use arrow keys) to resize. Height and visibility are remembered in localStorage. Hiding or navigating preserves running sessions and output; switch labeled project/task groups in the dock.
 
+- **File references**: `@path`, `@path#L10-20` and `@path#L5` inject numbered file text from the task working directory (main folder for direct tasks). Messages retain the original instruction and show reference status. Secrets, binaries and escaping paths are excluded; unresolved references never block sending. Ranges are extracted from the bounded file prefix; content beyond the limit is marked truncated.
 - **Left-hand tree**: tasks appear under projects; subtasks are indented with `↳`, and branch tasks are marked `⑂`. Dot colors: red = AI running, yellow = awaiting your reply, blue = awaiting completion confirmation, purple = complete, light green = previously handled, gray = not started. Unread results are marked “Unread.” The context menu (⋯) supports renaming, adding subtasks or branches, and archiving; projects also support pinning, reordering (or drag-and-drop), and adding subprojects. The search box at the top (`/` or Ctrl/⌘+K) filters projects and tasks.
 - **Your turn**: the title-bar button shows task counts for “Awaiting reply” and “Confirm completion.” Open it to “Mark complete” or “Continue.”
 - **Running panel**: while any AI is running, the status bar at the bottom shows a red “Running N”. Open it to see each running task (AI, model, elapsed time), jump to it, stop one, or “Stop all” (same as Stop inside a task, which also clears that task’s queue).
@@ -133,6 +134,7 @@ Configuration lookup order: the `YUMEEWADE_CONFIG` environment variable → `con
 | `cli` | `envPassthrough` | Additional environment variables allowed through to CLI child processes (by default, only PATH / HOME / LANG and similar variables) |
 | `limits` | `bodyBytes`、`promptChars`、`sendPerMinute`、`concurrentRuns`、`sseConnections`、`queueLength`、`handoffChars`、`heartbeatSeconds`、`diffBytes`、`uploadBytes`、`imagesPerSend`、`verifySeconds` (verification timeout, default 600)、`verifyOutputBytes` (tail bytes of verification output kept, default 65536)、`runSeconds` (maximum run time of one AI turn; it is stopped and marked as timed out beyond this, default 7200) | Resource and request limits |
 | `limits` | `usagePollSeconds` | Account quota query interval in seconds; default `60` = 1 minute |
+| `limits` | `mentionFileBytes`, `mentionTotalBytes` | @reference read limits per file / per instruction, in bytes; defaults 65536 / 262144 |
 
 ## Protocol summary (UI ⇄ core)
 

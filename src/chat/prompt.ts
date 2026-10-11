@@ -83,6 +83,6 @@ export const ASK_RULE = `# 需要人判斷時
 [[/question]]
 提供 2–4 個選項；多個問題可連續寫。`;
 
-export function buildPrompt(parts: { preamble?: string; handoff?: string; context?: string; text: string; images?: string[] }): string {
-  return [parts.preamble, ASK_RULE, parts.context, parts.handoff, `# 這次的指示\n${parts.text}`, parts.images?.length ? `圖片（請用 Read 工具查看）：\n${parts.images.join('\n')}` : ''].filter(Boolean).join('\n\n');
+export function buildPrompt(parts: { preamble?: string; handoff?: string; context?: string; references?: string; text: string; images?: string[] }): string {
+  return [parts.preamble, ASK_RULE, parts.context, parts.handoff, `# 這次的指示\n${parts.text}`, parts.references, parts.images?.length ? `圖片（請用 Read 工具查看）：\n${parts.images.join('\n')}` : ''].filter(Boolean).join('\n\n');
 }

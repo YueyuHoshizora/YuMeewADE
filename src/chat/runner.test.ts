@@ -40,6 +40,23 @@ async function setup(ws: Workspace, options: MockOptions = {}, runSeconds = 600,
   const send = (text: string, extra: Partial<Parameters<ChatRunner['send']>[0]> = {}) => runner.send({ project: 'P', task: task.id, text, ...extra });
   return { runner, store, settings, projects, tasks, task, send, calls, events, usageAccounts, completion, restored, ranges, forks, mock, watch: () => { watching = true; } };
 }
+test('Mock CLI receives numbered file references on first send, resume and provider handoff while stored text stays original', () => withTmpWorkspace(async ws => {
+  const s = await setup(ws);
+  await fs.writeFile(path.join(ws.projectDir('P'), 'sample.ts'), 'first\nreference payload\nthird');
+  for (const ai of ['codex', 'codex', 'claude']) {
+    const text = ai === 'claude' ? 'Continue' : 'Read @sample.ts#L2 @missing';
+    await s.send(text, { ai });
+    await s.runner.whenIdle();
+    assert.match(s.calls.at(-1)!.prompt, /# 引用檔案/u);
+    assert.match(s.calls.at(-1)!.prompt, /2: reference payload/u);
+    const user = (await s.store.readLog('P', s.task.id)).findLast(r => r.role === 'user');
+    assert.ok(user?.role === 'user');
+    assert.equal(user.text, text);
+    assert.deepEqual(user.mentions?.map(m => m.status) ?? [], ai === 'claude' ? [] : ['resolved', 'not-found']);
+  }
+  assert.ok(s.calls[1]?.resumeId);
+  assert.match(s.calls[2]!.prompt, /previous_conversation/u);
+}));
 test('standalone CLI reports preserve resumable conversation state on success and failure', () => withTmpWorkspace(async ws => {
   const s = await setup(ws);
   await s.send('start conversation');

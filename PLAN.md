@@ -185,6 +185,7 @@ Roles   { models, roles: { role: { main, backup, job } }, permissions }   // rol
 - Task 狀態機：未開始 → 進行中 → 等待回覆 → 暫停 → 完成（狀態值入檔，UI 下拉選單同源）。
 - 併發保證：單一後端程序為唯一寫者；檔案寫入採「寫暫存檔後原子搬移」；JSONL 只追加不改寫。
 - 持久化：全部落地為檔案；重啟後對話、隊列、worktree 狀態皆可還原（與範圍外一致：無 DB）。
+- user ChatRow 可附 `mentions: [{token,path,start?,end?,status}]`；status＝resolved／not-found／truncated／excluded／binary。只存解析狀態，不存檔案內容；原始指示 text 不變。
 - 跨平台路徑：一律以 Node `path` API 組路徑；檔案名稱（專案名／作業 ID）走白名單正則，兼容 Windows 分隔符與大小寫不敏感檔案系統（見第九節風險）。
 
 ---
@@ -530,3 +531,4 @@ electron 44.7.0、vite 8.3.4、electron-builder 26.15.3、typescript 7.0.2、@ty
 - Git 工作台增加有界分頁圖形歷史、檔案歷史、提交詳情與 blame；所有新 Git 路由沿用專案信任閘門。
 - Stash 建立／套用／pop／確認刪除；cherry-pick 衝突自動回滾，非互動 rebase dirty 拒絕及三方解決後 continue／abort。
 - CodeMirror 6 工作台取代 textarea／正規式上色，保留 v3 復原、雙面板、revision 原子儲存及既有檔案／LSP 操作；新增行號、摺疊、多游標／矩形選取、undo／redo、括號匹配及內建搜尋面板，涵蓋主要語言。文件上限依 HTTP body 預算（最高 8 MiB）及 JSON 跳脫成本判斷，無法安全儲存者唯讀。
+- `@path`、`@path#L10-20`、`@path#L5` 在每次真正送出時依 CLI cwd 解析，所有 provider／續聊／交接共用引用區。realpath 防逃逸、機密名稱與 `.git` 排除、二進位略過；每檔 64 KiB、總計 256 KiB（`limits.mentionFileBytes`／`mentionTotalBytes`），顯示行號及截斷提示；失敗不阻止送出，user 列顯示引用狀態。

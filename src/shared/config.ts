@@ -53,6 +53,8 @@ export interface Config {
     verifyOutputBytes: number;
     runSeconds: number;
     usagePollSeconds: number;
+    mentionFileBytes: number;
+    mentionTotalBytes: number;
   };
   /** 實際採用的設定檔路徑；null＝全部用預設值。 */
   source: string | null;
@@ -135,6 +137,8 @@ export const DEFAULT_CONFIG: Config = {
     verifyOutputBytes: 65_536,
     runSeconds: 7_200,
     usagePollSeconds: 60,
+    mentionFileBytes: 65_536,
+    mentionTotalBytes: 262_144,
   },
   source: null,
 };
@@ -293,6 +297,8 @@ export function parseConfig(text: string, source: string | null): Config {
       verifySeconds: int(limits, 'verifySeconds', L.verifySeconds, 'limits'),
       verifyOutputBytes: int(limits, 'verifyOutputBytes', L.verifyOutputBytes, 'limits'),
       runSeconds: int(limits, 'runSeconds', L.runSeconds, 'limits'),
+      mentionFileBytes: int(limits, 'mentionFileBytes', L.mentionFileBytes, 'limits'),
+      mentionTotalBytes: int(limits, 'mentionTotalBytes', L.mentionTotalBytes, 'limits'),
       usagePollSeconds: int(limits, 'usagePollSeconds', L.usagePollSeconds, 'limits'),
     },
     source,
