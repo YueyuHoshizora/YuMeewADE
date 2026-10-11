@@ -16,6 +16,21 @@ export function applyMention(text: string, mention: Mention, caret: number, file
   return { text: text.slice(0, mention.start) + insert + text.slice(caret), caret: mention.start + insert.length };
 }
 
+/** Scope the editor/palette insertion contract to the currently mounted composer. */
+export function attachComposeInsert(input: HTMLTextAreaElement, project: string, task: string, target: EventTarget = window): () => void {
+  const insert = (event: Event) => {
+    const detail: unknown = (event as CustomEvent<unknown>).detail;
+    if (!detail || typeof detail !== 'object') return;
+    const value = detail as Record<string, unknown>;
+    if (value.project !== project || value.task !== task || typeof value.text !== 'string') return;
+    input.setRangeText(value.text, input.selectionStart, input.selectionEnd, 'end');
+    input.dispatchEvent(new Event('input', { bubbles: true }));
+    input.focus();
+  };
+  target.addEventListener('yumeewade:compose-insert', insert);
+  return () => target.removeEventListener('yumeewade:compose-insert', insert);
+}
+
 export function attachMention(input: HTMLTextAreaElement, load: (query: string) => Promise<string[]>): HTMLUListElement {
   const list = document.createElement('ul');
   list.className = 'mention-list';

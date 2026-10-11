@@ -22,7 +22,7 @@ import { stream } from '../components/stream.ts';
 import { parseDiff, type DiffLine } from '../components/diff.ts';
 import { buildReviewPrompt, type ReviewItem } from '../components/review.ts';
 import { openFileBrowser } from '../components/files.ts';
-import { attachMention } from '../components/mention.ts';
+import { attachComposeInsert, attachMention } from '../components/mention.ts';
 import { snippetsButton } from '../components/snippet-menu.ts';
 import { attachSlashCommands } from '../components/slash-menu.ts';
 import { contextButton } from '../components/context.ts';
@@ -244,6 +244,7 @@ export function taskView(
     storeLocal(draftKey, draft.value);
     resizeDraft();
   };
+  const disposeComposeInsert = attachComposeInsert(draft, project.id, task.id);
   const initialPick = readLocal(
     pickKey,
     { ai: task.cli || context.state.settings.initial.ai, model: task.model || context.state.settings.initial.model, effort: task.effort || context.state.settings.initial.effort });
@@ -1040,6 +1041,7 @@ export function taskView(
       cancelAnimationFrame(resizeFrame);
       upload.dispose();
       slashCommands.dispose();
+      disposeComposeInsert();
     },
     update: (state: AppState) => {
       context.state = state;

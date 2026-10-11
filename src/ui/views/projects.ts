@@ -13,6 +13,7 @@ import { archiveButton } from '../components/archive.ts';
 import { gitWorkbenchButton } from '../components/git-workbench.ts';
 import { projectTrustButton } from '../components/project-trust.ts';
 import { confirmUsageRound } from '../components/usage-history.ts';
+import { attachComposeInsert } from '../components/mention.ts';
 
 async function startWithBudget(context: ViewContext, input: StartInput): Promise<void> {
   const { task } = await request<{ task: Task }>('/api/start/prepare', input);
@@ -221,6 +222,7 @@ export function projectView(context: ViewContext, project: ProjectView, params: 
   renderOverview(); node.append(overview);
   const draftKey = `yumeewade.quick.${project.id}`; const draft = area(readLocal<string>(draftKey, ''), `${t('project.quickPlaceholder')} · ${t(readLocal('yumeewade.enterToSend', false) ? 'chat.hintEnter' : 'chat.hintModifier')}`); draft.maxLength = context.state.limits.promptChars;
   draft.oninput = () => storeLocal(draftKey, draft.value);
+  const disposeComposeInsert = attachComposeInsert(draft, project.id, '');
   const pick = aiPicker(context.state, project.startPick ?? context.state.settings.initial, () => slashCommands.refresh()); const upload = attachments(project.id, context.state.limits, draft);
   const slashCommands = attachSlashCommands(draft, () => JSON.stringify([
     pick.value().ai, context.state.settings.activeAccounts, context.state.settings.accounts, project.bodyPath,
@@ -232,7 +234,7 @@ export function projectView(context: ViewContext, project: ProjectView, params: 
   }, 'primary');
   draft.onkeydown = e => { if (shouldSend(e, readLocal('yumeewade.enterToSend', false))) { e.preventDefault(); start.click(); } };
   node.append(card(t('project.quick'), slashCommands.node, draft, upload.node, row(pick.node, start)), detailedTaskForm(context, project, params));
-  return { node, dispose: () => { slashCommands.dispose(); upload.dispose(); }, update: state => {
+  return { node, dispose: () => { slashCommands.dispose(); upload.dispose(); disposeComposeInsert(); }, update: state => {
     context.state = state;
     const next = state.projects.find(p => p.id === project.id);
     if (!next) { location.hash = '#/turn'; return; }
