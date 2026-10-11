@@ -730,3 +730,10 @@ export interface CareDiagnostics {
 }
 
 export interface LogTail { text: string; truncated: boolean; }
+export interface TaskTemplate {
+  name: string;
+  scope: 'project' | 'workspace';
+  title: string;
+  steps: string[];
+  instruction: string;
+}

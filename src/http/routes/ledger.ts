@@ -6,6 +6,7 @@ import { AppError } from '../../shared/errors.ts';
 import { phaseKey, stepsHash } from '../../ledger/completion.ts';
 import { phaseTasks } from '../../state/state.ts';
 import { Router, reqString } from '../router.ts';
+import { TaskTemplates } from '../../ledger/task-templates.ts';
 
 function object(value: unknown): Record<string, unknown> {
   if (!value || typeof value !== 'object' || Array.isArray(value)) throw new AppError('bad_request', 'patch_not_object');
@@ -30,6 +31,34 @@ export function registerLedgerRoutes(router: Router, app: App): void {
     app.changed(project, task);
   }
   const ids = (body: Record<string, unknown>) => ({ project: reqString(body, 'project', 120), task: reqString(body, 'task', 120) });
+  const templates = new TaskTemplates(app.ws);
+  const templateScope = (value: unknown): 'project' | 'workspace' => {
+    if (value !== 'project' && value !== 'workspace') throw new AppError('bad_request', 'field_type', { field: 'scope' });
+    return value;
+  };
+  router.get('/api/task/templates', async ({ query }) => {
+    const project = reqString(query, 'project', 120); await app.projects.get(project);
+    return { templates: await templates.list(project) };
+  });
+  router.post('/api/task/template/save', async ({ body }) => {
+    const { project, task } = ids(body); await app.projects.get(project);
+    if (body.instruction !== undefined && typeof body.instruction !== 'string') throw new AppError('bad_request', 'field_type');
+    const result = await templates.saveFromTask(project, task, reqString(body, 'name', 60), typeof body.instruction === 'string' ? body.instruction : '', templateScope(body.scope));
+    await changed('task.template.save', project, task); return result;
+  });
+  router.post('/api/task/template/delete', async ({ body }) => {
+    const project = reqString(body, 'project', 120); await app.projects.get(project);
+    if (body.confirm !== true) throw new AppError('bad_request');
+    await templates.remove(project, templateScope(body.scope), reqString(body, 'name', 60));
+    await changed('task.template.delete', project); return { ok: true };
+  });
+  router.post('/api/task/template/create', async ({ body }) => {
+    const project = reqString(body, 'project', 120); await app.projects.get(project);
+    const template = await templates.get(project, templateScope(body.scope), reqString(body, 'name', 60));
+    const task = await app.tasks.create(project, { title: template.title, steps: template.steps });
+    await changed('task.new', project, task.id);
+    return { task, instruction: template.instruction };
+  });
   router.post('/api/project/new', async ({ body }) => {
     reqString(body, 'name', 60);
     if (body.verify !== undefined) {

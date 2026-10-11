@@ -52,6 +52,7 @@ export const featureZhTW = {
   ...palette.featureZhTW,
   ...paletteHelp.featureZhTW,
   ...tasks.featureZhTW,
+  ...tasks.templatesZhTW,
 };
 export const featureZhCN = {
   ...archive.featureZhCN,
@@ -80,6 +81,7 @@ export const featureZhCN = {
   ...palette.featureZhCN,
   ...paletteHelp.featureZhCN,
   ...tasks.featureZhCN,
+  ...tasks.templatesZhCN,
 };
 export const featureEn = {
   ...archive.featureEn,
@@ -108,6 +110,7 @@ export const featureEn = {
   ...palette.featureEn,
   ...paletteHelp.featureEn,
   ...tasks.featureEn,
+  ...tasks.templatesEn,
 };
 export const featureJa = {
   ...archive.featureJa,
@@ -136,6 +139,7 @@ export const featureJa = {
   ...palette.featureJa,
   ...paletteHelp.featureJa,
   ...tasks.featureJa,
+  ...tasks.templatesJa,
 };
 export const featureDe = {
   ...archive.featureDe,
@@ -164,6 +168,7 @@ export const featureDe = {
   ...palette.featureDe,
   ...paletteHelp.featureDe,
   ...tasks.featureDe,
+  ...tasks.templatesDe,
 };
 export const featureFr = {
   ...archive.featureFr,
@@ -192,6 +197,7 @@ export const featureFr = {
   ...palette.featureFr,
   ...paletteHelp.featureFr,
   ...tasks.featureFr,
+  ...tasks.templatesFr,
 };
 export const featureIt = {
   ...archive.featureIt,
@@ -220,4 +226,5 @@ export const featureIt = {
   ...palette.featureIt,
   ...paletteHelp.featureIt,
   ...tasks.featureIt,
+  ...tasks.templatesIt,
 };

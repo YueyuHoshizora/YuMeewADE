@@ -544,3 +544,4 @@ electron 44.7.0、vite 8.3.4、electron-builder 26.15.3、typescript 7.0.2、@ty
 - 前往檔案：專案／作業 ⌘/Ctrl+P 使用 `/api/task/files`，150ms debounce、過期查詢與選取失效處理；`path:line` 支援 1 起算正整數行號，以 `yumeewade:open-file` 事件傳給編輯器。
 - 快捷鍵說明：非輸入狀態 `?`／⌘/Ctrl+/ 開啟可存取原生 dialog；七語系列出現有全域、面板、編輯器儲存、樹狀清除、slash／mention 建議、composer IME／Enter 規則與終端轉送操作，不搶原有快捷鍵。
 - 作業期限／標籤：frontmatter 読寫驗證、舊檔錯值忽略、詳細新增／作業頁編輯、樹狀／專案清單顯示未完成逾期。
+- 作業範本：專案／工作區 Markdown 範本的標題、步驟、第一則指示；從現有作業建立／確認刪除，範本指示只預填新作業草稿，不自動執行 CLI。
