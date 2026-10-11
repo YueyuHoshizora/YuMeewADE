@@ -7,6 +7,7 @@ import { FilePreview, isImage } from './file-preview.ts';
 import { selectionMention } from './editor-mention.ts';
 import { fileHierarchy, normalizeLayout } from './editor-layout.ts';
 import { preferenceCommand, readPreferences, serializeEol } from './editor-preferences.ts';
+import { debuggerWorkbench } from './debugger.ts';
 
 export interface WorkbenchEditorHost {
   snapshot(): { path: string; revision: string; text: string; selection: { from: number; to: number } } | null;
@@ -19,6 +20,7 @@ export function registerWorkbenchPanel(id: string, factory: (context: WorkbenchP
   panelFactories.set(id, factory);
   window.dispatchEvent(new Event('yumeewade:workbench-panels'));
 }
+registerWorkbenchPanel('debugger', debuggerWorkbench);
 let workbenchMount: HTMLElement | undefined;
 let activeWorkspace = '';
 export function mountEditorWorkbench(main: HTMLElement): void {
@@ -130,6 +132,17 @@ export function openFileBrowser(project: string, task: string, workspace = activ
   let persistenceTimer: number | undefined;
   const live = new Map<string, { timer?: number; flight?: Promise<void>; disabled: boolean; text?: string; diagnostics: EditorDiagnostic[] }>();
   let disposed = false;
+  let debugState: { breakpoints: { path: string; line: number }[]; active?: { path: string; line: number } } = { breakpoints: [] };
+  const renderDebug = () => {
+    const active = debugState.active;
+    for (const view of views) view.content.debugDecoration(debugState.breakpoints.filter(bp => bp.path === view.path).map(bp => bp.line), active && active.path === view.path ? active.line : undefined);
+  };
+  const debugDecoration = (event: Event) => {
+    const detail = (event as CustomEvent).detail;
+    if (!detail || detail.project !== project || detail.task !== task || !Array.isArray(detail.breakpoints)) return;
+    debugState = { breakpoints: detail.breakpoints, ...(detail.active ? { active: detail.active } : {}) }; renderDebug();
+  };
+  window.addEventListener('yumeewade:debug-decoration', debugDecoration);
   function renderDiagnostics(path: string): void {
     const items = live.get(path)?.diagnostics ?? [];
     for (const view of views) if (view.path === path) {
@@ -216,6 +229,7 @@ export function openFileBrowser(project: string, task: string, workspace = activ
     } else view.content.revealLine(line + 1, character);
     if (!isImage(path)) view.content.focus(); focused = index; refreshTabs();
     capture(index); schedulePersist();
+    renderDebug();
     window.dispatchEvent(new CustomEvent('yumeewade:editor-active', { detail: { project, task, path, content: view.content } }));
     if (!isImage(path)) { renderDiagnostics(path); scheduleDiagnostics(path); }
     if (view.content.readOnly && !isImage(path)) output.replaceChildren(el('p', 'warning', buffer.document.binary ? t('files.binary') : buffer.document.truncated ? t('files.truncated') : t('detail.editor_readonly')));
@@ -237,6 +251,7 @@ export function openFileBrowser(project: string, task: string, workspace = activ
     const index = views.length; const code = el('div', 'editor-code'); const content = new EditorContent(code, t('editor.content'));
     const tabs = el('div'); const node = el('div'); const body = el('div'); const preview = new FilePreview(code, ids); body.append(code, preview.node); node.style.minWidth = '0'; node.style.flex = '1'; node.append(tabs, body); views.push({ path: undefined, content, preview, tabs, node }); panes.append(node);
     schedulePersist();
+    content.ongutter = line => { const path = views[index]!.path; if (path) window.dispatchEvent(new CustomEvent('yumeewade:debug-gutter', { detail: { project, task, path, line } })); };
     content.complete = async context => {
       const path = views[index]!.path; const buffer = path ? buffers.get(path) : undefined;
       if (!buffer?.document.languageAvailable || content.readOnly) return null;
@@ -495,7 +510,7 @@ export function openFileBrowser(project: string, task: string, workspace = activ
     if (editReserved) { disposeDeferred = true; dialog.hidden = true; return; }
     flush(); disposed = true; window.clearInterval(syncTimer); window.clearTimeout(persistenceTimer);
     window.removeEventListener('focus', syncFocus); window.removeEventListener('beforeunload', unload);
-    window.removeEventListener('yumeewade:workbench-panels', mountPanels); 
+    window.removeEventListener('yumeewade:workbench-panels', mountPanels); window.removeEventListener('yumeewade:debug-decoration', debugDecoration);
     for (const state of live.values()) window.clearTimeout(state.timer);
     live.clear();
     views.forEach(view => { view.content.destroy(); view.preview.destroy(); }); dialog.remove();

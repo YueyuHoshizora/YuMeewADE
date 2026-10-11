@@ -96,6 +96,7 @@ Claude／Codex 模型清單直接讀 CLI 自己的快取（`~/.codex/models_cach
 - **本機執行**：持久化具名 command／args／kind／cwd／env 設定，提供有限 stdout／stderr、結束碼及行程樹停止。內嵌終端使用真正 `node-pty`、ANSI 畫面、輸入／resize／stop、只放 POST body 的 owner capability，失聯 5 分鐘回收。系統終端整合仍保留，其輸出／生命週期不由 App 管理。預覽限明確 port 的 loopback HTTP(S)。內嵌 Node Inspector 僅附加 App 自己啟動的 loopback debug 行程，提供 breakpoint、stack、variables、pause／resume／step 與有界請求；不是任意遠端 DAP 或無限制 evaluate。仍可使用瀏覽器 DevTools／外部 IDE。
   - 執行上限：command／debug 10 分鐘，preview 24 小時，輸出尾段最多 256 KiB／1024 筆事件；同時執行數使用 `limits.concurrentRuns`。這些執行期限不是 AI 的 `limits.runSeconds`，系統終端不受此管理。
   - 重新載入可接回同一 renderer 的存活 PTY，透過 HttpOnly／SameSite cookie、sessionStorage renderer ID 與一次性 ticket 驗證及輪替 owner。owner／ticket 不存 localStorage，不允許其他視窗接管；核心重啟不恢復 shell。
+  - Node 除錯支援工作根內的平面本機 Source Map v3、持久化 revision 綁定的條件斷點、編輯器 gutter 與 source stack 定位。條件僅支援變數／屬性／literal 比較，在目標行程中執行，getter 可能有副作用；Watch 僅讀變數／屬性路徑，不呼叫 getter 或任意 evaluate。遠端／indexed map、機密與越界來源皆拒絕。
 - **整合設定**：`config.yaml` 的 `execution.ide`／`terminal`／`browser` 各為 `{command, args}`；argv 支援 `{cwd}`、`{url}`、`{command}` 替換。IDE 開資料夾需要 `{cwd}`，IDE debug 需要 `{url}`；自訂 terminal 需要 `{cwd}`，帶指令時也需 `{command}`。外部工具需自行安裝，指令以你的權限執行。
 - **Git**：status／PR、staged diff、綁定實際版本的逐檔／hunk／選取行 stage／unstage、base／ours／theirs 三方衝突與人工合併文字、commit、fetch 及 branch 操作。手動 commit 預設執行 hooks，bypass 必須明確確認。Push 須確認且禁止 force；PR 須確認及已登入 `gh`。不自動 push／發 PR，fetch／push／PR 是網路操作。
 - **獨立唯讀審查**：不借用寫作 session 或 full-access 旗標。Codex 使用原生 read-only sandbox，僅 Darwin／Linux；Claude 僅允許 Read／Glob／Grep，**是 CLI 工具政策，不是 OS 沙箱**。Grok／Gemini 或不符受限設定的 provider 明確拒絕，不以提示詞冒充安全隔離。CLI 本身仍是受信任的本機程式。
@@ -231,7 +232,7 @@ HTTP JSON 加 SSE，桌面版與網頁版完全相同。型別定義在 [`src/sh
 | 編輯器 | `GET /api/editor/file`、`/api/editor/image`（圖片，20 MiB）；`POST /api/editor/save`（含 revision）、`/api/editor/language`（definition／references／diagnostics） |
 | 編輯設定／同步 | `GET/POST /api/editor/settings`；`GET /api/editor/preferences`；`POST /api/editor/{revisions,merge}` |
 | 測試／驗證歷史 | `GET /api/task/tests`、`/api/task/verify/history`；`POST /api/task/tests/{configure,run}` |
-| 終端恢復 | `POST /api/terminal/recovery/{init,list,bind,claim}` |
+| 終端恢復／source 除錯 | `POST /api/terminal/recovery/{init,list,bind,claim}`；`POST /api/debugger/{source-breakpoint,source-breakpoint/delete,watch}` |
 | 真正送出背景 | `GET /api/task/context/manifest?project=&task=&request=` |
 | 執行／整合 | `POST /api/execution/start`、`/stop`、`/preview`、`/ide`、`/terminal`、`/debug`；`GET /api/execution/list`、`/output`（上述短路徑均接 `/api/execution`） |
 | Git | `GET /api/git/status`、`/api/git/pr-status`；`POST /api/git/{stage,unstage,resolve,commit,fetch,branch,push,pr}` |

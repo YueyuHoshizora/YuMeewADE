@@ -37,6 +37,7 @@ import * as taskBoard from './task-board.ts';
 import * as taskBulk from './task-bulk.ts';
 import * as terminalRecovery from './terminal-recovery.ts';
 import * as testExplorer from './test-explorer.ts';
+import * as debuggerExtensions from './debugger-extensions.ts';
 import * as contextBudget from './context-budget.ts';
 import * as ideWorkbench from './ide-workbench.ts';
 
@@ -81,6 +82,7 @@ export const featureZhTW = {
   ...taskBulk.featureZhTW,
   ...terminalRecovery.featureZhTW,
   ...testExplorer.featureZhTW,
+  ...debuggerExtensions.featureZhTW,
   ...contextBudget.featureZhTW,
   ...ideWorkbench.featureZhTW,
 };
@@ -125,6 +127,7 @@ export const featureZhCN = {
   ...taskBulk.featureZhCN,
   ...terminalRecovery.featureZhCN,
   ...testExplorer.featureZhCN,
+  ...debuggerExtensions.featureZhCN,
   ...contextBudget.featureZhCN,
   ...ideWorkbench.featureZhCN,
 };
@@ -169,6 +172,7 @@ export const featureEn = {
   ...taskBulk.featureEn,
   ...terminalRecovery.featureEn,
   ...testExplorer.featureEn,
+  ...debuggerExtensions.featureEn,
   ...contextBudget.featureEn,
   ...ideWorkbench.featureEn,
 };
@@ -213,6 +217,7 @@ export const featureJa = {
   ...taskBulk.featureJa,
   ...terminalRecovery.featureJa,
   ...testExplorer.featureJa,
+  ...debuggerExtensions.featureJa,
   ...contextBudget.featureJa,
   ...ideWorkbench.featureJa,
 };
@@ -257,6 +262,7 @@ export const featureDe = {
   ...taskBulk.featureDe,
   ...terminalRecovery.featureDe,
   ...testExplorer.featureDe,
+  ...debuggerExtensions.featureDe,
   ...contextBudget.featureDe,
   ...ideWorkbench.featureDe,
 };
@@ -301,6 +307,7 @@ export const featureFr = {
   ...taskBulk.featureFr,
   ...terminalRecovery.featureFr,
   ...testExplorer.featureFr,
+  ...debuggerExtensions.featureFr,
   ...contextBudget.featureFr,
   ...ideWorkbench.featureFr,
 };
@@ -345,6 +352,7 @@ export const featureIt = {
   ...taskBulk.featureIt,
   ...terminalRecovery.featureIt,
   ...testExplorer.featureIt,
+  ...debuggerExtensions.featureIt,
   ...contextBudget.featureIt,
   ...ideWorkbench.featureIt,
 };

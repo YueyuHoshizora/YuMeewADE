@@ -44,6 +44,7 @@ import { ProjectTrustService } from '../ledger/trust.ts';
 import { UsageHistory } from '../ai/usage-history.ts';
 import { TerminalService } from '../system/terminal.ts';
 import { DebuggerService } from '../system/debugger.ts';
+import { debuggerMetadataFile } from '../system/debugger-metadata.ts';
 import { UpdateDownloads } from '../system/update-download.ts';
 import { MemoryLedger } from '../ledger/memory.ts';
 import { TestExplorerService } from '../system/test-explorer.ts';
@@ -161,7 +162,10 @@ export class App {
     this.terminal = new TerminalService(this.execution, { concurrent: config.limits.concurrentRuns, envPassthrough: config.cli.envPassthrough,
       beforeStart: project => this.trust.assertExecutable(project),
       isRunning: (project, task) => this.runner.isRunning(project, task) || this.review.isBusy(project, task) || this.verify.isRunning(project, task) || this.workflows.isBusy(project, task) || this.testExplorer.isRunning(project, task) });
-    this.debugger = new DebuggerService(this.execution);
+    this.debugger = new DebuggerService(this.execution, {
+      metadataFile: (p, t) => debuggerMetadataFile(this.ws, this.tasks, p, t),
+      beforeMutate: p => this.trust.assertExecutable(p),
+    });
     this.integrations = new IntegrationService(this.execution, { ...config.execution, envPassthrough: config.cli.envPassthrough, beforeStart: project => this.trust.assertExecutable(project) });
     this.gitWorkbench = new GitWorkbench({ ws: this.ws, projects: this.projects, tasks: this.tasks, isRunning: project => this.taskBusy(project) });
     this.ai = new AiCatalog({ config, ws: this.ws, settings: this.settings, ...(options.home ? { home: options.home } : {}), ...(options.accounts ? { accounts: options.accounts } : {}) });

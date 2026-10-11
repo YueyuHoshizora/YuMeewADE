@@ -1,0 +1,31 @@
+import assert from 'node:assert/strict';
+import { promises as fs } from 'node:fs';
+import path from 'node:path';
+import { test } from 'node:test';
+import { ProjectLedger } from '../ledger/projects.ts';
+import { TaskLedger } from '../ledger/tasks.ts';
+import { withTmpWorkspace } from '../testing/tmp.ts';
+import { debuggerMetadataFile } from './debugger-metadata.ts';
+
+test('debugger metadata is validated per ledger task and rejects final links, nonfiles and parent symlinks', () => withTmpWorkspace(async (ws, dir) => {
+  const projects = new ProjectLedger(ws); const tasks = new TaskLedger(ws);
+  await projects.create({ name: 'Debug' });
+  const task = await tasks.create('Debug', { title: 'Debug', workspace: 'direct' });
+  const file = await debuggerMetadataFile(ws, tasks, 'Debug', task.id);
+  assert.equal(file, path.join(await fs.realpath(ws.tasksDir('Debug')), `${task.id}.debugger.json`));
+  await assert.rejects(debuggerMetadataFile(ws, tasks, '../Debug', task.id), { status: 400 });
+  await assert.rejects(debuggerMetadataFile(ws, tasks, 'Debug', '../task'), { status: 400 });
+  const outside = path.join(dir, 'outside.json'); await fs.writeFile(outside, '{}');
+  await fs.symlink(outside, file);
+  await assert.rejects(debuggerMetadataFile(ws, tasks, 'Debug', task.id), { status: 400 });
+  await fs.unlink(file); await fs.mkdir(file);
+  await assert.rejects(debuggerMetadataFile(ws, tasks, 'Debug', task.id), { status: 400 });
+  await fs.rmdir(file);
+  const directory = ws.tasksDir('Debug'); const moved = `${directory}-real`;
+  await fs.rename(directory, moved); await fs.symlink(moved, directory, process.platform === 'win32' ? 'junction' : 'dir');
+  await assert.rejects(debuggerMetadataFile(ws, tasks, 'Debug', task.id), { status: 400 });
+  await fs.unlink(directory); await fs.rename(moved, directory);
+  const ai = path.dirname(directory); const realAI = `${ai}-real`;
+  await fs.rename(ai, realAI); await fs.symlink(realAI, ai, process.platform === 'win32' ? 'junction' : 'dir');
+  await assert.rejects(debuggerMetadataFile(ws, tasks, 'Debug', task.id), { status: 400 });
+}));

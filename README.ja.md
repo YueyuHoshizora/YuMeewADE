@@ -91,6 +91,7 @@ Claude／Codex のモデル一覧・推論強度は CLI キャッシュから取
 - **本機実行**：名前付き command／args／kind／cwd／env 設定を永続化し、有界 stdout／stderr、終了コードとプロセスツリー停止を提供します。内蔵端末は実際の `node-pty`、ANSI 表示、入力／resize／stop、POST body のみの owner capability、切断5分後の回収に対応します。システム端末連携も残し、その出力／ライフサイクルは App 管理外です。プレビューは明示 port 付き loopback HTTP(S) のみ。内蔵 Node Inspector は App 自身が起動した loopback debug プロセスだけに接続し、breakpoint、stack、variables、pause／resume／step と有界リクエストを提供します。任意の遠隔 DAP や無制限 evaluate ではなく、ブラウザー DevTools／外部 IDE 連携も利用できます。
   - 実行上限：command／debug は 10 分、preview は 24 時間、出力末尾は最大 256 KiB／1024 イベント。同時数は `limits.concurrentRuns`。AI の `limits.runSeconds` とは別で、システム端末は管理対象外です。
   - renderer 再読み込み後は HttpOnly／SameSite cookie、sessionStorage の renderer ID、一度限りの ticket で同じ生存 PTY に再接続し owner を更新します。owner／ticket は localStorage に保存せず、別ウィンドウの接管も拒否します。コア再起動で shell を復活させません。
+  - Node デバッグは作業 root 内の平面ローカル Source Map v3、revision付き永続条件 breakpoint、エディター gutter、source stack 移動に対応します。変数／属性／literal 比較条件は対象プロセスで実行され、getter に副作用があり得ます。Watch は getter や任意 evaluate を呼びません。remote／indexed map、機密・範囲外ソースは拒否します。
 - **統合設定**：`config.yaml` の `execution.ide`／`terminal`／`browser` は `{command, args}`、argv 内で `{cwd}`／`{url}`／`{command}` を置換します。IDE フォルダーには `{cwd}`、IDE debug には `{url}` が必要。カスタム端末には `{cwd}`、コマンド指定時には `{command}` も必要です。外部ツールは自分でインストールし、指示は自分の権限で実行します。
 - **Git**：status／PR 状態、staged diff、実際の revision に結び付いたファイル／hunk／選択行 stage／unstage、base／ours／theirs 3方向競合表示と手動マージ文、commit、fetch、branch 操作。手動 commit は既定で hooks を実行し、bypass は明示確認が必要です。Push は確認必須・force 禁止、PR は確認とログイン済み `gh` が必要です。自動 push／PR は行わず、fetch／push／PR は外部通信です。
 - **独立した読み取り専用審査**：書き込み session／full-access 旗標を流用しません。Codex は Darwin／Linux のみネイティブ read-only sandbox、Claude は Read／Glob／Grep のみの **CLI ツールポリシーで、OS sandbox ではありません**。Grok／Gemini や有効な制限設定のない provider は明確に拒否し、プロンプトだけを隔離保証にしません。CLI 自体は信頼するローカルプログラムです。
@@ -225,7 +226,7 @@ HTTP JSON と SSE を使い、デスクトップ版と Web 版で完全に共通
 | エディター | `GET /api/editor/file`、`/api/editor/image`（画像、20 MiB）；`POST /api/editor/save`（revision）、`/api/editor/language`（definition／references／diagnostics） |
 | 編集設定／同期 | `GET/POST /api/editor/settings`；`GET /api/editor/preferences`；`POST /api/editor/{revisions,merge}` |
 | テスト／検証履歴 | `GET /api/task/tests`、`/api/task/verify/history`；`POST /api/task/tests/{configure,run}` |
-| 端末復元 | `POST /api/terminal/recovery/{init,list,bind,claim}` |
+| 端末復元／sourceデバッグ | `POST /api/terminal/recovery/{init,list,bind,claim}`；`POST /api/debugger/{source-breakpoint,source-breakpoint/delete,watch}` |
 | 送信背景manifest | `GET /api/task/context/manifest?project=&task=&request=` |
 | 実行／統合 | `POST /api/execution/{start,stop,preview,ide,terminal,debug}`；`GET /api/execution/{list,output}` |
 | Git | `GET /api/git/{status,pr-status}`；`POST /api/git/{stage,unstage,resolve,commit,fetch,branch,push,pr}` |

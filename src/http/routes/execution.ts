@@ -38,8 +38,6 @@ export function registerExecutionRoutes(router: Router, app: App): void {
   router.post('/api/debugger/attach', async ({ body }) => app.debugger.attach(reqString(body, 'project', 80), reqString(body, 'task', 80), reqString(body, 'run', 80)));
   router.get('/api/debugger/state', async ({ query }) => app.debugger.state(reqString(query, 'project', 80), reqString(query, 'task', 80), reqString(query, 'id', 80)));
   router.post('/api/debugger/action', async ({ body }) => app.debugger.action(reqString(body, 'project', 80), reqString(body, 'task', 80), reqString(body, 'id', 80), reqString(body, 'action', 20) as DebugAction));
-  router.post('/api/debugger/breakpoint', async ({ body }) => app.debugger.breakpoint(reqString(body, 'project', 80), reqString(body, 'task', 80), reqString(body, 'id', 80), reqString(body, 'path', 4096), body.line as number));
-  router.post('/api/debugger/breakpoint/delete', async ({ body }) => app.debugger.removeBreakpoint(reqString(body, 'project', 80), reqString(body, 'task', 80), reqString(body, 'id', 80), reqString(body, 'breakpoint', 4096)));
   router.post('/api/debugger/variables', async ({ body }) => app.debugger.variables(reqString(body, 'project', 80), reqString(body, 'task', 80), reqString(body, 'id', 80), reqString(body, 'object', 4096)));
   router.post('/api/debugger/detach', async ({ body }) => { app.debugger.detach(reqString(body, 'project', 80), reqString(body, 'task', 80), reqString(body, 'id', 80)); return { ok: true }; });
 }

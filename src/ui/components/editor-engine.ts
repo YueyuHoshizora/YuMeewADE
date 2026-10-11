@@ -1,6 +1,6 @@
 import { basicSetup } from 'codemirror';
 import { EditorState, EditorSelection, Compartment } from '@codemirror/state';
-import { EditorView, keymap, rectangularSelection, crosshairCursor } from '@codemirror/view';
+import { EditorView, keymap, rectangularSelection, crosshairCursor, gutter, GutterMarker, ViewPlugin, Decoration, type DecorationSet } from '@codemirror/view';
 import { indentWithTab } from '@codemirror/commands';
 import { javascript } from '@codemirror/lang-javascript';
 import { python } from '@codemirror/lang-python';
@@ -60,6 +60,11 @@ export function editorLanguage(path: string) {
     default: return /(^|\/)dockerfile$/i.test(path) ? StreamLanguage.define(dockerFile) : [];
   }
 }
+class DebugMarker extends GutterMarker {
+  readonly active: boolean; readonly breakpoint: boolean;
+  constructor(active: boolean, breakpoint: boolean) { super(); this.active = active; this.breakpoint = breakpoint; }
+  override toDOM(): HTMLElement { const marker = document.createElement('span'); marker.className = 'debug-breakpoint'; marker.textContent = this.active ? '▶' : this.breakpoint ? '●' : '·'; return marker; }
+}
 
 /** Compatibility surface for the workbench's v3 recovery coordinates; text lives only in CM. */
 export class EditorContent {
@@ -67,7 +72,11 @@ export class EditorContent {
   private language = new Compartment();
   private editable = new Compartment();
   private preferences = new Compartment();
+  private debug = new Compartment();
   private format: EditorResolvedFormatPreferences | undefined;
+  private breakpoints: number[] = [];
+  private activeLine: number | undefined;
+  ongutter?: (line: number) => void;
   private readonly refreshPreferences = () => this.view.dispatch({ effects: this.preferences.reconfigure(this.preferenceExtensions()) });
   private states = new Map<string, EditorState>();
   private path = '';
@@ -90,11 +99,26 @@ export class EditorContent {
   resolvedFormat(format: EditorResolvedFormatPreferences | undefined): void {
     this.format = format; this.refreshPreferences();
   }
+  private debugExtensions() {
+    const owner = this;
+    return [gutter({ class: 'debug-gutter', lineMarker: (view, line) => { const number = view.state.doc.lineAt(line.from).number; return new DebugMarker(number === owner.activeLine, owner.breakpoints.includes(number)); }, domEventHandlers: { mousedown: (view, line) => { owner.ongutter?.(view.state.doc.lineAt(line.from).number); return true; } } }),
+      ViewPlugin.fromClass(class {
+        decorations: DecorationSet;
+        constructor(view: EditorView) { this.decorations = this.build(view); }
+        update(update: { view: EditorView }): void { this.decorations = this.build(update.view); }
+        build(view: EditorView): DecorationSet { return owner.activeLine && owner.activeLine <= view.state.doc.lines ? Decoration.set([Decoration.line({ class: 'debug-active-line' }).range(view.state.doc.line(owner.activeLine).from)]) : Decoration.none; }
+      }, { decorations: plugin => plugin.decorations })];
+  }
+  debugDecoration(breakpoints: number[], active?: number): void {
+    this.breakpoints = breakpoints.filter(line => Number.isSafeInteger(line) && line > 0); this.activeLine = active;
+    this.view.dispatch({ effects: this.debug.reconfigure(this.debugExtensions()) });
+  }
   private state(text: string): EditorState {
     return EditorState.create({ doc: text, extensions: [
       basicSetup, syntaxHighlighting(appHighlight), rectangularSelection(), crosshairCursor(),
       EditorView.clickAddsSelectionRange.of(event => event.altKey || event.metaKey || event.ctrlKey),
       keymap.of([indentWithTab]), this.language.of([]), this.editable.of(EditorState.readOnly.of(true)), this.preferences.of(this.preferenceExtensions()),
+      this.debug.of(this.debugExtensions()),
       lintGutter(), autocompletion({ override: [context => this.complete?.(context) ?? null] }),
       EditorView.theme({
         '&': { backgroundColor: 'var(--panel)', color: 'var(--c-e7eaf4)' },
