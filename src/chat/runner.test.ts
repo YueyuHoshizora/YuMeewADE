@@ -11,7 +11,7 @@ import { DEFAULT_CONFIG } from '../shared/config.ts';
 import { loadRoles } from '../roles/roles.ts';
 import { withTmpWorkspace } from '../testing/tmp.ts';
 import type { Workspace } from '../ledger/workspace.ts';
-import type { WorktreeService } from '../git/worktree.ts';
+import { WorktreeService } from '../git/worktree.ts';
 import type { ChatEvent, VerifyResult } from '../shared/types.ts';
 import { HISTORY_PAGE } from '../shared/types.ts';
 import { promises as fs } from 'node:fs';
@@ -25,6 +25,7 @@ import { ChatStore } from './store.ts';
 import { WorkflowService } from './workflows.ts';
 import { UsageHistory } from '../ai/usage-history.ts';
 import { AppError } from '../shared/errors.ts';
+import { saveContext, readContextManifest } from './context.ts';
 async function setup(ws: Workspace, options: MockOptions = {}, runSeconds = 600, overrides: Partial<RunnerDeps> = {}) {
   const projects = new ProjectLedger(ws); await projects.create({ name: 'P' });
   const tasks = new TaskLedger(ws); const task = await tasks.create('P', { title: 'T', workspace: 'direct' });
@@ -36,9 +37,10 @@ async function setup(ws: Workspace, options: MockOptions = {}, runSeconds = 600,
   const ranges: string[][] = [];
   const forks: string[] = [];
   const usageAccounts: string[] = [];
+  const worktree = new WorktreeService({ ws, projects, tasks, diffBytes: DEFAULT_CONFIG.limits.diffBytes });
   const runner = new ChatRunner({ ws, store, projects, tasks, settings, completion, oplog: new OpLog(ws), roles: () => loadRoles(ws.rolesFile), providers: { mock, claude: mock, codex: mock }, limits: { concurrentRuns: 2, queueLength: 3, handoffChars: 60000, imagesPerSend: 10, runSeconds }, worktree: { bodyPath: async () => ws.projectDir('P'), prepare: async () => ws.projectDir('P'), checkpoint: async () => String(++checkpointCount).padStart(40, '0'), restore: async (_p: string, _t: string, sha: string) => { restored.push(sha); }, finishTurn: async (_p: string, _t: string, start: string) => start.endsWith('1') ? { after: 'f'.repeat(40), changes: { files: 2, added: 3, removed: 1 } } : { after: 'e'.repeat(40) }, rangeDiff: async (_p: string, _t: string, from: string, to: string) => { ranges.push([from, to]); return { diff: 'd', truncated: false }; }, prepareFrom: async (_p: string, _t: string, sha: string) => { forks.push(sha); return ws.projectDir('P'); } } as unknown as WorktreeService, publish: (_p, _t, ev) => events.push(ev), watching: () => watching, onChanged: () => {}, onUsage: (_ai, _event, account) => { usageAccounts.push(account); }, ...overrides });
   const send = (text: string, extra: Partial<Parameters<ChatRunner['send']>[0]> = {}) => runner.send({ project: 'P', task: task.id, text, ...extra });
-  return { runner, store, settings, projects, tasks, task, send, calls, events, usageAccounts, completion, restored, ranges, forks, mock, watch: () => { watching = true; } };
+  return { runner, store, settings, projects, tasks, task, send, calls, events, usageAccounts, completion, restored, ranges, forks, mock, worktree, watch: () => { watching = true; } };
 }
 test('Mock CLI receives numbered file references on first send, resume and provider handoff while stored text stays original', () => withTmpWorkspace(async ws => {
   const s = await setup(ws);
@@ -56,6 +58,27 @@ test('Mock CLI receives numbered file references on first send, resume and provi
   }
   assert.ok(s.calls[1]?.resumeId);
   assert.match(s.calls[2]!.prompt, /previous_conversation/u);
+}));
+test('sent context manifests preserve exact source snapshot after later file changes', () => withTmpWorkspace(async ws => {
+  const s = await setup(ws);
+  const file = path.join(ws.projectDir('P'), 'sample.ts');
+  await fs.writeFile(file, 'first source\nsecond source\n');
+  await saveContext(ws, 'P', s.task.id, {
+    decisions: 'Keep the public API stable.', decisionBudget: 100,
+    sources: [{ path: 'sample.ts', start: 1, end: 2, allocatedChars: 100, enabled: true }],
+    revision: 0,
+  });
+  await s.send('make the requested change'); await s.runner.whenIdle();
+  const rows = await s.store.readLog('P', s.task.id);
+  const turn = rows.find(row => row.role === 'user');
+  assert.ok(turn?.role === 'user');
+  await fs.writeFile(file, 'replacement after send\n');
+  const manifest = await readContextManifest(ws, 'P', s.task.id, turn.request);
+  assert.ok(manifest);
+  assert.match(manifest.context.text, /1: first source\n2: second source/u);
+  assert.doesNotMatch(manifest.context.text, /replacement after send/u);
+  assert.ok(s.calls[0]?.prompt.includes(manifest.context.text));
+  assert.equal(manifest.context.allocations.find(row => row.id === 'source:0')?.status, 'included');
 }));
 test('standalone CLI reports preserve resumable conversation state on success and failure', () => withTmpWorkspace(async ws => {
   const s = await setup(ws);
@@ -585,6 +608,9 @@ test('workflow stop during awaited availability prevents writing and review laun
     const release = Promise.withResolvers<boolean>();
     let reviews = 0;
     const workflow = new WorkflowService({ ws, tasks: s.tasks, completion: s.completion, runner: s.runner,
+      store: s.store,
+      beforeStart: async () => {}, prepareBranch: async (p, t) => { await s.worktree.prepare(p, t); },
+      isTaskBusy: (p, t) => s.runner.isRunning(p, t), maxParallel: 2,
       roles: async () => ({ roles: { worker: { main: { cli: 'codex', model: 'm', effort: 'high' }, job: '' } } }),
       available: () => { entered.resolve(); return release.promise; },
       review: async () => { reviews++; return { request: 'review', ai: 'codex', text: '', ok: true, approved: false, structured: false }; },
@@ -636,6 +662,9 @@ test('workflow completes consecutive steps while another task stays active', { t
   const completed = Promise.withResolvers<void>();
   let started = false;
   const workflow = new WorkflowService({ ws, tasks: s.tasks, completion: s.completion, runner: s.runner,
+    store: s.store,
+    beforeStart: async () => {}, prepareBranch: async (p, t) => { await s.worktree.prepare(p, t); },
+    isTaskBusy: (p, t) => s.runner.isRunning(p, t), maxParallel: 2,
     roles: async () => ({ roles: { worker: { main: { cli: 'codex', model: 'm', effort: 'high' }, job: '' } } }),
     available: async () => true, review: async () => { throw new Error('unexpected review'); }, stopReview: () => false,
     changed: () => { if (started && !workflow.isBusy('P', s.task.id)) completed.resolve(); }, promptChars: 1000 });
@@ -654,6 +683,9 @@ test('workflow completes consecutive steps while another task stays active', { t
 test('workflow stop during initial dependency load waits for reservation and never launches', { timeout: 5000 }, () => withTmpWorkspace(async ws => {
   const s = await setup(ws);
   const workflow = new WorkflowService({ ws, tasks: s.tasks, completion: s.completion, runner: s.runner,
+    store: s.store,
+    beforeStart: async () => {}, prepareBranch: async (p, t) => { await s.worktree.prepare(p, t); },
+    isTaskBusy: (p, t) => s.runner.isRunning(p, t), maxParallel: 2,
     roles: async () => ({ roles: { worker: { main: { cli: 'codex', model: 'm', effort: 'high' }, job: '' } } }),
     available: async () => true, review: async () => { throw new Error('unexpected review'); }, stopReview: () => false,
     changed() {}, promptChars: 1000 });
@@ -708,6 +740,9 @@ test('workflow outcomes survive more than one history page of automatic-fix tool
   const completed = Promise.withResolvers<void>();
   let started = false;
   const workflow = new WorkflowService({ ws, tasks: s.tasks, completion: s.completion, runner: s.runner,
+    store: s.store,
+    beforeStart: async () => {}, prepareBranch: async (p, t) => { await s.worktree.prepare(p, t); },
+    isTaskBusy: (p, t) => s.runner.isRunning(p, t), maxParallel: 2,
     roles: async () => ({ roles: { worker: { main: { cli: 'codex', model: 'm', effort: 'high' }, job: '' } } }),
     available: async () => true, review: async () => { throw new Error('unexpected review'); }, stopReview: () => false,
     changed: () => { if (started && !workflow.isBusy('P', s.task.id)) completed.resolve(); }, promptChars: 1000 });
@@ -726,6 +761,9 @@ test('review steps require explicit approval and edits/reruns preserve prior att
   let approved = false;
   let finished = Promise.withResolvers<void>();
   const workflow = new WorkflowService({ ws, tasks: s.tasks, completion: s.completion, runner: s.runner,
+    store: s.store,
+    beforeStart: async () => {}, prepareBranch: async (p, t) => { await s.worktree.prepare(p, t); },
+    isTaskBusy: (p, t) => s.runner.isRunning(p, t), maxParallel: 2,
     roles: async () => ({ roles: { reviewer: { main: { cli: 'codex', model: 'm', effort: 'high' }, job: '' } } }),
     available: async () => true,
     review: async () => ({ request: String(approved), ai: 'codex', text: approved ? 'structured approval' : 'APPROVED', ok: true, structured: approved, approved }),
@@ -734,7 +772,7 @@ test('review steps require explicit approval and edits/reruns preserve prior att
   finished = Promise.withResolvers<void>();
   await workflow.start('P', s.task.id); await finished.promise;
   const failed = await workflow.get('P', s.task.id);
-  assert.equal(failed.state, 'failed'); assert.equal(failed.cursor, 0); assert.equal(failed.results[0]?.ok, false);
+  assert.equal(failed.state, 'failed'); assert.equal(failed.nodeStates?.['step-1'], 'failed'); assert.equal(failed.nodeStates?.['step-2'], 'skipped'); assert.equal(failed.results[0]?.ok, false);
   const edited = await workflow.configure('P', s.task.id, [], [{ role: 'reviewer', text: 'retry', review: true }]);
   assert.equal(edited.results.length, 1);
   approved = true; finished = Promise.withResolvers<void>();
@@ -751,6 +789,9 @@ test('review steps require explicit approval and edits/reruns preserve prior att
 test('interrupted workflow recovery is durable and human approval requires saved evidence', () => withTmpWorkspace(async ws => {
   const s = await setup(ws); let finished = Promise.withResolvers<void>();
   const deps = { ws, tasks: s.tasks, completion: s.completion, runner: s.runner,
+    store: s.store,
+    beforeStart: async () => {}, prepareBranch: async (p: string, t: string) => { await s.worktree.prepare(p, t); },
+    isTaskBusy: (p: string, t: string) => s.runner.isRunning(p, t), maxParallel: 2,
     roles: async () => ({ roles: { human: { main: { cli: '人', model: '', effort: '' }, job: '' } } }),
     available: async () => true, review: async () => { throw new Error('unexpected review'); }, stopReview: () => false,
     changed: () => { if (!workflow.isBusy('P', s.task.id)) finished.resolve(); }, promptChars: 1000 };
@@ -851,4 +892,36 @@ test('approval route validates decisions and checks trust before allowing', () =
   await s.runner.whenIdle();
   assert.deepEqual(answers, [true]);
   await assert.rejects(async () => handler(ctx({ project: 'P', task: s.task.id, id, allow: false })), { code: 'conflict' });
+}));
+test('workflow resumes an answered AI branch only on explicit start without replaying its instruction', () => withTmpWorkspace(async ws => {
+  const s = await setup(ws, { text: opts => opts.prompt.includes('answer now') ? 'thanks' : '[[question]]\nWhich?\n1. A\n2. B\n[[/question]]' });
+  let finished = Promise.withResolvers<void>();
+  const workflow = new WorkflowService({
+    ws, tasks: s.tasks, completion: s.completion, runner: s.runner, store: s.store,
+    roles: async () => ({ roles: { worker: { main: { cli: 'codex', model: 'm', effort: 'high' }, job: '' } } }),
+    available: async () => true, review: async () => { throw new Error('unexpected review'); },
+    stopReview: () => false, beforeStart: async () => {},
+    prepareBranch: async (p, t) => { await s.worktree.prepare(p, t); },
+    isTaskBusy: (p, t) => s.runner.isRunning(p, t), maxParallel: 2, promptChars: 1000,
+    changed: () => { if (!workflow.isBusy('P', s.task.id)) finished.resolve(); },
+  });
+  try {
+    await workflow.configure('P', s.task.id, [], [{ id: 'worker', role: 'worker', text: 'initial question', review: false }]);
+    finished = Promise.withResolvers<void>();
+    await workflow.start('P', s.task.id); await finished.promise;
+    let plan = await workflow.get('P', s.task.id);
+    assert.equal(plan.nodeStates?.worker, 'human');
+    const branch = plan.branchTasks!.worker!;
+    finished = Promise.withResolvers<void>();
+    await workflow.start('P', s.task.id); await finished.promise;
+    assert.equal(s.calls.length, 1);
+    await s.runner.send({ project: 'P', task: branch, text: 'answer now', answer: true });
+    await s.runner.whenTaskIdle('P', branch);
+    assert.equal((await workflow.get('P', s.task.id)).state, 'paused');
+    finished = Promise.withResolvers<void>();
+    await workflow.start('P', s.task.id); await finished.promise;
+    plan = await workflow.get('P', s.task.id);
+    assert.equal(plan.state, 'completed'); assert.equal(plan.nodeStates?.worker, 'succeeded');
+    assert.equal(plan.results.at(-1)?.output, 'thanks'); assert.equal(s.calls.length, 2);
+  } finally { await workflow.close(); await s.runner.stopAll(); }
 }));

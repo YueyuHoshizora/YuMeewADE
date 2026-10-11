@@ -40,6 +40,7 @@ import * as testExplorer from './test-explorer.ts';
 import * as debuggerExtensions from './debugger-extensions.ts';
 import * as githubFeedback from './github-feedback.ts';
 import * as contextBudget from './context-budget.ts';
+import * as workflowGraph from './workflow-graph.ts';
 import * as providerCapabilities from './provider-capabilities.ts';
 import * as editorProposals from './editor-proposals.ts';
 import * as ideWorkbench from './ide-workbench.ts';
@@ -88,6 +89,7 @@ export const featureZhTW = {
   ...debuggerExtensions.featureZhTW,
   ...githubFeedback.featureZhTW,
   ...contextBudget.featureZhTW,
+  ...workflowGraph.featureZhTW,
   ...providerCapabilities.featureZhTW,
   ...editorProposals.featureZhTW,
   ...ideWorkbench.featureZhTW,
@@ -136,6 +138,7 @@ export const featureZhCN = {
   ...debuggerExtensions.featureZhCN,
   ...githubFeedback.featureZhCN,
   ...contextBudget.featureZhCN,
+  ...workflowGraph.featureZhCN,
   ...providerCapabilities.featureZhCN,
   ...editorProposals.featureZhCN,
   ...ideWorkbench.featureZhCN,
@@ -184,6 +187,7 @@ export const featureEn = {
   ...debuggerExtensions.featureEn,
   ...githubFeedback.featureEn,
   ...contextBudget.featureEn,
+  ...workflowGraph.featureEn,
   ...providerCapabilities.featureEn,
   ...editorProposals.featureEn,
   ...ideWorkbench.featureEn,
@@ -232,6 +236,7 @@ export const featureJa = {
   ...debuggerExtensions.featureJa,
   ...githubFeedback.featureJa,
   ...contextBudget.featureJa,
+  ...workflowGraph.featureJa,
   ...providerCapabilities.featureJa,
   ...editorProposals.featureJa,
   ...ideWorkbench.featureJa,
@@ -280,6 +285,7 @@ export const featureDe = {
   ...debuggerExtensions.featureDe,
   ...githubFeedback.featureDe,
   ...contextBudget.featureDe,
+  ...workflowGraph.featureDe,
   ...providerCapabilities.featureDe,
   ...editorProposals.featureDe,
   ...ideWorkbench.featureDe,
@@ -328,6 +334,7 @@ export const featureFr = {
   ...debuggerExtensions.featureFr,
   ...githubFeedback.featureFr,
   ...contextBudget.featureFr,
+  ...workflowGraph.featureFr,
   ...providerCapabilities.featureFr,
   ...editorProposals.featureFr,
   ...ideWorkbench.featureFr,
@@ -376,6 +383,7 @@ export const featureIt = {
   ...debuggerExtensions.featureIt,
   ...githubFeedback.featureIt,
   ...contextBudget.featureIt,
+  ...workflowGraph.featureIt,
   ...providerCapabilities.featureIt,
   ...editorProposals.featureIt,
   ...ideWorkbench.featureIt,

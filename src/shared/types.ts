@@ -11,6 +11,7 @@ export type * from './usage-history-types.ts';
 export type * from './backup-types.ts';
 export type * from './update-types.ts';
 export type * from './context-budget.ts';
+export type * from './workflow-graph.ts';
 export type * from './editor-preferences.ts';
 export type * from './terminal-recovery.ts';
 export type * from './ai-capabilities.ts';
@@ -690,17 +691,6 @@ export interface ApiError {
   field?: string;
 }
 
-// ---- 明確啟動的角色流程與作業相依 ----
-export interface WorkflowStep { role: string; text: string; review: boolean }
-export interface WorkflowResult { role: string; ai: string; request: string; at: string; ok: boolean; step?: number; invalidatedAt?: string; output?: string; approved?: boolean; evidence?: string; reviewSnapshot?: string }
-export interface WorkflowPlan {
-  dependencies: string[];
-  steps: WorkflowStep[];
-  cursor: number;
-  state: 'ready' | 'running' | 'paused' | 'failed' | 'completed';
-  results: WorkflowResult[];
-  reason?: string;
-}
 
 export interface VerificationCheck { name: string; command: string }
 export interface VerificationStepResult extends Omit<VerifyResult, 'steps' | 'drifted'> { name: string; command: string }

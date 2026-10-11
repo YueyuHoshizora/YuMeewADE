@@ -1,7 +1,7 @@
 import type { UsageScope, WorkflowPlan, WorkflowStep } from '../../shared/types.ts';
 import { query, request } from '../api.ts';
 import { t } from '../i18n/index.ts';
-import { area, button, confirmModal, el, field, modal, row, run, select, type ViewContext } from './dom.ts';
+import { area, button, confirmModal, el, field, modal, row, run, select, taskHash, type ViewContext } from './dom.ts';
 import { confirmUsageRound, workflowBudgetRisk } from './usage-history.ts';
 
 export function workflowButton(context: ViewContext, project: string, task: string): HTMLElement {
@@ -11,10 +11,10 @@ export function workflowButton(context: ViewContext, project: string, task: stri
     const status = el('p');
     const risk = el('div'); let riskSnapshot = ''; let riskSerial = 0;
     async function renderRisk(): Promise<void> {
-      const snapshot = JSON.stringify([plan.cursor, plan.state, plan.steps[plan.cursor]]);
+      const snapshot = JSON.stringify([plan.revision, plan.state, plan.nodeStates]);
       if (snapshot === riskSnapshot) return;
       riskSnapshot = snapshot; const serial = ++riskSerial; risk.replaceChildren();
-      if (plan.state === 'running' || !plan.steps[plan.cursor]) return;
+      if (plan.state === 'running' || !plan.steps.some(s => plan.nodeStates?.[s.id!] === 'pending')) return;
       const scope = await request<UsageScope | null>(query('/api/task/workflow/next', { project, task }));
       if (scope && serial === riskSerial) risk.append(workflowBudgetRisk(scope));
     }
@@ -27,55 +27,67 @@ export function workflowButton(context: ViewContext, project: string, task: stri
       dependencies.append(field(`${candidate.title} (${candidate.state})`, check));
     }
     const steps = el('div', 'workflow-steps');
-    const editors: { role: HTMLSelectElement; text: HTMLTextAreaElement; review: HTMLInputElement; remove: HTMLButtonElement }[] = [];
+    const editors: { role: HTMLSelectElement; text: HTMLTextAreaElement; review: HTMLInputElement; remove: HTMLButtonElement; id: HTMLInputElement; needs: HTMLInputElement; condition: HTMLInputElement; kind: HTMLSelectElement }[] = [];
     const roles = Object.keys(context.state.roles.roles).map(value => ({ value, label: value }));
     function addStep(step?: WorkflowStep): void {
       const role = select(roles, step?.role ?? roles[0]?.value ?? '');
       const text = area(step?.text ?? ''); text.maxLength = context.state.limits.promptChars;
       const review = el('input'); review.type = 'checkbox'; review.checked = step?.review ?? false;
+      const id = el('input'); id.value = step?.id ?? `node-${editors.length + 1}`; id.maxLength = 80;
+      const needs = el('input'); needs.value = step?.dependsOn?.join(',') ?? '';
+      const condition = el('input'); condition.value = step?.condition ? `${step.condition.node}:${step.condition.outcome}` : '';
+      const kind = select([{ value: 'expert', label: t('workflow.graph.expert') }, { value: 'join', label: t('workflow.graph.join') }], step?.kind ?? 'expert');
       const block = el('section', 'card');
       const remove = button(t('common.remove'), () => { editors.splice(editors.indexOf(editor), 1); block.remove(); });
-      const editor = { role, text, review, remove }; editors.push(editor);
-      block.append(field(t('workflow.role'), role), field(t('workflow.instruction'), text), field(t('workflow.readonly'), review), remove);
+      const editor = { role, text, review, remove, id, needs, condition, kind }; editors.push(editor);
+      block.append(field(t('workflow.graph.id'), id), field(t('workflow.graph.needs'), needs), field(t('workflow.graph.condition'), condition), field(t('workflow.graph.kind'), kind), field(t('workflow.role'), role), field(t('workflow.instruction'), text), field(t('workflow.readonly'), review), remove);
       steps.append(block);
     }
     plan.steps.forEach(addStep);
     function renderStatus(): void {
       status.textContent = `${t(`workflow.state.${plan.state}`)} · ${plan.cursor}/${plan.steps.length}${plan.reason ? ` · ${t(`detail.${plan.reason}` as Parameters<typeof t>[0])}` : ''}`;
       void run(renderRisk);
-      save.disabled = plan.state === 'running'; start.disabled = plan.state === 'running' || plan.cursor >= plan.steps.length;
-      stop.hidden = plan.state !== 'running'; approve.hidden = plan.reason !== 'workflow_human';
-      editors.forEach((editor, index) => { editor.role.disabled = editor.text.disabled = editor.review.disabled = editor.remove.disabled = plan.state === 'running' || index < plan.cursor; });
+      save.disabled = plan.state === 'running';
+      start.disabled = plan.state === 'running' || !plan.steps.some(s => plan.nodeStates?.[s.id!] === 'pending' || plan.nodeStates?.[s.id!] === 'human' && !s.review && context.state.roles.roles[s.role]?.main.cli !== '人');
+      stop.hidden = plan.state !== 'running';
+      approve.hidden = plan.reason !== 'workflow_human' || !plan.steps.some(s => plan.nodeStates?.[s.id!] === 'human' && context.state.roles.roles[s.role]?.main.cli === '人');
+      editors.forEach(editor => { editor.role.disabled = editor.text.disabled = editor.review.disabled = editor.remove.disabled = editor.id.disabled = editor.needs.disabled = editor.condition.disabled = editor.kind.disabled = plan.state === 'running'; });
       evidence.hidden = approve.hidden;
       rerunCurrent.disabled = plan.state === 'running' || plan.cursor >= plan.steps.length;
       history.replaceChildren(...plan.results.map((result, index) => {
         const block = el('section', 'card');
-        block.append(el('p', result.ok ? '' : 'error-mark', `${(result.step ?? index) + 1} · ${result.role} · ${result.ai} · ${t(result.ok ? 'verify.pass' : 'verify.fail')} · ${result.at}`));
+        block.append(el('p', result.ok ? '' : 'error-mark', `${result.node ?? (result.step ?? index) + 1} · ${result.role} · ${result.ai} · ${t(result.ok ? 'verify.pass' : 'verify.fail')} · ${result.at}`));
+        if (result.task) block.append(button(`${t('workflow.graph.branch')} ${result.task}`, async () => { await context.refresh(); root.closest('dialog')?.close(); location.hash = taskHash(project, result.task!); }));
         if (result.invalidatedAt) block.append(el('p', 'muted', t('workflow.invalidated')));
         if (result.evidence) block.append(el('p', '', result.evidence));
         if (result.output) { const details = el('details'); details.append(el('summary', '', t('workflow.output')), el('pre', '', result.output)); block.append(details); }
         if (result.request && !result.reviewSnapshot) block.append(button(t('copy.diff'), async () => {
-          const diff = await request<unknown>(query('/api/chat/turn-diff', { project, task, request: result.request }));
+          const diff = await request<unknown>(query('/api/chat/turn-diff', { project, task: result.task ?? task, request: result.request }));
           modal(t('copy.diff'), el('pre', '', JSON.stringify(diff, null, 2)));
         }));
         block.append(button(t('verify.run'), async () => {
-          const verification = await request<unknown>(query('/api/task/verify', { project, task }));
+          const verification = await request<unknown>(query('/api/task/verify', { project, task: result.task ?? task }));
           modal(t('verify.run'), el('pre', '', JSON.stringify(verification, null, 2)));
         }));
-        if ((result.step ?? index) <= plan.cursor && (result.step ?? index) < plan.steps.length) block.append(button(t('workflow.rerun'), async () => {
+        if ((result.step ?? index) < plan.steps.length) block.append(button(t('workflow.rerun'), async () => {
           if (!await confirmModal(t('workflow.rerun'), t('workflow.preserve'))) return;
-          plan = await request<WorkflowPlan>('/api/task/workflow/rerun', { project, task, from: result.step ?? index }); renderStatus();
+          plan = await request<WorkflowPlan>('/api/task/workflow/rerun', { project, task, revision: plan.revision, from: result.step ?? index }); renderStatus();
         }));
         return block;
       }));
     }
     const save = button(t('common.save'), async () => {
       if (!await confirmModal(t('workflow.title'), t('workflow.preserve'))) return;
-      plan = await request<WorkflowPlan>('/api/task/workflow/configure', { project, task, dependencies: choices.filter(c => c.node.checked).map(c => c.id), steps: editors.map(e => ({ role: e.role.value, text: e.text.value, review: e.review.checked })) });
+      const graph = editors.map(e => {
+        const [node, outcome] = e.condition.value.trim().split(':');
+        if (node && outcome !== 'success' && outcome !== 'approved' && outcome !== 'failure') throw new Error(t('workflow.graph.condition'));
+        return { id: e.id.value.trim(), dependsOn: e.needs.value.split(',').map(id => id.trim()).filter(Boolean), kind: e.kind.value as 'expert' | 'join', role: e.role.value, text: e.text.value, review: e.review.checked, ...(node ? { condition: { node, outcome: outcome as 'success' | 'approved' | 'failure' } } : {}) };
+      });
+      plan = await request<WorkflowPlan>('/api/task/workflow/configure', { project, task, revision: plan.revision, dependencies: choices.filter(c => c.node.checked).map(c => c.id), steps: graph });
       renderStatus(); await context.refresh();
     });
     const start = button(t('workflow.start'), async () => {
-      if (!await confirmModal(t('workflow.title'), t('workflow.startConfirm'), t('workflow.start'))) return;
+      if (!await confirmModal(t('workflow.title'), t('workflow.graph.help'), t('workflow.start'))) return;
       const scope = await request<UsageScope | null>(query('/api/task/workflow/next', { project, task }));
       if (scope && !await confirmUsageRound(scope)) return;
       plan = await request<WorkflowPlan>('/api/task/workflow/start', { project, task }); renderStatus();
@@ -83,20 +95,24 @@ export function workflowButton(context: ViewContext, project: string, task: stri
     const stop = button(t('chat.stop'), async () => { await request('/api/task/workflow/stop', { project, task }); await refresh(); });
     const approve = button(t('workflow.approveHuman'), async () => {
       if (!await confirmModal(t('workflow.approveHuman'), t('workflow.approveConfirm'))) return;
-      plan = await request<WorkflowPlan>('/api/task/workflow/approve', { project, task, evidence: evidence.value }); renderStatus();
+      plan = await request<WorkflowPlan>('/api/task/workflow/approve', { project, task, revision: plan.revision, node: plan.steps.find(s => plan.nodeStates?.[s.id!] === 'human' && context.state.roles.roles[s.role]?.main.cli === '人')?.id, evidence: evidence.value }); renderStatus();
     });
     const rerunCurrent = button(t('workflow.rerun'), async () => {
       if (!await confirmModal(t('workflow.rerun'), t('workflow.preserve'))) return;
-      plan = await request<WorkflowPlan>('/api/task/workflow/rerun', { project, task, from: plan.cursor }); renderStatus();
+      const from = plan.steps.findIndex(step => ['pending', 'failed', 'human'].includes(plan.nodeStates?.[step.id!] ?? ''));
+      plan = await request<WorkflowPlan>('/api/task/workflow/rerun', { project, task, revision: plan.revision, from }); renderStatus();
     });
     const history = el('div', 'workflow-results');
     const evidence = area(''); evidence.maxLength = 10000; evidence.placeholder = t('review.evidence');
     root.append(el('p', 'muted', t('workflow.help')), status, risk, field(t('workflow.dependencies'), dependencies), steps,
       button(t('workflow.add'), () => addStep()), evidence, row(save, start, stop, approve, rerunCurrent), history);
+    root.prepend(el('p', 'muted', t('workflow.graph.help')));
+    const graphStatus = el('pre'); root.append(graphStatus);
     modal(t('workflow.title'), root); renderStatus();
     async function refresh(): Promise<void> {
       plan = await request<WorkflowPlan>(query('/api/task/workflow', { project, task }));
       if (root.isConnected) renderStatus();
+      graphStatus.textContent = plan.steps.map(step => `${step.id} [${plan.nodeStates?.[step.id!] ?? 'pending'}] ← ${step.dependsOn?.join(', ') ?? ''}${step.condition ? ` (${step.condition.node}:${step.condition.outcome})` : ''}${plan.branchTasks?.[step.id!] ? ` · ${plan.branchTasks[step.id!]}` : ''}`).join('\n');
     }
     const timer = window.setInterval(() => { if (root.isConnected) void run(refresh); else window.clearInterval(timer); }, 1500);
     root.closest('dialog')?.addEventListener('close', () => window.clearInterval(timer), { once: true });

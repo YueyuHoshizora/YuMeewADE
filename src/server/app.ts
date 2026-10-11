@@ -233,9 +233,14 @@ export class App {
       onUsage: (ai, ev, account) => this.usage.record(ai, ev, account),
     });
     this.workflows = new WorkflowService({ ws: this.ws, tasks: this.tasks, completion: this.completion, runner: this.runner,
+      store: this.store,
       roles: () => this.roles(), available: async ai => !!this.providers[ai] && await this.providers[ai]!.available(),
       review: (p, t, input) => this.review.run(p, t, input), stopReview: (p, t) => this.review.stop(p, t),
-      changed: (p, t) => this.changed(p, t), promptChars: config.limits.promptChars });
+      changed: (p, t) => this.changed(p, t), promptChars: config.limits.promptChars,
+      beforeStart: project => this.trust.assertExecutable(project),
+      isTaskBusy: (p, t) => this.runner.isRunning(p, t) || this.execution.isRunning(p, t) || this.terminal.isRunning(p, t) || this.verify.isRunning(p, t) || this.review.isBusy(p, t) || this.testExplorer.isRunning(p, t) || this.editorProposals.isBusy(p, t),
+      prepareBranch: async (p, t) => { await this.trust.assertExecutable(p); await this.worktree.prepare(p, t); },
+      maxParallel: config.limits.concurrentRuns });
     this.care = new CareService({ config, ws: this.ws, version: this.version, catalog: this.ai, settings: this.settings,
       ...(options.home ? { privateDirectory: path.join(options.home, '.yumeewade', 'care') } : {}),
       reserve: work => this.mutations.exclusive(() => this.isBusy(), work),
