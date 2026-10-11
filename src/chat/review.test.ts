@@ -12,6 +12,8 @@ import { WorktreeService } from '../git/worktree.ts';
 import { withTmpWorkspace } from '../testing/tmp.ts';
 import { ChatStore } from './store.ts';
 import { ReviewService } from './review.ts';
+import { promises as fs } from 'node:fs';
+import path from 'node:path';
 
 test('review arguments cannot inherit full-access, writing session, ledger dirs or arbitrary tools', () => {
   for (const [builder, cfg] of [[claudeArgs, DEFAULT_CONFIG.cli.claude], [codexArgs, DEFAULT_CONFIG.cli.codex]] as const) {
@@ -51,12 +53,14 @@ test('review provider write request is rejected; transcript persists without cha
   };
   const worktree = new WorktreeService({ ws, projects, tasks, diffBytes: DEFAULT_CONFIG.limits.diffBytes });
   let writing = true; let published = 0;
-  const service = new ReviewService({ providers: { codex: provider, mock: new MockCliProvider() }, tasks, settings, store, worktree, limits: DEFAULT_CONFIG.limits, onChanged() {}, isRunning: () => writing, publish: () => { published++; } });
+  const service = new ReviewService({ ws, providers: { codex: provider, mock: new MockCliProvider() }, tasks, settings, store, worktree, limits: DEFAULT_CONFIG.limits, onChanged() {}, isRunning: () => writing, publish: () => { published++; } });
   await assert.rejects(service.run('P', task.id, { ai: 'codex', text: 'writing still active' }));
   assert.equal(calls.length, 0);
   writing = false;
   const result = await service.run('P', task.id, { ai: 'codex', text: 'Attempt Write and Bash' });
   assert.equal(result.session, 'isolated-review-session'); assert.equal(result.ok, true);
+  assert.equal(result.approved, false); assert.equal(result.structured, false);
+  assert.equal((await service.history('P', task.id)).snapshots[0]?.text, 'Write denied by tool policy');
   assert.deepEqual(await store.readMeta('P', task.id), meta);
   assert.equal((await store.readLog('P', task.id)).length, 2);
   assert.equal(published, 2);
@@ -81,7 +85,7 @@ test('stop while user transcript append is pending prevents provider launch', { 
   const provider: CliProvider = { name: 'review-test', dangerous: false, supportsReadonly: true, readonlyEnforcement: 'tool-allowlist', available: async () => true,
     send: () => { launches++; return { stop() {}, done: Promise.resolve({ ok: true, stopped: false }) }; } };
   const worktree = new WorktreeService({ ws, projects, tasks, diffBytes: DEFAULT_CONFIG.limits.diffBytes });
-  const service = new ReviewService({ providers: { codex: provider }, tasks, settings, store, worktree, limits: DEFAULT_CONFIG.limits, onChanged() {}, isRunning: () => false, publish() {} });
+  const service = new ReviewService({ ws, providers: { codex: provider }, tasks, settings, store, worktree, limits: DEFAULT_CONFIG.limits, onChanged() {}, isRunning: () => false, publish() {} });
   const running = service.run('P', task.id, { ai: 'codex', text: 'review' });
   const rejected = assert.rejects(running, { code: 'conflict' });
   await entered.promise;
@@ -93,4 +97,29 @@ test('stop while user transcript append is pending prevents provider launch', { 
   assert.ok(last?.role === 'assistant' && last.stopped);
   assert.equal(service.isBusy(), false);
   await service.close();
+}));
+
+test('review findings retain evidence and prior snapshots; stale approval blocks merging', () => withTmpWorkspace(async ws => {
+  const projects = new ProjectLedger(ws); await projects.create({ name: 'P' });
+  const tasks = new TaskLedger(ws); const task = await tasks.create('P', { title: 'Review', workspace: 'direct' });
+  const settings = new SettingsStore(ws, DEFAULT_CONFIG); const store = new ChatStore(ws);
+  let text = JSON.stringify({ schema: 1, approved: false, findings: [{ severity: 'major', path: 'a.ts', line: 1, message: 'Failure', evidence: 'invalid branch' }] });
+  const provider: CliProvider = { name: 'review-test', dangerous: false, supportsReadonly: true, readonlyEnforcement: 'tool-allowlist', available: async () => true,
+    send: (_opts, event) => { event({ type: 'result', text }); return { stop() {}, done: Promise.resolve({ ok: true, stopped: false }) }; } };
+  const service = new ReviewService({ ws, providers: { codex: provider }, tasks, settings, store,
+    worktree: new WorktreeService({ ws, projects, tasks, diffBytes: DEFAULT_CONFIG.limits.diffBytes }), limits: DEFAULT_CONFIG.limits, isRunning: () => false, onChanged() {}, publish() {} });
+  const first = await service.run('P', task.id, { ai: 'codex', text: 'review' });
+  assert.equal(first.approved, false);
+  await service.setGate('P', task.id, true); await assert.rejects(service.assertMergeAllowed('P', task.id));
+  const finding = first.snapshot!.findings[0]!;
+  const history = await service.updateFinding('P', task.id, first.request, finding.id, 'resolved', 'Fixed the invalid branch');
+  assert.equal(history.snapshots[0]?.findings[0]?.transitions[0]?.evidence, 'Fixed the invalid branch');
+  await assert.rejects(service.assertMergeAllowed('P', task.id));
+  text = JSON.stringify({ schema: 1, approved: true, findings: [] });
+  await service.run('P', task.id, { ai: 'codex', text: 'review again' });
+  await service.assertMergeAllowed('P', task.id);
+  assert.equal((await service.history('P', task.id)).snapshots.length, 2);
+  await fs.writeFile(path.join(ws.projectDir('P'), 'a.ts'), 'changed');
+  assert.equal((await service.history('P', task.id)).stale, true);
+  await assert.rejects(service.assertMergeAllowed('P', task.id)); await service.close();
 }));

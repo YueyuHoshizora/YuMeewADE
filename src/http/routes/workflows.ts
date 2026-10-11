@@ -5,6 +5,11 @@ import { reqString, type Router } from '../router.ts';
 
 export function registerWorkflowRoutes(router: Router, app: App): void {
   router.get('/api/task/workflow', async ({ query }) => app.workflows.get(reqString(query, 'project', 120), reqString(query, 'task', 120)));
+  router.get('/api/task/workflow/next', async ({ query }) => {
+    const project = reqString(query, 'project', 120); const task = reqString(query, 'task', 120);
+    const pick = await app.workflows.nextSelection(project, task);
+    return pick ? { project, task, ai: pick.ai, account: (await app.settings.get()).activeAccounts[pick.ai] ?? 'default' } : null;
+  });
   router.post('/api/task/workflow/configure', async ({ body }) => {
     if (!Array.isArray(body.dependencies) || !body.dependencies.every(d => typeof d === 'string') || !Array.isArray(body.steps)) throw new AppError('bad_request', 'workflow_invalid');
     return app.workflows.configure(reqString(body, 'project', 120), reqString(body, 'task', 120), body.dependencies as string[], body.steps as WorkflowStep[]);
@@ -14,5 +19,9 @@ export function registerWorkflowRoutes(router: Router, app: App): void {
     await app.workflows.stop(reqString(body, 'project', 120), reqString(body, 'task', 120));
     return { ok: true };
   });
-  router.post('/api/task/workflow/approve', async ({ body }) => app.workflows.approveHuman(reqString(body, 'project', 120), reqString(body, 'task', 120)));
+  router.post('/api/task/workflow/approve', async ({ body }) => app.workflows.approveHuman(reqString(body, 'project', 120), reqString(body, 'task', 120), reqString(body, 'evidence', 10000)));
+  router.post('/api/task/workflow/rerun', async ({ body }) => {
+    if (typeof body.from !== 'number') throw new AppError('bad_request', 'workflow_invalid');
+    return app.workflows.rerun(reqString(body, 'project', 120), reqString(body, 'task', 120), body.from);
+  });
 }

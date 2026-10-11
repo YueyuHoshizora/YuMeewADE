@@ -3,7 +3,7 @@ import type { Workspace } from '../ledger/workspace.ts';
 import type { TaskLedger } from '../ledger/tasks.ts';
 import type { CompletionStore } from '../ledger/completion.ts';
 import type { ChatRunner } from './runner.ts';
-import type { Roles, WorkflowPlan, WorkflowStep } from '../shared/types.ts';
+import type { AiPick, RoleSlot, Roles, WorkflowPlan, WorkflowStep, ReviewResult } from '../shared/types.ts';
 import { HUMAN } from '../shared/types.ts';
 import { AppError } from '../shared/errors.ts';
 import { readJson, writeJson, withFileLocks } from '../shared/fsx.ts';
@@ -16,7 +16,7 @@ interface WorkflowDeps {
   runner: ChatRunner;
   roles: () => Promise<Roles>;
   available: (ai: string) => Promise<boolean>;
-  review: (project: string, task: string, input: { ai: string; model?: string; effort?: string; text: string }) => Promise<{ request: string; ok: boolean }>;
+  review: (project: string, task: string, input: { ai: string; model?: string; effort?: string; text: string }) => Promise<ReviewResult>;
   stopReview: (project: string, task: string) => boolean;
   changed: (project: string, task: string) => void;
   promptChars: number;
@@ -46,7 +46,10 @@ export class WorkflowService {
     const plan = await readJson<WorkflowPlan>(this.file(p, t), empty());
     if (!Array.isArray(plan.dependencies) || !Array.isArray(plan.steps) || !Array.isArray(plan.results)
       || !Number.isSafeInteger(plan.cursor) || plan.cursor < 0 || plan.cursor > plan.steps.length) throw new AppError('conflict', 'workflow_invalid');
-    if (plan.state === 'running' && !this.jobs.has(this.key(p, t))) return { ...plan, state: 'paused', reason: 'workflow_interrupted' };
+    if (plan.state === 'running' && !this.jobs.has(this.key(p, t))) {
+      plan.state = 'paused'; plan.reason = 'workflow_interrupted';
+      await writeJson(this.file(p, t), plan);
+    }
     return plan;
   }
 
@@ -74,7 +77,13 @@ export class WorkflowService {
         visited.add(id);
       };
       for (const id of dependencies) await visit(id, new Set());
-      const plan = { ...empty(), dependencies: [...dependencies], steps: steps.map(s => ({ ...s })) };
+      const prior = await this.get(p, t);
+      for (let index = 0; index < prior.cursor; index++) {
+        if (JSON.stringify(prior.steps[index]) !== JSON.stringify(steps[index])) throw new AppError('conflict', 'workflow_invalid');
+      }
+      const plan: WorkflowPlan = { ...prior, dependencies: [...dependencies], steps: steps.map(s => ({ ...s })),
+        state: prior.cursor === steps.length ? 'completed' : 'ready' };
+      delete plan.reason;
       await writeJson(file, plan);
       this.deps.changed(p, t);
       return plan;
@@ -86,6 +95,21 @@ export class WorkflowService {
       const task = await this.deps.tasks.get(p, dependency);
       if (task.state !== '完成' || !await this.deps.completion.isApproved(p, dependency)) throw new AppError('conflict', 'workflow_dependencies');
     }
+  }
+  private async resolveStep(step: WorkflowStep): Promise<RoleSlot | null> {
+    const role = (await this.deps.roles()).roles[step.role];
+    if (!role) throw new AppError('bad_request', 'workflow_invalid');
+    if (role.main.cli === HUMAN) return null;
+    if (await this.deps.available(role.main.cli)) return role.main;
+    if (!role.backup || role.backup.cli === HUMAN || !await this.deps.available(role.backup.cli)) throw new AppError('unavailable', 'cli_unavailable');
+    return role.backup;
+  }
+
+  async nextSelection(p: string, t: string): Promise<AiPick | null> {
+    const plan = await this.get(p, t); const step = plan.steps[plan.cursor];
+    if (!step) return null;
+    const slot = await this.resolveStep(step);
+    return slot ? { ai: slot.cli, model: slot.model, effort: slot.effort } : null;
   }
 
   async start(p: string, t: string): Promise<WorkflowPlan> {
@@ -113,27 +137,23 @@ export class WorkflowService {
       while (plan.cursor < plan.steps.length && !job.stopped) {
         await this.assertDependencies(p, t);
         const step = plan.steps[plan.cursor]!;
-        const role = (await this.deps.roles()).roles[step.role];
-        if (!role) throw new AppError('bad_request', 'workflow_invalid');
-        let slot = role.main;
-        if (slot.cli === HUMAN) { plan.state = 'paused'; plan.reason = 'workflow_human'; break; }
-        if (!await this.deps.available(slot.cli)) {
-          if (!role.backup || role.backup.cli === HUMAN || !await this.deps.available(role.backup.cli)) throw new AppError('unavailable', 'cli_unavailable');
-          slot = role.backup;
-        }
-        let result: { request: string; ok: boolean };
+        const slot = await this.resolveStep(step);
+        if (!slot) { plan.state = 'paused'; plan.reason = 'workflow_human'; break; }
+        let result: { request: string; ok: boolean; approved?: boolean; structured?: boolean; text?: string; snapshot?: { id: string } };
         if (job.stopped) break;
         if (step.review) result = await this.deps.review(p, t, { ai: slot.cli, model: slot.model, effort: slot.effort, text: step.text });
         else {
           const sent = await this.deps.runner.send({ project: p, task: t, text: step.text, ai: slot.cli, model: slot.model, effort: slot.effort }, { workflow: true });
           await this.deps.runner.whenTaskIdle(p, t);
           const reply = await this.deps.runner.outcome(p, t, sent.request);
-          result = { request: sent.request, ok: reply?.role === 'assistant' && !reply.error && !reply.stopped && !reply.asks?.length };
+          result = { request: sent.request, ...(reply?.text === undefined ? {} : { text: reply.text }), ok: reply?.role === 'assistant' && !reply.error && !reply.stopped && !reply.asks?.length };
         }
-        plan.results.push({ role: step.role, ai: slot.cli, request: result.request, ok: result.ok, at: new Date().toISOString() });
+        plan.results.push({ step: plan.cursor, role: step.role, ai: slot.cli, request: result.request,
+          ok: result.ok && (!step.review || (result.approved === true && result.structured === true)), ...(result.approved === undefined ? {} : { approved: result.approved }),
+          ...(result.text === undefined ? {} : { output: result.text }), ...(result.snapshot ? { reviewSnapshot: result.snapshot.id } : {}), at: new Date().toISOString() });
         if (job.stopped) break;
         const task = await this.deps.tasks.get(p, t);
-        if (!result.ok || task.state === '等待回覆') { plan.state = 'failed'; plan.reason = 'workflow_step_failed'; break; }
+        if (!result.ok || (step.review && (result.approved !== true || result.structured !== true)) || task.state === '等待回覆') { plan.state = 'failed'; plan.reason = 'workflow_step_failed'; break; }
         plan.cursor++;
         await writeJson(this.file(p, t), plan);
         this.deps.changed(p, t);
@@ -149,17 +169,29 @@ export class WorkflowService {
   }
 
   /** An explicit human approval advances only a human-owned paused step. */
-  async approveHuman(p: string, t: string): Promise<WorkflowPlan> {
+  async approveHuman(p: string, t: string, evidence: string): Promise<WorkflowPlan> {
     if (this.jobs.has(this.key(p, t))) throw new AppError('conflict', 'workflow_busy');
+    if (typeof evidence !== 'string' || !evidence.trim() || evidence.length > 10000) throw new AppError('bad_request', 'workflow_invalid');
     const plan = await this.get(p, t);
     const step = plan.steps[plan.cursor];
     if (!step || plan.state !== 'paused' || (await this.deps.roles()).roles[step.role]?.main.cli !== HUMAN) throw new AppError('conflict', 'workflow_invalid');
-    plan.results.push({ role: step.role, ai: HUMAN, request: '', ok: true, at: new Date().toISOString() });
+    plan.results.push({ step: plan.cursor, role: step.role, ai: HUMAN, request: '', ok: true, approved: true, evidence, at: new Date().toISOString() });
     plan.cursor++;
     plan.state = plan.cursor === plan.steps.length ? 'completed' : 'ready';
     delete plan.reason;
     await writeJson(this.file(p, t), plan);
     this.deps.changed(p, t);
+    return plan;
+  }
+  /** Explicit reruns preserve attempts but revoke downstream checkpoints. */
+  async rerun(p: string, t: string, from: number): Promise<WorkflowPlan> {
+    if (this.jobs.has(this.key(p, t)) || this.deps.runner.isRunning(p, t)) throw new AppError('conflict', 'workflow_busy');
+    const plan = await this.get(p, t);
+    if (!Number.isSafeInteger(from) || from < 0 || from > plan.cursor || from >= plan.steps.length) throw new AppError('bad_request', 'workflow_invalid');
+    const at = new Date().toISOString();
+    plan.results.forEach((result, index) => { if (!result.invalidatedAt && (result.step ?? index) >= from) result.invalidatedAt = at; });
+    plan.cursor = from; plan.state = 'ready'; delete plan.reason;
+    await writeJson(this.file(p, t), plan); this.deps.changed(p, t);
     return plan;
   }
 

@@ -7,10 +7,18 @@ import type { SettingsStore } from '../ledger/settings.ts';
 import type { Config } from '../shared/config.ts';
 import type { Ask, ChatEvent, ChatRow, ReviewCapability, ReviewInput, ReviewResult, TurnUsage } from '../shared/types.ts';
 import { AppError } from '../shared/errors.ts';
+import path from 'node:path';
+import type { Workspace } from '../ledger/workspace.ts';
+import type { ReviewHistory, ReviewFindingState, ReviewSnapshot } from '../shared/review-types.ts';
+import { readJson, writeJson, withFileLocks } from '../shared/fsx.ts';
+import { parseReviewOutput, reviewFingerprint, REVIEW_PROTOCOL } from './review-output.ts';
 
 interface Dependencies {
   providers: Record<string, CliProvider>; store: ChatStore; worktree: WorktreeService;
   tasks: TaskLedger; settings: SettingsStore; limits: Config['limits'];
+  ws: Workspace;
+  beforeRun?: (project: string, task: string, ai: string, account: string) => Promise<void>;
+  onCompleted?: (input: { requestId: string; sessionId?: string; project: string; task: string; ai: string; account: string; usage: TurnUsage | null }) => Promise<void>;
   onChanged: (project: string, task: string) => void;
   isRunning: (project: string, task: string) => boolean;
   publish: (project: string, task: string, event: ChatEvent) => void;
@@ -44,6 +52,45 @@ export class ReviewService {
     await this.deps.store.append(project, task, row);
     this.deps.publish(project, task, { event: 'row', data: row });
   }
+  private file(project: string, task: string): string { return path.join(this.deps.ws.projectDir(project), '.ai', 'reviews', `${task}.json`); }
+  private async cwd(project: string, task: string): Promise<string> {
+    const record = await this.deps.tasks.get(project, task);
+    return record.workspace === 'isolated' && record.workdir ? record.workdir : this.deps.worktree.bodyPath(project);
+  }
+  async history(project: string, task: string): Promise<ReviewHistory> {
+    const fingerprint = await reviewFingerprint(await this.cwd(project, task));
+    const history = await readJson<ReviewHistory>(this.file(project, task), { snapshots: [], requireApproval: false, stale: true });
+    const latest = history.snapshots.at(-1);
+    return { ...history, stale: !latest || latest.content !== fingerprint.content || latest.revision !== fingerprint.revision };
+  }
+  async setGate(project: string, task: string, required: boolean): Promise<ReviewHistory> {
+    await this.deps.tasks.get(project, task);
+    const file = this.file(project, task);
+    await withFileLocks([file], async () => {
+      const history = await readJson<ReviewHistory>(file, { snapshots: [], requireApproval: false, stale: true });
+      history.requireApproval = required; await writeJson(file, history);
+    });
+    this.deps.onChanged(project, task); return this.history(project, task);
+  }
+  async updateFinding(project: string, task: string, snapshot: string, finding: string, state: ReviewFindingState, evidence: string): Promise<ReviewHistory> {
+    await this.deps.tasks.get(project, task);
+    if (!['open', 'resolved', 'dismissed'].includes(state) || !evidence.trim() || evidence.length > 10000 || this.isBusy(project, task)) throw new AppError('bad_request');
+    const file = this.file(project, task);
+    await withFileLocks([file], async () => {
+      const history = await readJson<ReviewHistory>(file, { snapshots: [], requireApproval: false, stale: true });
+      const item = history.snapshots.find(s => s.id === snapshot)?.findings.find(f => f.id === finding);
+      if (!item) throw new AppError('not_found');
+      item.state = state; item.transitions.push({ state, evidence, at: new Date().toISOString() });
+      await writeJson(file, history);
+    });
+    this.deps.onChanged(project, task); return this.history(project, task);
+  }
+  async assertMergeAllowed(project: string, task: string): Promise<void> {
+    const history = await this.history(project, task); const latest = history.snapshots.at(-1);
+    if (history.requireApproval && (history.stale || !latest?.ok || !latest.structured
+      || latest.findings.some(f => f.state === 'open' && (f.severity === 'major' || f.severity === 'critical'))
+      || !latest.approved)) throw new AppError('conflict');
+  }
   run(project: string, task: string, input: ReviewInput): Promise<ReviewResult> {
     const key = JSON.stringify([project, task]);
     if (this.closed) return Promise.reject(new AppError('unavailable'));
@@ -58,19 +105,25 @@ export class ReviewService {
       let text = ''; let session: string | undefined; let usage: TurnUsage | undefined; let asks: Ask[] | undefined;
       let failure = false; let timer: NodeJS.Timeout | undefined; let appended = false;
       try {
-        const record = await this.deps.tasks.get(project, task);
-        const cwd = record.workspace === 'isolated' && record.workdir ? record.workdir : await this.deps.worktree.bodyPath(project);
+        const cwd = await this.cwd(project, task);
+        const fingerprint = await reviewFingerprint(cwd);
         const settings = await this.deps.settings.get();
         if (!await provider.available()) throw new AppError('bad_request', 'cli_unavailable');
         if (entry.stopped || this.closed) throw new AppError('conflict');
+        const account = settings.activeAccounts[input.ai] ?? 'default';
+        await this.deps.beforeRun?.(project, task, input.ai, account);
         const selection = { ...(input.model === undefined ? {} : { model: input.model }), ...(input.effort === undefined ? {} : { effort: input.effort }) };
         await this.append(project, task, { at: new Date().toISOString(), role: 'user', to: input.ai, text: input.text, ...selection, request });
         appended = true;
         if (entry.stopped || this.closed) throw new AppError('conflict');
-        entry.run = provider.send({ prompt: `Review the workspace and report findings only. Do not change files.\n\n${input.text}`, cwd, readonly: true,
+        entry.run = provider.send({ prompt: `${REVIEW_PROTOCOL}\n\n${input.text}`, cwd, readonly: true,
           ...selection, accountId: settings.activeAccounts[input.ai] ?? 'default' }, event => {
-          if (event.type === 'delta') text += event.text;
-          else if (event.type === 'result') text = event.text;
+          if (event.type === 'delta') {
+            const remaining = Math.max(0, 2_000_000 - text.length);
+            text += event.text.slice(0, remaining);
+            if (event.text.length > remaining) { failure = true; entry.run?.stop(); }
+          }
+          else if (event.type === 'result') { text = event.text.slice(0, 2_000_000); failure ||= event.text.length > 2_000_000; }
           else if (event.type === 'session') session = event.id;
           else if (event.type === 'usage') usage = event.usage;
           else if (event.type === 'asks') asks = event.asks;
@@ -78,13 +131,24 @@ export class ReviewService {
         });
         timer = setTimeout(() => { entry.stopped = true; entry.run?.stop(); }, this.deps.limits.runSeconds * 1000);
         const outcome = await entry.run.done;
+        await this.deps.onCompleted?.({ requestId: request, ...(session ? { sessionId: session } : {}), project, task, ai: input.ai, account, usage: usage ?? null });
         failure ||= !outcome.ok;
         entry.stopped ||= outcome.stopped;
         await this.append(project, task, { at: new Date().toISOString(), role: 'assistant', ai: input.ai, text,
           ...selection, request, ms: Date.now() - started, ...(usage ? { usage } : {}),
           ...(failure ? { error: 'review_failed' } : {}), ...(entry.stopped ? { stopped: true } : {}), ...(asks ? { asks } : {}) });
         appended = false;
-        return { request, text, ai: input.ai, ...(session ? { session } : {}), ...(asks ? { asks } : {}), ok: !failure && !entry.stopped };
+        const parsed = parseReviewOutput(text);
+        const current = await reviewFingerprint(cwd);
+        const ok = !failure && !entry.stopped;
+        const snapshot: ReviewSnapshot = { id: request, request, ai: input.ai, at: new Date().toISOString(), ...fingerprint, text, ok,
+          ...parsed, approved: ok && parsed.approved && !asks?.length && current.content === fingerprint.content && current.revision === fingerprint.revision };
+        const file = this.file(project, task);
+        await withFileLocks([file], async () => {
+          const history = await readJson<ReviewHistory>(file, { snapshots: [], requireApproval: false, stale: true });
+          history.snapshots.push(snapshot); await writeJson(file, history);
+        });
+        return { request, text, ai: input.ai, ...(session ? { session } : {}), ...(asks ? { asks } : {}), ok, approved: snapshot.approved, structured: parsed.structured, snapshot };
       } catch (error) {
         if (appended) await this.append(project, task, { at: new Date().toISOString(), role: 'assistant', ai: input.ai, text, request, ms: Date.now() - started, error: 'review_failed', ...(entry.stopped ? { stopped: true } : {}) });
         throw error;

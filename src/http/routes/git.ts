@@ -12,6 +12,7 @@ export function registerGitRoutes(router: Router, app: App): void {
     const result = await app.worktree.merge(project, task, async () => {
       if (app.taskBusy(project, task)) throw new AppError('conflict', 'merge_while_running');
       await app.verify.requireCurrentPass(project, task);
+      await app.review.assertMergeAllowed(project, task);
     });
     app.changed(project, task);
     return result;
