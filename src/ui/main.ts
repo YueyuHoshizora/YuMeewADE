@@ -20,9 +20,11 @@ import { showInitialCare } from './components/care.ts';
 import { mountTerminalDock, toggleTerminalDock } from './components/terminal-dock.ts';
 import { openCommandPalette, paletteShortcut } from './components/palette.ts';
 import { overviewView } from './views/overview.ts';
+import { mountEditorWorkbench, setWorkbenchScope } from './components/files.ts';
 
 const header = document.getElementById('header')!; const sidebar = document.getElementById('sidebar')!; const main = document.getElementById('main')!; const footer = document.getElementById('footer')!;
 mountTerminalDock();
+mountEditorWorkbench(main);
 let state: AppState | null = null; let usage: UsageState = { ais: [], tokensPerSecond: null }; let view: View | null = null; let route = ''; let viewTarget = ''; let refreshJob: Promise<void> | null = null; let refreshAgain = false; let debounce: number | undefined;
 let initialCareShown = false;
 function notify(previous: AppState | null, next: AppState): void {
@@ -121,6 +123,7 @@ function navigate(force = false): void {
   else view = turnView(context);
   main.classList.toggle('task-main', parts[0] === 't' && !waiting);
   main.replaceChildren(view.node); main.scrollTop = 0; document.body.classList.remove('sidebar-open'); drawShell();
+  setWorkbenchScope(project?.id ?? '', task?.id ?? '', state.root);
 }
 function refresh(): Promise<void> {
   // 建立後的呼叫必須等到真正取得新 state；正在抓取時不能提早 resolve。
@@ -128,8 +131,10 @@ function refresh(): Promise<void> {
   refreshJob = (async () => {
     try {
       do {
-        refreshAgain = false; const next = await api.state(); notify(state, next); announceQuota(next.usage); announceUpdate(next); state = next; usage = next.usage; drawShell();
-        navigate(); view?.update?.(state);
+        refreshAgain = false; const next = await api.state(); const workspaceChanged = state !== null && state.root !== next.root;
+        if (workspaceChanged) window.dispatchEvent(new CustomEvent('yumeewade:workspace-changed', { detail: { root: next.root } }));
+        notify(state, next); announceQuota(next.usage); announceUpdate(next); state = next; usage = next.usage; drawShell();
+        navigate(workspaceChanged); view?.update?.(state);
         if (!initialCareShown) { initialCareShown = true; showInitialCare({ state, refresh }); }
       } while (refreshAgain);
     } catch (error) {

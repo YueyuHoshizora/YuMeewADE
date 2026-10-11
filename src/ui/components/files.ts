@@ -5,8 +5,32 @@ import { el, input, area, button, row, confirmModal, run } from './dom.ts';
 import { EditorContent } from './editor-engine.ts';
 import { FilePreview, isImage } from './file-preview.ts';
 import { selectionMention } from './editor-mention.ts';
+import { fileHierarchy, normalizeLayout } from './editor-layout.ts';
 
-const browsers = new Map<string, { dialog: HTMLDialogElement; open: (path: string, line?: number) => Promise<void> }>();
+export interface WorkbenchEditorHost {
+  snapshot(): { path: string; revision: string; text: string; selection: { from: number; to: number } } | null;
+  applyEdits(expected: { path: string; revision: string; text: string }, edits: { from: number; to: number; text: string }[]): boolean;
+}
+export interface WorkbenchPanelContext { project: string; task: string; node: HTMLElement; open(path: string, line?: number): Promise<void>; editor: WorkbenchEditorHost; }
+const panelFactories = new Map<string, (context: WorkbenchPanelContext) => HTMLElement>();
+export function registerWorkbenchPanel(id: string, factory: (context: WorkbenchPanelContext) => HTMLElement): void {
+  panelFactories.set(id, factory);
+  window.dispatchEvent(new Event('yumeewade:workbench-panels'));
+}
+let workbenchMount: HTMLElement | undefined;
+let activeWorkspace = '';
+export function mountEditorWorkbench(main: HTMLElement): void {
+  workbenchMount = el('section', 'editor-workbench-host');
+  main.after(workbenchMount);
+}
+export function setWorkbenchScope(project: string, task: string, workspace: string): void {
+  activeWorkspace = workspace;
+  if (!project) return;
+  for (const browser of browsers.values()) { browser.flush(); browser.dialog.hidden = true; }
+  if (project) openFileBrowser(project, task, workspace);
+}
+
+const browsers = new Map<string, { dialog: HTMLElement; open: (path: string, line?: number) => Promise<void>; flush(): void; dispose(): void; canDispose(): boolean; restoreLayout(): void }>();
 
 window.addEventListener('yumeewade:open-file', event => {
   const detail = (event as CustomEvent<unknown>).detail;
@@ -15,16 +39,22 @@ window.addEventListener('yumeewade:open-file', event => {
   if (typeof project !== 'string' || !project || typeof task !== 'string' || typeof path !== 'string' || !path ||
     (line !== undefined && (typeof line !== 'number' || !Number.isSafeInteger(line) || line < 1))) return;
   openFileBrowser(project, task);
-  const browser = browsers.get(JSON.stringify([project, task]));
+  const browser = browsers.get(JSON.stringify([activeWorkspace, project, task]));
   if (browser) void run(() => browser.open(path, line as number | undefined));
 });
 
-export function openFileBrowser(project: string, task: string): void {
-  const key = JSON.stringify([project, task]); const existing = browsers.get(key);
-  if (existing) { if (existing.dialog.open) existing.dialog.focus(); return; }
+export function openFileBrowser(project: string, task: string, workspace = activeWorkspace): void {
+  const key = JSON.stringify([workspace, project, task]); const existing = browsers.get(key);
+  if (existing) { for (const browser of browsers.values()) { browser.flush(); browser.dialog.hidden = browser !== existing; } existing.dialog.hidden = false; existing.restoreLayout(); return; }
+  for (const browser of browsers.values()) { browser.flush(); browser.dialog.hidden = true; }
+  if (browsers.size >= 12) {
+    const idle = [...browsers].find(([, browser]) => browser.canDispose());
+    if (idle) { idle[1].dispose(); browsers.delete(idle[0]); }
+  }
+  if (browsers.size >= 12) throw new Error(t('ew.recoveryLimit'));
   const ids: Record<string, string> = { project, ...(task ? { task } : {}) }; let storageKey = ''; let persistenceEnabled = false;
   const buffers = new Map<string, EditorRecovery>(); const views: { path: string | undefined; content: EditorContent; preview: FilePreview; tabs: HTMLDivElement; node: HTMLDivElement }[] = [];
-  const dialog = el('dialog', 'modal'); const results = el('div'); const output = el('div'); const panes = el('div'); panes.style.display = 'flex'; panes.style.gap = '1rem'; let focused = 0;
+  const dialog = el('section', 'editor-workbench'); const results = el('div', 'editor-file-tree'); const output = el('div', 'editor-problems'); const panes = el('div', 'editor-panes'); let focused = 0;
   const filter = input('', t('files.search')); const sourceSearch = input('', t('ew.search')); const replacement = input('', t('ew.replacement'));
   const dirty = (buffer: EditorRecovery) => buffer.text !== buffer.document.text;
   let persistenceTimer: number | undefined;
@@ -214,7 +244,11 @@ export function openFileBrowser(project: string, task: string): void {
     const serial = ++loadSerial; const q = filter.value.trim();
     const found = await request<{ files: string[]; total: number }>(query('/api/task/files', { ...ids, q }));
     if (serial !== loadSerial || !dialog.isConnected || q !== filter.value.trim()) return;
-    results.replaceChildren(...found.files.map(path => button(path, () => show(path), 'file-result')));
+    results.replaceChildren(...[...fileHierarchy(found.files)].map(([folder, paths]) => {
+      const group = el('details'); group.open = !folder || !!q;
+      group.append(el('summary', '', folder || project), ...paths.map(path => button(path.slice(path.lastIndexOf('/') + 1), () => show(path), 'file-result')));
+      return group;
+    }));
     if (found.total > found.files.length) results.append(el('p', 'muted', t('files.more', { total: found.total, n: found.files.length })));
   }
   async function search(replace: boolean): Promise<void> {
@@ -250,7 +284,7 @@ export function openFileBrowser(project: string, task: string): void {
     const session = parsed && typeof parsed === 'object' && !Array.isArray(parsed) ? parsed as { version?: unknown; buffers?: unknown; panes?: unknown; focused?: unknown } : undefined;
     const values = Array.isArray(parsed) ? parsed : session?.version === 3 ? session.buffers : undefined;
     if (!Array.isArray(values) || values.length > 50 || new TextEncoder().encode(raw).byteLength > 4 * 1024 * 1024) { output.append(el('p', 'warning', t('ew.recoveryLimit'))); return; }
-    if (values.some(value => value && typeof value === 'object' && !('clean' in value && value.clean === true)) && !(await confirmModal(t('ew.recover'), t('ew.recover'), t('ew.recover')))) { dialog.close(); return; }
+    if (values.some(value => value && typeof value === 'object' && !('clean' in value && value.clean === true)) && !(await confirmModal(t('ew.recover'), t('ew.recover'), t('ew.recover')))) return;
     for (const value of values) { if (!value || typeof value !== 'object') continue; const candidate = value as Partial<EditorRecovery> & { clean?: boolean }; if (!candidate.document || typeof candidate.document.path !== 'string' || typeof candidate.document.revision !== 'string' || typeof candidate.text !== 'string' || candidate.text.length > 4 * 1024 * 1024) continue;
       const original = candidate.document;
       if (typeof original.text !== 'string') continue;
@@ -298,21 +332,53 @@ export function openFileBrowser(project: string, task: string): void {
       await pin(buffer.document.path, buffer.text.slice(0, buffer.start).split('\n').length, buffer.text.slice(0, buffer.end).split('\n').length, buffer.document.revision);
     })] : []));
   actions.append(send);
-  const close = async () => { views.forEach((_, index) => capture(index)); persist(); dialog.close(); };
   filter.oninput = () => void run(load);
   const unload = (event: BeforeUnloadEvent) => { views.forEach((_, index) => capture(index)); persist(); if ([...buffers.values()].some(dirty)) { event.preventDefault(); event.returnValue = ''; } };
-  window.addEventListener('beforeunload', unload); const navigate = () => void run(close); window.addEventListener('hashchange', navigate);
-  dialog.addEventListener('cancel', event => { event.preventDefault(); void run(close); }); dialog.addEventListener('close', () => { disposed = true; for (const path of live.keys()) void closeDiagnostics(path); browsers.delete(key); window.clearTimeout(persistenceTimer); views.forEach(view => { view.content.destroy(); view.preview.destroy(); }); window.removeEventListener('beforeunload', unload); window.removeEventListener('hashchange', navigate); dialog.remove(); }, { once: true });
-  dialog.append(row(el('h2', '', t('files.title')), button(t('common.close'), close)), actions, row(pathInput, destination, ...(['createFile', 'createFolder', 'rename', 'delete'] as const).map(action => button(t(`ew.${action}`), () => mutate(action)))), row(sourceSearch, replacement, button(t('ew.search'), () => search(false)), button(t('ew.replacePreview'), () => search(true))), filter, results, panes, output);
-  document.body.append(dialog);
+  window.addEventListener('beforeunload', unload);
+  const panelHost = el('div', 'editor-extension-panels');
+  const editor: WorkbenchEditorHost = {
+    snapshot: () => { const buffer = current(); if (!buffer) return null; return { path: buffer.document.path, revision: buffer.document.revision, text: buffer.text, selection: { from: buffer.start, to: buffer.end } }; },
+    applyEdits: (expected, edits) => {
+      const buffer = current(); if (!buffer || buffer.document.path !== expected.path || buffer.document.revision !== expected.revision || buffer.text !== expected.text || views[focused]!.content.readOnly) return false;
+      const sorted = [...edits].sort((a, b) => a.from - b.from);
+      if (sorted.some((edit, index) => !Number.isSafeInteger(edit.from) || !Number.isSafeInteger(edit.to) || edit.from < 0 || edit.to < edit.from || edit.to > buffer.text.length || (index > 0 && edit.from < sorted[index - 1]!.to))) return false;
+      views[focused]!.content.view.dispatch({ changes: sorted.map(edit => ({ from: edit.from, to: edit.to, insert: edit.text })) }); return true;
+    }
+  };
+  const mountedPanels = new Set<string>();
+  const mountPanels = () => { for (const [id, factory] of panelFactories) if (!mountedPanels.has(id)) { mountedPanels.add(id); panelHost.append(factory({ project, task, node: dialog, open: (path, line) => show(path, line === undefined ? undefined : line - 1), editor })); } };
+  window.addEventListener('yumeewade:workbench-panels', mountPanels); mountPanels();
+  const dock = button(t('editorUI.dock'), () => { layout.dock = layout.dock === 'right' ? 'bottom' : 'right'; applyLayout(); });
+  let layout = normalizeLayout(undefined);
+  const resize = input(); resize.type = 'range'; resize.min = '20'; resize.max = '80'; resize.value = '50'; resize.setAttribute('aria-label', t('editorUI.resize'));
+  resize.oninput = () => { layout.width = Number(resize.value); applyLayout(); };
+  function applyLayout(): void {
+    if (!workbenchMount) return;
+    workbenchMount.style.width = layout.dock === 'right' ? `${layout.width}%` : '100%'; workbenchMount.dataset.dock = layout.dock;
+    document.body.classList.toggle('workbench-bottom', layout.dock === 'bottom');
+    try { if (storageKey) localStorage.setItem(`${storageKey}:layout`, JSON.stringify(layout)); } catch { output.append(el('p', 'warning', t('ew.recoveryLimit'))); }
+  }
+  dialog.append(row(el('h2', '', t('files.title')), dock, resize), actions, row(pathInput, destination, ...(['createFile', 'createFolder', 'rename', 'delete'] as const).map(action => button(t(`ew.${action}`), () => mutate(action)))), row(sourceSearch, replacement, button(t('ew.search'), () => search(false)), button(t('ew.replacePreview'), () => search(true))), filter);
+  const body = el('div', 'editor-workbench-body'); body.append(results, panes); dialog.append(body, output, panelHost);
+  (workbenchMount ?? document.body).append(dialog);
   const ready = (async () => {
     const { scope } = await request<{ scope: string }>(query('/api/editor/scope', ids));
     if (!dialog.isConnected) return;
     storageKey = `editor-recovery:v2:${scope}`;
-    dialog.showModal(); await recover();
+    try { layout = normalizeLayout(JSON.parse(localStorage.getItem(`${storageKey}:layout`) ?? 'null')); } catch { layout = normalizeLayout(undefined); }
+    resize.value = String(layout.width); applyLayout(); await recover();
     if (!dialog.isConnected) return;
     persistenceEnabled = true;
-  })().catch(error => { dialog.dispatchEvent(new Event('close')); throw error; });
-  browsers.set(key, { dialog, open: async (path, line) => { await ready; if (dialog.isConnected) await show(path, line === undefined ? undefined : line - 1); } });
+  })().catch(error => { dispose(); browsers.delete(key); throw error; });
+  const flush = () => { views.forEach((_, index) => capture(index)); persist(); };
+  const dispose = () => {
+    flush(); disposed = true; window.clearTimeout(persistenceTimer);
+    window.removeEventListener('beforeunload', unload);
+    window.removeEventListener('yumeewade:workbench-panels', mountPanels);
+    for (const state of live.values()) window.clearTimeout(state.timer);
+    live.clear();
+    views.forEach(view => { view.content.destroy(); view.preview.destroy(); }); dialog.remove();
+  };
+  browsers.set(key, { dialog, flush, dispose, canDispose: () => ![...buffers.values()].some(dirty), restoreLayout: applyLayout, open: async (path, line) => { await ready; if (dialog.isConnected) await show(path, line === undefined ? undefined : line - 1); } });
   void run(async () => { await ready; await load(); });
 }

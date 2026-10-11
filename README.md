@@ -88,7 +88,7 @@ Claude／Codex 模型清單直接讀 CLI 自己的快取（`~/.codex/models_cach
   復原格式 v3 也保存所有已開啟文件（含未修改分頁）的中繼資料、兩個面板路徑、焦點面板與各面板游標選取／捲動位置。rename／format／code actions 的 workspace edits 必須基於已儲存快照；先儲存 dirty 文件，否則回 `editor_conflict`。
   尚未建立或已清除隔離副本時，可唯讀瀏覽主資料夾及使用語言導覽，但不能從該作業儲存到主資料夾。
   CodeMirror 6 提供行號、摺疊、多游標（Alt／Option 點選）、矩形選取、undo／redo、括號匹配與 regex／大小寫／整字搜尋面板。主題跟隨 App，LSP 補全直接出現在編輯器。文件上限依 `limits.bodyBytes` 扣除請求開銷（最高 8 MiB），JSON 跳脫後無法儲存或更大的文件維持唯讀。
-  專案 Problems 保留目前未儲存 buffer 的版本，不以磁碟內容覆寫即時診斷。
+  專案 Problems 保留目前未儲存 buffer 的版本，不以磁碟內容覆寫即時診斷。常駐非 modal 工作台可與聊天、終端並用，保存左右／底部停駐、寬度、檔案樹與雙面板比例；最多 12 個在記憶體中的 scope，自動釋放未修改的閒置 scope，不丟棄 dirty 文件。
 - **文件預覽**：Markdown 可切換編輯／預覽／分割，180ms 防抖渲染未儲存文字（不解析 HTML）。png／jpg／jpeg／gif／webp／svg 以圖片檢視，顯示尺寸與位元組數、符合視窗／100% 縮放。圖片 API 上限 20 MiB，沿用檔案範圍與機密／symlink 防護；SVG 僅透過 `<img>`，回應附 nosniff 與禁止腳本的 sandbox CSP。
 - **編輯器與對話連動**：檔案導覽事件會重用同專案／作業的工作台，在分頁開檔並定位到指定行。工具列「傳送選取範圍到對話」或 Ctrl／⌘+Shift+L 將主要選取轉為 `@路徑#L起行-迄行 `（單行省略範圍、無選取僅檔名）；不關閉編輯器，專案層級瀏覽則停用傳送並提示原因。
 - **本機執行**：持久化具名 command／args／kind／cwd／env 設定，提供有限 stdout／stderr、結束碼及行程樹停止。內嵌終端使用真正 `node-pty`、ANSI 畫面、輸入／resize／stop、只放 POST body 的 owner capability，失聯 5 分鐘回收。系統終端整合仍保留，其輸出／生命週期不由 App 管理。預覽限明確 port 的 loopback HTTP(S)。內嵌 Node Inspector 僅附加 App 自己啟動的 loopback debug 行程，提供 breakpoint、stack、variables、pause／resume／step 與有界請求；不是任意遠端 DAP 或無限制 evaluate。仍可使用瀏覽器 DevTools／外部 IDE。
