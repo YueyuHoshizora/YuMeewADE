@@ -54,7 +54,7 @@ cli:
     fullAccess: true
     fullAccessArgs: [--dangerously-skip-permissions]
     safeArgs: [--mode, accept-edits]      # 只自動接受檔案編輯
-    quotaArgs: []
+    quotaArgs: [-p, /usage, --output-format, json]  # 唯讀額度報告，不啟動模型回合
     loginArgs: []
   # 子行程環境變數採白名單；除了內建的 PATH／HOME／LANG 等基本變數外，額外要放行的名稱寫在這裡
   envPassthrough: []

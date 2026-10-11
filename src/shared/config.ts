@@ -89,7 +89,7 @@ export const DEFAULT_CONFIG: Config = {
       fullAccessArgs: ['--dangerously-skip-permissions'],
       // 只自動接受檔案編輯；其他操作不讓無頭回合等待互動核准。
       safeArgs: ['--mode', 'accept-edits'],
-      quotaArgs: [],
+      quotaArgs: ['-p', '/usage', '--output-format', 'json'],
       loginArgs: [],
     },
     envPassthrough: [],

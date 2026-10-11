@@ -4,6 +4,9 @@
 
 ## [Unreleased]
 
+### 修正
+- Gemini 額度改以 `agy -p /usage --output-format json` 唯讀查詢，使用 App 隔離帳號憑證並保存 CLI 更新的憑證；顯示 Gemini 與 Claude／GPT 各額度池的真實使用比例與重置時間，納入既有輪詢及提醒。缺少或無效測量不冒充可用額度。
+
 ## [1.1.0] - 2026-10-11
 
 ### 變更

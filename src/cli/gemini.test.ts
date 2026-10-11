@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import { promises as fs } from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
-import { createGeminiParser, GeminiCliProvider, geminiArgs, geminiInput, geminiOutcome } from './gemini.ts';
+import { createGeminiParser, GeminiCliProvider, geminiArgs, geminiInput, geminiOutcome, geminiQuota } from './gemini.ts';
 import { parseGeminiModels } from '../ai/catalog.ts';
 import type { CliEvent } from './provider.ts';
 import { DEFAULT_CONFIG } from '../shared/config.ts';
@@ -98,4 +98,38 @@ process.stdin.on('end', () => {
     const slash = await provider.send({ prompt: 'p', cwd: dir, slashCommand: '/x' }, () => undefined).done;
     assert.equal(slash.ok, false);
   } finally { await fs.rm(dir, { recursive: true, force: true }); }
+});
+
+test('quota reports preserve independent pools, measured fractions, and exhausted limits', () => {
+  const reset = '2026-10-15T06:14:55Z';
+  const report = { status: 'SUCCESS', conversation_id: '', command: { name: 'usage', data: { groups: [
+    { name: 'Gemini Models', buckets: [
+      { name: 'Weekly Limit Remaining', remaining_fraction: 0.8, reset_time: reset },
+      { name: 'Five Hour Limit Remaining', remaining_fraction: 0, reset_time: reset },
+    ] },
+    { name: 'Claude and GPT models', buckets: [{ name: 'Weekly Limit Remaining', remaining_fraction: 1, reset_time: reset }] },
+  ] } } };
+  const quota = geminiQuota(report, reset)!;
+  assert.equal(quota.limited, true);
+  assert.deepEqual(quota.windows.map(window => window.label), [
+    'Gemini Models · Weekly Limit Remaining', 'Gemini Models · Five Hour Limit Remaining', 'Claude and GPT models · Weekly Limit Remaining',
+  ]);
+  assert.ok(Math.abs(quota.windows[0]!.usedPercent - 20) < 1e-10);
+  assert.equal(quota.windows[1]!.usedPercent, 100);
+  assert.equal(quota.windows[2]!.usedPercent, 0);
+  assert.equal(quota.windows[0]!.resetsAt, reset);
+});
+
+test('missing or invalid measurements never invent available quota', () => {
+  const report = (bucket: Record<string, unknown>) => ({ status: 'SUCCESS', command: { name: 'usage', data: {
+    groups: [{ name: 'Gemini Models', buckets: [bucket] }],
+  } } });
+  const bucket = { name: 'Weekly Limit Remaining', remaining_fraction: 1, reset_time: '2026-10-15T06:14:55Z' };
+  for (const remaining_fraction of [undefined, null, '1', NaN, Infinity, -0.1, 1.1]) {
+    assert.equal(geminiQuota(report({ ...bucket, remaining_fraction })), null);
+  }
+  assert.equal(geminiQuota(report({ ...bucket, reset_time: 'invalid' })), null);
+  assert.equal(geminiQuota(report({ ...bucket, disabled: true })), null);
+  assert.equal(geminiQuota({ ...report(bucket), status: 'ERROR' }), null);
+  assert.equal(geminiQuota({ ...report(bucket), command: { name: 'model' } }), null);
 });

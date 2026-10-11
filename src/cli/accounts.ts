@@ -381,7 +381,7 @@ export class CredentialAccounts {
       name: ai, dangerous: config.fullAccess,
       available: () => base.available(),
       quota: async (configDir) => {
-        if (ai === 'gemini') return null;
+        if (ai === 'gemini') return this.withEnv(ai, configDir, env => factory(env).quota!(env['HOME']));
         if (ai === 'codex') return this.withEnv(ai, configDir, env => factory(env).quota!(env['CODEX_HOME']));
         const profile = this.profile(ai, configDir);
         return this.track((async () => {

@@ -1,9 +1,12 @@
 // Google Gemini via the Antigravity CLI (`agy`) print mode.
 // The prompt travels over stdin as one stream-json "user" message, never argv; the CLI's own login is used.
 import { randomUUID } from 'node:crypto';
+import { promises as fs } from 'node:fs';
+import os from 'node:os';
+import path from 'node:path';
 import type { CliCommandConfig } from '../shared/config.ts';
 import type { TurnUsage } from '../shared/types.ts';
-import { findExecutable, minimalEnv, runLineProcess } from './process.ts';
+import { captureCommand, findExecutable, minimalEnv, runLineProcess } from './process.ts';
 import type { CliEvent, CliProvider, CliRun, RunOutcome, SendOptions } from './provider.ts';
 
 export function geminiArgs(cfg: CliCommandConfig, opts: SendOptions): string[] {
@@ -90,6 +93,30 @@ export function geminiOutcome(outcome: RunOutcome, completed: boolean, failed: b
   return outcome;
 }
 
+/** Read-only /usage reports are not conversation results and have no conversation id. */
+export function geminiQuota(value: unknown, at = new Date().toISOString()): Extract<CliEvent, { type: 'quota' }> | null {
+  const report = record(value);
+  const command = record(report?.['command']);
+  const groups = record(command?.['data'])?.['groups'];
+  if (report?.['status'] !== 'SUCCESS' || command?.['name'] !== 'usage' || !Array.isArray(groups)) return null;
+  const windows: Extract<CliEvent, { type: 'quota' }>['windows'] = [];
+  for (const value of groups) {
+    const group = record(value);
+    if (typeof group?.['name'] !== 'string' || !Array.isArray(group['buckets'])) return null;
+    for (const value of group['buckets']) {
+      const bucket = record(value);
+      if (bucket?.['disabled'] === true) continue;
+      const remaining = bucket?.['remaining_fraction'];
+      const reset = bucket?.['reset_time'];
+      const name = bucket?.['name'];
+      if (typeof remaining !== 'number' || !Number.isFinite(remaining) || remaining < 0 || remaining > 1
+        || typeof name !== 'string' || !name || typeof reset !== 'string' || !Number.isFinite(Date.parse(reset))) return null;
+      windows.push({ label: `${group['name']} · ${name}`, usedPercent: (1 - remaining) * 100, resetsAt: reset });
+    }
+  }
+  return windows.length ? { type: 'quota', windows, limited: windows.some(window => window.usedPercent === 100), at } : null;
+}
+
 export class GeminiCliProvider implements CliProvider {
   readonly name = 'gemini';
   readonly dangerous: boolean;
@@ -101,6 +128,17 @@ export class GeminiCliProvider implements CliProvider {
     this.env = env ?? minimalEnv(envPassthrough);
   }
   async available(): Promise<boolean> { return (await findExecutable(this.cfg.command, this.env)) !== null; }
+  async quota(configDir?: string): Promise<Extract<CliEvent, { type: 'quota' }> | null> {
+    if (!this.cfg.quotaArgs.length) return null;
+    // SSH_TTY selects agy's file credential store rather than the ambient macOS Keychain.
+    const env = configDir ? { ...this.env, HOME: configDir, USERPROFILE: configDir, SSH_TTY: 'yumeewade-quota' } : this.env;
+    const cwd = await fs.mkdtemp(path.join(os.tmpdir(), 'ym-gemini-quota-'));
+    try {
+      const result = await captureCommand({ command: this.cfg.command, args: this.cfg.quotaArgs, env, cwd, timeoutMs: 90_000, maxOutputBytes: 1024 * 1024 });
+      if (!result.ok) throw new Error('Gemini quota query failed');
+      return geminiQuota(JSON.parse(result.stdout));
+    } finally { await fs.rm(cwd, { recursive: true, force: true }); }
+  }
   send(opts: SendOptions, onEvent: (ev: CliEvent) => void): CliRun {
     if (opts.slashCommand) {
       const reason = 'Gemini print mode slash commands are unsupported';
