@@ -16,6 +16,7 @@ const LANGUAGE: Record<string, string> = { ts: 'typescript', tsx: 'typescriptrea
 export class EditorService {
   private clients = new Map<string, LanguageClient>();
   private versions = new Map<string, number>();
+  private snapshots = new Map<string, { root: string; uri: string; language: string; text: string }>();
   readonly commands: Record<string, string[]>;
   private readonly MAX: number;
   private readonly bodyBytes: number;
@@ -133,10 +134,9 @@ export class EditorService {
   async close(project: string, task: string, relative: string): Promise<void> {
     const { root, file } = await this.target(project, task, relative);
     await withFileLocks([file], async () => {
-      const document = await this.document(file, relative);
-      const key = `${root}\0${document.language}`; const uri = pathToFileURL(file).href;
-      const versionKey = `${key}\0${uri}`;
-      if (this.versions.has(versionKey)) this.clients.get(key)?.closeDocument(uri);
+      const uri = pathToFileURL(file).href;
+      for (const [clientKey, client] of this.clients) if (clientKey.startsWith(`${root}\0`)) client.closeDocument(uri);
+      this.snapshots.delete(`${root}\0${uri}`);
       // Keep the bounded version counter until server eviction so late publications cannot match a reopened buffer.
     });
   }
@@ -153,13 +153,24 @@ export class EditorService {
       if (this.clients.size >= 16) throw new AppError('unavailable');
       const created: LanguageClient = new LanguageClient(command, root, () => this.evictClient(key, created));
       client = created; this.clients.set(key, client);
+      try { await client.ready; } catch (error) { client.dispose(); this.evictClient(key, client); throw error; }
+      for (const snapshot of this.snapshots.values()) if (snapshot.root === root) {
+        const snapshotKey = `${key}\0${snapshot.uri}`;
+        const version = (this.versions.get(snapshotKey) ?? 0) + 1;
+        this.versions.set(snapshotKey, version);
+        client.openDocument(snapshot.uri, snapshot.language, version, snapshot.text);
+      }
     }
     try { await client.ready; } catch (error) { client.dispose(); this.evictClient(key, client); throw error; }
     const uri = pathToFileURL(file).href;
-    const versionKey = `${key}\0${uri}`;
-    if (!this.versions.has(versionKey) && this.versions.size >= 2000) throw new AppError('too_large');
-    const version = (this.versions.get(versionKey) ?? 0) + 1; this.versions.set(versionKey, version);
-    client.openDocument(uri, document.language, version, text);
+    if (!this.snapshots.has(`${root}\0${uri}`) && this.snapshots.size >= 1000) throw new AppError('too_large');
+    this.snapshots.set(`${root}\0${uri}`, { root, uri, language: document.language, text });
+    for (const [clientKey, active] of this.clients) if (clientKey.startsWith(`${root}\0`)) {
+      const snapshotKey = `${clientKey}\0${uri}`;
+      if (!this.versions.has(snapshotKey) && this.versions.size >= 16000) throw new AppError('too_large');
+      const version = (this.versions.get(snapshotKey) ?? 0) + 1; this.versions.set(snapshotKey, version);
+      active.openDocument(uri, document.language, version, text);
+    }
     const locations: EditorLocation[] = []; const diagnostics: EditorDiagnostic[] = [];
     if (action === 'completion' || action === 'hover' || action === 'rename' || action === 'format' || action === 'codeActions') {
       const method = action === 'format' ? 'formatting' : action === 'codeActions' ? 'codeAction' : action;
@@ -370,7 +381,9 @@ export class EditorService {
       const document = await this.read(project, task, relative);
       if (document.binary || document.truncated) throw new AppError('bad_request', 'editor_readonly');
       bytes += document.size; if (bytes > 32 * 1024 * 1024) throw new AppError('too_large');
-      const result = await this.language(project, task, relative, document.text, 0, 0, 'diagnostics');
+      const uri = pathToFileURL((await this.target(project, task, relative)).file).href;
+      const text = this.snapshots.get(`${root}\0${uri}`)?.text ?? document.text;
+      const result = await this.language(project, task, relative, text, 0, 0, 'diagnostics');
       checked.add(relative);
       for (const diagnostic of result.diagnostics) { output.push({ path: relative, ...diagnostic }); if (output.length > 1000) throw new AppError('too_large'); }
     }
@@ -395,5 +408,5 @@ export class EditorService {
     this.clients.delete(key);
     for (const versionKey of this.versions.keys()) if (versionKey.startsWith(`${key}\0`)) this.versions.delete(versionKey);
   }
-  dispose(): void { for (const client of this.clients.values()) client.dispose(); this.clients.clear(); this.versions.clear(); }
+  dispose(): void { for (const client of this.clients.values()) client.dispose(); this.clients.clear(); this.versions.clear(); this.snapshots.clear(); }
 }

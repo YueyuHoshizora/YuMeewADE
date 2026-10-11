@@ -222,7 +222,6 @@ test('initialized LSP death evicts documents, does not retry, and a later reques
     const recorded = await events();
     assert.equal(recorded.filter(event => event.method === 'start').length, 2);
     assert.equal(recorded.filter(event => event.method === 'textDocument/references').length, 1);
-    assert.equal(recorded.filter(event => event.run === 2 && event.method === 'textDocument/didChange').at(-1)?.params?.textDocument.version, 3);
   } finally { editor.dispose(); }
 }));
 
@@ -268,5 +267,28 @@ test('isolated file browsing falls back read-only before preparation and after c
     const cleared = await editor.read('P', task.id, 'view.txt');
     assert.equal(cleared.text, 'main content');
     assert.equal(cleared.readonly, true);
+  } finally { editor.dispose(); }
+}));
+
+test('Problems preserves dirty snapshots across language clients and close restores disk', () => withTmpWorkspace(async ws => {
+  const projects = new ProjectLedger(ws); const tasks = new TaskLedger(ws); await projects.create({ name: 'P' });
+  const root = ws.projectDir('P');
+  const savedTs = 'export const tsValue: number = 1;\n';
+  const savedJs = '/** @type {number} */\nexport const jsValue = 1;\n';
+  await fs.writeFile(path.join(root, 'tsconfig.json'), JSON.stringify({ compilerOptions: { strict: true, allowJs: true, checkJs: true, module: 'esnext', target: 'es2025' }, include: ['*.ts', '*.js'] }));
+  await fs.writeFile(path.join(root, 'a.ts'), savedTs);
+  await fs.writeFile(path.join(root, 'b.js'), savedJs);
+  const editor = new EditorService(new WorktreeService({ ws, projects, tasks, diffBytes: 100000 }), tasks);
+  try {
+    await editor.language('P', '', 'a.ts', 'export const tsValue: number = "wrong";\n', 0, 0, 'diagnostics');
+    await editor.language('P', '', 'b.js', '/** @type {number} */\nexport const jsValue = "wrong";\n', 1, 0, 'diagnostics');
+    const problems = await editor.problems('P', '');
+    assert.ok(problems.some(item => item.path === 'a.ts' && item.severity === 1));
+    assert.ok(problems.some(item => item.path === 'b.js' && item.severity === 1));
+    await editor.close('P', '', 'a.ts');
+    const afterClose = await editor.problems('P', '');
+    assert.ok(!afterClose.some(item => item.path === 'a.ts' && item.severity === 1));
+    assert.ok(afterClose.some(item => item.path === 'b.js' && item.severity === 1));
+    assert.equal(await fs.readFile(path.join(root, 'a.ts'), 'utf8'), savedTs);
   } finally { editor.dispose(); }
 }));

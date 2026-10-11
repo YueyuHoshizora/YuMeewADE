@@ -565,3 +565,23 @@ electron 44.7.0、vite 8.3.4、electron-builder 26.15.3、typescript 7.0.2、@ty
 - 作業看板：專案頁清單／五狀態 kanban 切換，拖曳與鍵盤「移動至…」共用 `/api/task/update` 完成核可／重開撤銷語義；卡片顯示 AI、期限標籤、執行中／未讀。兩種檢視共用四種排序與標籤／狀態／AI／逾期／文字篩選，驗證本機儲存值、依專案保存，純函式測試涵蓋組合條件及穩定排序。
 - 作業批次操作：專案頁選取模式／組內全選（200 筆上限），狀態／階段／標籤增刪／期限設定清除。POST `/api/task/bulk` 先驗證整批輸入、逐筆回報結果；完成同單筆路由寫人工核准，標籤讀改寫在台帳鎖內。UI 封存重用單筆 archiveFlow 的確認／保存副本規則；批次封存端點保守拒絕帶副本或執行中的作業。
 - 即時 LSP 診斷：CodeMirror 未儲存 buffer 400ms debounce、每檔單一在途請求、有界內容／結果；didOpen／遞增版本 didChange、publishDiagnostics 版本快取與 pull fallback、關閉 didClose，gutter／hover／每檔問題數，缺少 server 不重試洗版。
+
+### B.13 日常 IDE 工作流補完（使用者裁示 2026-10-12：「全部都做，依功能提交」）
+- 沿用現有台帳、CodeMirror、LSP、PTY 與信任政策，按功能提交、不自動推送；不新增未核准相依。常駐工作台讓檔案、聊天、Problems 與終端並存，版面、偏好及文件復原依工作區與工作根隔離。
+- Problems 必須以目前開啟的未儲存文件版本優先，不得用磁碟文字悄悄改寫 LSP 的 dirty snapshot。外部檔案變更只自動刷新 clean buffer；dirty buffer 提供原基底／本機／外部比較及明確合併，仍核對最新 revision。
+- 編輯器提供字型、字級、縮排、換行顯示及可重設的快捷鍵；格式化採用驗證後的專案規則。LSP 管理提供可信任本機 argv、能力／連線診斷、文件大綱及工作區符號搜尋；不自動下載或執行未知 server。
+- 專案 LSP／格式設定 `.yumeewade/editor-settings.json`：project → `{commands: Record<languageId,string[]>,format?:{tabSize,insertSpaces,eol}}`；讀取回傳內容雜湊 revision、格式來源與 runtime capabilities，更新採 CAS。`.editorconfig` 僅支援上述縮排／換行子集，64 KiB／100 section／32 層上限，不跟隨 symlink 或越界讀取。renderer 偏好存 `yumeewade.editor.preferences`，工作台版面以文件復原 scope key 隔離；最多 12 個記憶體 scope，只自動釋放 clean 閒置 scope。
+- 驗證歷史存 `.ai/verification/{作業ID}.json`，0600 原子寫入，JSON 陣列最多 20 筆／4 MiB；每筆 `{id,at,before,after,configuration,result,status,revoked?}`，after 可為 null。歷史與目前通過分離，只有未撤銷且 before＝after、設定及目前內容指紋皆一致的最新結果可作合併門檻。
+- 測試探索器設定存 `.ai/test-explorer/{作業ID}.json`，陣列元素 `{name,files}`；執行歷史另存 `.ai/verification/{作業ID}.tests.json`，最多 20 筆／4 MiB。以明確設定的 Node 原生測試檔探索、執行及單案例重跑，呈現真實測試樹、失敗位置與比較；任意驗證命令不冒充支援案例過濾。指紋只排除精確受管測試／驗證結果與暫存檔，仍涵蓋其他 ignored／產生檔。
+- AI 上下文增加來源啟用、順序／優先級、逐段預算與納入／截斷狀態，保存真正送出回合的背景清單；字元預算不冒充模型 token 計數。固定決策與來源仍是背景，不是新執行授權。
+- 上下文設定 `.ai/chat/{作業ID}.context.json`：`{decisions,sources:[{path,start,end,priority,order,enabled,allocatedChars}],decisionBudget,revision}`；revision 採 CAS。真正送出清單 `.ai/context-manifests/{作業ID}/{request}.json`：`{request,ai,model?,at,context:{text,truncated,sources,allocations,budgetChars,revision},handoff:{text,rows,start,end,truncated},providerTokens?}`，每筆最多 2 MiB，每作業保留最新 100 筆，0600 原子寫入；拒絕 symlink 與敏感來源。
+- 終端可在 renderer 重新載入後安全重新附接自己的存活 PTY；owner capability 不存 localStorage，不回傳其他視窗的私有輸出。重新附接核對工作區與 owner session 並輪替能力，核心重啟不冒充恢復舊 shell，五分鐘失聯回收保留。
+- Node 除錯增加工作根內有界 source-map 映射、條件斷點及編輯器 gutter／stack 定位；僅附接 App 自己啟動的行程。Watch 僅允許明確的變數／屬性路徑，不提供任意 evaluate 或虛構唯讀執行保證。
+- 斷點持久化 `.ai/tasks/{作業ID}.debugger.json` 依作業與工作根雜湊綁定、0600 原子寫入；僅支援本機平面 Source Map v3，拒絕 remote／symlink／越界／敏感路徑與 indexed map。條件比較在目標程序執行，getter 可能有副作用；Watch 不呼叫 getter。
+- PR／issue 回饋連結存 `.ai/task-linked-feedback/{作業ID}.json`：`{revision,repository,kind,number,url,threadId,commentId,path,line,source,draft,resolved,state,headOid}`。kind 為 thread／issue，line 可為 null；issue 的 headOid 為空字串，thread 以穩定 node ID 及 headOid 綁定原 PR。來源轉作業只保存可編輯草稿，不自動執行 AI；回覆、解決討論與 issue 狀態回寫均需人工確認並拒絕過期／跨儲存庫操作。
+- 各 AI 顯示實際核准、唯讀審查、續聊、斜線指令及用量能力。Codex app-server 為獨立 stdio JSON-RPC adapter，管理 thread／turn／resume／interrupt 與工具核准；exec parser 不混入雙向協定。核准期限由核心 `limits.approvalSeconds` 單一決定，逾期透過原生 respond 拒絕，不另設提早失效的 adapter 計時器。全域完整權限預設不變，唯讀審查與局部提案仍使用已驗證的受限執行。
+- 編輯器 AI 局部提案綁定文件 revision、buffer 快照及選取範圍，提供逐段接受／拒絕、undo 與衝突檢查；決定期間保留並鎖定工作台快照，拒絕同時儲存／修改／同步或釋放該工作台。傳輸中斷時重新取得持久化決策，並提供需明確確認、可 undo 的已接受草稿恢復，不冒充已寫入檔案。產生提案不直接寫檔，不挪用一般寫作 session，儲存仍由人明確觸發。
+- 提案存 `.ai/editor-proposals.json`，最多 12 筆／12 MiB，0600 原子寫入；每筆 `{id,project,task,path,revision,version,base,local,current,ai,instruction,createdAt,edits:[{id,from,to,text,state}]}`，範圍以 UTF-16 offset 綁定提交的 buffer。替換 text 的 CRLF／CR 先正規化為 LF，再驗證、儲存及計算位移，以對齊 CodeMirror 草稿；檔案換行格式仍只在明確儲存時序列化。讀寫均拒絕 symlink、無效快照與過期決策。
+- 角色流程支援有界 DAG、條件分支、真正並行的獨立節點與匯總；不同寫者不得共用同一 worktree，分支工作使用獨立作業／副本且不自動合併。人工證據、下游失效、停止與重啟暫停語義保留，不因流程圖自動擴大授權。
+- Workflow `.ai/workflows/{作業ID}.json` 延伸 `{dependencies,steps,cursor,state,results,reason?,revision,nodeStates,branchTasks}`；step 增加 `id,dependsOn,condition:{node,outcome},kind:'expert'|'join'`，result 增加 `node,task`。舊線性步驟移轉為 `step-N` 串接；cursor 是成功／略過節點數，不是下一步索引。所有可執行節點（含舊線性流程）均建立真實隔離衍生作業，人工節點不自動執行。
+- 節點因 AI 提問而暫停時，在該衍生作業回答，再明確 `start` 消耗新的成功 assistant 結果；仍等待回答、執行中、停止、錯誤或再次提問都不可當作完成，且不重送原指示。人工／review 節點保留獨立證據與核准流程；已完成流程只可明確重跑後修改。
