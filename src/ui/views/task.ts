@@ -36,6 +36,7 @@ import { gitWorkbenchButton } from '../components/git-workbench.ts';
 import { workflowButton } from '../components/workflows.ts';
 import { confirmUsageRound } from '../components/usage-history.ts';
 import { projectTrustButton } from '../components/project-trust.ts';
+import { testExplorerButton, verificationHistoryButton } from '../components/test-explorer.ts';
 
 export function taskView(
   context: ViewContext,
@@ -174,6 +175,8 @@ export function taskView(
       button(t('common.open'), () => request('/api/open', { path: task.workdir || project.bodyPath })),
       exportLink,
       verifyButton,
+      testExplorerButton(project.id, task.id),
+      verificationHistoryButton(project.id, task.id),
       button(t('files.open'), () => openFileBrowser(project.id, task.id)),
       executionButton(context, project.id, task.id),
       gitWorkbenchButton(context, project.id, task.id),

@@ -10,6 +10,7 @@ export type * from './usage-history-types.ts';
 export type * from './backup-types.ts';
 export type * from './update-types.ts';
 export type * from './editor-preferences.ts';
+export type * from './test-explorer.ts';
 
 // ---- 列舉值（寫進台帳檔案的原值；UI 依值翻譯顯示） ----
 

@@ -9,7 +9,7 @@ import { registerLedgerRoutes } from './ledger.ts';
 import { registerStateRoutes } from './state.ts';
 import { registerSystemRoutes } from './system.ts';
 import { registerSearchRoutes } from './search.ts';
-import { registerVerifyRoutes } from './verify.ts';
+import { registerVerifyRoutes, registerTestExplorerRoutes } from './verify.ts';
 import { registerArchiveRoutes } from './archive.ts';
 import { registerEditorRoutes } from './editor.ts';
 import { registerExecutionRoutes } from './execution.ts';
@@ -44,6 +44,7 @@ export function registerRoutes(router: Router, app: App): void {
   registerAiRoutes(router, app);
   registerSearchRoutes(router, app);
   registerVerifyRoutes(router, app);
+  registerTestExplorerRoutes(router, app);
   registerArchiveRoutes(router, app);
   registerEditorRoutes(router, app);
   registerExecutionRoutes(router, app);

@@ -35,6 +35,7 @@ import * as gitWorktrees from './git-worktrees.ts';
 import * as overview from './overview.ts';
 import * as taskBoard from './task-board.ts';
 import * as taskBulk from './task-bulk.ts';
+import * as testExplorer from './test-explorer.ts';
 import * as ideWorkbench from './ide-workbench.ts';
 
 export const featureZhTW = {
@@ -76,6 +77,7 @@ export const featureZhTW = {
   ...overview.featureZhTW,
   ...taskBoard.featureZhTW,
   ...taskBulk.featureZhTW,
+  ...testExplorer.featureZhTW,
   ...ideWorkbench.featureZhTW,
 };
 export const featureZhCN = {
@@ -117,6 +119,7 @@ export const featureZhCN = {
   ...overview.featureZhCN,
   ...taskBoard.featureZhCN,
   ...taskBulk.featureZhCN,
+  ...testExplorer.featureZhCN,
   ...ideWorkbench.featureZhCN,
 };
 export const featureEn = {
@@ -158,6 +161,7 @@ export const featureEn = {
   ...overview.featureEn,
   ...taskBoard.featureEn,
   ...taskBulk.featureEn,
+  ...testExplorer.featureEn,
   ...ideWorkbench.featureEn,
 };
 export const featureJa = {
@@ -199,6 +203,7 @@ export const featureJa = {
   ...overview.featureJa,
   ...taskBoard.featureJa,
   ...taskBulk.featureJa,
+  ...testExplorer.featureJa,
   ...ideWorkbench.featureJa,
 };
 export const featureDe = {
@@ -240,6 +245,7 @@ export const featureDe = {
   ...overview.featureDe,
   ...taskBoard.featureDe,
   ...taskBulk.featureDe,
+  ...testExplorer.featureDe,
   ...ideWorkbench.featureDe,
 };
 export const featureFr = {
@@ -281,6 +287,7 @@ export const featureFr = {
   ...overview.featureFr,
   ...taskBoard.featureFr,
   ...taskBulk.featureFr,
+  ...testExplorer.featureFr,
   ...ideWorkbench.featureFr,
 };
 export const featureIt = {
@@ -322,5 +329,6 @@ export const featureIt = {
   ...overview.featureIt,
   ...taskBoard.featureIt,
   ...taskBulk.featureIt,
+  ...testExplorer.featureIt,
   ...ideWorkbench.featureIt,
 };

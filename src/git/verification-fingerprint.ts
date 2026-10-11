@@ -15,15 +15,21 @@ export async function verificationFingerprint(root: string, configuration: strin
     const canonical = await fs.realpath(dir);
     if (canonical !== root && !isInside(root, canonical)) throw new AppError('bad_request');
     const directory = await fs.stat(dir);
-    digest.update(JSON.stringify([path.relative(root, dir), directory.mode, directory.mtimeMs, directory.ctimeMs, directory.ino, directory.dev]));
+    // Directory timestamps change when atomic history writes rename temporary files.
+    // Names/content still fingerprint every non-managed entry, including ignored inputs.
+    digest.update(JSON.stringify([path.relative(root, dir), directory.mode, directory.ino, directory.dev]));
     const entries = await fs.readdir(dir, { withFileTypes: true });
     entries.sort((a, b) => a.name.localeCompare(b.name));
     for (const entry of entries) {
       if (entry.name === '.git') continue;
+      const managed = path.relative(root, path.join(dir, entry.name)).split(path.sep);
+      if (entry.isFile() && managed.length === 3 && managed[0] === '.ai' && managed[1] === 'verification' && /^[A-Za-z0-9_-]+(?:\.tests)?\.json(?:\.\d+\.[a-f0-9-]+\.tmp)?$/.test(entry.name)) continue;
       const file = path.join(dir, entry.name);
       const relative = path.relative(root, file);
       const stat = await fs.lstat(file);
-      digest.update(JSON.stringify([relative, stat.mode, stat.size, stat.mtimeMs, stat.ctimeMs, stat.ino, stat.dev]));
+      digest.update(JSON.stringify(stat.isDirectory()
+        ? [relative, stat.mode, stat.ino, stat.dev]
+        : [relative, stat.mode, stat.size, stat.mtimeMs, stat.ctimeMs, stat.ino, stat.dev]));
       if (stat.isSymbolicLink()) {
         const target = await fs.realpath(file);
         if ((target !== root && !isInside(root, target)) || path.relative(root, target).split(path.sep).includes('.git')) throw new AppError('bad_request');

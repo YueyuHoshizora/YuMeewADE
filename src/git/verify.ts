@@ -1,12 +1,14 @@
-import { spawn } from 'node:child_process';
+import { randomUUID } from 'node:crypto';
+import path from 'node:path';
 import { promises as fs } from 'node:fs';
-import { minimalEnv, signalTree } from '../cli/process.ts';
+import { minimalEnv, signalTree, spawnCli } from '../cli/process.ts';
 import type { ProjectLedger } from '../ledger/projects.ts';
 import type { TaskLedger } from '../ledger/tasks.ts';
 import type { Workspace } from '../ledger/workspace.ts';
 import type { Config } from '../shared/config.ts';
 import { AppError } from '../shared/errors.ts';
-import { isInside } from '../shared/fsx.ts';
+import { atomicWrite, isInside, withFileLocks } from '../shared/fsx.ts';
+import type { VerificationHistoryEntry } from '../shared/test-explorer.ts';
 import type { VerifyResult, VerifyStatus } from '../shared/types.ts';
 import { verificationFingerprint } from './verification-fingerprint.ts';
 import { parseVerificationChecks } from '../shared/verification.ts';
@@ -24,14 +26,58 @@ export class VerifyService {
   private readonly opts: VerifyOptions;
   private readonly runs = new Map<string, { stop?: (() => void) | undefined; done?: Promise<VerifyResult> }>();
   private readonly last = new Map<string, { status: VerifyStatus; fingerprint: string }>();
+  private readonly invalidated = new Set<string>();
+  private readonly revocations = new Set<Promise<void>>();
   private closed = false;
 
   constructor(opts: VerifyOptions) { this.opts = opts; }
 
+  private async historyFile(project: string, task: string): Promise<string> {
+    this.opts.ws.taskFile(project, task);
+    await this.opts.tasks.get(project, task);
+    const root = await fs.realpath(this.opts.ws.projectDir(project));
+    const folder = path.join(root, '.ai', 'verification');
+    await fs.mkdir(folder, { recursive: true });
+    if (!isInside(root, await fs.realpath(folder))) throw new AppError('bad_request');
+    const file = path.join(folder, `${task}.json`);
+    const stat = await fs.lstat(file).catch(error => { if ((error as NodeJS.ErrnoException).code === 'ENOENT') return null; throw error; });
+    if (stat && (!stat.isFile() || stat.isSymbolicLink())) throw new AppError('bad_request');
+    return file;
+  }
+
+  async history(project: string, task: string): Promise<VerificationHistoryEntry[]> {
+    const file = await this.historyFile(project, task);
+    const stat = await fs.stat(file).catch(error => { if ((error as NodeJS.ErrnoException).code === 'ENOENT') return null; throw error; });
+    if (!stat) return [];
+    if (stat.size > 4 * 1024 * 1024) throw new AppError('bad_request');
+    const rows: unknown = JSON.parse(await fs.readFile(file, 'utf8'));
+    if (!Array.isArray(rows) || rows.length > 20 || rows.some(row => !row || typeof row.id !== 'string' || typeof row.before !== 'string' || typeof row.configuration !== 'string' || typeof row.status?.ok !== 'boolean' || typeof row.result?.output !== 'string')) throw new AppError('bad_request');
+    return rows as VerificationHistoryEntry[];
+  }
+
+  private async record(project: string, task: string, row: VerificationHistoryEntry): Promise<void> {
+    const file = await this.historyFile(project, task);
+    const steps = row.result.steps?.map(step => ({ ...step, output: step.output.slice(-16384), truncated: step.truncated || step.output.length > 16384 }));
+    row = { ...row, result: { ...row.result, output: row.result.output.slice(-65536), truncated: row.result.truncated || row.result.output.length > 65536, ...(steps ? { steps } : {}) }, status: { ...row.status, ...(steps ? { steps } : {}) } };
+    await withFileLocks([this.opts.ws.projectFile(project), file], async () => {
+      await this.opts.tasks.get(project, task);
+      const rows = [...await this.history(project, task), row].slice(-20);
+      while (Buffer.byteLength(JSON.stringify(rows)) > 4 * 1024 * 1024 && rows.length > 1) rows.shift();
+      if (Buffer.byteLength(JSON.stringify(rows)) > 4 * 1024 * 1024) throw new AppError('too_large');
+      await atomicWrite(file, JSON.stringify(rows) + '\n');
+      await fs.chmod(file, 0o600);
+    });
+  }
+
   /** 狀態讀取重新計算實際內容；外部編輯與設定變更不依賴 UI invalidate。 */
   async status(project: string, task: string): Promise<VerifyStatus | null> {
     const key = JSON.stringify([project, task]);
-    const cached = this.last.get(key);
+    let cached = this.last.get(key);
+    if (!cached && !this.invalidated.has(key)) {
+      const row = (await this.history(project, task).catch(() => [])).at(-1);
+      if (row?.after && row.before === row.after && !row.result.drifted && !row.revoked) cached = { fingerprint: row.after, status: row.status };
+      if (cached) this.last.set(key, cached);
+    }
     if (!cached || this.runs.has(key) || this.opts.isRunning(project, task)) return null;
     try {
       const context = await this.context(project, task);
@@ -56,6 +102,15 @@ export class VerifyService {
 
   invalidate(project: string, task: string): void {
     this.last.delete(JSON.stringify([project, task]));
+    this.invalidated.add(JSON.stringify([project, task]));
+    const pending = this.historyFile(project, task).then(file => withFileLocks([file], async () => {
+      const rows = await this.history(project, task);
+      for (const row of rows) row.revoked = true;
+      await atomicWrite(file, JSON.stringify(rows) + '\n');
+      await fs.chmod(file, 0o600);
+    }));
+    this.revocations.add(pending);
+    void pending.finally(() => this.revocations.delete(pending)).catch(() => {});
   }
 
   run(project: string, task: string): Promise<VerifyResult> {
@@ -69,11 +124,32 @@ export class VerifyService {
     return entry.done;
   }
 
-  private async context(projectId: string, taskId: string) {
+  /** Explicit Node argv runs share process limits/trust but never satisfy the full-check gate. */
+  runNodeTests(project: string, task: string, files: string[], pattern?: string): Promise<VerifyResult> {
+    const key = JSON.stringify([project, task]);
+    if (this.closed || this.runs.has(key) || this.opts.isRunning(project, task) || this.runs.size >= this.opts.config.limits.concurrentRuns) throw new AppError('conflict');
+    const entry: { stop?: (() => void) | undefined; done?: Promise<VerifyResult> } = {};
+    this.runs.set(key, entry);
+    entry.done = (async () => {
+      await this.opts.beforeRun?.(project);
+      const { cwd } = await this.context(project, task, false);
+      if (!Array.isArray(files) || !files.length || files.length > 100 || files.some(file => typeof file !== 'string' || !file.startsWith('./') || file.length > 4096 || /[\0\r\n]/u.test(file)) || (pattern !== undefined && (typeof pattern !== 'string' || pattern.length > 12000))) throw new AppError('bad_request');
+      for (const file of files) {
+        const real = await fs.realpath(path.resolve(cwd, file));
+        if (!isInside(cwd, real) || !(await fs.stat(real)).isFile()) throw new AppError('bad_request');
+      }
+      if (this.closed || this.opts.isRunning(project, task)) throw new AppError('conflict');
+      const args = ['--test', '--test-reporter=tap', ...(pattern ? [`--test-name-pattern=${pattern}`] : []), ...files];
+      return this.executeCommand(cwd, process.execPath, entry, this.opts.config.limits.verifySeconds * 1000, args);
+    })().finally(() => this.runs.delete(key));
+    return entry.done;
+  }
+
+  private async context(projectId: string, taskId: string, requireChecks = true) {
     const { ws, projects, tasks } = this.opts;
     const [project, task] = await Promise.all([projects.get(projectId), tasks.get(projectId, taskId)]);
     const checks = parseVerificationChecks(project.checks?.length ? project.checks : project.verify.trim() ? [{ name: 'verify', command: project.verify }] : []);
-    if (!checks.length) throw new AppError('bad_request');
+    if (requireChecks && !checks.length) throw new AppError('bad_request');
     const cwd = await fs.realpath(task.workdir || projects.bodyPath(project)).catch(() => null);
     const [workspace, body] = await Promise.all([fs.realpath(ws.root), fs.realpath(projects.bodyPath(project)).catch(() => null)]);
     if (!cwd || !(await fs.stat(cwd).catch(() => null))?.isDirectory() || (!isInside(workspace, cwd) && !(body && (cwd === body || isInside(body, cwd))))) throw new AppError('bad_request');
@@ -82,8 +158,10 @@ export class VerifyService {
 
   private async execute(projectId: string, taskId: string, entry: { stop?: (() => void) | undefined }): Promise<VerifyResult> {
     const key = JSON.stringify([projectId, taskId]);
+    await Promise.all(this.revocations);
     await this.opts.beforeRun?.(projectId);
     const context = await this.context(projectId, taskId);
+    await this.historyFile(projectId, taskId);
     let drifted = false;
     const started = Date.now();
     const deadline = started + this.opts.config.limits.verifySeconds * 1000;
@@ -114,12 +192,15 @@ export class VerifyService {
         ms: Date.now() - started, output: tail.subarray(start).toString('utf8'),
         truncated: bytes.length > limit || steps.some(step => step.truncated), steps, drifted,
       };
-      if (!drifted && after) this.last.set(key, { fingerprint: after, status: { ok: result.ok, exitCode: result.exitCode, timedOut: result.timedOut, at: new Date().toISOString(), steps, drifted } });
+      const status: VerifyStatus = { ok: result.ok, exitCode: result.exitCode, timedOut: result.timedOut, at: new Date().toISOString(), steps, drifted };
+      await this.record(projectId, taskId, { id: randomUUID(), at: status.at, before, after, configuration: context.configuration, result, status });
+      this.invalidated.delete(key);
+      if (!drifted && after) this.last.set(key, { fingerprint: after, status });
       return result;
     } finally { entry.stop = undefined; }
   }
 
-  private async executeCommand(cwd: string, command: string, entry: { stop?: (() => void) | undefined }, timeoutMs: number): Promise<VerifyResult> {
+  private async executeCommand(cwd: string, command: string, entry: { stop?: (() => void) | undefined }, timeoutMs: number, args?: string[]): Promise<VerifyResult> {
     const { config } = this.opts;
     const started = Date.now();
     const env = minimalEnv(config.cli.envPassthrough);
@@ -144,8 +225,8 @@ export class VerifyService {
       resolve({ ok: exitCode === 0 && !timedOut && !stopped, exitCode, timedOut, ms: Date.now() - started, output: bytes.subarray(start).toString('utf8'), truncated });
     };
     // cmd /s removes the outer quotes; preserve quoted executable paths inside.
-    const child = spawn(process.platform === 'win32' ? env['ComSpec'] || 'cmd.exe' : 'sh', process.platform === 'win32' ? ['/d', '/s', '/c', `"${command}"`] : ['-c', command], {
-      cwd, env, stdio: ['ignore', 'pipe', 'pipe'], windowsHide: true, detached: process.platform !== 'win32', ...(process.platform === 'win32' ? { windowsVerbatimArguments: true } : {}),
+    const child = spawnCli(args ? command : process.platform === 'win32' ? env['ComSpec'] || 'cmd.exe' : 'sh', args ?? (process.platform === 'win32' ? ['/d', '/s', '/c', `"${command}"`] : ['-c', command]), {
+      cwd, env, stdio: ['ignore', 'pipe', 'pipe'], windowsHide: true, detached: process.platform !== 'win32', ...(!args && process.platform === 'win32' ? { windowsVerbatimArguments: true } : {}),
     });
     const capture = (chunk: Buffer) => {
       if (settled) return;
@@ -166,13 +247,13 @@ export class VerifyService {
       stopped = true;
       signalTree(child, 'SIGKILL');
       bound = setTimeout(() => {
-        child.stdout.destroy(); child.stderr.destroy(); child.unref(); finish(null);
+        child.stdout!.destroy(); child.stderr!.destroy(); child.unref(); finish(null);
       }, 1000);
     };
     entry.stop = stop;
     timer = setTimeout(() => { timedOut = true; stop(); }, timeoutMs);
-    child.stdout.on('data', capture);
-    child.stderr.on('data', capture);
+    child.stdout!.on('data', capture);
+    child.stderr!.on('data', capture);
     child.on('error', () => finish(null));
     child.on('close', code => finish(code));
     return promise;
@@ -186,5 +267,6 @@ export class VerifyService {
   async stopAll(): Promise<void> {
     this.close();
     await Promise.allSettled([...this.runs.values()].flatMap(run => run.done ? [run.done] : []));
+    await Promise.all(this.revocations);
   }
 }

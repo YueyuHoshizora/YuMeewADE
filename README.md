@@ -42,7 +42,7 @@
   - 執行中送出：**① 取消並重做**、**② 補充說明（一起做）**、**③ 做完再接續**（排隊，做完自動開始；重啟後也保留），以及「停止」（同時清空排隊）。
   - AI 需要你決定時，會在回覆最後用固定格式提問，畫面顯示成**選項按鈕**，也能自己寫答案。回答後作業從「等待回覆」回到「進行中」。
   - 工作副本：顯示「N 個檔案 +a −b」與衝突預警。可以看差異（依檔案分段、可收合、逐檔顯示 +/−）、**合併到主資料夾**（自動儲存兩邊再 `--no-ff` 合併，成功後移除副本並把作業標為完成；衝突就中止、主資料夾不變，作業轉為等待回覆。副本內若還有不會被提交的檔案，例如新增的 `.env*`，合併仍成功，但副本會保留並列出這些檔案），或排除合併。
-  - 驗證：`PROJECT.md` 支援舊 `verify` 或多個具名 `checks: [{name, command}]`，依序執行並顯示逐項結果與輸出尾段；指令只來自台帳，逾時終止行程樹。通過必須符合目前內容指紋；外部編輯、設定變動、產生檔及 ignored 檔的寫入都會使結果失效，驗證本身改檔也算 `drifted`，不能沿用綠燈。結果僅存記憶體。可選 `requireVerification: true` 要求合併前目前內容已通過，預設不強制。
+  - 驗證：`PROJECT.md` 支援舊 `verify` 或多個具名 `checks: [{name, command}]`，依序執行並顯示逐項結果與輸出尾段；指令只來自台帳，逾時終止行程樹。通過必須符合目前內容指紋；外部編輯、設定變動、產生檔及 ignored 檔的寫入都會使結果失效，驗證本身改檔也算 `drifted`，不能沿用綠燈。歷史持久化，重啟仍重新驗證內容與設定。可選 `requireVerification: true` 要求合併前目前內容已通過，預設不強制。
   - 驗證失敗自動修正：專案頁的「驗證失敗自動修正」可設 0–5 次（`PROJECT.md` 的 `autoFix`，預設 0＝關閉）。AI 做完一則指示、隊列已空時自動跑驗證；失敗就把輸出尾段交回同一個 AI，直到通過或用完次數；用完仍失敗會把作業轉為「等待回覆」請你接手。AI 失敗、被停止、等你回答時不驗證；你下新指示會重新計數。
   - 對話：每則訊息有複製鈕；失敗或被停止的回覆有「重試」；回覆顯示 CLI 回報的本輪 token 用量（輸入／輸出／快取）；標題列「匯出 Markdown」下載整段對話。
   - 工具呼叫群組預設收合（包含歷史紀錄），不沿用舊的全域自動展開偏好；點群組標題即可手動展開。
@@ -90,6 +90,7 @@ Claude／Codex 模型清單直接讀 CLI 自己的快取（`~/.codex/models_cach
   CodeMirror 6 提供行號、摺疊、多游標（Alt／Option 點選）、矩形選取、undo／redo、括號匹配與 regex／大小寫／整字搜尋面板。主題跟隨 App，LSP 補全直接出現在編輯器。文件上限依 `limits.bodyBytes` 扣除請求開銷（最高 8 MiB），JSON 跳脫後無法儲存或更大的文件維持唯讀。
   專案 Problems 保留目前未儲存 buffer 的版本，不以磁碟內容覆寫即時診斷。常駐非 modal 工作台可與聊天、終端並用，保存左右／底部停駐、寬度、檔案樹與雙面板比例；最多 12 個在記憶體中的 scope，自動釋放未修改的閒置 scope，不丟棄 dirty 文件。
 - **編輯偏好與 LSP 管理**：設定頁提供字型、字級、縮排、換行顯示及可重設的儲存／傳送選取快捷鍵。專案格式選項與有界 `.editorconfig` 的 `indent_style`／`indent_size`／`tab_width`／`end_of_line` 套用到編輯與 LSP 格式化。專案 LSP 面板保存可信任本機 argv，呈現連線／能力診斷，提供文件大綱與工作區符號搜尋；不自動下載 server。
+- **測試探索與驗證歷史**：作業頁可設定明確的 Node 原生測試檔、探索真實案例樹、執行全部或精確重跑單案例，顯示失敗檔案／行號及前次結果。完整驗證與測試各保存最近 20 筆歷史；只有設定與目前內容指紋皆相符、執行中內容未漂移且未撤銷的完整驗證可通過合併門檻。案例子集不冒充完整驗證。
 - **文件預覽**：Markdown 可切換編輯／預覽／分割，180ms 防抖渲染未儲存文字（不解析 HTML）。png／jpg／jpeg／gif／webp／svg 以圖片檢視，顯示尺寸與位元組數、符合視窗／100% 縮放。圖片 API 上限 20 MiB，沿用檔案範圍與機密／symlink 防護；SVG 僅透過 `<img>`，回應附 nosniff 與禁止腳本的 sandbox CSP。
 - **編輯器與對話連動**：檔案導覽事件會重用同專案／作業的工作台，在分頁開檔並定位到指定行。工具列「傳送選取範圍到對話」或 Ctrl／⌘+Shift+L 將主要選取轉為 `@路徑#L起行-迄行 `（單行省略範圍、無選取僅檔名）；不關閉編輯器，專案層級瀏覽則停用傳送並提示原因。
 - **本機執行**：持久化具名 command／args／kind／cwd／env 設定，提供有限 stdout／stderr、結束碼及行程樹停止。內嵌終端使用真正 `node-pty`、ANSI 畫面、輸入／resize／stop、只放 POST body 的 owner capability，失聯 5 分鐘回收。系統終端整合仍保留，其輸出／生命週期不由 App 管理。預覽限明確 port 的 loopback HTTP(S)。內嵌 Node Inspector 僅附加 App 自己啟動的 loopback debug 行程，提供 breakpoint、stack、variables、pause／resume／step 與有界請求；不是任意遠端 DAP 或無限制 evaluate。仍可使用瀏覽器 DevTools／外部 IDE。
@@ -210,7 +211,7 @@ HTTP JSON 加 SSE，桌面版與網頁版完全相同。型別定義在 [`src/sh
 | `GET /api/task/files?project=&task=&q=`、`GET /api/task/file?project=&task=&path=` | 唯讀檔案瀏覽與 `@檔名` 提及：`task` 省略／空字串使用主資料夾，否則使用作業檢視根目錄；受限專案回 403。檔名搜尋最多 50 筆且排除本機機密；讀取前 256 KiB，路徑須在清單內且 realpath 仍在根目錄內，二進位不回內容 |
 | `POST /api/task/revert-file` | `{project, task, path}`：把單一檔案還原成與主資料夾分岔時的樣子（原有檔案取回原內容、新增的檔案刪除）；路徑必須是目前有變更的檔案，否則 404；AI 執行中回 409 |
 | `POST /api/task/verify` | 執行台帳的全部具名檢查；回 `{ok, exitCode, timedOut, ms, output, truncated, steps, drifted}`；互斥執行 |
-| `GET /api/task/verify?project=&task=` | 目前內容指紋仍相符時回 `{ok, exitCode, timedOut, at, steps, drifted}`，否則 `null`；僅存記憶體 |
+| `GET /api/task/verify?project=&task=` | 目前內容指紋與設定仍相符且未撤銷時回 `{ok, exitCode, timedOut, at, steps, drifted}`，否則 `null`；完整歷史見 `/api/task/verify/history` |
 | `GET /api/ai`、`POST /api/ai/refresh`、`POST /api/ai/update` | AI 工具與模型清單 |
 | `POST /api/settings`、`POST /api/roles`、`GET /api/log` | 設定、角色、操作紀錄 |
 | `POST /api/accounts/prepare`、`/api/accounts/add` | 準備隔離目錄；新增 `{ai, name, login:true}` 執行 OAuth，或 `{ai, name, configDir}` 匯入（含 Gemini） |
@@ -228,6 +229,7 @@ HTTP JSON 加 SSE，桌面版與網頁版完全相同。型別定義在 [`src/sh
 | 封存 | `GET /api/archive/list`、`/api/archive/preview`；`POST /api/archive/restore` |
 | 編輯器 | `GET /api/editor/file`、`/api/editor/image`（圖片，20 MiB）；`POST /api/editor/save`（含 revision）、`/api/editor/language`（definition／references／diagnostics） |
 | 編輯設定／同步 | `GET/POST /api/editor/settings`；`GET /api/editor/preferences`；`POST /api/editor/{revisions,merge}` |
+| 測試／驗證歷史 | `GET /api/task/tests`、`/api/task/verify/history`；`POST /api/task/tests/{configure,run}` |
 | 執行／整合 | `POST /api/execution/start`、`/stop`、`/preview`、`/ide`、`/terminal`、`/debug`；`GET /api/execution/list`、`/output`（上述短路徑均接 `/api/execution`） |
 | Git | `GET /api/git/status`、`/api/git/pr-status`；`POST /api/git/{stage,unstage,resolve,commit,fetch,branch,push,pr}` |
 | Git 歷史 | `GET /api/git/{history,commit-detail,blame}` |

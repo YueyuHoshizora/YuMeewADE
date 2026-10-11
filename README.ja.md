@@ -49,7 +49,7 @@
   - 実行中の送信：**① 中止してやり直す**、**② 補足（同時に実行）**、**③ 終了後に続ける**（キューに追加し、終了後に自動実行。再起動しても保持します）を選べます。「停止」はキューも同時に空にします。
   - AI が判断を求める場合、応答の最後に決まった形式で質問します。画面では**選択肢ボタン**として表示し、自分で回答を書くこともできます。回答すると、タスクは「回答待ち」から「進行中」に戻ります。
   - 作業コピー：「N ファイル +a −b」と競合の警告を表示します。「差分を見る」（ファイルごとに分割・折りたたみ可能、ファイル別の +/− 付き）、**メインフォルダーにマージ**（両側を自動保存してから `--no-ff` でマージ。成功するとコピーを削除してタスクを完了にします。競合するとマージを中止し、メインフォルダーは変更せず、タスクを回答待ちにします。新規の `.env*` などコミットされないファイルがコピーに残っている場合、マージは成功しますがコピーは保持し、そのファイルを一覧表示します）、または「マージから除外」を選べます。
-  - 検証：`PROJECT.md` の旧 `verify` または名前付き `checks: [{name, command}]` を順番に実行し、個別結果と出力末尾を表示します。コマンドは台帳からのみ取得し、タイムアウトはプロセスツリーを終了します。成功は現在の内容 fingerprint と一致する必要があり、外部編集、設定変更、生成・ignored ファイルへの書き込みで無効になります。検証自身の変更も `drifted` となり、成功扱いを再利用しません。結果はメモリのみ。任意の `requireVerification: true` はマージ前の現内容の成功を必須にします（既定は無効）。
+  - 検証：`PROJECT.md` の旧 `verify` または名前付き `checks: [{name, command}]` を順番に実行し、個別結果と出力末尾を表示します。コマンドは台帳からのみ取得し、タイムアウトはプロセスツリーを終了します。成功は現在の内容 fingerprint と一致する必要があり、外部編集、設定変更、生成・ignored ファイルへの書き込みで無効になります。検証自身の変更も `drifted` となり、成功扱いを再利用しません。履歴は永続化し、再起動後も内容と設定を再検証します。任意の `requireVerification: true` はマージ前の現内容の成功を必須にします（既定は無効）。
   - 検証失敗時の自動修正：プロジェクトページの「検証失敗時の自動修正」で 0〜5 回を設定できます（`PROJECT.md` の `autoFix`、既定 0＝オフ）。AI が指示を終えてキューが空になると検証を自動実行し、失敗したら出力の末尾を同じ AI に返して、成功するか回数が尽きるまで繰り返します。回数が尽きても失敗する場合、タスクを「回答待ち」にして引き継ぎを求めます。AI の失敗・停止・回答待ちのときは検証しません。新しい指示を出すとカウントはリセットされます。
   - 会話：各メッセージにコピーボタン、失敗または停止した応答に「再試行」、応答に CLI が報告したターンごとのトークン使用量（入力／出力／キャッシュ）を表示します。ヘッダーの「Markdown を書き出す」で会話全体をダウンロードできます。
   - ツール呼び出しのグループは履歴も含めて既定で折りたたみ、以前の全体自動展開設定は使用しません。見出しをクリックすると手動で展開できます。
@@ -85,6 +85,7 @@ Claude／Codex のモデル一覧・推論強度は CLI キャッシュから取
   CodeMirror 6 は行番号、折りたたみ、Alt／Optionクリックの複数カーソル、矩形選択、undo／redo、括弧対応と正規表現／大小文字／単語検索を提供します。テーマは App に追従し、LSP 補完はエディター内に表示します。上限は `limits.bodyBytes` からリクエスト分を除いたサイズ（最大8 MiB）で、超過や JSON エスケープ後に保存できない文書は読み取り専用です。
   プロジェクト Problems は未保存 buffer の版を保持し、ディスク内容で上書きしません。常設の非 modal ワークベンチはチャット・端末と併用でき、右／下への配置、幅、ツリーと分割比率を保存します。メモリ内は最大12 scope とし、未変更の待機 scope のみ解放し、dirty 文書は破棄しません。
 - **編集設定／LSP 管理**：フォント、サイズ、字下げ、折り返し、リセット可能な保存／選択範囲送信ショートカットを設定できます。プロジェクト整形設定と有界 `.editorconfig` の `indent_style`／`indent_size`／`tab_width`／`end_of_line` を編集・LSP整形に適用します。プロジェクト LSP パネルは信頼するローカル argv、接続／能力診断、文書アウトライン、workspace シンボル検索を提供し、server の自動ダウンロードは行いません。
+- **テスト探索／検証履歴**：明示した Node ネイティブテストファイルから実際のケースを探索し、全実行・正確な単一ケース再実行、失敗ファイル／行と前回結果を表示します。テストと完全検証の履歴は各20件。設定・現在の内容指紋が一致し、実行中に変化せず、取り消されていない完全検証のみマージ関門に使えます。一部ケース実行で代用しません。
 - **ファイルプレビュー**：Markdown は編集／プレビュー／分割を切り替え、未保存のテキストを180msのデバウンスで表示します（HTMLは解析しません）。png／jpg／jpeg／gif／webp／svg は画像として寸法とバイト数、画面に合わせる／100%を表示。画像APIは20 MiB上限、既存の範囲・機密・symlink検証を使用し、SVGは `<img>` のみで表示、nosniffとスクリプト禁止のsandbox CSPを付けます。
 - **エディターとチャットの連携**：ファイル移動イベントは同じプロジェクト／タスクのワークベンチを再利用し、タブで指定行を表示します。「選択範囲をチャットへ送信」または Ctrl／⌘+Shift+L で主選択を `@パス#L開始-終了 ` に変換します（単一行は `#Ln`、未選択は `@パス `）。エディターは閉じず、タスクがない場合は説明付きで無効化します。
 - **本機実行**：名前付き command／args／kind／cwd／env 設定を永続化し、有界 stdout／stderr、終了コードとプロセスツリー停止を提供します。内蔵端末は実際の `node-pty`、ANSI 表示、入力／resize／stop、POST body のみの owner capability、切断5分後の回収に対応します。システム端末連携も残し、その出力／ライフサイクルは App 管理外です。プレビューは明示 port 付き loopback HTTP(S) のみ。内蔵 Node Inspector は App 自身が起動した loopback debug プロセスだけに接続し、breakpoint、stack、variables、pause／resume／step と有界リクエストを提供します。任意の遠隔 DAP や無制限 evaluate ではなく、ブラウザー DevTools／外部 IDE 連携も利用できます。
@@ -204,7 +205,7 @@ HTTP JSON と SSE を使い、デスクトップ版と Web 版で完全に共通
 | `GET /api/task/files?project=&task=&q=`、`GET /api/task/file?project=&task=&path=` | 読み取り専用閲覧と `@ファイル名` メンション：`task` 省略／空文字はメインフォルダー、それ以外はタスクの閲覧ルートを使用。制限付きプロジェクトは403。秘密を除外して最大50件検索、先頭256 KiBを読み取り、一覧内かつ解決後もルート内のパスのみ許可。バイナリは内容なし |
 | `POST /api/task/revert-file` | `{project, task, path}`：1 ファイルをメインフォルダから分岐した時点の状態に戻す（既存ファイルは元の内容に、新規追加は削除）。パスは現在変更のあるファイルであること（なければ 404）。AI 実行中は 409 |
 | `POST /api/task/verify` | 台帳の全検証を実行し `{ok, exitCode, timedOut, ms, output, truncated, steps, drifted}` を返す。排他実行 |
-| `GET /api/task/verify?project=&task=` | 現内容 fingerprint が一致すると `{ok, exitCode, timedOut, at, steps, drifted}`、それ以外は `null`。メモリのみ |
+| `GET /api/task/verify?project=&task=` | 現内容 fingerprint・設定が一致し、取消されていない時のみ `{ok, exitCode, timedOut, at, steps, drifted}`、それ以外は `null`。履歴は `/api/task/verify/history` |
 | `GET /api/ai`、`POST /api/ai/refresh`、`POST /api/ai/update` | AI ツールとモデル一覧 |
 | `POST /api/settings`、`POST /api/roles`、`GET /api/log` | 設定、役割、操作記録 |
 | `POST /api/accounts/prepare`、`/api/accounts/add` | 隔離フォルダー準備。`{ai, name, login:true}` で OAuth、または `{ai, name, configDir}` で取り込み（Gemini 含む） |
@@ -222,6 +223,7 @@ HTTP JSON と SSE を使い、デスクトップ版と Web 版で完全に共通
 | アーカイブ | `GET /api/archive/list`、`/api/archive/preview`；`POST /api/archive/restore` |
 | エディター | `GET /api/editor/file`、`/api/editor/image`（画像、20 MiB）；`POST /api/editor/save`（revision）、`/api/editor/language`（definition／references／diagnostics） |
 | 編集設定／同期 | `GET/POST /api/editor/settings`；`GET /api/editor/preferences`；`POST /api/editor/{revisions,merge}` |
+| テスト／検証履歴 | `GET /api/task/tests`、`/api/task/verify/history`；`POST /api/task/tests/{configure,run}` |
 | 実行／統合 | `POST /api/execution/{start,stop,preview,ide,terminal,debug}`；`GET /api/execution/{list,output}` |
 | Git | `GET /api/git/{status,pr-status}`；`POST /api/git/{stage,unstage,resolve,commit,fetch,branch,push,pr}` |
 | Git 履歴 | `GET /api/git/{history,commit-detail,blame}` |

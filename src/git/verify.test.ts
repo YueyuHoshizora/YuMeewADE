@@ -199,3 +199,18 @@ test('a transient input edit restored to identical bytes still invalidates verif
     assert.equal(await service.status('P', task.id), null);
   } finally { await service.stopAll(); }
 }));
+
+test('verification history survives restart but never verifies changed content', () => withTmpWorkspace(async ws => {
+  const { service, projects, tasks, task } = await setup(ws, nodeCommand('process.exit(0)'));
+  await projects.update('P', { requireVerification: true });
+  await service.run('P', task.id);
+  await service.stopAll();
+  const restored = new VerifyService({ ws, projects, tasks, config: parseConfig('', null), isRunning: () => false });
+  try {
+    assert.equal((await restored.history('P', task.id)).length, 1);
+    await restored.requireCurrentPass('P', task.id);
+    await fs.writeFile(path.join(projects.bodyPath(await projects.get('P')), '.ignored-input'), 'change');
+    await assert.rejects(restored.requireCurrentPass('P', task.id), { status: 409 });
+    assert.equal((await restored.history('P', task.id)).length, 1);
+  } finally { await restored.stopAll(); }
+}));
