@@ -100,7 +100,8 @@ export class TaskLedger {
         return null;
       }
     }));
-    return rows.filter((t): t is Task => t !== null).sort((a, b) => b.id.localeCompare(a.id));
+    // Numeric chunks compare as numbers: the 1000th task of a day (`…-1000`) is newer than `…-999`.
+    return rows.filter((t): t is Task => t !== null).sort((a, b) => b.id.localeCompare(a.id, 'en', { numeric: true }));
   }
 
   async get(project: string, id: string): Promise<Task> {

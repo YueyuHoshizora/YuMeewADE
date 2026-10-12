@@ -1,5 +1,6 @@
 import assert from 'node:assert/strict';
 import { promises as fs } from 'node:fs';
+import path from 'node:path';
 import { test } from 'node:test';
 import { withTmpWorkspace } from '../testing/tmp.ts';
 import { ProjectLedger } from './projects.ts';
@@ -124,6 +125,18 @@ test('moving a task under its own descendant is refused, while other reparenting
   const results = await Promise.allSettled([ledger.update('P', other.id, { parent: a.id }), ledger.update('P', a.id, { parent: other.id })]);
   assert.deepEqual(results.map(result => result.status).sort(), ['fulfilled', 'rejected']);
   assert.equal((await ledger.update('P', c.id, { parent: a.id })).parent, a.id);
+}));
+
+test('the newest task stays first after a day passes its 999th task id', () => withTmpWorkspace(async ws => {
+  await new ProjectLedger(ws).create({ name: 'P' });
+  const ledger = new TaskLedger(ws);
+  const first = await ledger.create('P', { title: 'first' });
+  // Reserve up to …-998 the way earlier creations of the same day would have.
+  const reservations = path.join(ws.internalDir, 'task-ids', 'P');
+  await fs.writeFile(path.join(reservations, `${first.id.split('-')[0]}-998`), '');
+  const older = await ledger.create('P', { title: 'older' }); const newer = await ledger.create('P', { title: 'newer' });
+  assert.deepEqual([older.id.split('-')[1], newer.id.split('-')[1]], ['999', '1000']);
+  assert.deepEqual((await ledger.list('P')).map(task => task.title), ['newer', 'older', 'first']);
 }));
 
 test('步驟改名保留勾選，移動時連同縮排子項目一起搬且不帶走區段尾端空行', () => withTmpWorkspace(async ws => {

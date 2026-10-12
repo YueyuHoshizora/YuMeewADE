@@ -17,6 +17,6 @@ export function selectTasks<T extends Task>(tasks: readonly T[], selection: Task
       case 'title': order = a.title.localeCompare(b.title); break;
       case 'state': order = TASK_STATES.indexOf(a.state) - TASK_STATES.indexOf(b.state); break;
     }
-    return order || a.id.localeCompare(b.id);
+    return order || a.id.localeCompare(b.id, 'en', { numeric: true });
   });
 }
