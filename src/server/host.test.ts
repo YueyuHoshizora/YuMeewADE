@@ -3,6 +3,7 @@ import { promises as fs } from 'node:fs';
 import path from 'node:path';
 import { test } from 'node:test';
 import { MockCliProvider } from '../cli/mock.ts';
+import { OpLog } from '../ledger/oplog.ts';
 import { parseConfig } from '../shared/config.ts';
 import type { AppState, Project, Task } from '../shared/types.ts';
 import { startTestServer } from '../testing/server.ts';
@@ -84,3 +85,39 @@ test('core startup refuses a second owner and shutdown releases workspace owners
     second.close();
   }
 }));
+
+test('core init failure closes resources already opened and releases workspace ownership', () => withTmpWorkspace(async ws => {
+  const config = parseConfig(`workspace:\n  root: ${JSON.stringify(ws.root)}\n`, null);
+  const host = new CoreHost(config, { app: { providers: { mock: new MockCliProvider() } } });
+  // care starts after the preview gateway is already listening.
+  host.app.care.init = async () => { throw new Error('care init failed'); };
+  try {
+    await assert.rejects(host.init(), /care init failed/u);
+    const gateway = host.app.embeddedPreview.gatewayOrigin();
+    assert.match(gateway, /^http:\/\/127\.0\.0\.1:\d+$/u);
+    await assert.rejects(fetch(gateway), 'preview gateway must stop listening after a failed init');
+    await assert.rejects(fs.access(path.join(ws.root, '.yumeewade', 'core.lock')));
+  } finally { host.close(); }
+}));
+
+test('切換工作區：換上新工作區後紀錄寫入失敗仍回報成功並收尾舊工作區', async () => {
+  const s = await startTestServer();
+  const record = OpLog.prototype.record;
+  try {
+    const before = s.app.ws.root;
+    await fs.access(path.join(before, '.yumeewade', 'core.lock'));
+    OpLog.prototype.record = async function (this: OpLog, entry) {
+      if (entry.action === 'workspace') throw new Error('oplog disk full');
+      return record.call(this, entry);
+    };
+    const next = path.join(s.dir, 'next root');
+    const res = await s.api('POST', '/api/workspace', { root: next });
+    assert.equal(res.status, 200);
+    assert.equal(s.app.ws.root, next);
+    await assert.rejects(fs.access(path.join(before, '.yumeewade', 'core.lock')), 'old workspace ownership must be released');
+    await fs.access(path.join(next, '.yumeewade', 'core.lock'));
+  } finally {
+    OpLog.prototype.record = record;
+    await s.close();
+  }
+});

@@ -44,6 +44,9 @@ export class CoreHost {
       this.useLog(this.current);
       await this.current.init();
     } catch (err) {
+      // init may already have opened the preview gateway, timers or watchers; close them before the lock.
+      try { await this.current.shutdown(); }
+      catch (cleanup) { log.error('核心初始化失敗後的收尾失敗', cleanup); }
       await this.releaseLock();
       this.releaseLock = undefined;
       throw err;
@@ -70,15 +73,15 @@ export class CoreHost {
       try {
         await next.init();
       } catch (cause) {
-        await next.shutdown();
-        await releaseNext();
+        try { await next.shutdown(); }
+        finally { await releaseNext(); }
         throw new AppError('bad_request', 'root_unwritable', { cause });
       }
       try {
         await saveWorkspaceRoot(configWriteTarget(old.config), root);
       } catch (err) {
-        await next.shutdown();
-        await releaseNext();
+        try { await next.shutdown(); }
+        finally { await releaseNext(); }
         throw err;
       }
       const releaseOld = this.releaseLock;
@@ -86,12 +89,16 @@ export class CoreHost {
       this.current = next;
       this.http.mount(next);
       this.useLog(next);
-      log.info('已切換工作區', { from: old.ws.root, to: root });
-      await next.oplog.record({ action: 'workspace', from: old.ws.root });
-      // 連線沿用，所有開著的視窗收到 changed 就會重抓新工作區的狀態
-      next.changed();
-      try { await old.shutdown(); }
-      finally { await releaseOld?.(); }
+      // The swap is committed: an oplog failure must not report failure or skip the old App's cleanup.
+      try {
+        log.info('已切換工作區', { from: old.ws.root, to: root });
+        await next.oplog.record({ action: 'workspace', from: old.ws.root }).catch(err => log.error('工作區切換紀錄失敗', err));
+        // 連線沿用，所有開著的視窗收到 changed 就會重抓新工作區的狀態
+        next.changed();
+      } finally {
+        try { await old.shutdown(); }
+        finally { await releaseOld?.(); }
+      }
       return root;
     } finally {
       this.relocating = false;
