@@ -20,6 +20,7 @@ import { metadataBadge, metadataFields } from '../components/task-metadata.ts';
 import { taskTemplates } from '../components/task-templates.ts';
 import { memoryPanel } from '../components/memory.ts';
 import { taskBoard } from '../components/task-board.ts';
+import { phaseEditor } from '../components/phase-editor.ts';
 import { TASK_STATES, type BulkTaskAction, type BulkTaskResult } from '../../shared/types.ts';
 import type { MessageKey } from '../i18n/zh-TW.ts';
 
@@ -296,6 +297,7 @@ export function projectView(context: ViewContext, project: ProjectView, params: 
       for (const [i, phase] of project.phases.entries()) road.append(el('div', `phase ${phase.name === project.currentPhase ? 'current' : ''} ${phase.state === '完成' ? 'complete' : ''}`, `${i + 1} · ${phase.name}`));
       overview.append(road);
     }
+    overview.append(phaseEditor(project, context.refresh));
     if (project.phaseOffer) overview.append(card(t('project.phaseComplete'), row(
       button(t('project.nextPhase'), async () => { await request('/api/phase/next', { project: project.id, phase: project.currentPhase }); await context.refresh(); }, 'primary'),
       button(t('project.continuePhase'), async () => { await request('/api/phase/continue', { project: project.id, phase: project.currentPhase }); await context.refresh(); }),

@@ -131,6 +131,22 @@ export function registerLedgerRoutes(router: Router, app: App): void {
     await changed('phase.continue', project);
     return result;
   });
+  router.post('/api/project/phases', async ({ body }) => {
+    const project = reqString(body, 'project', 120);
+    if (!Array.isArray(body.previous) || body.previous.some(name => typeof name !== 'string')) throw new AppError('bad_request', 'field_type', { field: 'previous' });
+    const phases = body.phases;
+    if (!Array.isArray(phases) || phases.length > 12 || phases.some(entry => !entry || typeof entry !== 'object' || typeof entry.name !== 'string' || (entry.from !== undefined && typeof entry.from !== 'string'))) {
+      throw new AppError('bad_request', 'field_type', { field: 'phases' });
+    }
+    const { project: result, renamed } = await app.projects.setPhases(project, body.previous as string[], (phases as { name: string; from?: string }[]).map(entry => ({ name: entry.name, ...(entry.from === undefined ? {} : { from: entry.from }) })));
+    // Tasks follow a renamed phase; tasks of a removed phase keep their label and show under other phases.
+    if (renamed.size) for (const task of await app.tasks.list(project)) {
+      const to = renamed.get(task.phase);
+      if (to !== undefined) await app.tasks.update(project, task.id, { phase: to });
+    }
+    await changed('project.phases', project);
+    return result;
+  });
   router.post('/api/order', async ({ body }) => {
     if (typeof body.parent !== 'string') throw new AppError('bad_request');
     const order = await app.order.setOrder(body.parent, strings(body.order));

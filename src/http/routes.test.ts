@@ -139,6 +139,32 @@ test('phase offer, continuation key, legacy fallback, order and pins', async () 
   } finally { await s.close(); }
 });
 
+test('editing phases renames tasks along, keeps states, normalizes the current phase and rejects stale or duplicate lists', async () => {
+  const { server: s, project: p } = await setup();
+  const state = async () => ((await s.api('GET', '/api/state')).json as AppState).projects[0]!;
+  try {
+    const done = (await s.api('POST', '/api/task/new', { project: p.id, title: 'Plan', phase: '計畫' })).json as Task;
+    const later = (await s.api('POST', '/api/task/new', { project: p.id, title: 'Build', phase: '實作' })).json as Task;
+    await s.api('POST', '/api/phase/next', { project: p.id, phase: '計畫' });
+    const previous = ['計畫', '實作', '檢查', '收尾'];
+    // Rename 實作, insert a phase before it, drop 收尾.
+    const edited = await s.api('POST', '/api/project/phases', { project: p.id, previous, phases: [{ name: '計畫', from: '計畫' }, { name: '設計' }, { name: '開發', from: '實作' }, { name: '檢查', from: '檢查' }] });
+    assert.equal(edited.status, 200);
+    const project = await state();
+    assert.deepEqual(project.phases, [{ name: '計畫', state: '完成' }, { name: '設計', state: '進行中' }, { name: '開發', state: '未開始' }, { name: '檢查', state: '未開始' }]);
+    assert.equal(project.currentPhase, '設計');
+    assert.equal(project.tasks.find(task => task.id === later.id)!.phase, '開發');
+    assert.equal(project.tasks.find(task => task.id === done.id)!.phase, '計畫');
+    const stale = await s.api('POST', '/api/project/phases', { project: p.id, previous, phases: [{ name: 'X' }] });
+    assert.equal(stale.status, 409); assert.equal((stale.json as { detail: string }).detail, 'phase_changed');
+    const current = project.phases.map(phase => phase.name);
+    const duplicate = await s.api('POST', '/api/project/phases', { project: p.id, previous: current, phases: [{ name: '計畫', from: '計畫' }, { name: ' 計畫 ' }] });
+    assert.equal(duplicate.status, 400); assert.equal((duplicate.json as { detail: string }).detail, 'phase_duplicate');
+    assert.equal((await s.api('POST', '/api/project/phases', { project: p.id, previous: current, phases: [{ name: 'A', from: '不存在' }] })).status, 400);
+    assert.deepEqual((await state()).phases.map(phase => phase.name), current);
+  } finally { await s.close(); }
+});
+
 test('force archive discards the copy but keeps its work on the task branch', async () => {
   const { server: s, project: p, task: t } = await setup();
   const ids = { project: p.id, task: t.id };

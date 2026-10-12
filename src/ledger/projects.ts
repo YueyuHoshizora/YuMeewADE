@@ -6,14 +6,22 @@ import { parseFrontmatter, patchHeaderLines, serializeFrontmatter } from '../sha
 import { atomicWrite, isInside, pathExists, withFileLocks } from '../shared/fsx.ts';
 import { log } from '../shared/log.ts';
 import { isValidProjectName } from '../shared/names.ts';
-import { AUTO_FIX_MAX, PHASE_STATES, PROJECT_STATUSES, type NewProjectInput, type Phase, type Project, type ProjectPatch, type ProjectStatus } from '../shared/types.ts';
+import { AUTO_FIX_MAX, PHASE_STATES, PROJECT_STATUSES, type NewProjectInput, type Phase, type PhaseState, type Project, type ProjectPatch, type ProjectStatus } from '../shared/types.ts';
 import { type YamlValue } from '../shared/yaml.ts';
 import { ensureRepo } from '../git/git.ts';
 import { parseVerificationChecks, parseVerificationInputModel } from '../shared/verification.ts';
 import { TEMPLATES_DIR, type Workspace } from './workspace.ts';
 
 export const RULES_MAX = 20_000;
+export const PHASE_NAME_MAX = 200;
 
+/** Checked where phases are named (create, edit) rather than in `validate`, so hand-edited ledgers with odd names still advance. */
+function checkPhaseNames(names: string[]): void {
+  if (names.some(name => !name)) throw new AppError('bad_request', 'field_type', { field: 'phases' });
+  if (names.some(name => name.length > PHASE_NAME_MAX)) throw new AppError('bad_request', 'field_too_long', { field: 'phases' });
+  // currentPhase and task grouping match phases by name; two equal names would be indistinguishable.
+  if (new Set(names).size !== names.length) throw new AppError('bad_request', 'phase_duplicate');
+}
 
 export const PROJECT_GITIGNORE = ['# 台帳與對話不進版本控制', '.ai/', '', '# 本機機密', '.env', '.env.*', '.npmrc', '.dev.vars*', '.DS_Store', ''].join('\n');
 export function todayDate(now = new Date()): string {
@@ -113,6 +121,7 @@ export class ProjectLedger {
       const phases = input.phases ?? ['計畫', '實作', '檢查', '收尾'];
       if (!Array.isArray(phases) || phases.some(p => typeof p !== 'string')) throw new AppError('bad_request', 'field_type', { field: 'phases' });
       const patch = { ...input, phases: phases.map((name, i) => ({ name: name.trim(), state: i === 0 ? '進行中' as const : '未開始' as const })) };
+      checkPhaseNames(patch.phases.map(phase => phase.name));
       await this.validate(patch, input.name);
       const dir = this.ws.projectDir(input.name);
       // 先前失敗或中斷的建立會留下空資料夾；它不含任何資料，可直接重用（rmdir 只刪空資料夾）。
@@ -175,6 +184,32 @@ export class ProjectLedger {
       project.phases[index]!.state = '完成';
       if (project.phases[index + 1]) project.phases[index + 1]!.state = '進行中';
       return this.updateLocked(id, { phases: project.phases, ...(index + 1 === project.phases.length ? { status: '完成' as const } : {}) });
+    });
+  }
+  /**
+   * Replaces the phase list the caller edited (`previous`, a conflict if it changed meanwhile). An entry's `from` names the
+   * existing phase it continues, keeping its state; new entries start unfinished. The first unfinished phase becomes current.
+   * Returns the renames so the caller can move tasks along.
+   */
+  async setPhases(id: string, previous: string[], next: { name: string; from?: string }[]): Promise<{ project: Project; renamed: Map<string, string> }> {
+    return withFileLocks([this.ws.projectFile(id)], async () => {
+      const project = await this.get(id);
+      if (JSON.stringify(project.phases.map(p => p.name)) !== JSON.stringify(previous)) throw new AppError('conflict', 'phase_changed');
+      const states = new Map(project.phases.map(p => [p.name, p.state]));
+      const sources = next.flatMap(entry => entry.from === undefined ? [] : [entry.from]);
+      if (sources.some(from => !states.has(from)) || new Set(sources).size !== sources.length) throw new AppError('bad_request', 'field_type', { field: 'phases' });
+      const names = next.map(entry => entry.name.trim());
+      checkPhaseNames(names);
+      const renamed = new Map<string, string>();
+      let started = false;
+      const phases: Phase[] = next.map((entry, i) => {
+        const name = names[i]!;
+        if (entry.from !== undefined && entry.from !== name) renamed.set(entry.from, name);
+        let state: PhaseState = entry.from === undefined ? '未開始' : states.get(entry.from)!;
+        if (state !== '完成') { state = started ? '未開始' : '進行中'; started = true; }
+        return { name, state };
+      });
+      return { project: await this.updateLocked(id, { phases }), renamed };
     });
   }
 

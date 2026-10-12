@@ -264,6 +264,7 @@
 .tree-unreadable{margin:12px 5px 0;line-height:1.5}.tree-unreadable ul{margin:4px 0 0;padding-left:16px}.tree-unreadable code{overflow-wrap:anywhere}
 .diff-file>.form{max-width:none}
 .range-label{display:inline-flex;align-items:center;gap:6px;font-size:12px}.range-label[hidden]{display:none}
+.phase-editor-list{margin:8px 0;padding-left:24px}.phase-editor-list li{display:flex;flex-wrap:wrap;align-items:center;gap:6px;margin:6px 0}.phase-editor-list input{flex:1 1 200px;min-width:0}
 .sidebar-actions{position:sticky;bottom:0;margin-top:auto;display:flex;flex-direction:column;background:var(--c-141722);border-top:1px solid var(--border)}.sidebar-actions .new-project{position:static;border-top:0;padding-block:12px}.sidebar-actions button.new-project{border:0;border-radius:0;text-align:left}
 .side-diff-labels{display:grid;grid-template-columns:1fr 1fr;min-width:600px;margin-bottom:4px}
 /* In a narrow column (side panels or docked workbench open) the wrapped controls must not push the transcript out. */

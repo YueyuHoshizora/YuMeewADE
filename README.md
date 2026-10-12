@@ -202,7 +202,8 @@ HTTP JSON 加 SSE，桌面版與網頁版完全相同。型別定義在 [`src/sh
 | `GET /api/chat/export?project=&task=&tools=` | 下載對話 Markdown（`tools=1` 含工具呼叫；不含工作區絕對路徑） |
 | `GET /api/search?q=&project=&task=` | 搜尋作業標題與對話內容（最多 50 筆）；可選 `project`（及 `task`）只搜尋該專案或作業，名稱不合法回 400、不存在回 404，`task` 必須搭配 `project` |
 | `POST /api/project/new`、`/api/project/update`、`/api/project/archive` | 專案 |
-| `POST /api/phase/next`、`/api/phase/continue` | 階段 |
+| `POST /api/phase/next`、`/api/phase/continue` | 階段：`{project, phase}`，`phase` 為畫面上的目前階段；已被推進時回 409 `phase_changed` |
+| `POST /api/project/phases` | 編輯階段 `{project, previous: string[], phases: [{name, from?}]}`（最多 12 個、名稱不重複）：`from` 指向沿用的既有階段，改名時該階段的作業一起改名；`previous` 與目前不符回 409 `phase_changed` |
 | `POST /api/order`、`/api/pin` | 專案排序與釘選 |
 | `POST /api/task/new`、`/api/task/update`、`/api/task/step`、`/api/task/memo`、`/api/task/completion`、`/api/task/archive`、`/api/task/read` | 作業 |
 | `POST /api/task/bulk` | `{project, tasks: string[] (1–200、不重複), action: {kind: state/phase/due/addTag/removeTag, value} 或 {kind: archive, confirm: true}}`；回傳 `results: [{task, ok, error?, detail?}]`，封存不強制刪副本 |
