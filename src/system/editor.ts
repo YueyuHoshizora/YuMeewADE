@@ -15,6 +15,7 @@ import type { EditorBufferSnapshot, EditorAction, EditorActionResult, EditorChan
 import type { EditorSettings, EditorSettingsPatch, EditorResolvedFormatPreferences } from '../shared/editor-preferences.ts';
 import { EditorSettingsStore, validateEditorCommands, DEFAULT_EDITOR_FORMAT, applyEditorConfig } from './editor-settings.ts';
 import { boundedMatches, type SearchOptions } from './editor-search.ts';
+import { historyEntries, preserveHistory, type HistoryEntry } from './editor-history.ts';
 
 const LANGUAGE: Record<string, string> = { ts: 'typescript', tsx: 'typescriptreact', js: 'javascript', jsx: 'javascriptreact', mjs: 'javascript', cjs: 'javascript', json: 'json', py: 'python', rs: 'rust', go: 'go', css: 'css', scss: 'scss', html: 'html', vue: 'html', md: 'markdown', c: 'c', h: 'c', cpp: 'cpp', hpp: 'cpp', java: 'java', kt: 'kotlin', php: 'php', sql: 'sql', xml: 'xml', svg: 'xml', yaml: 'yaml', yml: 'yaml', toml: 'toml', sh: 'shellscript', bash: 'shellscript', zsh: 'shellscript', rb: 'ruby', swift: 'swift', lua: 'lua', ini: 'ini' };
 export class EditorService {
@@ -200,6 +201,28 @@ export class EditorService {
       return { bytes: bytes.subarray(0, offset), contentType };
     } finally { await handle.close(); }
   }
+  async history(project: string, task: string, relative: string): Promise<{ entries: HistoryEntry[] }> {
+    try { await this.target(project, task, relative, false); } catch (error) { if ((error as NodeJS.ErrnoException).code !== 'ENOENT') throw error; }
+    const { root } = await this.root(project, task);
+    return { entries: await historyEntries(root, relative) };
+  }
+  async restoreHistory(project: string, task: string, relative: string, id: string, revision: string): Promise<EditorDocument> {
+    const { entries } = await this.history(project, task, relative);
+    const entry = entries.find(item => item.id === id); if (!entry) throw new AppError('not_found');
+    if (revision !== 'missing') return this.save(project, task, relative, entry.text, revision);
+    const repo = await fs.realpath(await this.worktree.bodyPath(project));
+    return withFileLocks([repo], async () => {
+      const { root, readonly } = await this.root(project, task); if (readonly) throw new AppError('bad_request', 'editor_readonly');
+      const parent = path.posix.dirname(relative); if (parent !== '.') await this.target(project, task, parent, false);
+      const file = path.join(root, relative);
+      const tmp = path.join(path.dirname(file), `.editor-${randomUUID()}.tmp`);
+      const handle = await fs.open(tmp, 'wx', 0o600);
+      try { await handle.writeFile(entry.text); await handle.sync(); await handle.close(); if (parent !== '.') await this.target(project, task, parent, false); await fs.link(tmp, file); }
+      catch (error) { if ((error as NodeJS.ErrnoException).code === 'EEXIST') throw new AppError('conflict', 'editor_conflict'); throw error; }
+      finally { await handle.close().catch(() => undefined); await fs.rm(tmp, { force: true }); }
+      return this.document(file, relative);
+    });
+  }
   async save(project: string, task: string, relative: string, text: string, revision: string): Promise<EditorDocument> {
     if (Buffer.byteLength(text) > this.MAX || Buffer.byteLength(JSON.stringify(text)) > this.bodyBytes - 8192 || text.includes('\0')) throw new AppError('too_large');
     // Worktree mutations lock the canonical main repository, including task copies.
@@ -211,6 +234,7 @@ export class EditorService {
       const current = await this.document(target.file, relative);
       if (current.binary || current.truncated) throw new AppError('bad_request', 'editor_readonly');
       if (current.revision !== revision) throw new AppError('conflict', 'editor_conflict');
+      await preserveHistory(target.root, { path: relative, revision: current.revision, text: current.text, reason: 'save' });
       const stat = await fs.stat(target.file);
       const tmp = path.join(path.dirname(target.file), `.editor-${randomUUID()}.tmp`);
       const handle = await fs.open(tmp, 'wx', stat.mode & 0o777);
@@ -440,6 +464,7 @@ export class EditorService {
             if (target.readonly || current.binary || current.truncated) throw new AppError('bad_request', 'editor_readonly');
             if (current.revision !== change.revision) throw new AppError('conflict', 'editor_conflict');
             if (Buffer.byteLength(change.text) > this.MAX || change.text.includes('\0')) throw new AppError('too_large');
+            await preserveHistory(target.root, { path: change.path, revision: current.revision, text: current.text, reason: 'apply' });
             const tmp = path.join(path.dirname(target.file), `.editor-${randomUUID()}.tmp`);
             const backup = `${tmp}.backup`;
             staged.push({ tmp, file: target.file, backup });
@@ -532,6 +557,11 @@ export class EditorService {
       } else {
         await this.target(project, task, mutation.path);
         if ((await this.document(target.file, mutation.path)).revision !== mutation.revision) throw new AppError('conflict', 'editor_conflict');
+      }
+      const affected = stat.isDirectory() ? (await this.files(root)).filter(relative => relative.startsWith(`${mutation.path}/`)) : [mutation.path];
+      for (const relative of affected) {
+        const current = await this.read(project, task, relative);
+        if (!current.binary && !current.truncated) await preserveHistory(root, { path: relative, revision: current.revision, text: current.text, reason: 'mutate' });
       }
       if (mutation.action === 'rename') await fs.rename(target.file, await validateNew(mutation.destination ?? ''));
       else if (mutation.action === 'delete') {

@@ -1,0 +1,23 @@
+import assert from 'node:assert/strict';
+import { promises as fs } from 'node:fs';
+import path from 'node:path';
+import { test } from 'node:test';
+import { ProjectLedger } from '../ledger/projects.ts';
+import { TaskLedger } from '../ledger/tasks.ts';
+import { WorktreeService } from '../git/worktree.ts';
+import { withTmpWorkspace } from '../testing/tmp.ts';
+import { EditorService } from './editor.ts';
+test('persistent history restores with CAS and retains deleted files', () => withTmpWorkspace(async ws => {
+  const projects = new ProjectLedger(ws); const tasks = new TaskLedger(ws); await projects.create({ name: 'P' });
+  const worktree = new WorktreeService({ ws, projects, tasks, diffBytes: 100000 });
+  const editor = new EditorService(worktree, tasks, {}); const file = path.join(ws.projectDir('P'), 'history.txt');
+  await fs.writeFile(file, 'before'); const first = await editor.read('P', '', 'history.txt');
+  const saved = await editor.save('P', '', first.path, 'after', first.revision);
+  const reopened = new EditorService(worktree, tasks, {}); const { entries } = await reopened.history('P', '', first.path);
+  assert.equal(entries[0]?.text, 'before'); await fs.writeFile(file, 'external');
+  await assert.rejects(reopened.restoreHistory('P', '', first.path, entries[0]!.id, saved.revision)); assert.equal(await fs.readFile(file, 'utf8'), 'external');
+  const current = await reopened.read('P', '', first.path); await reopened.restoreHistory('P', '', first.path, entries[0]!.id, current.revision); assert.equal(await fs.readFile(file, 'utf8'), 'before');
+  const restored = await reopened.read('P', '', first.path); await reopened.mutate('P', '', { action: 'delete', path: first.path, confirmation: first.path, revision: restored.revision });
+  const deleted = await reopened.history('P', '', first.path); await reopened.restoreHistory('P', '', first.path, deleted.entries[0]!.id, 'missing'); assert.equal(await fs.readFile(file, 'utf8'), 'before');
+  editor.dispose(); reopened.dispose();
+}));

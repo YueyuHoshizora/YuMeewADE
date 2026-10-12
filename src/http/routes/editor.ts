@@ -7,6 +7,13 @@ export function registerEditorRoutes(router: Router, app: App): void {
   router.get('/api/editor/scope', async ({ query }) => app.editor.scope(reqString(query, 'project', 120), query.has('task') ? reqString(query, 'task', 120) : '', app.ws.root));
   router.get('/api/editor/settings', async ({ query }) => app.editor.settings(reqString(query, 'project', 120)));
   router.get('/api/editor/preferences', async ({ query }) => app.editor.preferences(reqString(query, 'project', 120), query.has('task') ? reqString(query, 'task', 120) : '', reqString(query, 'path', 1000)));
+  router.get('/api/editor/history', async ({ query }) => app.editor.history(reqString(query, 'project', 120), query.has('task') ? reqString(query, 'task', 120) : '', reqString(query, 'path', 1000)));
+  router.post('/api/editor/history/restore', async ({ body }) => {
+    const project = reqString(body, 'project', 120); const task = body.task === undefined ? '' : reqString(body, 'task', 120);
+    if (app.editorWriteBusy(project, task || undefined)) throw new AppError('conflict', 'editor_running');
+    const result = await app.editor.restoreHistory(project, task, reqString(body, 'path', 1000), reqString(body, 'id', 100), reqString(body, 'revision', 100));
+    if (task) app.verify.invalidate(project, task); app.changed(project, task || undefined); return result;
+  });
   router.post('/api/editor/settings', async ({ body }) => {
     const project = reqString(body, 'project', 120);
     await app.trust.assertExecutable(project);
