@@ -23,6 +23,14 @@ test('Node TAP names are unescaped, so a rerun selector matches the real case na
   assert.deepEqual(tree.map(node => [node.name, node.fullName, node.status]), [['hash # name', 'hash # name', 'passed'], ['back\\slash', 'back\\slash', 'passed']]);
 });
 
+test('lines inside a TAP YAML diagnostic block are never read as cases or results', () => {
+  // An error message that itself contains TAP-looking lines, as Node prints it inside `---` … `...`.
+  const tap = "TAP version 13\n# Subtest: real failure\nnot ok 1 - real failure\n  ---\n  location: '/project/a.test.mjs:2:1'\n  failureType: 'testCodeFailure'\n  error: |-\n    first line\n    # Subtest: invented\n    ok 1 - invented\n  code: 'ERR_TEST_FAILURE'\n  ...\n1..1\n";
+  const { tree } = parseNodeTap(tap, '/project');
+  assert.deepEqual(tree.map(node => [node.name, node.status]), [['real failure', 'failed']]);
+  assert.equal(tree[0]!.file, 'a.test.mjs'); assert.match(tree[0]!.error!, /ERR_TEST_FAILURE/u);
+});
+
 test('Node TAP keeps the first 2000 cases of a huge suite and leaves deeper or later subtests out cleanly', () => {
   const many = Array.from({ length: 2001 }, (_, i) => `# Subtest: case ${i}\nok ${i + 1} - case ${i}\n`).join('');
   const big = parseNodeTap(`TAP version 13\n${many}`, '/project');

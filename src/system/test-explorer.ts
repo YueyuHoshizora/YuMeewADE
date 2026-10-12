@@ -44,8 +44,15 @@ export function parseNodeTap(output: string, root: string): { tree: TestCaseNode
   const stack: { indent: number; node: TestCaseNode | null }[] = [];
   let last: TestCaseNode | undefined;
   let count = 0; let truncated = false;
+  // A result line may be followed by an indented YAML diagnostic block (`---` … `...`). Its contents (an error message can
+  // contain `# Subtest:` or `ok 1` lines) are diagnostics of that result, never declarations or results of their own.
+  let resultIndent: number | undefined; let yamlEnd: string | undefined;
   for (const row of output.split(/\r?\n/u)) {
-    const declaration = /^(\s*)# Subtest: (.*)$/u.exec(row);
+    const opensYaml = resultIndent !== undefined && row === `${' '.repeat(resultIndent + 2)}---`;
+    resultIndent = undefined;
+    if (opensYaml) { yamlEnd = row.replace(/---$/u, '...'); continue; }
+    if (yamlEnd !== undefined && row === yamlEnd) { yamlEnd = undefined; continue; }
+    const declaration = yamlEnd === undefined ? /^(\s*)# Subtest: (.*)$/u.exec(row) : null;
     if (declaration) {
       const indent = declaration[1]!.length;
       while (stack.length && stack.at(-1)!.indent >= indent) stack.pop();
@@ -59,9 +66,9 @@ export function parseNodeTap(output: string, root: string): { tree: TestCaseNode
       (parent?.children ?? roots).push(node); stack.push({ indent, node }); last = node;
       continue;
     }
-    const result = /^(\s*)(not ok|ok)\s+\d+\s*(?:-\s*)?(.*?)(?:\s+#\s*(SKIP|TODO)\b.*)?$/iu.exec(row);
+    const result = yamlEnd === undefined ? /^(\s*)(not ok|ok)\s+\d+\s*(?:-\s*)?(.*?)(?:\s+#\s*(SKIP|TODO)\b.*)?$/iu.exec(row) : null;
     if (result) {
-      const indent = result[1]!.length;
+      const indent = result[1]!.length; resultIndent = indent;
       while (stack.length && stack.at(-1)!.indent > indent) stack.pop();
       const candidate = stack.at(-1);
       if (candidate?.indent === indent) {
