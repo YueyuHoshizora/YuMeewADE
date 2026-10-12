@@ -64,6 +64,23 @@ test('backup rejects escaping symlinks and restore rejects altered snapshots', a
   } finally { await fs.rm(temporary, { recursive: true, force: true }); }
 });
 
+test('a link to an excluded credential file is left out, so the snapshot still restores', async () => {
+  const temporary = await fs.mkdtemp(path.join(os.tmpdir(), 'care-excluded-link-'));
+  try {
+    const ws = new Workspace(path.join(temporary, 'source')); await ws.init();
+    await fs.writeFile(path.join(ws.root, 'auth.json'), 'credential');
+    await fs.symlink('auth.json', path.join(ws.root, 'auth-link'));
+    await fs.mkdir(path.join(ws.root, 'cli-accounts')); await fs.writeFile(path.join(ws.root, 'cli-accounts', 'token'), 'x');
+    await fs.symlink(path.join('cli-accounts', 'token'), path.join(ws.root, 'token-link'));
+    const backup = new BackupService(ws, path.join(temporary, 'private'));
+    const snapshot = await backup.create(true); assert.equal(snapshot.complete, true);
+    const destination = path.join(temporary, 'destination');
+    await backup.restore(snapshot.id, destination);
+    for (const name of ['auth.json', 'auth-link', 'cli-accounts', 'token-link']) await assert.rejects(fs.lstat(path.join(destination, name)), { code: 'ENOENT' });
+    assert.ok((await fs.readdir(destination)).includes('roles.yaml'));
+  } finally { await fs.rm(temporary, { recursive: true, force: true }); }
+});
+
 test('a complete backup refuses an external folder that contains the backup storage', async () => {
   const temporary = await fs.mkdtemp(path.join(os.tmpdir(), 'care-overlap-'));
   try {

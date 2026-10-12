@@ -313,6 +313,9 @@ async function copyTree(source: string, target: string, mappings: { source: stri
   if (stat.isSymbolicLink()) {
     const real = await fs.realpath(source); const mapping = mappings.find(e => inside(e.source, real));
     if (!mapping) throw fail('care_backup_invalid');
+    // A link to an excluded credential file (or into an excluded folder) is left out with its target; copied, it would
+    // dangle and make the whole snapshot unrestorable.
+    if (path.relative(mapping.source, real).split(path.sep).some(excluded)) return;
     await fs.symlink(path.relative(path.dirname(target), path.join(mapping.target, path.relative(mapping.source, real))), target);
   } else if (stat.isDirectory()) {
     await fs.mkdir(target, { recursive: true, mode: 0o700 });
