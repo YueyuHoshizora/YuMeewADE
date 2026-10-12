@@ -90,7 +90,10 @@ export function mountEditorProposals(context: WorkbenchPanelContext): HTMLElemen
   };
   const generate = button(t('proposal.generate'), async () => {
     if (busy) return;
-    const snapshots = editor.snapshots().filter(snapshot => selected.has(snapshot.path));
+    const chosen = () => editor.snapshots().filter(snapshot => selected.has(snapshot.path));
+    // The file list is built when the panel mounts, usually before any file is open: fall back to the active file.
+    let snapshots = chosen();
+    if (!snapshots.length) { selected.clear(); refreshFiles(); snapshots = chosen(); }
     if (!snapshots.length) { status.textContent = t('proposal.noFiles'); return; }
     busy = true; setLocked(generate, true);
     try {
