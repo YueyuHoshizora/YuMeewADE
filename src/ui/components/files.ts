@@ -540,8 +540,10 @@ export function openFileBrowser(project: string, task: string, workspace = activ
       // letter/digit/underscore word boundary. Plain text inserts the replacement literally; regex keeps $1/$& groups.
       const source = regex.checked ? needle : needle.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
       const expression = new RegExp(wholeWord.checked ? `(?<![\\p{L}\\p{N}_])(?:${source})(?![\\p{L}\\p{N}_])` : source, caseSensitive.checked ? 'gmu' : 'gimu');
-      const changes: EditorChange[] = [];
-      for (const path of new Set(hits.map(hit => hit.path))) {
+      const changes: EditorChange[] = []; const paths = new Set(hits.map(hit => hit.path));
+      // One editor apply covers at most 50 files; say so before reading every matching file.
+      if (paths.size > 50) throw new UserError(t('detail.editor_changes_too_many'));
+      for (const path of paths) {
         const document = await request<EditorDocument>(query('/api/editor/file', { ...ids, path }));
         if (hits.some(hit => hit.path === path && hit.revision !== document.revision)) throw new UserError(t('detail.editor_conflict'));
         const text = buffers.get(path)?.text ?? document.text;

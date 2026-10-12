@@ -78,6 +78,8 @@ test('editor CRUD, folder revisions and preview-bound multidocument replacement'
     changes[1] = { ...changes[1]!, revision: (await editor.read('P', '', 'src/b.txt')).revision };
     await editor.apply('P', '', changes);
     for (const file of ['a.txt', 'b.txt']) assert.equal(await fs.readFile(path.join(root, 'src', file), 'utf8'), 'one replacement two replacement');
+    // More files than one editor apply may touch is named, so a large replace-all or rename says why it cannot run.
+    await assert.rejects(editor.apply('P', '', Array.from({ length: 51 }, (_, i) => ({ path: `src/f${i}.txt`, revision: 'x', text: '' }))), (error: unknown) => error instanceof AppError && error.detail === 'editor_changes_too_many');
     const revision = await editor.folderRevision('P', '', 'src');
     await assert.rejects(editor.mutate('P', '', { action: 'delete', path: 'src', revision: revision.revision }));
     await editor.mutate('P', '', { action: 'createFolder', path: 'src/sub' });

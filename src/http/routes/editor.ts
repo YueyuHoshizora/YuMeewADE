@@ -82,7 +82,8 @@ export function registerEditorRoutes(router: Router, app: App): void {
   router.post('/api/editor/apply', async ({ body }) => {
     const project = reqString(body, 'project', 120); const task = body.task === undefined ? '' : reqString(body, 'task', 120);
     if (app.editorWriteBusy(project, task || undefined)) throw new AppError('conflict', 'editor_running');
-    if (!Array.isArray(body.changes) || body.changes.length > 50 || !body.changes.every(value => value && typeof value === 'object' && typeof value.path === 'string' && typeof value.revision === 'string' && typeof value.text === 'string')) throw new AppError('bad_request');
+    // The 50-file cap is checked by the service, which names it; this only checks the shape.
+    if (!Array.isArray(body.changes) || body.changes.length > 1000 || !body.changes.every(value => value && typeof value === 'object' && typeof value.path === 'string' && typeof value.revision === 'string' && typeof value.text === 'string')) throw new AppError('bad_request');
     const result = await app.editor.apply(project, task, body.changes as EditorChange[]);
     if (task) app.verify.invalidate(project, task); app.changed(project, task || undefined); return result;
   });

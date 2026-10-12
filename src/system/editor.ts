@@ -570,7 +570,7 @@ export class EditorService {
       if (!change.textDocument || !Array.isArray(change.edits)) throw new AppError('bad_request');
       entries.push([change.textDocument.uri, change.edits]);
     }
-    if (entries.length > 50) throw new AppError('too_large');
+    if (entries.length > 50) throw new AppError('too_large', 'editor_changes_too_many');
     const output: EditorChange[] = []; const seen = new Set<string>();
     for (const [uri, edits] of entries) {
       const relative = path.relative(root, fileURLToPath(uri)).split(path.sep).join('/');
@@ -594,7 +594,8 @@ export class EditorService {
     return output;
   }
   async apply(project: string, task: string, changes: EditorChange[]): Promise<EditorDocument[]> {
-    if (!changes.length || changes.length > 50 || new Set(changes.map(change => change.path)).size !== changes.length) throw new AppError('bad_request');
+    if (changes.length > 50) throw new AppError('too_large', 'editor_changes_too_many');
+    if (!changes.length || new Set(changes.map(change => change.path)).size !== changes.length) throw new AppError('bad_request');
     if (Buffer.byteLength(JSON.stringify(changes)) > this.bodyBytes - 8192) throw new AppError('too_large');
     const repo = await fs.realpath(await this.worktree.bodyPath(project));
     return withFileLocks([repo], async () => {
