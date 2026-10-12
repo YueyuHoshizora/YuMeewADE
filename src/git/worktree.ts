@@ -403,6 +403,9 @@ export class WorktreeService {
       const record = await this.tasks.get(project, task);
       if (!(await this.mergedInfo(project, task)) || (await gitOk(repo, ['status', '--porcelain'])).length > 0) throw new AppError('conflict', 'unmerge_unavailable');
       const before = (await gitOk(repo, ['rev-parse', 'HEAD^1'])).trim();
+      // `reset --hard` silently overwrites ignored files sitting where it restores a file the merge had deleted.
+      const restored = splitNull(await gitOk(repo, ['diff', '--name-only', '--no-renames', '-z', '--diff-filter=A', 'HEAD', before]));
+      for (const file of restored) if (await occupied(repo, file)) throw new AppError('conflict', 'unmerge_unavailable');
       const source = (await gitOk(repo, ['rev-parse', 'HEAD^2'])).trim();
       const branch = this.branch(task);
       if (!(await branchExists(repo, branch))) await gitOk(repo, ['branch', branch, source]);
@@ -491,6 +494,16 @@ async function deadGitfile(dir: string): Promise<boolean> {
   return match !== null && !(await pathExists(path.resolve(dir, match[1]!.trim())));
 }
 function splitNull(value: string): string[] { return value.split('\0').filter(Boolean); }
+/** Something untracked already sits at `file` (a repository path), or a non-directory blocks one of its parent folders. */
+async function occupied(repo: string, file: string): Promise<boolean> {
+  const parts = file.split('/');
+  for (let i = 1; i <= parts.length; i++) {
+    const stat = await fs.lstat(path.join(repo, ...parts.slice(0, i))).catch((error: NodeJS.ErrnoException) => { if (error.code === 'ENOENT') return null; throw error; });
+    if (!stat) return false;
+    if (i === parts.length || !stat.isDirectory()) return true;
+  }
+  return false;
+}
 async function mergeHead(dir: string): Promise<string | null> {
   const result = await git(dir, ['rev-parse', '--verify', '-q', 'MERGE_HEAD']);
   if (result.code < 0 || result.truncated) throw new AppError('internal', 'git_failed');

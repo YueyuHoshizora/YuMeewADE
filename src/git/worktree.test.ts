@@ -329,6 +329,32 @@ test('unmerge rewinds the main folder and revives the copy, but only while the m
   assert.equal(await fs.readFile(path.join(repo, 'later.txt'), 'utf8'), 'later\n');
 }));
 
+test('unmerge refuses instead of overwriting an ignored file where it would restore a file the merge deleted', () => withTmpWorkspace(async ws => {
+  const projects = new ProjectLedger(ws);
+  const tasks = new TaskLedger(ws);
+  await projects.create({ name: 'P' });
+  const repo = ws.projectDir('P');
+  await fs.mkdir(path.join(repo, 'docs')); await fs.writeFile(path.join(repo, 'important.txt'), 'base\n'); await fs.writeFile(path.join(repo, 'docs', 'guide.md'), 'guide\n');
+  await commitAll(repo, 'base');
+  const task = await tasks.create('P', { title: '刪檔' });
+  const wt = new WorktreeService({ ws, projects, tasks, diffBytes: 100_000 });
+  const dir = await wt.prepare('P', task.id);
+  await fs.rm(path.join(dir, 'important.txt')); await fs.rm(path.join(dir, 'docs'), { recursive: true });
+  await fs.appendFile(path.join(dir, '.gitignore'), '\nimportant.txt\ndocs\n');
+  await wt.merge('P', task.id);
+  const unavailable = (e: unknown) => e instanceof AppError && e.detail === 'unmerge_unavailable';
+  await fs.writeFile(path.join(repo, 'important.txt'), 'irreplaceable\n');
+  await assert.rejects(wt.unmerge('P', task.id), unavailable);
+  assert.equal(await fs.readFile(path.join(repo, 'important.txt'), 'utf8'), 'irreplaceable\n');
+  // An ignored file where a restored folder belongs blocks it as well.
+  await fs.rm(path.join(repo, 'important.txt')); await fs.writeFile(path.join(repo, 'docs'), 'notes\n');
+  await assert.rejects(wt.unmerge('P', task.id), unavailable);
+  assert.equal(await fs.readFile(path.join(repo, 'docs'), 'utf8'), 'notes\n');
+  await fs.rm(path.join(repo, 'docs'));
+  assert.equal((await wt.unmerge('P', task.id)).state, '進行中');
+  assert.equal(await fs.readFile(path.join(repo, 'important.txt'), 'utf8'), 'base\n');
+}));
+
 test('prepareFrom grows a new copy from a checkpoint without touching the main folder', () => withTmpWorkspace(async ws => {
   const projects = new ProjectLedger(ws);
   const tasks = new TaskLedger(ws);

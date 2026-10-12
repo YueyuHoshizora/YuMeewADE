@@ -231,7 +231,7 @@ HTTP JSON 加 SSE，桌面版與網頁版完全相同。型別定義在 [`src/sh
 | `POST /api/upload`、`GET /api/upload`、`GET /api/attachment` | 圖片上傳、預覽、對話附件 |
 | `GET /api/task/preview`、`GET /api/task/diff`、`POST /api/task/merge`、`/api/task/merge-exclusion`、`/api/task/copyclear` | 工作副本 |
 | `GET /api/git/worktrees`, `GET /api/git/worktrees/prune-preview`, `POST /api/git/worktrees/{prune,remove}` | 專案副本維護；POST 需 `confirmed: true`，prune 需完整 `preview`，remove 需 `path` |
-| `GET /api/task/merged`、`POST /api/task/unmerge` | 主資料夾最新 commit 若是該作業的合併（`YuMeewADE-Task:` 標記）就回其 hash；撤銷合併：主資料夾回到合併前、重建分支與副本、作業回到進行中。之後有新 commit 或未提交內容時回 409 |
+| `GET /api/task/merged`、`POST /api/task/unmerge` | 主資料夾最新 commit 若是該作業的合併（`YuMeewADE-Task:` 標記）就回其 hash；撤銷合併：主資料夾回到合併前、重建分支與副本、作業回到進行中。之後有新 commit、未提交內容，或要還原的路徑上已有被忽略的檔案時回 409 |
 | `GET /api/task/files?project=&task=&q=`、`GET /api/task/file?project=&task=&path=` | 唯讀檔案瀏覽與 `@檔名` 提及：`task` 省略／空字串使用主資料夾，否則使用作業檢視根目錄；受限專案回 403。檔名搜尋最多 50 筆且排除本機機密；讀取前 256 KiB，路徑須在清單內且 realpath 仍在根目錄內，二進位不回內容 |
 | `POST /api/task/revert-file` | `{project, task, path}`：把單一檔案還原成與主資料夾分岔時的樣子（原有檔案取回原內容、新增的檔案刪除）；路徑必須是目前有變更的檔案，否則 404；AI 執行中回 409 |
 | `POST /api/task/verify` | 執行台帳的全部具名檢查；回 `{ok, exitCode, timedOut, ms, output, truncated, steps, drifted}`；互斥執行 |

@@ -224,7 +224,7 @@ HTTP JSON と SSE を使い、デスクトップ版と Web 版で完全に共通
 | `POST /api/upload`、`GET /api/upload`、`GET /api/attachment` | 画像アップロード、プレビュー、会話の添付ファイル |
 | `GET /api/task/preview`、`GET /api/task/diff`、`POST /api/task/merge`、`/api/task/merge-exclusion`、`/api/task/copyclear` | 作業コピー |
 | `GET /api/git/worktrees`, `GET /api/git/worktrees/prune-preview`, `POST /api/git/worktrees/{prune,remove}` | プロジェクトのワークツリー保守。POST は `confirmed: true`、prune は完全一致の `preview`、remove は `path` が必要 |
-| `GET /api/task/merged`、`POST /api/task/unmerge` | メインフォルダの最新コミットがこのタスクのマージ（`YuMeewADE-Task:` トレーラー）ならそのハッシュを返す。マージの取り消し：メインフォルダをマージ前に戻し、ブランチと作業コピーを再作成してタスクを進行中に戻す。新しいコミットや未コミットの内容があると 409 |
+| `GET /api/task/merged`、`POST /api/task/unmerge` | メインフォルダの最新コミットがこのタスクのマージ（`YuMeewADE-Task:` トレーラー）ならそのハッシュを返す。マージの取り消し：メインフォルダをマージ前に戻し、ブランチと作業コピーを再作成してタスクを進行中に戻す。新しいコミットや未コミットの内容がある場合、または復元するパスに無視対象のファイルがある場合は 409 |
 | `GET /api/task/files?project=&task=&q=`、`GET /api/task/file?project=&task=&path=` | 読み取り専用閲覧と `@ファイル名` メンション：`task` 省略／空文字はメインフォルダー、それ以外はタスクの閲覧ルートを使用。制限付きプロジェクトは403。秘密を除外して最大50件検索、先頭256 KiBを読み取り、一覧内かつ解決後もルート内のパスのみ許可。バイナリは内容なし |
 | `POST /api/task/revert-file` | `{project, task, path}`：1 ファイルをメインフォルダから分岐した時点の状態に戻す（既存ファイルは元の内容に、新規追加は削除）。パスは現在変更のあるファイルであること（なければ 404）。AI 実行中は 409 |
 | `POST /api/task/verify` | 台帳の全検証を実行し `{ok, exitCode, timedOut, ms, output, truncated, steps, drifted}` を返す。排他実行 |
