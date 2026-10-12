@@ -79,6 +79,7 @@ export const it: Record<MessageKey, string> = {
 'nav.turn': 'Tocca a te',
 'nav.settings': 'Impostazioni',
 'nav.menu': 'Espandi/comprimi i progetti',
+'nav.skip': 'Vai al contenuto principale',
 'common.save': 'Salva',
 'common.add': 'Aggiungi',
 'common.remove': 'Rimuovi',

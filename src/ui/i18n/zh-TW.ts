@@ -73,7 +73,7 @@ export const zhTW = {
 'chat.interrupted': '核心重新啟動，作業已中斷',
 'lang.name': '繁體中文',
 'app.title': 'YuMeewADE',
-'nav.projects': '專案', 'nav.new': '＋ 新專案', 'nav.turn': '交給你嚕', 'nav.settings': '設定', 'nav.menu': '展開／收起專案',
+'nav.projects': '專案', 'nav.new': '＋ 新專案', 'nav.turn': '交給你嚕', 'nav.settings': '設定', 'nav.menu': '展開／收起專案', 'nav.skip': '跳到主要內容',
 'common.forceArchive': '強制封存',
 'common.refresh': '重新整理',
 'common.save': '儲存', 'common.add': '新增', 'common.remove': '移除', 'common.close': '關閉', 'common.cancel': '取消', 'common.none': '無', 'common.rename': '重新命名', 'common.archive': '封存', 'common.open': '開啟資料夾', 'common.updated': '更新 {at}', 'common.loading': '載入中…', 'common.empty': '目前沒有項目', 'common.saved': '已儲存', 'common.confirmArchive': '確定封存「{name}」？資料會移至封存區，不會刪除。', 'common.title': '標題', 'common.name': '名稱', 'common.details': '詳細設定（選填）', 'common.actions': '更多操作', 'common.back': '← 返回 {name}', 'common.error': '操作失敗',

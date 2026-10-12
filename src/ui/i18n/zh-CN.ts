@@ -79,6 +79,7 @@ export const zhCN: Record<MessageKey, string> = {
 'nav.turn': '交给你噜',
 'nav.settings': '设置',
 'nav.menu': '展开／收起项目',
+'nav.skip': '跳到主要内容',
 'common.save': '保存',
 'common.add': '添加',
 'common.remove': '移除',

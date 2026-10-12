@@ -259,6 +259,7 @@
 .title-input{flex:1 1 220px;min-width:0}
 .onboarding-banner{margin-bottom:16px}
 .lazy-view{display:contents}
+.skip-link{position:fixed;left:8px;top:-60px;z-index:200}.skip-link:focus{top:8px}#main:focus{outline:none}
 /* In a narrow column (side panels or docked workbench open) the wrapped controls must not push the transcript out. */
 .task-header{max-height:30%;overflow:auto}
 .task-column{container-type:inline-size}

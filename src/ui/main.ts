@@ -20,6 +20,9 @@ import { terminalFilePath } from './components/terminal-links.ts';
 import { mountEditorWorkbench, setWorkbenchScope } from './components/editor-loader.ts';
 
 const header = document.getElementById('header')!; const sidebar = document.getElementById('sidebar')!; const main = document.getElementById('main')!; const footer = document.getElementById('footer')!;
+// Keyboard users would otherwise tab through the whole header and project tree before reaching the page.
+main.tabIndex = -1;
+document.body.prepend(button(t('nav.skip'), () => main.focus(), 'skip-link'));
 mountTerminalDock();
 mountEditorWorkbench(main);
 let state: AppState | null = null; let usage: UsageState = { ais: [], tokensPerSecond: null }; let view: View | null = null; let route = ''; let viewTarget = ''; let refreshJob: Promise<void> | null = null; let refreshAgain = false; let debounce: number | undefined;

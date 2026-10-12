@@ -79,6 +79,7 @@ export const ja: Record<MessageKey, string> = {
 'nav.turn': 'あなたの番',
 'nav.settings': '設定',
 'nav.menu': 'プロジェクトを展開／折りたたむ',
+'nav.skip': 'メインコンテンツへ移動',
 'common.save': '保存',
 'common.add': '追加',
 'common.remove': '削除',
