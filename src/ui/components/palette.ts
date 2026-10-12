@@ -100,6 +100,7 @@ export function openShortcutHelp(): void {
     ['↑↓ · Enter · Tab · Esc', t('palette.menuKeys')], ['Esc', t('palette.treeEsc')],
     ['⌘/Ctrl+S', t('palette.save')], ['Ctrl · Enter · ↑↓←→', t('palette.terminal')], ['⌘/Ctrl+Click', t('palette.terminalLinks')],
   ];
+  if (window.yumeewade?.desktop) shortcuts.push(['⌘/Ctrl+F', t('find.label')]);
   if (document.querySelector('.cm-editor')) shortcuts.push(['⌘/Ctrl+F · ⌘/Ctrl+Z · ⌘/Ctrl+Shift+Z · Ctrl+Y · Ctrl+Space · ⌘/Ctrl+Shift+L', t('palette.editorKeys')]);
   dialog.append(row(el('h2', '', t('palette.help')), button(t('common.close'), () => dialog.close())), ...shortcuts.map(([keys, description]) => row(el('kbd', '', keys), el('span', '', description))));
   dialog.addEventListener('close', () => { dialog.remove(); if (active === dialog) active = undefined; });
