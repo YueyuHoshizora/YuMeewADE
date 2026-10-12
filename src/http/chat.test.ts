@@ -27,14 +27,16 @@ test('HTTP roleless send, snapshot first, stop queue and attachment preview', as
 test('a chat stream refused at the SSE connection limit leaves the result unread', async () => {
   const s = await startTestServer('limits:\n  sseConnections: 1\n', { providers: { codex: new MockCliProvider({ chunkMs: 1, text: 'reply' }) } });
   const held = new AbortController();
+  // Kept referenced until the end: an unreferenced fetch Response is collected and its body cancelled, closing the connection.
+  let holding: Response | undefined;
   try {
     await s.api('POST', '/api/project/new', { name: 'P' });
     const task = (await s.api('POST', '/api/task/new', { project: 'P', title: 'T', workspace: 'direct' })).json as Task;
     await s.api('POST', '/api/chat/send', { project: 'P', task: task.id, text: 'hello' }); await s.app.runner.whenIdle();
-    await fetch(`${s.base}/api/events`, { signal: held.signal });
+    holding = await fetch(`${s.base}/api/events`, { signal: held.signal });
     assert.equal((await s.api('GET', `/api/chat/stream?project=P&task=${task.id}`)).status, 503);
     assert.equal(s.app.runner.unread().length, 1);
-  } finally { held.abort(); await s.close(); }
+  } finally { await holding?.body?.cancel().catch(() => {}); held.abort(); await s.close(); }
 });
 test('quickstart creates current-phase task, saves selection; settings and roles endpoints', async () => {
   const s = await startTestServer();
