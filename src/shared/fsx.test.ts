@@ -5,7 +5,7 @@ import { promises as fs } from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { test } from 'node:test';
-import { acquireWorkspaceLock, readJson } from './fsx.ts';
+import { acquireWorkspaceLock, atomicWrite, readJson } from './fsx.ts';
 
 test('workspace ownership is exclusive, refuses a live PID and takes over a dead PID', async () => {
   const root = await fs.mkdtemp(path.join(os.tmpdir(), 'ym-lock-'));
@@ -72,5 +72,22 @@ test('a corrupted or wrongly shaped JSON file is reported by name, never as an i
     // A null fallback means any JSON value is acceptable to the caller.
     await fs.writeFile(file, 'null');
     assert.equal(await readJson(file, null), null);
+  } finally { await fs.rm(root, { recursive: true, force: true }); }
+});
+
+test('a write cut short by a full disk leaves the old file and no partial temp file behind', async (t) => {
+  const root = await fs.mkdtemp(path.join(os.tmpdir(), 'ym-write-'));
+  try {
+    const file = path.join(root, 'task.md');
+    await fs.writeFile(file, 'old');
+    const write = fs.writeFile;
+    t.mock.method(fs, 'writeFile', async (target: string, data: string) => {
+      await write(target, data.slice(0, 2));
+      throw Object.assign(new Error('no space left on device'), { code: 'ENOSPC' });
+    });
+    await assert.rejects(atomicWrite(file, 'new content'), { code: 'ENOSPC' });
+    t.mock.restoreAll();
+    assert.deepEqual(await fs.readdir(root), ['task.md']);
+    assert.equal(await fs.readFile(file, 'utf8'), 'old');
   } finally { await fs.rm(root, { recursive: true, force: true }); }
 });

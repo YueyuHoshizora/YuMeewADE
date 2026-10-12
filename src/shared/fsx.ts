@@ -8,10 +8,11 @@ import { AppError } from './errors.ts';
 export async function atomicWrite(file: string, content: string | Uint8Array): Promise<void> {
   await fs.mkdir(path.dirname(file), { recursive: true });
   const tmp = `${file}.${process.pid}.${randomUUID()}.tmp`;
-  await fs.writeFile(tmp, content, 'utf8');
   try {
+    await fs.writeFile(tmp, content, 'utf8');
     await fs.rename(tmp, file);
   } catch (err) {
+    // A write cut short (disk full, I/O error) leaves a partial temp file that would otherwise pile up beside the ledger.
     await fs.rm(tmp, { force: true });
     throw err;
   }
