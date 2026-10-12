@@ -1,4 +1,4 @@
-import { type ArchiveEntry, type NewTaskInput, type ProjectView, type SlashCommand, type StartInput, type Task } from '../../shared/types.ts';
+import { type AppState, type ArchiveEntry, type NewTaskInput, type ProjectView, type SlashCommand, type StartInput, type Task } from '../../shared/types.ts';
 import { ApiFailure, api, query, request } from '../api.ts';
 import { labelValue, t } from '../i18n/index.ts';
 import { attachments } from '../components/attachments.ts';
@@ -171,7 +171,13 @@ export function detailedTaskForm(context: ViewContext, project: ProjectView, par
 
 export function projectView(context: ViewContext, project: ProjectView, params: URLSearchParams): View {
   const node = el('div', 'page project-page'); const overview = el('div', 'project-overview');
-  let activity = JSON.stringify([context.state.running, context.state.unread]);
+  // Only this project's running/unread tasks and the related projects' names affect the page; activity elsewhere must not redraw it.
+  const activityOf = (state: AppState, related: string[]) => JSON.stringify([
+    state.running.filter(item => item.project === project.id).map(item => item.task),
+    state.unread.filter(item => item.project === project.id).map(item => item.task),
+    related.map(id => state.projects.find(other => other.id === id)?.name ?? null),
+  ]);
+  let activity = activityOf(context.state, project.related);
   let selecting = false, bulkBusy = false;
   // The chosen bulk action and its value survive redraws triggered by unrelated activity.
   let bulkKind = 'state', bulkValue = '';
@@ -383,7 +389,7 @@ export function projectView(context: ViewContext, project: ProjectView, params: 
     context.state = state;
     const next = state.projects.find(p => p.id === project.id);
     if (!next) { location.hash = '#/turn'; return; }
-    const nextActivity = JSON.stringify([state.running, state.unread]);
+    const nextActivity = activityOf(state, next.related);
     if (JSON.stringify(next) !== JSON.stringify(project) || nextActivity !== activity) { project = next; activity = nextActivity; renderOverview(); }
     slashCommands.refresh();
   } };
