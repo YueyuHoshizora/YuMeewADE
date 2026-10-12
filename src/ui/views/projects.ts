@@ -173,6 +173,8 @@ export function projectView(context: ViewContext, project: ProjectView, params: 
   const node = el('div', 'page project-page'); const overview = el('div', 'project-overview');
   let activity = JSON.stringify([context.state.running, context.state.unread]);
   let selecting = false, bulkBusy = false;
+  // The chosen bulk action and its value survive redraws triggered by unrelated activity.
+  let bulkKind = 'state', bulkValue = '';
   const selected = new Set<string>();
   const bulkResults = el('div'); bulkResults.setAttribute('aria-live', 'polite');
   const count = el('span');
@@ -181,7 +183,7 @@ export function projectView(context: ViewContext, project: ProjectView, params: 
     const mode = button(t(selecting ? 'bulk.cancel' : 'bulk.select'), () => { selecting = !selecting; selected.clear(); renderOverview(); });
     mode.disabled = bulkBusy;
     if (!selecting) return row(mode, bulkResults);
-    const kind = select(['state', 'phase', 'addTag', 'removeTag', 'due', 'archive'].map(value => ({ value, label: t(`bulk.${value}` as MessageKey) })));
+    const kind = select(['state', 'phase', 'addTag', 'removeTag', 'due', 'archive'].map(value => ({ value, label: t(`bulk.${value}` as MessageKey) })), bulkKind);
     const value = el('div');
     let readValue: () => string = () => '';
     function changeAction(): void {
@@ -190,10 +192,14 @@ export function projectView(context: ViewContext, project: ProjectView, params: 
         : input();
       if (control instanceof HTMLInputElement) { control.type = kind.value === 'due' ? 'date' : 'text'; control.maxLength = 60; }
       control.setAttribute('aria-label', t(`bulk.${kind.value}` as MessageKey));
+      // A select ignores a value it has no option for, so a stale draft falls back to its first option.
+      if (bulkValue) control.value = bulkValue;
+      bulkValue = control.value;
+      control.oninput = control.onchange = () => { bulkValue = control.value; };
       readValue = () => control.value;
       value.replaceChildren(...(kind.value === 'archive' ? [] : [control]));
     }
-    kind.onchange = changeAction; changeAction(); updateCount();
+    kind.onchange = () => { bulkKind = kind.value; bulkValue = ''; changeAction(); }; changeAction(); updateCount();
     const apply = button(t('bulk.apply'), async () => {
       if (bulkBusy || !selected.size) return;
       bulkBusy = true; mode.disabled = true; kind.disabled = true;
@@ -247,8 +253,32 @@ export function projectView(context: ViewContext, project: ProjectView, params: 
     if (!tasks.length) list.append(el('p', 'muted', t('common.empty')));
     return list;
   }
+  // Panels holding user edits are built once and re-appended: renderOverview runs on every running/unread change anywhere in the workspace.
+  const rules = area('', t('project.rulesPlaceholder'));
+  rules.rows = 12;
+  rules.maxLength = 20000;
+  rules.disabled = true;
+  const rulesBox = disclosure(t('project.rules'), el('p', 'muted', t('project.rulesHint')), rules, button(t('common.save'), async () => {
+    await request('/api/project/rules', { project: project.id, text: rules.value });
+    toast(t('common.saved'));
+  }));
+  let rulesLoading = false;
+  rulesBox.addEventListener('toggle', () => {
+    if (!rulesBox.open || rulesLoading || !rules.disabled) return;
+    rulesLoading = true;
+    void run(async () => {
+      try {
+        rules.value = (await request<{ text: string }>(query('/api/project/rules', { project: project.id }))).text;
+        rules.disabled = false;
+      } finally { rulesLoading = false; }
+    });
+  });
+  const memory = memoryPanel(project.id);
+  // Task templates list the project's tasks as sources, so they are rebuilt only when that list changes.
+  let templates: { key: string; node: HTMLElement } | undefined;
   function renderOverview(): void {
     const opened = new Set(Array.from(overview.querySelectorAll('details[open]')).map(d => d.querySelector('summary')?.textContent));
+    const focused = overview.contains(document.activeElement) ? document.activeElement as HTMLElement : null;
     overview.replaceChildren();
     const header = el('header', 'page-header');
     header.append(el('h1', '', project.name), el('span', 'state-chip', t(`state.${project.status}`)), el('span', 'muted', t('common.updated', { at: localTime(project.updated) })));
@@ -299,28 +329,11 @@ export function projectView(context: ViewContext, project: ProjectView, params: 
       for (const issue of project.issues) localIssues.append(el('p', '', `${issue.level ? `[${issue.level}] ` : ''}${issue.text}`));
       overview.append(disclosure(t('github.localIssues'), localIssues));
     }
-    const rules = area('', t('project.rulesPlaceholder'));
-    rules.rows = 12;
-    rules.maxLength = 20000;
-    rules.disabled = true;
-    const rulesBox = disclosure(t('project.rules'), el('p', 'muted', t('project.rulesHint')), rules, button(t('common.save'), async () => {
-      await request('/api/project/rules', { project: project.id, text: rules.value });
-      toast(t('common.saved'));
-    }));
-    let rulesLoading = false;
-    rulesBox.addEventListener('toggle', () => {
-      if (!rulesBox.open || rulesLoading || !rules.disabled) return;
-      rulesLoading = true;
-      void run(async () => {
-        try {
-          rules.value = (await request<{ text: string }>(query('/api/project/rules', { project: project.id }))).text;
-          rules.disabled = false;
-        } finally { rulesLoading = false; }
-      });
-    });
     overview.append(rulesBox);
-    overview.append(taskTemplates(context, project));
-    overview.append(memoryPanel(project.id));
+    const templatesKey = JSON.stringify(project.tasks.map(task => [task.id, task.title]));
+    if (templates?.key !== templatesKey) templates = { key: templatesKey, node: taskTemplates(context, project) };
+    overview.append(templates.node);
+    overview.append(memory);
     if (project.phases.length) {
       const road = el('div', 'phase-road');
       for (const [i, phase] of project.phases.entries()) road.append(el('div', `phase ${phase.name === project.currentPhase ? 'current' : ''} ${phase.state === '完成' ? 'complete' : ''}`, `${i + 1} · ${phase.name}`));
@@ -343,6 +356,9 @@ export function projectView(context: ViewContext, project: ProjectView, params: 
       return sections;
     }));
     for (const detail of overview.querySelectorAll('details')) detail.open = opened.has(detail.querySelector('summary')?.textContent);
+    // Rebuilt controls (the bulk value field) are found again by their label.
+    const label = focused?.getAttribute('aria-label');
+    (focused?.isConnected ? focused : label ? overview.querySelector<HTMLElement>(`[aria-label="${CSS.escape(label)}"]`) : null)?.focus();
   }
   renderOverview(); node.append(overview);
   const draftKey = `yumeewade.quick.${project.id}`; const draft = area(readLocal<string>(draftKey, ''), `${t('project.quickPlaceholder')} · ${t(readLocal('yumeewade.enterToSend', false) ? 'chat.hintEnter' : 'chat.hintModifier')}`); draft.maxLength = context.state.limits.promptChars;
