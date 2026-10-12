@@ -1,6 +1,7 @@
 // 台帳與程式本體可分離；顯示改名不搬目錄，避免破壞作業與對話的識別碼。
 import { promises as fs } from 'node:fs';
 import path from 'node:path';
+import { isDeepStrictEqual } from 'node:util';
 import { AppError } from '../shared/errors.ts';
 import { parseFrontmatter, patchHeaderLines, serializeFrontmatter } from '../shared/frontmatter.ts';
 import { atomicWrite, isInside, pathExists, withFileLocks } from '../shared/fsx.ts';
@@ -152,7 +153,8 @@ export class ProjectLedger {
 
   private async updateLocked(id: string, patch: ProjectPatch, expected?: ProjectExpectation): Promise<Project> {
     const current = await this.get(id);
-    if (expected) for (const [key, value] of Object.entries(expected)) if (JSON.stringify(current[key as keyof ProjectExpectation] ?? null) !== JSON.stringify(value ?? null)) throw new AppError('conflict', 'project_changed');
+    // Structural comparison: an API caller need not reproduce the ledger's key order; JSON round-trip drops ledger-only prototypes.
+    if (expected) for (const [key, value] of Object.entries(expected)) if (!isDeepStrictEqual(JSON.parse(JSON.stringify(current[key as keyof ProjectExpectation] ?? null)), value ?? null)) throw new AppError('conflict', 'project_changed');
     await this.validate(patch, id);
     const fm = parseFrontmatter(await fs.readFile(this.ws.projectFile(id), 'utf8'));
     const values: Record<string, YamlValue> = {};

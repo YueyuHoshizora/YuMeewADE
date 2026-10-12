@@ -91,6 +91,8 @@ test('project update with expected fields refuses a value changed since the edit
   assert.deepEqual((await projects.get('P')).checks, [{ name: 'unit', command: 'npm run test:all' }]);
   // Fields not listed in expected may change freely; a matching expectation saves.
   await projects.update('P', { description: 'new' }, { description: 'old' });
+  // An API caller listing the same check with its keys in another order is not a conflict.
+  await projects.update('P', { description: 'newer' }, { description: 'new', checks: [{ command: 'npm run test:all', name: 'unit' }] });
   await assert.rejects(projects.update('P', { description: 'stale' }, { description: 'old' }), { detail: 'project_changed' });
-  assert.equal((await projects.get('P')).description, 'new');
+  assert.equal((await projects.get('P')).description, 'newer');
 }));
