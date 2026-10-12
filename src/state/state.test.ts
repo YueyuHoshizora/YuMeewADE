@@ -104,6 +104,21 @@ test('unparseable ledger files are reported instead of silently disappearing, an
   } finally { await f.close(); }
 });
 
+test('a corrupt completion or start-pick file is reported once and the rest of the state still loads', async () => {
+  const f = await fixture();
+  try {
+    f.app.close();
+    await f.app.tasks.create('Project', { title: 'second' });
+    await fs.writeFile(f.app.completion.file, '{ not json');
+    await fs.writeFile(f.app.ws.startPickFile('Project'), '{ broken');
+    f.app.changed();
+    const state = await f.app.state();
+    assert.deepEqual(state.projects.map(project => [project.id, project.tasks.length]), [['Project', 2]]);
+    assert.deepEqual(state.unreadable, [path.join('.yumeewade', 'completion.json'), path.relative(f.app.ws.root, f.app.ws.startPickFile('Project'))].sort());
+    assert.equal(state.projects[0]!.startPick, null);
+  } finally { await f.close(); }
+});
+
 test('concurrent rebuilds share a snapshot and invalidation during a build cannot cache stale data', async () => {
   const f = await fixture();
   try {

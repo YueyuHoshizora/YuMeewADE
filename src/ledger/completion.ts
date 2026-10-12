@@ -12,7 +12,7 @@ export function phaseKey(tasks: Task[]): string {
 /** Keys are project names, and `__proto__` is a valid one: plain objects would turn its assignment into a prototype change. */
 const dict = (value: Record<string, string> | undefined): Record<string, string> => Object.assign(Object.create(null) as Record<string, string>, value);
 export class CompletionStore {
-  private readonly file: string;
+  readonly file: string;
   constructor(ws: Workspace) { this.file = path.join(ws.internalDir, 'completion.json'); }
   private async data(): Promise<CompletionData> {
     const value = await readJson<Partial<CompletionData>>(this.file, {});

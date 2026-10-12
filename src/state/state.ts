@@ -32,6 +32,7 @@ export async function buildState(app: App): Promise<StateSnapshot> {
     unreadable.push(path.relative(app.ws.root, file));
     return fallback();
   });
+  const completion = <T>(load: Promise<T>, fallback: T) => tolerate(load, app.completion.file, () => fallback);
   const [projects, savedOrder, settings, roles, ais] = await Promise.all([
     app.projects.list(skippedProjects), tolerate(app.order.get(), app.order.file, () => ({ order: {}, pins: [] })), app.settings.get(),
     tolerate(app.roles(), app.ws.rolesFile, () => ({ roles: Object.create(null) as Roles['roles'] })), app.ai.list(),
@@ -44,7 +45,7 @@ export async function buildState(app: App): Promise<StateSnapshot> {
     for (const name of skippedTasks) unreadable.push(path.relative(app.ws.root, path.join(app.ws.tasksDir(project.id), name)));
     const taskViews: TaskView[] = await Promise.all(tasks.map(async (task) => {
       const [approved, continued, copy, chat] = await Promise.all([
-        app.completion.isApproved(project.id, task.id), app.completion.continued(project.id, task.id), app.worktree.copyExists(project.id, task),
+        completion(app.completion.isApproved(project.id, task.id), false), completion(app.completion.continued(project.id, task.id), undefined), app.worktree.copyExists(project.id, task),
         hasChat(app.ws.chatFile(project.id, task.id, 'jsonl')),
       ]);
       return { ...task, confirm: task.state === '完成' ? !approved : task.steps.length > 0 && task.steps.every((step) => step.done) && continued !== stepsHash(task.steps), copy, copyMissing: Boolean(task.workdir) && !copy, hasChat: chat };
@@ -53,7 +54,8 @@ export async function buildState(app: App): Promise<StateSnapshot> {
     const currentPhase = app.projects.currentPhase(project);
     const group = phaseTasks(project, tasks);
     const [isGit, startPick, continued, body] = await Promise.all([
-      pathExists(path.join(bodyPath, '.git')), readJson<AiPick | null>(app.ws.startPickFile(project.id), null), app.completion.phaseContinued(project.id),
+      pathExists(path.join(bodyPath, '.git')), tolerate(readJson<AiPick | null>(app.ws.startPickFile(project.id), null), app.ws.startPickFile(project.id), () => null),
+      completion(app.completion.phaseContinued(project.id), undefined),
       fs.stat(bodyPath).catch(() => null),
     ]);
     return { ...project, tasks: taskViews, currentPhase, phaseOffer: Boolean(currentPhase) && group.length > 0 && group.every((task) => task.state === '完成') && continued !== phaseKey(group), isGit, bodyPath, bodyMissing: !body?.isDirectory(), dir: app.ws.projectDir(project.id), startPick, pinned: savedOrder.pins.includes(project.id) };
@@ -67,5 +69,5 @@ export async function buildState(app: App): Promise<StateSnapshot> {
     order[project.parent] = [...listed, ...ids.filter((id) => !listed.includes(id))];
   }
   const { promptChars, queueLength, concurrentRuns, uploadBytes, imagesPerSend } = app.config.limits;
-  return { version: app.version, root: app.ws.root, projects: views, order, ais, settings, roles, limits: { promptChars, queueLength, concurrentRuns, uploadBytes, imagesPerSend }, unreadable: unreadable.sort() };
+  return { version: app.version, root: app.ws.root, projects: views, order, ais, settings, roles, limits: { promptChars, queueLength, concurrentRuns, uploadBytes, imagesPerSend }, unreadable: [...new Set(unreadable)].sort() };
 }
