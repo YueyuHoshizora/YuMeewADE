@@ -4,13 +4,33 @@ import path from 'node:path';
 import { AppError } from '../shared/errors.ts';
 import { isInside } from '../shared/fsx.ts';
 import { git } from './git.ts';
+import { parseVerificationInputModel, type VerificationInputModel } from '../shared/verification.ts';
+
+function glob(pattern: string): RegExp {
+  let expression = '';
+  const parts = pattern.split('/');
+  for (let index = 0; index < parts.length; index++) {
+    const part = parts[index]!;
+    if (part === '**') expression += index === parts.length - 1 ? '.*' : '(?:[^/]+/)*';
+    else expression += part.split('*').map(text => text.replace(/[.*+?^${}()|[\]\\]/gu, '\\$&')).join('[^/]*') + (index < parts.length - 1 ? '/' : '');
+  }
+  return new RegExp(`^${expression}(?:/.*)?$`, 'u');
+}
 
 /** 保守策略：除 Git 管理資料外連 ignored/generated 檔也納入，不把可能的輸入當作輸出忽略。 */
-export async function verificationFingerprint(root: string, configuration: string): Promise<string> {
+export async function verificationFingerprint(root: string, configuration: string, value?: VerificationInputModel): Promise<string> {
+  const model = parseVerificationInputModel(value);
+  const inputs = model.inputs?.map(glob);
+  const outputs = model.outputs?.map(glob) ?? [];
+  const included = (relative: string) => !inputs || inputs.some(pattern => pattern.test(relative));
+  const excluded = (relative: string) => outputs.some(pattern => pattern.test(relative)) && !(inputs?.some(pattern => pattern.test(relative)));
+  // Literal prefixes bound traversal without trusting filesystem metadata as content proof.
+  const prefixes = model.inputs?.map(pattern => pattern.split('/').slice(0, pattern.split('/').findIndex(part => part.includes('*')) < 0 ? undefined : pattern.split('/').findIndex(part => part.includes('*'))).join('/'));
+  const mayContain = (relative: string) => !prefixes || prefixes.some(prefix => !prefix || prefix === relative || prefix.startsWith(`${relative}/`) || relative.startsWith(`${prefix}/`));
   const digest = createHash('sha256');
   const head = await git(root, ['rev-parse', '--verify', '-q', 'HEAD']);
   if (head.code < 0 || head.truncated) throw new AppError('internal', 'git_failed');
-  digest.update(JSON.stringify([root, configuration, head.code === 0 ? head.stdout.trim() : null]));
+  digest.update(JSON.stringify([root, configuration, model, head.code === 0 ? head.stdout.trim() : null]));
   async function visit(dir: string): Promise<void> {
     const canonical = await fs.realpath(dir);
     if (canonical !== root && !isInside(root, canonical)) throw new AppError('bad_request');
@@ -26,6 +46,9 @@ export async function verificationFingerprint(root: string, configuration: strin
       if (entry.isFile() && managed.length === 3 && managed[0] === '.ai' && managed[1] === 'verification' && /^[A-Za-z0-9_-]+(?:\.tests)?\.json(?:\.\d+\.[a-f0-9-]+\.tmp)?$/.test(entry.name)) continue;
       const file = path.join(dir, entry.name);
       const relative = path.relative(root, file);
+      const portable = relative.split(path.sep).join('/');
+      if (excluded(portable) && (!entry.isDirectory() || !inputs || !mayContain(portable))) continue;
+      if (entry.isDirectory() ? !mayContain(portable) : !included(portable)) continue;
       const stat = await fs.lstat(file);
       digest.update(JSON.stringify(stat.isDirectory()
         ? [relative, stat.mode, stat.ino, stat.dev]

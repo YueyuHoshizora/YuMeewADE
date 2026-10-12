@@ -13,3 +13,24 @@ export function parseVerificationChecks(value: unknown): VerificationCheck[] {
     return { name, command };
   });
 }
+
+/** Relative bounded globs; only explicitly declared outputs may be ignored. */
+export interface VerificationInputModel { inputs?: string[]; outputs?: string[]; }
+
+export function parseVerificationInputModel(value: unknown): VerificationInputModel {
+  if (value === undefined) return {};
+  if (!value || typeof value !== 'object' || Array.isArray(value)) throw new AppError('bad_request');
+  const object = value as Record<string, unknown>;
+  if (Object.keys(object).some(key => key !== 'inputs' && key !== 'outputs')) throw new AppError('bad_request');
+  const result: VerificationInputModel = {};
+  for (const key of ['inputs', 'outputs'] as const) {
+    if (object[key] === undefined) continue;
+    const patterns = object[key];
+    if (!Array.isArray(patterns) || patterns.length > 100 || (key === 'inputs' && !patterns.length)) throw new AppError('bad_request');
+    result[key] = [...new Set(patterns.map(pattern => {
+      if (typeof pattern !== 'string' || !pattern || pattern.length > 512 || pattern.startsWith('/') || /[\\:\0\r\n?[\]{}!]/u.test(pattern) || pattern.split('/').some(part => !part || part === '.' || part === '..' || part === '.git' || (part.includes('**') && part !== '**'))) throw new AppError('bad_request');
+      return pattern;
+    }))];
+  }
+  return result;
+}

@@ -20,13 +20,17 @@ export function verificationConfigButton(context: ViewContext, projectId: string
     for (const check of project.checks.length ? project.checks : project.verify ? [{ name: 'verify', command: project.verify }] : []) add(check);
     const requireVerification = input(); requireVerification.type = 'checkbox'; requireVerification.checked = project.requireVerification;
     const autoFix = select(Array.from({ length: AUTO_FIX_MAX + 1 }, (_, n) => ({ value: String(n), label: String(n) })), String(project.autoFix));
+    const inputs = input(project.verificationInputs?.inputs?.join(', ') ?? '');
+    const outputs = input(project.verificationInputs?.outputs?.join(', ') ?? '');
     modal(t('verification.configure'), el('p', 'muted', t('verification.hint')), list,
       button(t('verification.add'), () => { if (controls.length < 20) add({ name: '', command: '' }); }),
       field(t('verification.require'), requireVerification), field(t('project.autoFix'), autoFix),
+      field(t('verification.inputs'), inputs), field(t('verification.outputs'), outputs),
       button(t('common.save'), async () => {
         if (controls.some(control => !control.name.reportValidity() || !control.command.reportValidity())) return;
         const checks = controls.map(control => ({ name: control.name.value.trim(), command: control.command.value.trim() }));
-        await request('/api/project/update', { project: projectId, patch: { checks, requireVerification: requireVerification.checked, autoFix: Number(autoFix.value) } });
+        const patterns = (value: string) => value.split(',').map(pattern => pattern.trim()).filter(Boolean);
+        await request('/api/project/update', { project: projectId, patch: { checks, requireVerification: requireVerification.checked, autoFix: Number(autoFix.value), verificationInputs: { ...(inputs.value.trim() ? { inputs: patterns(inputs.value) } : {}), outputs: patterns(outputs.value) } } });
         await context.refresh(); toast(t('common.saved'));
       }));
   });
