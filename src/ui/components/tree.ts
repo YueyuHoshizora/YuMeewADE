@@ -9,6 +9,15 @@ const collapsed = new Set<string>(); const seenAttention = new Set<string>();
 let searchText = '';
 let dragging = '';
 export function needsReply(task: TaskView): boolean { return task.state !== '完成' && (task.state === '等待回覆' || !!task.question); }
+/**
+ * The two lists of 交給你嚕; the header counts come from the same split. A run waiting for a tool approval needs a reply
+ * now, so it is never also offered for completion.
+ */
+export function turnItems(state: AppState): { reply: TurnItem[]; confirm: TurnItem[] } {
+  const items = state.projects.flatMap(project => project.tasks.map(task => ({ project, task, waiting: state.running.some(r => r.project === project.id && r.task === task.id && !!r.approvals?.length) })));
+  return { reply: items.filter(({ task, waiting }) => waiting || needsReply(task)), confirm: items.filter(({ task, waiting }) => task.confirm && !waiting && !needsReply(task)) };
+}
+export interface TurnItem { project: ProjectView; task: TaskView; waiting: boolean }
 /** Tone from the task's own state; running is decided separately from the current running set. */
 function taskTone(task: TaskView): string {
   if (needsReply(task)) return 'reply'; if (task.confirm) return 'confirm';

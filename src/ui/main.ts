@@ -4,7 +4,7 @@ import { getLocale, t } from './i18n/index.ts';
 import { button, el, link, readLocal, run, searchHash, showError, taskHash, toast, type View, type ViewContext } from './components/dom.ts';
 import { aiLabel, localDateTime, localTime, quotaLabel } from './components/display.ts';
 import { quotaAlerts, quotaCountdowns, type QuotaAlert } from './components/quota-alert.ts';
-import { needsReply, tree } from './components/tree.ts';
+import { tree, turnItems } from './components/tree.ts';
 import { newProjectView, openProjectFromFolder, openProjectView, projectView } from './views/projects.ts';
 import { stream } from './components/stream.ts';
 import { attention } from './components/attention.ts';
@@ -96,7 +96,7 @@ function announceCodexReset(next: UsageState): void {
 
 function drawShell(): void {
   if (!state) return;
-  const tasks = state.projects.flatMap(p => p.tasks); const replies = tasks.filter(needsReply).length; const confirmations = tasks.filter(task => task.confirm && !needsReply(task)).length;
+  const { reply, confirm } = turnItems(state); const replies = reply.length; const confirmations = confirm.length;
   const menu = button('☰', () => document.body.classList.toggle('sidebar-open'), 'menu-toggle'); menu.setAttribute('aria-label', t('nav.menu'));
   header.replaceChildren(menu, link(t('app.title'), '#/turn', 'brand'), el('span', 'version', `v${state.version}`), ...(visibleUpdate(state.update) ? [updateChip(state.update!, state.version, drawShell)] : []), el('span', 'spacer'), link(`${t('nav.turn')} · ${t('tree.reply')} ${replies} · ${t('tree.confirm')} ${confirmations}`, '#/turn', 'turn-button'), link(t('nav.settings'), '#/settings', 'settings-button'));
   header.append(button(t('terminalDock.toggle'), toggleTerminalDock, 'terminal-toggle'));

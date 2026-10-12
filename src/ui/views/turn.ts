@@ -1,6 +1,6 @@
 import { request } from '../api.ts';
 import { labelValue, t } from '../i18n/index.ts';
-import { needsReply } from '../components/tree.ts';
+import { turnItems } from '../components/tree.ts';
 import { button, el, link, row, taskHash, type View, type ViewContext } from '../components/dom.ts';
 import { onboardingBanner } from '../components/onboarding.ts';
 import { openProjectFromFolder } from './projects.ts';
@@ -17,8 +17,7 @@ export function turnView(context: ViewContext): View {
   function render(): void {
     const empty = !context.state.projects.length;
     welcome.hidden = !empty; for (const part of [heading, tabs, hint, list]) part.hidden = empty;
-    const items = context.state.projects.flatMap(project => project.tasks.map(task => ({ project, task, waiting: context.state.running.some(r => r.project === project.id && r.task === task.id && !!r.approvals?.length) })));
-    const reply = items.filter(({ task, waiting }) => waiting || needsReply(task)); const confirm = items.filter(({ task, waiting }) => task.confirm && !waiting && !needsReply(task));
+    const { reply, confirm } = turnItems(context.state);
     if (!picked) selected = !reply.length && confirm.length ? 'confirm' : 'reply';
     tabs.replaceChildren(button(t('turn.reply', { n: reply.length }), () => { selected = 'reply'; picked = true; render(); }, selected === 'reply' ? 'active' : ''), button(t('turn.confirm', { n: confirm.length }), () => { selected = 'confirm'; picked = true; render(); }, selected === 'confirm' ? 'active' : ''));
     hint.textContent = t(selected === 'reply' ? 'turn.replyHint' : 'turn.confirmHint');
