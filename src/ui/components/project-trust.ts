@@ -1,7 +1,7 @@
 import type { ProjectTrustState, ProjectTrustView } from '../../shared/types.ts';
 import { query, request } from '../api.ts';
 import { t } from '../i18n/index.ts';
-import { button, confirmModal, el, field, row, select } from './dom.ts';
+import { button, confirmModal, el, field, iconButton, row, select } from './dom.ts';
 
 export function projectTrustButton(project: string, task?: string): HTMLButtonElement {
   return button(t('trust.title'), async () => {
@@ -21,7 +21,7 @@ export function projectTrustButton(project: string, task?: string): HTMLButtonEl
       for (const choice of choices.values()) choice.disabled = state.value !== 'trusted';
     }
     state.onchange = render;
-    dialog.append(row(el('h2', '', t('trust.title')), button('×', () => dialog.close())), overview, el('p', 'warning', t('trust.warning')), field(t('trust.title'), state), overrides, button(t('common.save'), async () => {
+    dialog.append(row(el('h2', '', t('trust.title')), iconButton('×', t('common.close'), () => dialog.close())), overview, el('p', 'warning', t('trust.warning')), field(t('trust.title'), state), overrides, button(t('common.save'), async () => {
       if (!await confirmModal(t('trust.title'), t('trust.confirm'), t('common.save'))) return;
       const values: Record<string, boolean> = {};
       for (const [ai, choice] of choices) if (choice.value) values[ai] = choice.value === 'true';
