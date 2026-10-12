@@ -37,6 +37,14 @@ test('patch 只改動指定鍵、保留註解與其他行、補新鍵', () => {
   assert.equal(again.body, fm.body);
 });
 
+test('patching a key keeps standalone comments and blank lines after it, including at the end of the header', () => {
+  const header = ['name: P', 'description: old', '', '# explains custom', 'custom: kept', 'updated: 2026-10-01', '# footer note'];
+  const lines = patchHeaderLines(header, { description: 'new', updated: '2026-10-13' });
+  assert.deepEqual(lines, ['name: P', 'description: new', '', '# explains custom', 'custom: kept', 'updated: 2026-10-13', '# footer note']);
+  // Indented lines inside a value still belong to it and are replaced with it.
+  assert.deepEqual(patchHeaderLines(['list:', '  - a', '  - b', '# after'], { list: ['c'] }), ['list: [c]', '# after']);
+});
+
 test('缺少 --- 時丟錯', () => {
   assert.throws(() => parseFrontmatter('no frontmatter'), YamlError);
   assert.throws(() => parseFrontmatter('---\na: 1\n'), YamlError);

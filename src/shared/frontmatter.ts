@@ -30,12 +30,15 @@ export function serializeFrontmatter(headerLines: string[], body: string): strin
 /**
  * 找出每個頂層鍵在 headerLines 中佔的行範圍 [start, end)。
  * 頂層鍵＝縮排 0 且含 `key:` 的行；其後縮排 >0 或 `- ` 開頭的行屬於同一鍵。
+ * 範圍尾端的空行與頂格 `#` 註解是獨立的（多半在說明下一個鍵），不算進前一個鍵，改寫時才不會被刪掉。
  */
 function topLevelRanges(headerLines: string[]): Map<string, [number, number]> {
   const ranges = new Map<string, [number, number]>();
   let current: { key: string; start: number } | null = null;
   const close = (end: number) => {
-    if (current) ranges.set(current.key, [current.start, end]);
+    if (!current) return;
+    while (end > current.start + 1 && /^(?:#|\s*$)/.test(headerLines[end - 1] ?? '')) end--;
+    ranges.set(current.key, [current.start, end]);
   };
   for (let i = 0; i < headerLines.length; i++) {
     const line = headerLines[i] ?? '';
