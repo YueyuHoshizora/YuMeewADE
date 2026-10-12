@@ -190,6 +190,7 @@ test('editor LSP exposes completion hover formatting rename actions and project 
       else if (message.method==='textDocument/diagnostic') result={items:[{range:{start:{line:0,character:0}},message:'problem',severity:2}]};
       else if (message.method==='textDocument/documentSymbol') result=[{name:'outer',kind:12,selectionRange:{start:{line:0,character:0}},children:[{name:'inner',kind:13,selectionRange:{start:{line:0,character:1}}}]}];
       else if (message.method==='workspace/symbol') result=message.params.query==='many'?Array.from({length:600},(_,i)=>({name:'s'+i,kind:13,location:{uri,range:{start:{line:0,character:0}}}})):[{name:'safe',kind:12,location:{uri,range:{start:{line:0,character:0}}}},{name:'secret',kind:12,location:{uri:uri.replace(/a\.ts$/,'.env'),range:{start:{line:0,character:0}}}}];
+      else if (message.method==='textDocument/references') result=Array.from({length:600},(_,i)=>({uri,range:{start:{line:0,character:i%3}}}));
       send({id:message.id,result});
     }});
   `;
@@ -207,6 +208,8 @@ test('editor LSP exposes completion hover formatting rename actions and project 
     // A large workspace answers with more symbols than are kept: the first 500 come back, marked as cut.
     const many = await editor.language('P', '', 'a.ts', 'old', 0, 0, 'workspaceSymbols', 'many');
     assert.equal(many.symbols?.length, 500); assert.equal(many.truncated, true);
+    const references = await editor.language('P', '', 'a.ts', 'old', 0, 0, 'references');
+    assert.equal(references.locations.length, 500); assert.equal(references.truncated, true);
     assert.equal((await editor.problems('P', '')).length, 2);
     await assert.rejects(editor.language('P', '', 'a.ts', 'unsaved', 0, 0, 'rename', 'new'));
     const rename = await editor.language('P', '', 'a.ts', 'old', 0, 0, 'rename', 'new');

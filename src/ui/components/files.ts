@@ -489,7 +489,8 @@ export function openFileBrowser(project: string, task: string, workspace = activ
     renderAdvancedLanguage(output, result, buffer.document.path, show);
     if (buffer.text === snapshot && result.inlayHints) for (const view of views) if (view.path === buffer.document.path) view.content.inlayHints(result.inlayHints);
     for (const symbol of result.symbols ?? []) output.append(button(`${symbol.container ? `${symbol.container} · ` : ''}${symbol.name} · ${symbol.path}:${symbol.line + 1}`, () => show(symbol.path, symbol.line, symbol.character)));
-    if (result.truncated) output.append(el('p', 'muted', t('editorUI.symbolsTruncated', { n: result.symbols?.length ?? 0 })));
+    const shown = (result.symbols?.length ?? 0) + result.locations.length + result.diagnostics.length + (result.callHierarchy?.length ?? 0) + (result.actions?.length ?? 0);
+    if (result.truncated && shown) output.append(el('p', 'muted', t('editorUI.resultsTruncated', { n: shown })));
     if (result.hover) output.append(el('pre', '', result.hover));
     for (const suggestion of result.suggestions ?? []) output.append(button(`${suggestion.label} ${suggestion.detail ?? ''}`, () => {
       if (editReserved || buffer.text !== snapshot) throw new UserError(t('detail.editor_conflict'));

@@ -23,23 +23,27 @@ export async function advancedLanguage(client: LanguageClient, action: string, u
   if (action === 'inlayHints') {
     const lines = text.split('\n');
     const result = await client.request('textDocument/inlayHint', { textDocument, range: { start: { line: 0, character: 0 }, end: { line: lines.length - 1, character: lines.at(-1)!.length } } });
-    if (result === null) return { inlayHints: [] }; if (!Array.isArray(result) || result.length > 1000) throw new AppError('too_large');
-    return { inlayHints: result.map(raw => { const item = raw as { position?: unknown; label?: unknown }; if (!validPosition(item.position) || item.position.line >= lines.length || item.position.character > lines[item.position.line]!.length) throw new AppError('bad_request'); const label = typeof item.label === 'string' ? item.label : Array.isArray(item.label) ? item.label.map(part => part && typeof part === 'object' && typeof part.value === 'string' ? part.value : '').join('') : ''; if (label.length > 2000) throw new AppError('too_large'); return { ...item.position, label }; }) };
+    // Hints are decorations: a very large file keeps the first 1000 instead of failing the request.
+    if (result === null) return { inlayHints: [] }; if (!Array.isArray(result)) throw new AppError('bad_request');
+    const truncated = result.length > 1000;
+    return { ...(truncated ? { truncated } : {}), inlayHints: result.slice(0, 1000).map(raw => { const item = raw as { position?: unknown; label?: unknown }; if (!validPosition(item.position) || item.position.line >= lines.length || item.position.character > lines[item.position.line]!.length) throw new AppError('bad_request'); const label = typeof item.label === 'string' ? item.label : Array.isArray(item.label) ? item.label.map(part => part && typeof part === 'object' && typeof part.value === 'string' ? part.value : '').join('') : ''; if (label.length > 2000) throw new AppError('too_large'); return { ...item.position, label }; }) };
   }
   if (action === 'callHierarchy') {
     const result = await client.request('textDocument/prepareCallHierarchy', { textDocument, position });
     if (result === null) return { callHierarchy: [] }; if (!Array.isArray(result) || result.length > 20) throw new AppError('too_large');
-    const callHierarchy: NonNullable<EditorActionResult['callHierarchy']> = [];
+    // A widely used function has more callers than are listed: keep the first ones and mark the list as cut instead of refusing it.
+    const callHierarchy: NonNullable<EditorActionResult['callHierarchy']> = []; let truncated = false;
     for (const item of result) {
       if (!item || typeof item !== 'object' || typeof item.uri !== 'string') throw new AppError('bad_request');
       const relative = path.relative(root, fileURLToPath(item.uri)).split(path.sep).join('/'); await allowed(relative);
       for (const direction of ['incoming', 'outgoing'] as const) {
         const calls = await client.request(`callHierarchy/${direction}Calls`, { item });
-        if (calls === null) continue; if (!Array.isArray(calls) || calls.length > 100) throw new AppError('too_large');
-        for (const call of calls) { const target = direction === 'incoming' ? call.from : call.to; if (!target || typeof target.name !== 'string' || target.name.length > 1000 || typeof target.uri !== 'string' || !validPosition(target.selectionRange?.start)) throw new AppError('bad_request'); const relative = path.relative(root, fileURLToPath(target.uri)).split(path.sep).join('/'); try { await allowed(relative); } catch { continue; } if (callHierarchy.length >= 500) throw new AppError('too_large'); callHierarchy.push({ name: target.name, path: relative, ...target.selectionRange.start, direction }); }
+        if (calls === null) continue; if (!Array.isArray(calls)) throw new AppError('bad_request');
+        if (calls.length > 100) truncated = true;
+        for (const call of calls.slice(0, 100)) { const target = direction === 'incoming' ? call.from : call.to; if (!target || typeof target.name !== 'string' || target.name.length > 1000 || typeof target.uri !== 'string' || !validPosition(target.selectionRange?.start)) throw new AppError('bad_request'); const relative = path.relative(root, fileURLToPath(target.uri)).split(path.sep).join('/'); try { await allowed(relative); } catch { continue; } if (callHierarchy.length >= 500) { truncated = true; break; } callHierarchy.push({ name: target.name, path: relative, ...target.selectionRange.start, direction }); }
       }
     }
-    return { callHierarchy };
+    return { callHierarchy, ...(truncated ? { truncated } : {}) };
   }
   return {};
 }

@@ -464,15 +464,16 @@ export class EditorService {
         this.versions.set(snapshotKey, version); active.openDocument(draftUri, current.language, version, draft.text);
       }
     }
-    const locations: EditorLocation[] = []; const diagnostics: EditorDiagnostic[] = [];
-    if (action === 'signatureHelp' || action === 'callHierarchy' || action === 'inlayHints') return { locations, diagnostics, ...await advancedLanguage(client, action, uri, root, text, line, character, relative => this.target(project, task, relative)) };
+    // Popular symbols and broken files exceed the result caps: keep the first entries and mark the result as cut instead of refusing it.
+    const locations: EditorLocation[] = []; const diagnostics: EditorDiagnostic[] = []; let truncated = false;
+    if (action === 'signatureHelp' || action === 'callHierarchy' || action === 'inlayHints') return { locations, diagnostics, ...await advancedLanguage(client, action, uri, root, text, line, character, await this.listedLookup(project, task)) };
     if (action === 'implementation' && !client.capabilities.implementationProvider) throw new AppError('unavailable', 'editor_language_unavailable');
     if (action === 'documentSymbols' || action === 'workspaceSymbols') {
       const result = await client.request(action === 'documentSymbols' ? 'textDocument/documentSymbol' : 'workspace/symbol', action === 'documentSymbols' ? { textDocument: { uri } } : { query: newName ?? '' });
       if (result !== null && !Array.isArray(result)) throw new AppError('bad_request');
       const symbols: NonNullable<EditorActionResult['symbols']> = [];
       // Large files and workspace queries routinely exceed the cap: keep the first 500 and say so instead of refusing the request.
-      let count = 0; let truncated = false; const lookup = await this.listedLookup(project, task);
+      let count = 0; const lookup = await this.listedLookup(project, task);
       const visit = async (values: unknown[], container?: string, depth = 0): Promise<void> => {
         if (depth > 32) throw new AppError('too_large');
         for (const value of values) {
@@ -519,13 +520,13 @@ export class EditorService {
         }) };
       }
       if (action === 'codeActions') {
-        if (Array.isArray(result) && result.length > 50) throw new AppError('too_large');
+        if (Array.isArray(result) && result.length > 50) truncated = true;
         const actions = [];
         for (const item of (Array.isArray(result) ? result : []).slice(0, 50)) {
           const value = item as { title?: string; edit?: unknown };
           if (typeof value.title === 'string' && value.title.length <= 1000 && value.edit) actions.push({ title: value.title, changes: await this.workspaceChanges(project, task, root, value.edit, drafts) });
         }
-        return { locations, diagnostics, actions };
+        return { locations, diagnostics, actions, ...(truncated ? { truncated } : {}) };
       }
       const changes = await this.workspaceChanges(project, task, root, action === 'format' ? { changes: { [uri]: result ?? [] } } : result, drafts);
       if (format) {
@@ -541,7 +542,8 @@ export class EditorService {
       let items: unknown[];
       try { const result = await client.request('textDocument/diagnostic', { textDocument: { uri } }) as { items?: unknown[] }; items = result.items ?? []; }
       catch (error) { if (!client.alive) throw error; items = await client.publishedDiagnostics(uri); }
-      if (!Array.isArray(items) || items.length > 1000) throw new AppError('too_large');
+      if (!Array.isArray(items)) throw new AppError('bad_request');
+      if (items.length > 1000) { truncated = true; items = items.slice(0, 1000); }
       for (const value of items) {
         const item = value as { range?: { start?: { line: number; character: number }; end?: { line: number; character: number } }; message?: string; severity?: number };
         const start = item?.range?.start; const end = item?.range?.end;
@@ -550,13 +552,14 @@ export class EditorService {
       }
     } else {
       const result = await client.request(`textDocument/${action}`, { textDocument: { uri }, position: { line, character }, ...(action === 'references' ? { context: { includeDeclaration: true } } : {}) });
-      const allowed = new Set(await this.files(root));
+      const lookup = await this.listedLookup(project, task);
       for (const value of result === null ? [] : Array.isArray(result) ? result : [result]) {
         const item = value as { uri?: string; targetUri?: string; range?: { start: { line: number; character: number } }; targetSelectionRange?: { start: { line: number; character: number } } };
-        try { const relative = path.relative(root, fileURLToPath(item.uri ?? item.targetUri!)).split(path.sep).join('/'); const start = (item.range ?? item.targetSelectionRange)!.start; if (allowed.has(relative) && Number.isSafeInteger(start.line) && Number.isSafeInteger(start.character) && start.line >= 0 && start.character >= 0) { await this.target(project, task, relative); if (locations.length >= 500) throw new AppError('too_large'); locations.push({ path: relative, line: start.line, character: start.character }); } } catch (error) { if (error instanceof AppError && error.code === 'too_large') throw error; /* 不暴露工作區之外、機密或 symlink 目標。 */ }
+        if (locations.length >= 500) { truncated = true; break; }
+        try { const relative = path.relative(root, fileURLToPath(item.uri ?? item.targetUri!)).split(path.sep).join('/'); const start = (item.range ?? item.targetSelectionRange)!.start; if (Number.isSafeInteger(start.line) && Number.isSafeInteger(start.character) && start.line >= 0 && start.character >= 0) { await lookup(relative); locations.push({ path: relative, line: start.line, character: start.character }); } } catch { /* 不暴露工作區之外、機密或 symlink 目標。 */ }
       }
     }
-    return { locations, diagnostics };
+    return { locations, diagnostics, ...(truncated ? { truncated } : {}) };
     });
   }
   private async workspaceChanges(project: string, task: string, root: string, value: unknown, drafts = new Map<string, EditorBufferSnapshot>()): Promise<EditorChange[]> {
