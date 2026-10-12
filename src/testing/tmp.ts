@@ -12,6 +12,7 @@ export async function withTmpWorkspace<T>(fn: (ws: Workspace, dir: string) => Pr
     await ws.init();
     return await fn(ws, dir);
   } finally {
-    await fs.rm(dir, { recursive: true, force: true });
+    // A commit starts `git maintenance run --auto --detach`, which may still be writing in a .git here: retry ENOTEMPTY.
+    await fs.rm(dir, { recursive: true, force: true, maxRetries: 5, retryDelay: 100 });
   }
 }

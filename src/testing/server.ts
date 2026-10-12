@@ -72,7 +72,8 @@ export async function startTestServer(configYaml = '', options: AppOptions = {})
       const { promise, resolve } = Promise.withResolvers<void>();
       server.close(() => resolve());
       await promise;
-      await fs.rm(dir, { recursive: true, force: true });
+      // Detached `git maintenance` after a commit may still be writing in a .git here (see withTmpWorkspace).
+      await fs.rm(dir, { recursive: true, force: true, maxRetries: 5, retryDelay: 100 });
     },
   };
 }
