@@ -13,7 +13,8 @@ function snapshot(value: unknown): ProposalSnapshot {
 }
 export function registerEditorProposalRoutes(router: Router, app: App): void {
   router.get('/api/editor/proposals', async ({ query }) => ({ proposals: await app.editorProposals.history(reqString(query, 'project', 120), query.get('task') ?? '') }));
-  router.post('/api/editor/proposals/generate', async ({ body }) => {
+  router.post('/api/editor/proposals/generate', async ({ body, ip }) => {
+    if (!app.sendLimiter.take(ip)) throw new AppError('too_many_requests');
     const project = reqString(body, 'project', 120); const task = body.task === undefined || body.task === '' ? '' : reqString(body, 'task', 120);
     await app.trust.assertExecutable(project);
     if (app.taskBusy(project, task || undefined)) throw new AppError('conflict', 'editor_running');

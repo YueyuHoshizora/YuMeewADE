@@ -16,7 +16,8 @@ export function registerWorkflowRoutes(router: Router, app: App): void {
     if (app.taskBusy(project, task)) throw new AppError('conflict', 'workflow_busy');
     return app.workflows.configure(project, task, body.dependencies as string[], body.steps as WorkflowStep[], body.revision as number);
   });
-  router.post('/api/task/workflow/start', async ({ body }) => {
+  router.post('/api/task/workflow/start', async ({ body, ip }) => {
+    if (!app.sendLimiter.take(ip)) throw new AppError('too_many_requests');
     const project = reqString(body, 'project', 120); const task = reqString(body, 'task', 120);
     await app.trust.assertExecutable(project);
     if (app.taskBusy(project, task)) throw new AppError('conflict', 'workflow_busy');
