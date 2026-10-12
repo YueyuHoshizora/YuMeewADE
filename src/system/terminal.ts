@@ -1,4 +1,5 @@
 import { randomBytes, randomUUID, timingSafeEqual } from 'node:crypto';
+import path from 'node:path';
 import * as pty from 'node-pty';
 import { captureCommand, findExecutable, minimalEnv } from '../cli/process.ts';
 import { AppError } from '../shared/errors.ts';
@@ -43,7 +44,8 @@ export class TerminalService {
       const env: NodeJS.ProcessEnv = { ...minimalEnv(this.options.envPassthrough ?? []), ...overrides, TERM: 'xterm-256color' };
       delete env['NODE_OPTIONS']; delete env['LD_PRELOAD']; delete env['DYLD_INSERT_LIBRARIES'];
       const shell = request.command ?? (process.platform === 'win32' ? process.env['ComSpec'] ?? 'cmd.exe' : process.env['SHELL'] ?? '/bin/sh');
-      const command = await findExecutable(shell, env);
+      // A path like ./bin/tool names a file in the task folder, as for run configurations, not in the core's folder.
+      const command = await findExecutable(/[/\\]/u.test(shell) ? path.resolve(cwd, shell) : shell, env);
       if (!command) throw new AppError('unavailable', 'cli_unavailable');
       if (this.closed || this.execution.isRunning(project, task) || this.options.isRunning?.(project, task)) throw new AppError('conflict');
       for (const [id, e] of this.sessions) { if (this.sessions.size < (this.options.history ?? 64)) break; if (e.view.status !== 'running') this.sessions.delete(id); }

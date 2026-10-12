@@ -1,4 +1,7 @@
 import assert from 'node:assert/strict';
+import { promises as fs } from 'node:fs';
+import os from 'node:os';
+import path from 'node:path';
 import { request } from 'node:http';
 import { test } from 'node:test';
 import { EmbeddedPreviewService } from './embedded-preview.ts';
@@ -162,4 +165,21 @@ test('preview output keeps characters whose UTF-8 bytes arrive in separate chunk
     }
     assert.equal(output, '€\n');
   } finally { await service.dispose(); }
+});
+
+test('a relative preview command resolves in the task folder', { skip: process.platform === 'win32' }, async () => {
+  const folder = await fs.mkdtemp(path.join(os.tmpdir(), 'ym-preview-cwd-'));
+  const service = new EmbeddedPreviewService({ cwd: async () => folder, assertTrusted: async () => {}, ideOrigins: ['http://127.0.0.1:3000'] });
+  await service.init();
+  try {
+    await fs.mkdir(path.join(folder, 'bin'));
+    await fs.writeFile(path.join(folder, 'bin', 'serve'), '#!/bin/sh\necho RELATIVE-PREVIEW "$1"\nsleep 60\n', { mode: 0o755 });
+    const view = await service.start('project', 'task', { command: './bin/serve', args: ['{port}'] });
+    let output = '';
+    for (let tries = 0; tries < 100 && !output.includes('RELATIVE-PREVIEW'); tries++) {
+      await new Promise(resolve => setTimeout(resolve, 20));
+      output = service.status('project', 'task', view.id).output;
+    }
+    assert.match(output, /RELATIVE-PREVIEW/);
+  } finally { await service.dispose(); await fs.rm(folder, { recursive: true, force: true }); }
 });

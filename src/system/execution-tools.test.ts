@@ -104,6 +104,18 @@ test('multiple same-task terminals reserve independent capacity and stop indepen
   } finally { await terminal.stopAll(); await execution.stopAll(); }
 }));
 
+test('a relative terminal command resolves in the task folder, not the core\'s working directory', { skip: process.platform === 'win32' }, () => withTmpWorkspace(async ws => {
+  const { execution, task } = await setup(ws);
+  const terminal = new TerminalService(execution);
+  const script = path.join(ws.projectDir('Tools'), 'bin', 'hello');
+  await fs.mkdir(path.dirname(script), { recursive: true });
+  await fs.writeFile(script, '#!/bin/sh\necho HELLO-RELATIVE\n', { mode: 0o755 });
+  try {
+    const lease = await terminal.start('Tools', task.id, { command: './bin/hello' });
+    await until(() => terminal.output('Tools', task.id, lease.session.id, lease.owner).output.map(o => o.text).join('').includes('HELLO-RELATIVE'));
+  } finally { await terminal.stopAll(); await execution.stopAll(); }
+}));
+
 test('terminal synchronously reserves task and honors trust hook before any PTY launch', () => withTmpWorkspace(async ws => {
   const { execution, task } = await setup(ws); const entered = Promise.withResolvers<void>(); const release = Promise.withResolvers<void>();
   const terminal = new TerminalService(execution, { concurrent: 1, beforeStart: async () => { entered.resolve(); await release.promise; throw new AppError('forbidden'); } });

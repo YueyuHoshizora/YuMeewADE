@@ -1,4 +1,5 @@
 import { randomUUID } from 'node:crypto';
+import path from 'node:path';
 import { createServer, request as httpRequest, type Server, type IncomingMessage, type ServerResponse } from 'node:http';
 import { createServer as createNetServer, type Server as NetServer } from 'node:net';
 import type { Duplex, Readable } from 'node:stream';
@@ -107,7 +108,7 @@ export class EmbeddedPreviewService {
       await this.init();
       const cwd = await this.options.cwd(project, task);
       const env = minimalEnv([]);
-      const command = await findExecutable(input.command, env);
+      const command = await findExecutable(/[/\\]/u.test(input.command) ? path.resolve(cwd, input.command) : input.command, env);
       if (!command) throw new AppError('unavailable', 'cli_unavailable', { field: 'preview' });
       const reservation = createNetServer();
       const port = await listen(reservation);
