@@ -119,9 +119,11 @@ export async function recordContextManifest(ws: Workspace, project: string, task
     await manifestFile(ws, project, task, manifest.request, true);
     await writeJson(file, manifest);
     const entries = await fs.readdir(dir, { withFileTypes: true });
-    const files = await Promise.all(entries.filter(entry => entry.isFile() && /^[a-zA-Z0-9_-]{1,100}\.json$/u.test(entry.name)).map(async entry => ({ file: path.join(dir, entry.name), at: (await fs.lstat(path.join(dir, entry.name))).mtimeMs })));
+    // The manifest just written is always kept: timestamps can tie (coarse file systems), and the name order of a tie says
+    // nothing about age. The 99 newest others stay with it.
+    const files = await Promise.all(entries.filter(entry => entry.isFile() && /^[a-zA-Z0-9_-]{1,100}\.json$/u.test(entry.name) && path.join(dir, entry.name) !== file).map(async entry => ({ file: path.join(dir, entry.name), at: (await fs.lstat(path.join(dir, entry.name))).mtimeMs })));
     files.sort((a, b) => b.at - a.at || a.file.localeCompare(b.file));
-    for (const entry of files.slice(100)) await fs.unlink(entry.file);
+    for (const entry of files.slice(99)) await fs.unlink(entry.file);
   });
 }
 export async function readContextManifest(ws: Workspace, project: string, task: string, request: string): Promise<ContextManifest | null> {

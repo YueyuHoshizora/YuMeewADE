@@ -60,6 +60,12 @@ test('context manifests reject symlinked stores and oversized payloads while ret
   assert.equal((await fs.readdir(directory)).length, 100);
   assert.ok(await readContextManifest(ws, 'P', task.id, 'latest'));
   assert.equal(await readContextManifest(ws, 'P', task.id, 'old-099'), null);
+  // Timestamps tie (or the clock stepped back): the manifest just written is still the one kept, whatever its name.
+  const future = new Date(Date.now() + 3_600_000);
+  for (const name of await fs.readdir(directory)) await fs.utimes(path.join(directory, name), future, future);
+  await recordContextManifest(ws, 'P', task.id, { ...manifest, request: 'zzzz-newest' });
+  assert.equal((await fs.readdir(directory)).length, 100);
+  assert.ok(await readContextManifest(ws, 'P', task.id, 'zzzz-newest'));
   const huge = path.join(directory, 'huge.json');
   await fs.writeFile(huge, 'x'.repeat(2 * 1024 * 1024 + 1));
   await assert.rejects(readContextManifest(ws, 'P', task.id, 'huge'), { code: 'bad_request' });
