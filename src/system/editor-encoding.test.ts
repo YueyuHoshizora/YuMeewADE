@@ -37,6 +37,22 @@ for (const encoding of ['UTF8', 'UTF8-BOM', 'UTF16LE', 'UTF16BE'] as EditorEncod
   }));
 }
 
+for (const encoding of ['UTF16LE', 'UTF16BE'] as EditorEncoding[]) {
+  test(`a ${encoding} file without a BOM is saved without one when opened by naming its encoding`, () => withTmpWorkspace(async ws => {
+    const { editor, root } = await fixture(ws); const file = path.join(root, 'plain.txt');
+    try {
+      await fs.writeFile(file, encodeText('hello\r\n', encoding, false));
+      assert.equal((await editor.read('P', '', 'plain.txt')).binary, true, 'unmarked UTF-16 needs its encoding named');
+      const document = await editor.read('P', '', 'plain.txt', encoding);
+      await editor.save('P', '', 'plain.txt', document.text, document.revision, encoding);
+      assert.deepEqual(await fs.readFile(file), encodeText('hello\r\n', encoding, false), 'an unchanged save keeps the bytes');
+      const next = await editor.read('P', '', 'plain.txt', encoding);
+      await editor.save('P', '', 'plain.txt', 'changed', next.revision, encoding);
+      assert.deepEqual(await fs.readFile(file), encodeText('changed', encoding, false));
+    } finally { editor.dispose(); }
+  }));
+}
+
 test('encoding-only save converts bytes and aggregate apply budget rejects atomically', () => withTmpWorkspace(async ws => {
   const { editor, root } = await fixture(ws, 16384);
   try {

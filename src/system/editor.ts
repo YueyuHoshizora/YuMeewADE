@@ -370,9 +370,11 @@ export class EditorService {
     if (target.readonly) throw new AppError('bad_request', 'editor_readonly');
     return withFileLocks([target.file], async () => {
       let current = await this.document(target.file, relative);
-      if (current.binary && selected) current = await this.document(target.file, relative, false, selected);
+      // Without a BOM a UTF-16 file reads as binary until its encoding is named; saving it that way keeps it unmarked.
+      const unmarked = current.binary && selected !== undefined;
+      if (unmarked) current = await this.document(target.file, relative, false, selected);
       const encoding = selected ?? current.encoding ?? 'UTF8';
-      const encoded = encodeText(text, encoding); if (encoded.length > this.MAX) throw new AppError('too_large');
+      const encoded = encodeText(text, encoding, !(unmarked && encoding.startsWith('UTF16'))); if (encoded.length > this.MAX) throw new AppError('too_large');
       if (current.binary || current.truncated) throw new AppError('bad_request', 'editor_readonly');
       await assertWritable(target.file);
       if (current.revision !== revision) throw new AppError('conflict', 'editor_conflict');
