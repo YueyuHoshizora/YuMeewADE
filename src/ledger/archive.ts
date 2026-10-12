@@ -108,6 +108,9 @@ export class ArchiveService {
         // External body paths remain untouched; only the ledger directory is moved.
         await this.assertNoLinks(path.join(source, '.ai'));
         await fs.rename(source, target);
+        // Another project may have taken this project's repository while it was archived.
+        try { await this.projects.assertRepositoryFree(this.projects.bodyPath(await this.projects.get(entry.project)), entry.project); }
+        catch (error) { await fs.rename(target, source); throw error; }
         completedMoves.push([source, target]);
       } else {
         if (await pathExists(this.ws.worktreeDir(project, entry.task))) throw new AppError('conflict', 'archive_restore_conflict');

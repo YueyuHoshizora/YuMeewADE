@@ -111,14 +111,8 @@ export class ProjectLedger {
     if (patch.status !== undefined && !PROJECT_STATUSES.includes(patch.status)) throw new AppError('bad_request', 'invalid_state');
     if (patch.body) {
       if (!path.isAbsolute(patch.body) || !(await fs.stat(patch.body).catch(() => null))?.isDirectory()) throw new AppError('bad_request', 'body_not_folder', { field: 'body' });
-      // Task ids are only unique per project and copies use branch `ym/<task>`, so two projects on one repository would share branches.
       // An unchanged body is not rechecked, so projects set up that way before can still be edited.
-      if ((id === undefined ? null : await this.get(id).catch(() => null))?.body !== patch.body) {
-        const key = await repositoryKey(patch.body);
-        for (const other of await this.list()) {
-          if (other.id !== id && await repositoryKey(this.bodyPath(other)).catch(() => null) === key) throw new AppError('conflict', 'body_shared', { field: 'body' });
-        }
-      }
+      if ((id === undefined ? null : await this.get(id).catch(() => null))?.body !== patch.body) await this.assertRepositoryFree(patch.body, id);
     }
     if (patch.parent) {
       let parent = await this.get(patch.parent);
@@ -132,6 +126,18 @@ export class ProjectLedger {
     }
     if (patch.related !== undefined && (!Array.isArray(patch.related) || patch.related.length > RELATED_MAX || patch.related.some(v => typeof v !== 'string' || !isValidProjectName(v) || v === id) || new Set(patch.related).size !== patch.related.length)) throw new AppError('bad_request', 'field_type', { field: 'related' });
     if (patch.phases !== undefined && (!Array.isArray(patch.phases) || patch.phases.length > PHASES_MAX || patch.phases.some(p => !p || typeof p.name !== 'string' || !p.name.trim() || !PHASE_STATES.includes(p.state)))) throw new AppError('bad_request', 'field_type', { field: 'phases' });
+  }
+
+  /**
+   * Task ids are only unique per project and copies use branch `ym/<task>`, so two projects on one repository would share branches:
+   * `folder` may not belong to a repository another project (other than `id`) already uses. A folder that cannot be resolved is not checked.
+   */
+  async assertRepositoryFree(folder: string, id?: string): Promise<void> {
+    const key = await repositoryKey(folder).catch(() => null);
+    if (key === null) return;
+    for (const other of await this.list()) {
+      if (other.id !== id && await repositoryKey(this.bodyPath(other)).catch(() => null) === key) throw new AppError('conflict', 'body_shared', { field: 'body' });
+    }
   }
 
   async create(input: NewProjectInput): Promise<Project> {

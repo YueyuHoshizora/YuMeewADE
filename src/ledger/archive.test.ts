@@ -126,6 +126,17 @@ test('restore name and destination conflicts never overwrite and temporary lefto
   await assert.rejects(archive.restore(projectEntry!.key));
 }));
 
+test('a project is not restored onto a repository another project took while it was archived', () => withTmpWorkspace(async ws => {
+  const { projects, archive } = services(ws);
+  const body = path.join(ws.root, 'external'); await fs.mkdir(body);
+  await projects.create({ name: 'P', body });
+  await projects.archive('P');
+  const [entry] = await archive.list();
+  await projects.create({ name: 'Q', body });
+  await assert.rejects(archive.restore(entry!.key), { detail: 'body_shared' });
+  assert.deepEqual([(await projects.list()).map(project => project.id), (await archive.list()).length], [['Q'], 1]);
+}));
+
 test('project restore reuses an empty leftover ledger folder but refuses one with data', () => withTmpWorkspace(async ws => {
   const { projects, archive } = services(ws);
   await projects.create({ name: 'P' });
