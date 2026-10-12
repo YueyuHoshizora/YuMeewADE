@@ -1,6 +1,6 @@
 import { type ArchiveEntry, type NewTaskInput, type ProjectView, type SlashCommand, type StartInput, type Task } from '../../shared/types.ts';
 import { ApiFailure, api, query, request } from '../api.ts';
-import { t } from '../i18n/index.ts';
+import { labelValue, t } from '../i18n/index.ts';
 import { attachments } from '../components/attachments.ts';
 import { aiPicker } from '../components/picker.ts';
 import { markdown } from '../components/markdown.ts';
@@ -254,10 +254,10 @@ export function projectView(context: ViewContext, project: ProjectView, params: 
     header.append(el('h1', '', project.name), el('span', 'state-chip', t(`state.${project.status}`)), el('span', 'muted', t('common.updated', { at: localTime(project.updated) })));
     if (project.related.length) {
       // Related projects are stored at creation; list them so the choice is visible. Archived or missing ids stay plain text.
-      const related = el('p', 'muted related-projects', `${t('project.related')}：`);
+      const related = el('p', 'muted related-projects', labelValue(t('project.related'), ''));
       for (const [index, id] of project.related.entries()) {
         const target = context.state.projects.find(other => other.id === id);
-        related.append(...(index ? [document.createTextNode('、')] : []), target ? link(target.name, projectHash(target.id)) : document.createTextNode(id));
+        related.append(...(index ? [document.createTextNode(t('common.listSeparator'))] : []), target ? link(target.name, projectHash(target.id)) : document.createTextNode(id));
       }
       header.append(related);
     }
