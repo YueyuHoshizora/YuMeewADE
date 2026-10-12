@@ -32,9 +32,15 @@ export function sideDiff(unified: HTMLElement, ids: { project: string; task?: st
     // Load CodeMirror only after the user requests the heavy comparison view.
     const [{ MergeView }, { EditorState }, { EditorView, lineNumbers }, { syntaxHighlighting }, { appHighlight, editorLanguage }] = await Promise.all([import('@codemirror/merge'), import('@codemirror/state'), import('@codemirror/view'), import('@codemirror/language'), import('./editor-engine.ts')]);
     if (current !== serial || closed) return;
-    const extensions = [lineNumbers(), editorLanguage(ids.path), syntaxHighlighting(appHighlight), EditorState.readOnly.of(true), EditorView.editable.of(false), EditorView.theme({ '&': { backgroundColor: 'var(--panel)', color: 'var(--c-e7eaf4)' }, '.cm-scroller': { overflow: 'visible' } })];
+    // Same CSS-variable colors as the main editor so gutters and collapsed-line bars follow the light/dark theme.
+    const extensions = [lineNumbers(), editorLanguage(ids.path), syntaxHighlighting(appHighlight), EditorState.readOnly.of(true), EditorView.editable.of(false), EditorState.phrases.of({ '$ unchanged lines': t('sideDiff.unchanged') }), EditorView.theme({
+      '&': { backgroundColor: 'var(--panel)', color: 'var(--c-e7eaf4)' }, '.cm-scroller': { overflow: 'visible' },
+      '.cm-gutters': { backgroundColor: 'var(--panel)', color: 'var(--muted)', borderColor: 'var(--border)' },
+      '.cm-collapsedLines': { background: 'color-mix(in srgb, var(--accent) 10%, var(--panel))', color: 'var(--muted)' },
+    })];
     unified.hidden = true; host.hidden = false; side = true;
-    host.append(row(el('strong', '', t('sideDiff.before')), el('strong', '', t('sideDiff.after'))));
+    const labels = el('div', 'side-diff-labels'); labels.append(el('strong', '', t('sideDiff.before')), el('strong', '', t('sideDiff.after')));
+    host.append(labels);
     merge = new MergeView({ parent: host, a: { doc: contents.before, extensions }, b: { doc: contents.after, extensions }, collapseUnchanged: { margin: 3, minSize: 8 }, highlightChanges: true, gutter: true });
     // One scroll container preserves MergeView's aligned rows on both sides.
     merge.dom.style.maxHeight = '60vh'; merge.dom.style.overflow = 'auto'; merge.dom.style.minWidth = '600px';

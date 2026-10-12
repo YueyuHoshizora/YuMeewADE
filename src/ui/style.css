@@ -262,6 +262,8 @@
 .skip-link{position:fixed;left:8px;top:-60px;z-index:200}.skip-link:focus{top:8px}#main:focus{outline:none}
 .tree-title .task-meta:not(:empty){margin-left:.5em}
 .tree-unreadable{margin:12px 5px 0;line-height:1.5}.tree-unreadable ul{margin:4px 0 0;padding-left:16px}.tree-unreadable code{overflow-wrap:anywhere}
+.diff-file>.form{max-width:none}
+.side-diff-labels{display:grid;grid-template-columns:1fr 1fr;min-width:600px;margin-bottom:4px}
 /* In a narrow column (side panels or docked workbench open) the wrapped controls must not push the transcript out. */
 .task-header{max-height:30%;overflow:auto}
 .task-column{container-type:inline-size}
