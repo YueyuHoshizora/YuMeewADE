@@ -22,7 +22,8 @@ test('force archive and restore retain fake secrets, ignored files, ordinary cha
   await projects.create({ name: 'P' });
   const task = await tasks.create('P', { title: '保存資料' });
   const dir = await worktree.prepare('P', task.id);
-  await fs.writeFile(path.join(dir, '.env.audit'), 'FAKE_ONLY=yes\n');
+  // Staged by hand: the archive commit still drops a new secret from Git, so the preview must not promise Git keeps it.
+  await fs.writeFile(path.join(dir, '.env.audit'), 'FAKE_ONLY=yes\n'); await gitOk(dir, ['add', '-f', '.env.audit']);
   await fs.appendFile(path.join(dir, '.gitignore'), '\nignored.bin\n');
   await fs.writeFile(path.join(dir, 'ignored.bin'), Buffer.from([0, 1, 2, 255]));
   await fs.writeFile(path.join(dir, 'ordinary.txt'), 'normal change\n');

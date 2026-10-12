@@ -69,7 +69,10 @@ export class ArchiveService {
       if (!(await pathExists(dir))) continue;
       if (path.resolve(dir) !== this.ws.worktreeDir(project, record.id) || (await fs.lstat(dir)).isSymbolicLink() || (await fs.lstat(path.dirname(dir))).isSymbolicLink() || !isInside(await fs.realpath(this.ws.workDir), await fs.realpath(dir))) { result.unavailable.push(prefix || record.id); continue; }
       const trackedResult = await git(dir, ['ls-files', '-z']);
-      const tracked = new Set(trackedResult.code === 0 && !trackedResult.truncated ? trackedResult.stdout.split('\0').filter(Boolean) : []);
+      // Newly staged local secrets are dropped from the index before the archive commit (as commitAll does), so only recovery keeps them.
+      const addedResult = trackedResult.code === 0 ? await git(dir, ['diff', '--cached', '--no-renames', '--name-only', '--diff-filter=A', '-z', 'HEAD']) : null;
+      const addedSecrets = new Set(addedResult?.code === 0 && !addedResult.truncated ? addedResult.stdout.split('\0').filter(file => file && isLocalSecret(file)) : []);
+      const tracked = new Set(trackedResult.code === 0 && !trackedResult.truncated ? trackedResult.stdout.split('\0').filter(file => file && !addedSecrets.has(file)) : []);
       const freshResult = trackedResult.code === 0 ? await gitOk(dir, ['ls-files', '--others', '--exclude-standard', '-z']) : '';
       const fresh = new Set(freshResult.split('\0').filter(Boolean));
       const walk = async (relative: string): Promise<void> => {
