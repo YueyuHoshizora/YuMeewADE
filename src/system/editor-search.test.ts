@@ -35,3 +35,15 @@ test('zero-width regex matches advance over full Unicode code points and reset f
     assert.deepEqual(await matcher.match(''), { offsets: [[0, 0]], truncated: false });
   } finally { matcher.close(); }
 });
+
+test('whole-word search treats supplementary Unicode letters as word characters on either side', async () => {
+  const text = '\u{10400}cat cat\u{10400} cat \u{1f408}cat\u{1f408} cat_';
+  for (const regex of [false, true]) {
+    const matcher = createMatcher('cat', { regex, wholeWord: true });
+    try {
+      assert.deepEqual(await matcher.match(text), { offsets: [[12, 15], [18, 21]], truncated: false });
+      assert.deepEqual(await matcher.match('cat'), { offsets: [[0, 3]], truncated: false });
+      assert.deepEqual(await matcher.match('x\ncat'), { offsets: [[2, 5]], truncated: false });
+    } finally { matcher.close(); }
+  }
+});

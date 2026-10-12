@@ -19,7 +19,7 @@ export function createMatcher(query: string, options: SearchOptions): Matcher {
   try { new RegExp(source, flags); } catch { throw new AppError('bad_request', 'search_regex_invalid'); }
   if (!options.regex) return { match: async text => literal(text, source, options), close() {} };
   // With the Unicode flag, advancing into a surrogate pair makes exec return the same empty match again.
-  const worker = new Worker(`const {parentPort,workerData:d}=require('node:worker_threads');const r=new RegExp(d.source,d.flags);const word=c=>c!==undefined&&/[\\p{L}\\p{N}_]/u.test(c);parentPort.on('message',text=>{r.lastIndex=0;const offsets=[];let m;let truncated=false;while((m=r.exec(text))){const start=m.index,end=start+m[0].length;if(!d.wholeWord||(!word(text[start-1])&&!word(text[end]))){if(offsets.length===${MAX_MATCHES}){truncated=true;break;}offsets.push([start,end]);}if(!m[0].length)r.lastIndex+=text.codePointAt(r.lastIndex)>0xffff?2:1;}parentPort.postMessage({offsets,truncated});});`, { eval: true, workerData: { source, flags, wholeWord: options.wholeWord }, resourceLimits: { maxOldGenerationSizeMb: 64 } });
+  const worker = new Worker(`const {parentPort,workerData:d}=require('node:worker_threads');const r=new RegExp(d.source,d.flags);const before=/[\\p{L}\\p{N}_](?![\\s\\S])/u,after=/^[\\p{L}\\p{N}_]/u;parentPort.on('message',text=>{r.lastIndex=0;const offsets=[];let m;let truncated=false;while((m=r.exec(text))){const start=m.index,end=start+m[0].length;if(!d.wholeWord||(!before.test(text.slice(Math.max(0,start-2),start))&&!after.test(text.slice(end,end+2)))){if(offsets.length===${MAX_MATCHES}){truncated=true;break;}offsets.push([start,end]);}if(!m[0].length)r.lastIndex+=text.codePointAt(r.lastIndex)>0xffff?2:1;}parentPort.postMessage({offsets,truncated});});`, { eval: true, workerData: { source, flags, wholeWord: options.wholeWord }, resourceLimits: { maxOldGenerationSizeMb: 64 } });
   worker.unref();
   let failure: unknown; let pending: { resolve: (value: SearchMatches) => void; reject: (error: unknown) => void; timer: NodeJS.Timeout } | undefined;
   const fail = (error: unknown): void => {
@@ -46,7 +46,8 @@ function literal(text: string, source: string, options: SearchOptions): SearchMa
   const matcher = new RegExp(source, options.caseSensitive ? 'gu' : 'giu'); const offsets: [number, number][] = [];
   for (const match of text.matchAll(matcher)) {
     const start = match.index; const end = start + match[0].length;
-    if (options.wholeWord && (start > 0 && /[\p{L}\p{N}_]/u.test(text[start - 1]!) || end < text.length && /[\p{L}\p{N}_]/u.test(text[end]!))) continue;
+    // Two code units cover one full neighbour. Unlike $, the end check must not match before a trailing newline.
+    if (options.wholeWord && (/[\p{L}\p{N}_](?![\s\S])/u.test(text.slice(Math.max(0, start - 2), start)) || /^[\p{L}\p{N}_]/u.test(text.slice(end, end + 2)))) continue;
     if (offsets.length === MAX_MATCHES) return { offsets, truncated: true };
     offsets.push([start, end]);
   }
