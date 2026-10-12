@@ -51,3 +51,18 @@ test('trust is invalidated by code-root changes and reapproval must use the curr
     assert.equal(await trust.fullAccess('P', 'codex', true), false);
   } finally { await fs.rm(root, { recursive: true, force: true }); }
 });
+
+test('a main folder moved or deleted outside the app is reported as missing, not as an internal error', async () => {
+  const root = await fs.mkdtemp(path.join(os.tmpdir(), 'ymae-trust-gone-'));
+  try {
+    const ws = new Workspace(root); await ws.init();
+    const body = path.join(root, 'code'); await fs.mkdir(body);
+    const projects = new ProjectLedger(ws); await projects.create({ name: 'P', body });
+    const trust = new ProjectTrustService(ws, projects, new TaskLedger(ws), new SettingsStore(ws, parseConfig(`workspace:\n  root: ${JSON.stringify(root)}`, null)));
+    await trust.view('P');
+    await fs.rename(body, path.join(root, 'moved'));
+    const missing = (err: unknown) => err instanceof AppError && err.status === 404 && err.detail === 'project_body_missing';
+    await assert.rejects(trust.view('P'), missing);
+    await assert.rejects(trust.assertExecutable('P'), missing);
+  } finally { await fs.rm(root, { recursive: true, force: true }); }
+});

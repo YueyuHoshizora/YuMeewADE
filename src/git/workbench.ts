@@ -10,7 +10,7 @@ import type { ProjectLedger } from '../ledger/projects.ts';
 import type { TaskLedger } from '../ledger/tasks.ts';
 import type { GitWorkbenchStatus, GitWorkbenchFile, GitPullRequestStatus, GitRemote } from '../shared/types.ts';
 import { AppError } from '../shared/errors.ts';
-import { withFileLocks } from '../shared/fsx.ts';
+import { missingAs, withFileLocks } from '../shared/fsx.ts';
 import { git, hasCommits, isLocalSecret } from './git.ts';
 import { github } from '../cli/github.ts';
 import type { GithubFeedbackInput } from '../shared/github.ts';
@@ -37,13 +37,14 @@ export class GitWorkbench {
   }
   private async location(project: string, task?: string): Promise<{ root: string; main: string }> {
     const record = await this.deps.projects.get(project);
-    const main = await fs.realpath(record.body || this.deps.ws.projectDir(project));
+    const main = await fs.realpath(record.body || this.deps.ws.projectDir(project)).catch(missingAs(() => new AppError('not_found', 'project_body_missing')));
     let root = main;
     if (task) {
       const item = await this.deps.tasks.get(project, task);
       if (item.workspace !== 'direct') {
         if (!item.workdir) throw new AppError('not_found', 'worktree_missing');
-        root = await fs.realpath(item.workdir);
+        // A task copy removed outside the app is the same situation as one that was never created.
+        root = await fs.realpath(item.workdir).catch(missingAs(() => new AppError('not_found', 'worktree_missing')));
       }
     }
     const common = async (dir: string) => fs.realpath((await this.command(dir, ['rev-parse', '--path-format=absolute', '--git-common-dir'])).trim());

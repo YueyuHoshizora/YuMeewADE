@@ -42,6 +42,7 @@ export const DETAIL_MESSAGES = {
   step_changed: '步驟清單已經變更，請確認後再操作',
   notes_changed: '備註已在別處修改，請重新開啟後再編輯',
   project_missing: '專案不存在',
+  project_body_missing: '找不到專案的主資料夾，可能已被移動或刪除',
   task_missing: '作業不存在',
   worktree_missing: '尚未建立工作副本',
   queue_item_missing: '隊列中沒有這筆指示',

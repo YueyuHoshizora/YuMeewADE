@@ -258,3 +258,14 @@ test('本地分支改名、合併安全刪除、強制雙確認及現行／live�
   await workbench.manageBranch('P', undefined, 'delete', 'unmerged', { confirmed: true, force: true, forceConfirmed: true });
   assert.ok(!(await workbench.status('P')).branches.includes('unmerged'));
 }));
+
+test('a task copy deleted outside the app is reported as missing, not as an internal error', () => withTmpWorkspace(async ws => {
+  const projects = new ProjectLedger(ws); const tasks = new TaskLedger(ws);
+  await projects.create({ name: 'P' });
+  const task = await tasks.create('P', { title: 'copy' });
+  const workdir = await new WorktreeService({ ws, projects, tasks, diffBytes: 100_000 }).prepare('P', task.id);
+  const workbench = new GitWorkbench({ ws, projects, tasks, isRunning: () => false });
+  await workbench.status('P', task.id);
+  await fs.rm(workdir, { recursive: true, force: true });
+  await assert.rejects(workbench.status('P', task.id), (error: unknown) => error instanceof AppError && error.status === 404 && error.detail === 'worktree_missing');
+}));

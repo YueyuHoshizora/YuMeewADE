@@ -8,7 +8,7 @@ import type { SettingsStore } from './settings.ts';
 import type { Workspace } from './workspace.ts';
 import type { ProjectTrustPatch, ProjectTrustState, ProjectTrustView } from '../shared/types.ts';
 import { AppError } from '../shared/errors.ts';
-import { readJson, withFileLocks, writeJson } from '../shared/fsx.ts';
+import { missingAs, readJson, withFileLocks, writeJson } from '../shared/fsx.ts';
 
 const AIS = ['claude', 'codex', 'grok', 'gemini'];
 interface SavedTrust { state: ProjectTrustState; root: string; overrides: Partial<Record<string, boolean>> }
@@ -23,7 +23,8 @@ export class ProjectTrustService {
   private file(project: string): string { return path.join(this.ws.projectDir(project), '.ai', 'trust.json'); }
   private async policy(project: string): Promise<{ saved: SavedTrust; root: string; revision: string; changed: boolean }> {
     const record = await this.projects.get(project);
-    const root = await fs.realpath(this.projects.bodyPath(record));
+    // Every execution guard resolves the main folder here; a folder moved or deleted outside the app is a 404 the UI can explain.
+    const root = await fs.realpath(this.projects.bodyPath(record)).catch(missingAs(() => new AppError('not_found', 'project_body_missing')));
     const saved = await readJson<SavedTrust>(this.file(project), { state: 'unreviewed', root, overrides: {} });
     if (!saved || !['unreviewed', 'trusted', 'restricted'].includes(saved.state) || typeof saved.root !== 'string' || !saved.overrides || typeof saved.overrides !== 'object' || Array.isArray(saved.overrides) || Object.entries(saved.overrides).some(([ai, value]) => !AIS.includes(ai) || typeof value !== 'boolean')) throw new AppError('conflict', 'project_trust_invalid');
     const revision = createHash('sha256').update(JSON.stringify(saved)).update('\0').update(root).digest('hex');
