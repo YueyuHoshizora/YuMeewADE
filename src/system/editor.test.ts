@@ -129,6 +129,23 @@ test('a file without write permission opens read-only and is never replaced by a
   } finally { await fs.chmod(file, 0o644).catch(() => undefined); editor.dispose(); }
 }));
 
+test('creating, renaming or deleting inside a folder without write permission is refused, not an internal error', { skip: process.getuid?.() === 0 && 'root bypasses file permissions' }, () => withTmpWorkspace(async ws => {
+  const projects = new ProjectLedger(ws); const tasks = new TaskLedger(ws); await projects.create({ name: 'P' });
+  const editor = new EditorService(new WorktreeService({ ws, projects, tasks, diffBytes: 100000 }), tasks, {});
+  const folder = path.join(ws.projectDir('P'), 'locked');
+  const denied = (error: unknown) => error instanceof AppError && error.detail === 'editor_not_writable';
+  try {
+    await editor.mutate('P', '', { action: 'createFolder', path: 'locked' });
+    await editor.mutate('P', '', { action: 'createFile', path: 'locked/kept.txt' });
+    await fs.chmod(folder, 0o555);
+    await assert.rejects(editor.mutate('P', '', { action: 'createFile', path: 'locked/new.txt' }), denied);
+    const revision = (await editor.read('P', '', 'locked/kept.txt')).revision;
+    await assert.rejects(editor.mutate('P', '', { action: 'rename', path: 'locked/kept.txt', destination: 'locked/moved.txt', confirmation: 'locked/kept.txt', revision }), denied);
+    await assert.rejects(editor.mutate('P', '', { action: 'delete', path: 'locked/kept.txt', confirmation: 'locked/kept.txt', revision }), denied);
+    assert.deepEqual(await fs.readdir(folder), ['kept.txt']);
+  } finally { await fs.chmod(folder, 0o755).catch(() => undefined); editor.dispose(); }
+}));
+
 test('editor LSP exposes completion hover formatting rename actions and project diagnostics', () => withTmpWorkspace(async ws => {
   const projects = new ProjectLedger(ws); const tasks = new TaskLedger(ws); await projects.create({ name: 'P' });
   for (const name of ['a.ts', 'b.ts']) await fs.writeFile(path.join(ws.projectDir('P'), name), 'old');

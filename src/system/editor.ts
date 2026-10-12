@@ -44,6 +44,11 @@ async function writable(file: string): Promise<boolean> {
 async function assertWritable(file: string): Promise<void> {
   if (!(await writable(file))) throw new AppError('forbidden', 'editor_not_writable');
 }
+/** Folder operations the OS refuses for lack of permission are the user's situation to fix, not an internal error. */
+function deniedAsNotWritable(error: unknown): never {
+  if (['EACCES', 'EPERM', 'EROFS'].includes((error as NodeJS.ErrnoException)?.code ?? '')) throw new AppError('forbidden', 'editor_not_writable');
+  throw error;
+}
 export class EditorService {
   private clients = new Map<string, LanguageClient>();
   private versions = new Map<string, number>();
@@ -676,7 +681,7 @@ export class EditorService {
         } else await fs.unlink(target.file);
       }
       else throw new AppError('bad_request');
-    });
+    }).catch(deniedAsNotWritable);
   }
   async problems(project: string, task: string): Promise<EditorProblem[]> {
     const { root } = await this.root(project, task); const output: EditorProblem[] = [];
