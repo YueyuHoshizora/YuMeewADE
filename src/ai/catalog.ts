@@ -115,6 +115,8 @@ export class AiCatalog {
   // 將 AI 的更新與原子寫入序列化，避免同時 refresh 遺失另一側清單。
   private writes: Promise<void> = Promise.resolve();
   private readonly accounts: CredentialAccounts | undefined;
+  /** One in-flight `update` per CLI: a second request (another window, a double submit) joins it instead of running the installer twice. */
+  private readonly updates = new Map<CatalogAi, Promise<{ before: string; after: string }>>();
 
   constructor(deps: { config: Config; ws: Workspace; settings: { get(): Promise<Settings> }; home?: string; accounts?: CredentialAccounts }) {
     this.config = deps.config;
@@ -170,12 +172,18 @@ export class AiCatalog {
     return this.get(name);
   }
 
-  async update(ai: string): Promise<{ before: string; after: string }> {
+  update(ai: string): Promise<{ before: string; after: string }> {
     const name = this.name(ai);
-    const before = (await this.status(name)).version;
-    const result = await captureCommand({ command: this.config.cli[name].command, args: ['update'], env: this.env(), timeoutMs: 300_000 });
-    if (!result.ok) throw new AppError('unavailable', 'cli_unavailable', { field: name, cause: result.reason });
-    return { before, after: (await this.status(name)).version };
+    const running = this.updates.get(name);
+    if (running) return running;
+    const update = (async () => {
+      const before = (await this.status(name)).version;
+      const result = await captureCommand({ command: this.config.cli[name].command, args: ['update'], env: this.env(), timeoutMs: 300_000 });
+      if (!result.ok) throw new AppError('unavailable', 'cli_unavailable', { field: name, cause: result.reason });
+      return { before, after: (await this.status(name)).version };
+    })().finally(() => this.updates.delete(name));
+    this.updates.set(name, update);
+    return update;
   }
 
   private name(ai: string): CatalogAi {

@@ -118,10 +118,11 @@ test('CLI version, codex refresh and update use configured executable without ch
   const refreshed = await f.catalog.refresh('codex');
   assert.equal(refreshed.source, 'cli');
   assert.equal(refreshed.models[0]!.defaultEffort, 'high');
-  assert.deepEqual(await f.catalog.update('codex'), { before: '0.160.1', after: '0.161.0' });
+  // A second request while the first is still installing joins it instead of running `update` twice.
+  assert.deepEqual(await Promise.all([f.catalog.update('codex'), f.catalog.update('codex')]), [{ before: '0.160.1', after: '0.161.0' }, { before: '0.160.1', after: '0.161.0' }]);
   const argv = (await fs.readFile(calls, 'utf8')).trim().split('\n').map((line) => JSON.parse(line));
   assert.ok(argv.some((args) => args.join(' ') === 'debug models -c cli_auth_credentials_store=\"file\"'));
-  assert.ok(argv.some((args) => args.join(' ') === 'update'));
+  assert.equal(argv.filter((args) => args.join(' ') === 'update').length, 1);
   assert.ok(argv.every((args) => ['--version', 'debug models -c cli_auth_credentials_store=\"file\"', 'update'].includes(args.join(' '))));
   const persisted = JSON.parse(await fs.readFile(path.join(f.ws.internalDir, 'models.json'), 'utf8'));
   assert.equal(persisted.codex.source, 'cli');
