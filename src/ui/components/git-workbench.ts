@@ -111,7 +111,7 @@ export function gitWorkbenchButton(context: ViewContext, project: string, task?:
           }));
           else actions.append(button(t(title === 'workbench.staged' ? 'workbench.unstage' : 'workbench.stage'), () => mutate(title === 'workbench.staged' ? 'unstage' : 'stage', { path: file.path })));
           if (!file.secret && !file.conflict) actions.append(button(t('gitPrecision.diff'), () => viewDiff(file.path, title === 'workbench.staged')));
-          if ((title === 'workbench.unstaged' || title === 'workbench.untracked') && !file.secret && !file.conflict && !file.originalPath) actions.append(button(t('workbench.discard'), async () => {
+          if ((title === 'workbench.unstaged' || title === 'workbench.untracked') && !file.secret && !file.conflict && !(file.originalPath && (file.working === 'R' || file.working === 'C'))) actions.append(button(t('workbench.discard'), async () => {
             // The fingerprint binds the discard to the content shown when confirming; a later edit makes the server refuse.
             const diff = await request<GitFileDiff>(query('/api/git/diff', { ...ids, path: file.path, staged: 'false' }));
             if (!diff.fingerprint) { toast(t('workbench.discardTooLarge')); return; }

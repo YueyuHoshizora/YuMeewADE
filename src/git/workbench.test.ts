@@ -278,6 +278,17 @@ test('a merge resolved entirely in favour of this side can still be committed; w
   assert.equal((await gitOk(root, ['rev-list', '--parents', '-n', '1', 'HEAD'])).trim().split(' ').length, 3);
 }));
 
+test('discarding unstaged edits of a staged rename keeps the rename', () => withTmpWorkspace(async ws => {
+  const projects = new ProjectLedger(ws); const tasks = new TaskLedger(ws); await projects.create({ name: 'P' });
+  const root = ws.projectDir('P'); const workbench = new GitWorkbench({ ws, projects, tasks, isRunning: () => false });
+  await fs.writeFile(path.join(root, 'old.txt'), 'base\n'); await commitAll(root, 'base');
+  await gitOk(root, ['mv', 'old.txt', 'new.txt']); await fs.appendFile(path.join(root, 'new.txt'), 'unstaged\n');
+  const fingerprint = (await workbench.diff('P', undefined, 'new.txt', false)).fingerprint!;
+  await workbench.discard('P', undefined, 'new.txt', fingerprint);
+  assert.equal(await fs.readFile(path.join(root, 'new.txt'), 'utf8'), 'base\n');
+  assert.equal((await gitOk(root, ['status', '--porcelain'])).trim(), 'R  old.txt -> new.txt');
+}));
+
 test('遠端新增、改名、fetch/push URL及移除驗證與確認', () => withTmpWorkspace(async ws => {
   const projects = new ProjectLedger(ws); const tasks = new TaskLedger(ws); await projects.create({ name: 'P' });
   const workbench = new GitWorkbench({ ws, projects, tasks, isRunning: () => false });

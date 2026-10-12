@@ -224,7 +224,9 @@ export class GitWorkbench {
   async discard(project: string, task: string | undefined, relative: string, fingerprint: string): Promise<void> {
     return this.locked(project, task, true, async root => {
       const file = (await this.files(root)).find(file => file.path === relative);
-      if (!file || file.secret || file.conflict || file.originalPath || !file.unstaged && !file.untracked) throw new AppError('conflict', 'git_workbench_path');
+      // A rename already staged keeps its index entry; only a rename in the working tree has no single file to restore.
+      const workingRename = !!file?.originalPath && (file.working === 'R' || file.working === 'C');
+      if (!file || file.secret || file.conflict || workingRename || !file.unstaged && !file.untracked) throw new AppError('conflict', 'git_workbench_path');
       // Bound to the diff the user confirmed: the index, the file bytes and HEAD must not have moved since.
       if (!fingerprint || await this.fingerprint(root, relative) !== fingerprint) throw new AppError('conflict', 'git_workbench_path');
       if (file.untracked) await fs.rm(path.join(root, relative));
