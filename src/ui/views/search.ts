@@ -41,7 +41,7 @@ export function searchView(context: ViewContext, params: URLSearchParams): View 
             if (hit.role) target.append(el('span', 'muted', t(hit.role === 'user' ? 'chat.you' : hit.role === 'assistant' ? 'ai.label' : 'common.details')));
             else if (hit.kind === 'record') target.append(el('span', 'muted', t('tasks.record')));
             const snippet = el('p');
-            for (const part of searchParts(hit.snippet, term)) {
+            for (const part of searchParts(hit.snippet, term.normalize('NFC'))) {
               snippet.append(part.match ? el('mark', '', part.text) : document.createTextNode(part.text));
             }
             target.append(snippet);

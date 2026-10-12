@@ -111,3 +111,12 @@ test('task records are searched after the title, one hit per task from the first
   const memoOnly = await search({ ...readers([]), sections: async () => ({ ...sections, done: [], next: [] }) }, 'needle');
   assert.deepEqual(memoOnly.hits.map(hit => hit.kind), ['record']);
 });
+
+test('a file name quoted in its decomposed macOS form is found by the composed spelling, and the reverse', async () => {
+  const decomposed = '資料/が.ts café'.normalize('NFD');
+  assert.notEqual(decomposed, '資料/が.ts café');
+  const found = await search(readers([user(`opened ${decomposed}`)], 'Work'), 'が.ts');
+  assert.deepEqual(found.hits.map(hit => [hit.kind, hit.snippet]), [['chat', 'opened 資料/が.ts café']]);
+  const reverse = await search(readers([user('menu café')], 'Work'), 'CAFÉ'.normalize('NFD'));
+  assert.equal(reverse.hits.length, 1);
+});
