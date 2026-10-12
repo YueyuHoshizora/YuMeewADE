@@ -32,6 +32,15 @@ async function close(server: Server | NetServer): Promise<void> {
 }
 /** Finished runs stay listable (exit code, last output) but only this many are kept. */
 const FINISHED_RUNS = 20;
+/** A redirect target on the dev server itself, as a path for the proxy origin; anything else (other host/port/scheme) is undefined. */
+function sameServerPath(location: string | undefined, from: string, port: number): string | undefined {
+  if (typeof location !== 'string' || !location || /[\0\r\n\\]/u.test(location)) return undefined;
+  let url: URL;
+  try { url = new URL(location, `http://127.0.0.1:${port}${from}`); } catch { return undefined; }
+  if (url.protocol !== 'http:' || !['127.0.0.1', 'localhost', '[::1]'].includes(url.hostname) || Number(url.port || 80) !== port || url.username || url.password) return undefined;
+  // `//host/x` would be scheme-relative in the browser and leave the proxy origin.
+  return url.pathname.startsWith('//') ? undefined : `${url.pathname}${url.search}${url.hash}`;
+}
 /** Every proxy has a distinct origin; no project response or credential enters the IDE origin. */
 export class EmbeddedPreviewService {
   private readonly runs = new Map<string, Run>();
@@ -160,8 +169,15 @@ export class EmbeddedPreviewService {
     const headers = { 'Content-Security-Policy': policy, 'Access-Control-Allow-Origin': 'null', 'Access-Control-Allow-Methods': 'GET, HEAD, POST, PUT, PATCH, DELETE, OPTIONS', 'Access-Control-Allow-Headers': 'content-type', 'Cache-Control': 'no-store', 'X-Content-Type-Options': 'nosniff', 'Referrer-Policy': 'no-referrer' };
     if (req.method === 'OPTIONS') { res.writeHead(204, headers); res.end(); return; }
     const upstream = httpRequest({ hostname: '127.0.0.1', port: run.port, path: req.url, method: req.method, headers: { host: `127.0.0.1:${run.port}`, ...(typeof req.headers['content-type'] === 'string' ? { 'content-type': req.headers['content-type'] } : {}) } }, response => {
-      // Even loopback redirects can escape ownership; never follow or expose Location.
-      if ((response.statusCode ?? 500) >= 300 && (response.statusCode ?? 500) < 400) { response.resume(); res.writeHead(502, headers); res.end(); return; }
+      const status = response.statusCode ?? 502;
+      if (status >= 300 && status < 400) {
+        // Only a redirect that stays on the dev server survives, as a path on the proxy origin; any other target could
+        // escape ownership, so it is never followed or exposed.
+        const location = sameServerPath(response.headers.location, req.url!, run.port);
+        response.resume();
+        if (location) res.writeHead(status, { ...headers, Location: location }); else res.writeHead(502, headers);
+        res.end(); return;
+      }
       res.writeHead(response.statusCode ?? 502, { ...headers, ...(typeof response.headers['content-type'] === 'string' ? { 'Content-Type': response.headers['content-type'] } : {}), ...(typeof response.headers['content-encoding'] === 'string' ? { 'Content-Encoding': response.headers['content-encoding'] } : {}) });
       response.on('error', () => res.destroy()); response.pipe(res);
     });

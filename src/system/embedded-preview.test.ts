@@ -9,6 +9,10 @@ const http = require('node:http');
 const crypto = require('node:crypto');
 const server = http.createServer((req, res) => {
   if (req.url === '/redirect') { res.writeHead(302, { location: 'http://example.com/' }); res.end(); return; }
+  if (req.url === '/') { res.writeHead(302, { location: '/home?next=%2F' }); res.end(); return; }
+  if (req.url === '/self') { res.writeHead(301, { location: 'http://localhost:' + process.env.PORT + '/home#top' }); res.end(); return; }
+  if (req.url === '/other-port') { res.writeHead(302, { location: 'http://127.0.0.1:1/' }); res.end(); return; }
+  if (req.url === '/scheme-relative') { res.writeHead(302, { location: 'http://127.0.0.1:' + process.env.PORT + '//evil.example/x' }); res.end(); return; }
   if (req.url === '/api/data') { res.setHeader('Content-Type', 'application/json'); res.end(JSON.stringify({ cookie: req.headers.cookie ?? null, authorization: req.headers.authorization ?? null, ok: true })); return; }
   res.setHeader('Content-Type', 'text/html'); res.setHeader('Set-Cookie', 'danger=1');
   res.end('<!doctype html><script>document.body.dataset.live="true";fetch("/api/data").then(r=>r.json()).then(v=>document.body.dataset.api=v.ok)</script><body>Owned preview</body>');
@@ -52,7 +56,7 @@ test('owned preview lifecycle isolates headers, redirects and exact nested navig
     assert.ok(origin);
     assert.match(wrapper.headers.get('content-security-policy') ?? '', new RegExp(`frame-src ${origin.replaceAll('.', '\\.')};`));
     assert.match(await wrapper.text(), /sandbox="allow-scripts"/);
-    const response = await fetch(origin, { headers: { Origin: 'null' } });
+    const response = await fetch(origin + '/home', { headers: { Origin: 'null' } });
     assert.match(await response.text(), /Owned preview/);
     assert.equal(response.headers.get('set-cookie'), null);
     assert.equal(response.headers.get('access-control-allow-origin'), 'null');
@@ -60,6 +64,12 @@ test('owned preview lifecycle isolates headers, redirects and exact nested navig
     const data = await fetch(origin + '/api/data', { headers: { Origin: 'null', Cookie: 'ide=secret', Authorization: 'Bearer secret' } });
     assert.deepEqual(await data.json(), { cookie: null, authorization: null, ok: true });
     assert.equal((await fetch(origin + '/redirect', { redirect: 'manual' })).status, 502);
+    // A root that redirects within the dev server (login, base path, trailing slash) keeps working as a path on the proxy.
+    const root = await fetch(origin + '/', { redirect: 'manual' });
+    assert.deepEqual([root.status, root.headers.get('location')], [302, '/home?next=%2F']);
+    const self = await fetch(origin + '/self', { redirect: 'manual' });
+    assert.deepEqual([self.status, self.headers.get('location')], [301, '/home#top']);
+    for (const escape of ['/other-port', '/scheme-relative']) assert.equal((await fetch(origin + escape, { redirect: 'manual' })).status, 502);
     assert.equal((await fetch(origin, { headers: { Origin: 'https://example.com' } })).status, 403);
     // Fetch may replace Host with the URL authority; node:http sends the actual adversarial header.
     assert.equal(await requestStatus(origin, { Host: 'evil.example' }), 403);
