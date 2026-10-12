@@ -78,8 +78,8 @@ export function carePanel(context: ViewContext): HTMLElement {
   const download = el('a', 'button', t('care.diagnostics')); download.href = '/api/care/diagnostics'; download.download = 'yumeewade-diagnostics.json';
   const panel = card(t('care.title'), el('p', '', t('care.risk')), field(t('care.network'), network), checked, status,
     el('p', '', t('care.scope')), el('p', 'warning', t('care.secret')), field(t('care.external'), external),
-    button(t('care.backup'), async () => { if (!await confirmModal(t('care.backup'), t('care.secret'), t('care.backup'))) return; await request('/api/care/backup', { includeExternal: external.checked }); await refresh(); }),
-    button(t('care.list'), refresh), capacity, field(t('care.destination'), destination), backups,
+    row(button(t('care.backup'), async () => { if (!await confirmModal(t('care.backup'), t('care.secret'), t('care.backup'))) return; await request('/api/care/backup', { includeExternal: external.checked }); await refresh(); }),
+      button(t('care.list'), refresh)), capacity, field(t('care.destination'), destination), backups,
     field(t('care.password'), password), el('p', '', t('care.passwordRule')),
     field(t('care.portableFile'), file), button(t('care.import'), async () => {
       const selected = file.files?.[0]; if (!selected) return;

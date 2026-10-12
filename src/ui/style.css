@@ -268,6 +268,8 @@
 .page-header .related-projects{flex-basis:100%;margin:0}
 /* A standalone button inside a card otherwise sits flush against the next field or note. */
 .card>button:not(:last-child){margin-bottom:10px}
+/* Consecutive standalone buttons in a card sit inline; without a gap they read as one control. */
+.card>button+button{margin-left:8px}
 .task-notes{margin:0 0 4px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .record-detail{margin-top:6px}.task-record{max-height:40vh;overflow:auto}.task-record h4{margin:8px 0 2px}
 .task-list-title{display:inline-flex;align-items:center;gap:6px;min-width:0}
