@@ -12,7 +12,7 @@ import { AppError } from '../shared/errors.ts';
 import { isInside, pathExists, withFileLocks } from '../shared/fsx.ts';
 import { log } from '../shared/log.ts';
 import type { FileView, MergePreview, MergeResult, Task, TaskOverlap, TurnChanges, WorktreeMaintenanceEntry } from '../shared/types.ts';
-import { branchExists, commitAll, ensureRepo, git, gitOk, isLocalSecret, isRepo } from './git.ts';
+import { branchExists, commitAll, ensureRepo, git, gitOk, isLocalSecret, isRepo, operationInProgress } from './git.ts';
 import { RecoveryStore } from './recovery.ts';
 
 const SHA = /^[0-9a-f]{40}$/;
@@ -125,7 +125,8 @@ export class WorktreeService {
     const record = await this.tasks.get(project, task);
     const repo = await this.bodyPath(project);
     if (record.workspace === 'direct') {
-      if (await isRepo(repo)) await commitAll(repo, 'YuMeewADE：開始前儲存');
+      // Working directly in the main folder may be how the user resolves an unfinished merge or rebase; skip the save instead of blocking.
+      if (await isRepo(repo) && !(await operationInProgress(repo))) await commitAll(repo, 'YuMeewADE：開始前儲存');
       return repo;
     }
     const dir = this.ws.worktreeDir(project, task);
@@ -285,6 +286,8 @@ export class WorktreeService {
     return this.mutate(project, async () => {
       const { record, dir } = await this.copy(project, task);
       if (record.workspace === 'direct' || !dir || !(await pathExists(path.join(dir, '.git')))) return undefined;
+      // The AI may have stopped mid-merge or mid-rebase; the next turn must still start (and can finish it), just without a checkpoint.
+      if (await operationInProgress(dir)) return undefined;
       await commitAll(dir, 'YuMeewADE：回合前檢查點');
       return (await gitOk(dir, ['rev-parse', 'HEAD'])).trim();
     });

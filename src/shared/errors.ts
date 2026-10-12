@@ -85,6 +85,7 @@ export const DETAIL_MESSAGES = {
   merge_conflict: '合併時發生衝突，請先在副本解決後再合併',
   merge_excluded: '此副本已排除合併',
   merge_in_progress: '已有尚未完成的合併，請先處理',
+  git_operation_in_progress: '有尚未完成的合併、rebase 或 cherry-pick（或仍標示衝突的檔案），請先完成或中止後再試',
   worktree_exists: '副本仍存在，不能清除紀錄',
   unmerge_unavailable: '主資料夾之後已有變更或未提交的內容，無法自動撤銷這次合併',
   fork_while_running: '作業執行中，請先停止再分支',

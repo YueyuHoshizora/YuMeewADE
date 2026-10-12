@@ -566,3 +566,38 @@ test('maintenance refuses pruning a missing active task copy', () => withTmpWork
   await assert.rejects(wt.pruneStale('P', await wt.prunePreview('P')));
   assert.equal((await wt.maintenance('P')).find(entry => entry.path === dir)?.kind, 'active');
 }));
+
+test('automatic saves never conclude a merge or rebase the user left unfinished', () => withTmpWorkspace(async ws => {
+  const projects = new ProjectLedger(ws);
+  const tasks = new TaskLedger(ws);
+  await projects.create({ name: 'P' });
+  const repo = ws.projectDir('P');
+  await fs.writeFile(path.join(repo, 'content.txt'), 'base\n'); await commitAll(repo, 'base');
+  const main = (await gitOk(repo, ['symbolic-ref', '--short', 'HEAD'])).trim();
+  await gitOk(repo, ['checkout', '-q', '-b', 'topic']); await fs.writeFile(path.join(repo, 'content.txt'), 'topic\n'); await commitAll(repo, 'topic');
+  await gitOk(repo, ['checkout', '-q', main]); await fs.writeFile(path.join(repo, 'content.txt'), 'main\n'); await commitAll(repo, 'main');
+  const wt = new WorktreeService({ ws, projects, tasks, diffBytes: 100_000 });
+  const inProgress = (error: unknown) => error instanceof AppError && error.detail === 'git_operation_in_progress';
+  for (const start of [['merge', 'topic'], ['rebase', 'topic']]) {
+    assert.notEqual((await git(repo, ['-c', 'core.editor=true', ...start])).code, 0);
+    const head = (await gitOk(repo, ['rev-parse', 'HEAD'])).trim();
+    // An isolated task branches from the main folder; saving it now would commit the conflict markers.
+    const isolated = await tasks.create('P', { title: `isolated ${start[0]}` });
+    await assert.rejects(wt.prepare('P', isolated.id), inProgress);
+    // Working directly in the main folder (e.g. asking the AI to resolve it) still starts, without a save.
+    const direct = await tasks.create('P', { title: `direct ${start[0]}`, workspace: 'direct' });
+    assert.equal(await wt.prepare('P', direct.id), repo);
+    assert.equal((await gitOk(repo, ['rev-parse', 'HEAD'])).trim(), head);
+    assert.match(await fs.readFile(path.join(repo, 'content.txt'), 'utf8'), /^<<<<<<< /m);
+    await gitOk(repo, [start[0]!, '--abort']);
+  }
+  // A task copy left mid-merge by the AI skips the turn checkpoint instead of blocking the next turn.
+  const task = await tasks.create('P', { title: 'copy' });
+  const dir = await wt.prepare('P', task.id);
+  await fs.writeFile(path.join(dir, 'content.txt'), 'copy\n'); await commitAll(dir, 'copy');
+  assert.notEqual((await git(dir, ['merge', 'topic'])).code, 0);
+  const copyHead = (await gitOk(dir, ['rev-parse', 'HEAD'])).trim();
+  assert.equal(await wt.checkpoint('P', task.id), undefined);
+  assert.equal((await gitOk(dir, ['rev-parse', 'HEAD'])).trim(), copyHead);
+  assert.equal((await git(dir, ['rev-parse', '--verify', '-q', 'MERGE_HEAD'])).code, 0);
+}));

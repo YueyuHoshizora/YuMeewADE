@@ -94,7 +94,7 @@ export class WorkflowIntegrationService {
     if ((await gitOk(task.workdir, ['rev-parse', 'HEAD'])).trim() !== candidate.head) throw new AppError('conflict');
     const conflicts = (await gitOk(task.workdir, ['diff', '--name-only', '--diff-filter=U', '-z'])).split('\0').filter(Boolean);
     if (conflicts.length) return { ...candidate, conflicts };
-    await commitAll(task.workdir, 'Workflow human integration resolution');
+    await commitAll(task.workdir, 'Workflow human integration resolution', { concludeMerge: true });
     for (const source of candidate.sources) {
       if ((await git(task.workdir, ['merge-base', '--is-ancestor', source.snapshot, 'HEAD'])).code === 0) continue;
       const result = await git(task.workdir, ['-c', 'core.hooksPath=/dev/null', 'merge', '--no-ff', '--no-edit', source.snapshot]);

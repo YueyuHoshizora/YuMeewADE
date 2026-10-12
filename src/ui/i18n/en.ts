@@ -306,7 +306,7 @@ export const en: Record<MessageKey, string> = {
 'detail.archive_project_has_worktrees': 'Merge all working copies before archiving',
 'detail.merge_conflict': 'Merge conflict; resolve it in the working copy before merging again',
 'detail.merge_excluded': 'This working copy is excluded from merging',
-'detail.merge_in_progress': 'Resolve the unfinished merge first',
+'detail.merge_in_progress': 'Resolve the unfinished merge first', 'detail.git_operation_in_progress': 'An unfinished merge, rebase or cherry-pick (or files still marked as conflicted) is in progress; finish or abort it first',
 'detail.worktree_exists': 'Working copy still exists; cannot clear the record',
 'detail.mode_required': 'While running, choose cancel and redo, add context, or continue afterward',
 'effort.low': 'Low', 'effort.medium': 'Medium', 'effort.high': 'High', 'effort.xhigh': 'Extra high', 'effort.max': 'Maximum', 'effort.ultra': 'Ultra',

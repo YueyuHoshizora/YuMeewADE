@@ -1,6 +1,7 @@
 // git 指令包裝：唯一呼叫 git 的地方。環境最小化、不提示輸入、身分缺省時用 YuMeewADE。
 
 import { spawn } from 'node:child_process';
+import { promises as fs } from 'node:fs';
 import { StringDecoder } from 'node:string_decoder';
 import { minimalEnv, terminateTree } from '../cli/process.ts';
 import { AppError } from '../shared/errors.ts';
@@ -84,8 +85,21 @@ export async function hasCommits(dir: string): Promise<boolean> {
   return result.code === 0;
 }
 
-/** 把工作樹全部提交；沒有變更回 false。 */
-export async function commitAll(dir: string, message: string): Promise<boolean> {
+/** A merge, rebase, cherry-pick, revert or `am` that was left unfinished, or files still marked as conflicted. */
+export async function operationInProgress(dir: string): Promise<boolean> {
+  const markers = ['MERGE_HEAD', 'CHERRY_PICK_HEAD', 'REVERT_HEAD', 'rebase-merge', 'rebase-apply'];
+  const files = (await gitOk(dir, ['rev-parse', '--path-format=absolute', ...markers.flatMap(name => ['--git-path', name])])).split('\n').filter(Boolean);
+  for (const file of files) if (await fs.lstat(file).then(() => true, () => false)) return true;
+  return (await gitOk(dir, ['ls-files', '-u', '-z'])) !== '';
+}
+
+/**
+ * 把工作樹全部提交；沒有變更回 false。
+ * An unfinished operation is refused: `add -A` would stage conflict markers and the commit would conclude it on the user's behalf.
+ * `concludeMerge` is only for callers that verified a merge they started themselves is fully resolved.
+ */
+export async function commitAll(dir: string, message: string, options: { concludeMerge?: boolean } = {}): Promise<boolean> {
+  if (!options.concludeMerge && await operationInProgress(dir)) throw new AppError('conflict', 'git_operation_in_progress');
   await gitOk(dir, ['add', '-A']);
   // Only newly staged secrets are excluded; previously tracked configuration keeps its normal history.
   const added = (await gitOk(dir, ['diff', '--cached', '--name-only', '--diff-filter=A', '-z'])).split('\0').filter(Boolean);

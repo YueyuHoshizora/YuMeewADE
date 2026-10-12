@@ -306,7 +306,7 @@ export const fr: Record<MessageKey, string> = {
 'detail.archive_project_has_worktrees': 'Fusionne toutes les copies de travail avant d’archiver',
 'detail.merge_conflict': 'Conflit de fusion ; résous-le dans la copie avant de fusionner à nouveau',
 'detail.merge_excluded': 'Cette copie est exclue de la fusion',
-'detail.merge_in_progress': 'Termine d’abord la fusion en cours',
+'detail.merge_in_progress': 'Termine d’abord la fusion en cours', 'detail.git_operation_in_progress': 'Une fusion, un rebase ou un cherry-pick inachevé (ou des fichiers encore en conflit) est en cours ; termine-le ou annule-le d’abord',
 'detail.worktree_exists': 'La copie existe encore ; impossible d’effacer l’enregistrement',
 'detail.mode_required': 'Pendant l’exécution, choisis de recommencer, de compléter ou de continuer ensuite',
 'effort.low': 'Faible', 'effort.medium': 'Moyen', 'effort.high': 'Élevé', 'effort.xhigh': 'Très élevé', 'effort.max': 'Maximum', 'effort.ultra': 'Ultra',

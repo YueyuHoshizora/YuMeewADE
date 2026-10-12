@@ -306,7 +306,7 @@ export const it: Record<MessageKey, string> = {
 'detail.archive_project_has_worktrees': 'Unisci tutte le copie di lavoro prima di archiviare',
 'detail.merge_conflict': 'Conflitto di unione; risolvilo nella copia prima di unire di nuovo',
 'detail.merge_excluded': 'Questa copia è esclusa dall’unione',
-'detail.merge_in_progress': 'Completa prima l’unione in sospeso',
+'detail.merge_in_progress': 'Completa prima l’unione in sospeso', 'detail.git_operation_in_progress': 'C’è un merge, rebase o cherry-pick non completato (o file ancora in conflitto); completalo o annullalo prima',
 'detail.worktree_exists': 'La copia esiste ancora; impossibile cancellare il record',
 'detail.mode_required': 'Durante l’esecuzione scegli se ricominciare, integrare o continuare dopo',
 'effort.low': 'Basso', 'effort.medium': 'Medio', 'effort.high': 'Alto', 'effort.xhigh': 'Molto alto', 'effort.max': 'Massimo', 'effort.ultra': 'Ultra',
