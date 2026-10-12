@@ -12,6 +12,7 @@ import { AppError } from '../shared/errors.ts';
 import { readJson, writeJson, withFileLocks } from '../shared/fsx.ts';
 import { log } from '../shared/log.ts';
 import { HANDOFF_NOTICE } from './prompt.ts';
+import type { WorkflowIntegrationService } from '../git/workflow-integration.ts';
 
 interface WorkflowDeps {
   ws: Workspace; tasks: TaskLedger; completion: CompletionStore; runner: ChatRunner;
@@ -24,6 +25,8 @@ interface WorkflowDeps {
   prepareBranch: (project: string, task: string) => Promise<void>;
   isTaskBusy: (project: string, task: string) => boolean;
   maxParallel: number;
+  integration?: WorkflowIntegrationService;
+  prepareFrom?: (project: string, task: string, sha: string) => Promise<unknown>;
 }
 interface Job { stopped: boolean; done: Promise<void>; branches: Set<string> }
 const empty = (): WorkflowPlan => ({ dependencies: [], steps: [], cursor: 0, state: 'ready', results: [], revision: 0, nodeStates: {}, branchTasks: {} });
@@ -87,6 +90,7 @@ export class WorkflowService {
       if (JSON.stringify(dependencies) !== JSON.stringify(prior.dependencies)) steps.forEach(s => changed.add(s.id!));
       const at = new Date().toISOString();
       for (const result of prior.results) if (changed.has(result.node ?? prior.steps[result.step ?? 0]?.id ?? '')) result.invalidatedAt ??= at;
+      for (const id of changed) { delete prior.candidates?.[id]; delete prior.branchTasks?.[id]; }
       if (this.isBusy(p, t) || this.deps.isTaskBusy(p, t)) throw new AppError('conflict', 'workflow_busy');
       const plan: WorkflowPlan = { ...prior, dependencies: [...dependencies], steps, revision: prior.revision! + 1, state: 'ready', nodeStates: Object.fromEntries(steps.map(s => [s.id!, changed.has(s.id!) ? 'pending' : prior.nodeStates![s.id!] ?? 'pending'])) };
       delete plan.reason; this.updateCursor(plan); await writeJson(this.file(p, t), plan); this.deps.changed(p, t); return plan;
@@ -150,6 +154,18 @@ export class WorkflowService {
   }
   private async executeNode(p: string, t: string, plan: WorkflowPlan, step: WorkflowStep, job: Job): Promise<void> {
     const id = step.id!; const index = plan.steps.indexOf(step);
+    if (step.kind === 'integration') {
+      if (!this.deps.integration) throw new AppError('unavailable', 'workflow_invalid');
+      const sources = step.upstream!.map(node => this.latest(plan, node)?.task);
+      if (sources.some(task => !task)) throw new AppError('conflict', 'workflow_invalid');
+      plan.nodeStates![id] = 'running';
+      const candidate = await this.deps.integration.create(p, t, step.role, sources as string[]);
+      plan.candidates ??= {}; Object.defineProperty(plan.candidates, id, { value: candidate, enumerable: true, writable: true, configurable: true });
+      Object.defineProperty(plan.branchTasks!, id, { value: candidate.task, enumerable: true, writable: true, configurable: true });
+      plan.nodeStates![id] = candidate.state === 'ready' ? 'succeeded' : 'human';
+      plan.results.push({ step: index, node: id, task: candidate.task, role: step.role, ai: 'git', request: '', at: new Date().toISOString(), ok: candidate.state === 'ready', output: candidate.diff });
+      await writeJson(this.file(p, t), plan); return;
+    }
     const slot = await this.resolveStep(step);
     if (!slot) { plan.nodeStates![id] = 'human'; return; }
     if (job.stopped) return;
@@ -160,7 +176,13 @@ export class WorkflowService {
     }
     job.branches.add(branch);
     if (this.deps.runner.isRunning(p, branch)) throw new AppError('conflict', 'workflow_busy');
-    await this.deps.beforeStart(p, branch); await this.deps.prepareBranch(p, branch);
+    await this.deps.beforeStart(p, branch);
+    const upstream = step.dependsOn!.map(node => plan.candidates?.[node]).filter(candidate => candidate?.state === 'ready');
+    if (upstream.length > 1) throw new AppError('conflict', 'workflow_invalid');
+    if (upstream.length) {
+      if (!this.deps.prepareFrom) throw new AppError('unavailable', 'workflow_invalid');
+      await this.deps.prepareFrom(p, branch, upstream[0]!.head);
+    } else await this.deps.prepareBranch(p, branch);
     const task = await this.deps.tasks.get(p, branch);
     if (task.workspace !== 'isolated' || !task.workdir) throw new AppError('conflict', 'workflow_invalid');
     const otherDirs = await Promise.all([...job.branches].filter(b => b !== branch).map(b => this.deps.tasks.get(p, b)));
@@ -251,9 +273,23 @@ export class WorkflowService {
     if (plan.results.length >= 200) throw new AppError('conflict', 'workflow_invalid');
     const affected = downstreamNodes(plan.steps, plan.steps[from]!.id!); const at = new Date().toISOString();
     for (const result of plan.results) if (affected.has(result.node ?? plan.steps[result.step ?? 0]?.id ?? '')) result.invalidatedAt ??= at;
+    for (const id of affected) { delete plan.candidates?.[id]; delete plan.branchTasks?.[id]; }
     for (const id of affected) plan.nodeStates![id] = 'pending';
     this.updateCursor(plan); plan.revision!++; plan.state = 'ready'; delete plan.reason;
     await writeJson(this.file(p, t), plan); this.deps.changed(p, t); return plan;
+    });
+  }
+  async resolveIntegration(p: string, t: string, node: string, revision: number): Promise<WorkflowPlan> {
+    return withFileLocks([path.join(this.deps.ws.projectDir(p), '.ai', 'workflows')], async () => {
+      const plan = await this.get(p, t);
+      if (this.isBusy(p, t) || revision !== plan.revision || !plan.candidates?.[node] || !this.deps.integration) throw new AppError('conflict');
+      const candidate = await this.deps.integration.resolve(p, plan.candidates[node]);
+      plan.candidates[node] = candidate; plan.revision!++;
+      if (candidate.state === 'ready') {
+        plan.nodeStates![node] = 'succeeded'; plan.state = 'ready'; delete plan.reason;
+        plan.results.push({ node, task: candidate.task, role: plan.steps.find(s => s.id === node)!.role, ai: 'human', request: '', at: new Date().toISOString(), ok: true, output: candidate.diff });
+      }
+      this.updateCursor(plan); await writeJson(this.file(p, t), plan); this.deps.changed(p, t); return plan;
     });
   }
   async stop(p: string, t: string): Promise<void> {

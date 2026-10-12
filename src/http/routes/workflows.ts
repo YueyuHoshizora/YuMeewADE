@@ -34,4 +34,10 @@ export function registerWorkflowRoutes(router: Router, app: App): void {
     if (typeof body.from !== 'number' || !Number.isSafeInteger(body.revision)) throw new AppError('bad_request', 'workflow_invalid');
     return app.workflows.rerun(reqString(body, 'project', 120), reqString(body, 'task', 120), body.from, body.revision as number);
   });
+  router.post('/api/task/workflow/integration/resolve', async ({ body }) => {
+    const project = reqString(body, 'project', 120); const task = reqString(body, 'task', 120);
+    if (!Number.isSafeInteger(body.revision)) throw new AppError('bad_request', 'workflow_invalid');
+    await app.trust.assertExecutable(project);
+    return app.workflows.resolveIntegration(project, task, reqString(body, 'node', 80), body.revision as number);
+  });
 }

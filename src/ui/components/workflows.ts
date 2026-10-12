@@ -27,7 +27,7 @@ export function workflowButton(context: ViewContext, project: string, task: stri
       dependencies.append(field(`${candidate.title} (${candidate.state})`, check));
     }
     const steps = el('div', 'workflow-steps');
-    const editors: { role: HTMLSelectElement; text: HTMLTextAreaElement; review: HTMLInputElement; remove: HTMLButtonElement; id: HTMLInputElement; needs: HTMLInputElement; condition: HTMLInputElement; kind: HTMLSelectElement }[] = [];
+    const editors: { role: HTMLSelectElement; text: HTMLTextAreaElement; review: HTMLInputElement; remove: HTMLButtonElement; id: HTMLInputElement; needs: HTMLInputElement; upstream: HTMLInputElement; condition: HTMLInputElement; kind: HTMLSelectElement }[] = [];
     const roles = Object.keys(context.state.roles.roles).map(value => ({ value, label: value }));
     function addStep(step?: WorkflowStep): void {
       const role = select(roles, step?.role ?? roles[0]?.value ?? '');
@@ -35,12 +35,13 @@ export function workflowButton(context: ViewContext, project: string, task: stri
       const review = el('input'); review.type = 'checkbox'; review.checked = step?.review ?? false;
       const id = el('input'); id.value = step?.id ?? `node-${editors.length + 1}`; id.maxLength = 80;
       const needs = el('input'); needs.value = step?.dependsOn?.join(',') ?? '';
+      const upstream = el('input'); upstream.value = step?.upstream?.join(',') ?? '';
       const condition = el('input'); condition.value = step?.condition ? `${step.condition.node}:${step.condition.outcome}` : '';
-      const kind = select([{ value: 'expert', label: t('workflow.graph.expert') }, { value: 'join', label: t('workflow.graph.join') }], step?.kind ?? 'expert');
+      const kind = select([{ value: 'expert', label: t('workflow.graph.expert') }, { value: 'join', label: t('workflow.graph.join') }, { value: 'integration', label: t('workflow.native.integration') }, { value: 'verify', label: t('verify.run') }, { value: 'review', label: t('workflow.readonly') }], step?.kind ?? 'expert');
       const block = el('section', 'card');
       const remove = button(t('common.remove'), () => { editors.splice(editors.indexOf(editor), 1); block.remove(); });
-      const editor = { role, text, review, remove, id, needs, condition, kind }; editors.push(editor);
-      block.append(field(t('workflow.graph.id'), id), field(t('workflow.graph.needs'), needs), field(t('workflow.graph.condition'), condition), field(t('workflow.graph.kind'), kind), field(t('workflow.role'), role), field(t('workflow.instruction'), text), field(t('workflow.readonly'), review), remove);
+      const editor = { role, text, review, remove, id, needs, upstream, condition, kind }; editors.push(editor);
+      block.append(field(t('workflow.graph.id'), id), field(t('workflow.graph.needs'), needs), field(t('workflow.native.upstream'), upstream), field(t('workflow.graph.condition'), condition), field(t('workflow.graph.kind'), kind), field(t('workflow.role'), role), field(t('workflow.instruction'), text), field(t('workflow.readonly'), review), remove);
       steps.append(block);
     }
     plan.steps.forEach(addStep);
@@ -51,13 +52,20 @@ export function workflowButton(context: ViewContext, project: string, task: stri
       start.disabled = plan.state === 'running' || !plan.steps.some(s => plan.nodeStates?.[s.id!] === 'pending' || plan.nodeStates?.[s.id!] === 'human' && !s.review && context.state.roles.roles[s.role]?.main.cli !== '人');
       stop.hidden = plan.state !== 'running';
       approve.hidden = plan.reason !== 'workflow_human' || !plan.steps.some(s => plan.nodeStates?.[s.id!] === 'human' && context.state.roles.roles[s.role]?.main.cli === '人');
-      editors.forEach(editor => { editor.role.disabled = editor.text.disabled = editor.review.disabled = editor.remove.disabled = editor.id.disabled = editor.needs.disabled = editor.condition.disabled = editor.kind.disabled = plan.state === 'running'; });
+      editors.forEach(editor => { editor.role.disabled = editor.text.disabled = editor.review.disabled = editor.remove.disabled = editor.id.disabled = editor.needs.disabled = editor.upstream.disabled = editor.condition.disabled = editor.kind.disabled = plan.state === 'running'; });
       evidence.hidden = approve.hidden;
       rerunCurrent.disabled = plan.state === 'running' || plan.cursor >= plan.steps.length;
       history.replaceChildren(...plan.results.map((result, index) => {
         const block = el('section', 'card');
         block.append(el('p', result.ok ? '' : 'error-mark', `${result.node ?? (result.step ?? index) + 1} · ${result.role} · ${result.ai} · ${t(result.ok ? 'verify.pass' : 'verify.fail')} · ${result.at}`));
         if (result.task) block.append(button(`${t('workflow.graph.branch')} ${result.task}`, async () => { await context.refresh(); root.closest('dialog')?.close(); location.hash = taskHash(project, result.task!); }));
+        const candidate = result.node ? plan.candidates?.[result.node] : undefined;
+        if (candidate) {
+          block.append(el('pre', '', candidate.conflicts.join('\n')), button(t('copy.diff'), () => { modal(t('copy.diff'), el('pre', '', candidate.diff)); }));
+          if (candidate.state === 'conflict') block.append(button(t('workflow.native.resolve'), async () => {
+            plan = await request<WorkflowPlan>('/api/task/workflow/integration/resolve', { project, task, node: result.node, revision: plan.revision }); renderStatus();
+          }));
+        }
         if (result.invalidatedAt) block.append(el('p', 'muted', t('workflow.invalidated')));
         if (result.evidence) block.append(el('p', '', result.evidence));
         if (result.output) { const details = el('details'); details.append(el('summary', '', t('workflow.output')), el('pre', '', result.output)); block.append(details); }
@@ -81,7 +89,7 @@ export function workflowButton(context: ViewContext, project: string, task: stri
       const graph = editors.map(e => {
         const [node, outcome] = e.condition.value.trim().split(':');
         if (node && outcome !== 'success' && outcome !== 'approved' && outcome !== 'failure') throw new Error(t('workflow.graph.condition'));
-        return { id: e.id.value.trim(), dependsOn: e.needs.value.split(',').map(id => id.trim()).filter(Boolean), kind: e.kind.value as 'expert' | 'join', role: e.role.value, text: e.text.value, review: e.review.checked, ...(node ? { condition: { node, outcome: outcome as 'success' | 'approved' | 'failure' } } : {}) };
+        return { id: e.id.value.trim(), dependsOn: e.needs.value.split(',').map(id => id.trim()).filter(Boolean), upstream: e.upstream.value.split(',').map(id => id.trim()).filter(Boolean), kind: e.kind.value as WorkflowStep['kind'], role: e.role.value, text: e.text.value, review: e.review.checked, ...(node ? { condition: { node, outcome: outcome as 'success' | 'approved' | 'failure' } } : {}) };
       });
       plan = await request<WorkflowPlan>('/api/task/workflow/configure', { project, task, revision: plan.revision, dependencies: choices.filter(c => c.node.checked).map(c => c.id), steps: graph });
       renderStatus(); await context.refresh();
