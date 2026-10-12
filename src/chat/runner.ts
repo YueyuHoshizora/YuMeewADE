@@ -463,7 +463,10 @@ export class ChatRunner extends EventEmitter {
         const row: ChatRow = { at: new Date().toISOString(), role: 'assistant', ai: item.ai, model: item.model ?? '', effort: item.effort ?? '', text: '', ms: 0, request: item.id, error: 'internal' };
         try { await this.deps.store.append(p, t, row); this.publish(p, t, { event: 'row', data: row }); }
         catch (appendError) { log.error('對話收尾失敗', appendError, { project: p, task: t }); }
+        // A failed turn is a finished reply like any other: it needs the human's attention until the page is seen.
+        this.unreadTasks.set(`${p}\0${t}`, { project: p, task: t });
         this.publish(p, t, { event: 'idle', data: { request: item.id } });
+        this.deps.onChanged(p, t);
       }
       const restore = !appended ? dequeued : undefined;
       if (restore) {

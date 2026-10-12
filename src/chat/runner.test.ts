@@ -395,6 +395,7 @@ test('a launch failure after the instruction was recorded closes the turn instea
   const rows = await s.store.readLog('P', s.task.id);
   assert.deepEqual(rows.map(row => row.role === 'assistant' ? [row.role, row.request, row.error] : [row.role, row.request]), [['user', busy.data.request], ['assistant', busy.data.request, 'internal']]);
   assert.equal(s.runner.isRunning('P', s.task.id), false);
+  assert.deepEqual(s.runner.unread(), [{ project: 'P', task: s.task.id }], 'the failed reply waits to be seen like any finished turn');
   await s.send('second'); await s.runner.whenIdle();
   assert.equal((await s.store.readLog('P', s.task.id)).at(-1)?.text, 'ok');
 }));
