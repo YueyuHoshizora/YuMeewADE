@@ -305,6 +305,10 @@ export class WorktreeService {
       await this.verifyFamily(repo, dir);
       const reachable = await git(dir, ['merge-base', '--is-ancestor', sha, 'HEAD']);
       if (reachable.code !== 0) throw new AppError('not_found', 'checkpoint_missing');
+      // reset --hard deletes tracked files the checkpoint lacks, so local secrets added since (even staged or committed by
+      // hand) are first dropped from the index only: as untracked files they survive the reset and the clean below.
+      const added = splitNull(await gitOk(dir, ['diff', '--name-only', '--no-renames', '--diff-filter=A', '-z', sha])).filter(isLocalSecret);
+      if (added.length) await gitOk(dir, ['--literal-pathspecs', 'rm', '-q', '--cached', '--', ...added]);
       await gitOk(dir, ['reset', '-q', '--hard', sha]);
       // Exclude patterns are case-sensitive on Linux; local secrets match in any case (see isLocalSecret).
       await gitOk(dir, ['clean', '-fdq', '-e', '.[eE][nN][vV]*', '-e', '.[nN][pP][mM][rR][cC]', '-e', '.[dD][eE][vV].[vV][aA][rR][sS]*']);

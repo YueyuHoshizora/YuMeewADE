@@ -244,6 +244,15 @@ test('restore returns the copy to a checkpoint and keeps local secrets', () => w
   await assert.rejects(fs.access(path.join(dir, 'b.txt')));
   await assert.rejects(fs.access(path.join(dir, 'c.txt')));
   assert.equal(await fs.readFile(path.join(dir, '.env'), 'utf8'), 'SECRET=1\n');
+  // Secrets the checkpoint never had survive even when force-staged or committed by hand.
+  await fs.writeFile(path.join(dir, '.env.local'), 'STAGED=1\n');
+  await fs.writeFile(path.join(dir, '.ENV.prod'), 'COMMITTED=1\n');
+  await gitOk(dir, ['add', '-f', '.env.local', '.ENV.prod']);
+  await gitOk(dir, ['commit', '-q', '-m', 'secret by hand', '--', '.ENV.prod']);
+  await wt.restore('P', task.id, first!);
+  assert.equal(await fs.readFile(path.join(dir, '.env.local'), 'utf8'), 'STAGED=1\n');
+  assert.equal(await fs.readFile(path.join(dir, '.ENV.prod'), 'utf8'), 'COMMITTED=1\n');
+  assert.equal((await gitOk(dir, ['status', '--porcelain', '--untracked-files=no'])).trim(), '');
   assert.equal((await gitOk(dir, ['rev-parse', 'HEAD'])).trim(), first);
   await assert.rejects(wt.restore('P', task.id, 'f'.repeat(40)), (e: unknown) => e instanceof AppError && e.detail === 'checkpoint_missing');
   await assert.rejects(wt.restore('P', task.id, 'not-a-sha'), (e: unknown) => e instanceof AppError && e.detail === 'checkpoint_missing');
