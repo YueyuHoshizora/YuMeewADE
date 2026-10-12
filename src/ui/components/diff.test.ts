@@ -32,3 +32,7 @@ test('plain unified diff uses its file header', () => {
   assert.equal(file!.added, 1);
   assert.equal(file!.removed, 1);
 });
+test('an unquoted name containing " b/" keeps its full path when there is no +++ line', () => {
+  const [file] = parseDiff('diff --git a/x b/y.png b/x b/y.png\nnew file mode 100644\nindex 0000000..bdc955b\nBinary files /dev/null and b/x b/y.png differ');
+  assert.equal(file!.path, 'x b/y.png');
+});

@@ -32,6 +32,17 @@ function gitPath(value: string): string {
   return new TextDecoder().decode(new Uint8Array(bytes));
 }
 
+/** Path from a `diff --git` header; later `+++`/`rename to` lines override it, so it only decides binary, mode-only and empty files. */
+function headerPath(rest: string): string {
+  // An unquoted name may itself contain " b/". Without a rename git writes the same name twice, which pins the split (as git apply does).
+  if (rest.startsWith('a/') && (rest.length - 5) % 2 === 0) {
+    const name = rest.slice(2, 2 + (rest.length - 5) / 2);
+    if (rest === `a/${name} b/${name}`) return name;
+  }
+  const paths = /^("(?:\\.|[^"\\])*"|a\/.*?) ("(?:\\.|[^"\\])*"|b\/.*)$/.exec(rest);
+  return paths ? gitPath(paths[2]!).replace(/^b\//, '') : rest;
+}
+
 export function parseDiff(value: string): DiffFile[] {
   if (!value.trim()) return [];
   const files: DiffFile[] = [];
@@ -44,8 +55,7 @@ export function parseDiff(value: string): DiffFile[] {
   for (const raw of lines) {
     const text = raw.endsWith('\r') ? raw.slice(0, -1) : raw;
     if (text.startsWith('diff --git ')) {
-      const paths = /^diff --git ("(?:\\.|[^"\\])*"|a\/.*?) ("(?:\\.|[^"\\])*"|b\/.*)$/.exec(text);
-      file = { path: paths ? gitPath(paths[2]!).replace(/^b\//, '') : text.slice(11), added: 0, removed: 0, lines: [] };
+      file = { path: headerPath(text.slice(11)), added: 0, removed: 0, lines: [] };
       files.push(file);
       inHunk = false;
     }
