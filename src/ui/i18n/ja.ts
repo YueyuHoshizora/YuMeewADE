@@ -36,6 +36,7 @@ export const ja: Record<MessageKey, string> = {
 'verify.run': '検証を実行', 'verify.running': '検証中…', 'verify.pass': '成功', 'verify.fail': '失敗',
 'verify.result': '終了コード {code} · {seconds} 秒', 'verify.timedOut': '検証がタイムアウトし、停止しました。',
 'verify.truncated': '出力が長いため末尾のみ表示します。',
+'verify.latest': '最新の検証', 'verify.none': '有効な検証結果はありません（未実行、または作業内容が変更されました）。',
 'verify.sendFix': 'AI に修正を依頼', 'verify.fixPrompt': '検証コマンドが失敗しました（終了コード {code}）。出力の末尾は次のとおりです。原因を調べて修正し、修正後に自分でもう一度検証して確認してください。\n\n```\n{output}\n```',
 'review.add': 'クリックしてこの行にコメント', 'review.placeholder': 'この行へのコメントを入力…', 'review.send': '{n} 件のコメントを AI に送る', 'review.prompt': '以下のコードレビューの指摘に沿って修正し（行番号は変更後のファイルの行）、修正後に自分で検証してください：', 'review.removedAt': '{path}（削除された行、元の {line} 行目）',
 'chat.copy': 'メッセージをコピー', 'chat.retry': '再試行', 'chat.export': 'Markdown をエクスポート',

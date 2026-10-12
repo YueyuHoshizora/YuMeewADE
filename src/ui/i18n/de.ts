@@ -36,6 +36,7 @@ export const de: Record<MessageKey, string> = {
 'verify.run': 'Prüfung starten', 'verify.running': 'Prüfung läuft…', 'verify.pass': 'Bestanden', 'verify.fail': 'Fehlgeschlagen',
 'verify.result': 'Exit-Code {code} · {seconds} s', 'verify.timedOut': 'Zeitlimit überschritten; Prüfung gestoppt.',
 'verify.truncated': 'Ausgabe zu lang; nur das Ende wird angezeigt.',
+'verify.latest': 'Letzte Prüfung', 'verify.none': 'Kein gültiges Prüfergebnis (noch nicht ausgeführt oder Arbeitsinhalt geändert).',
 'verify.sendFix': 'KI zur Korrektur auffordern', 'verify.fixPrompt': 'Der Prüfbefehl ist fehlgeschlagen (Exit-Code {code}). Das Ende der Ausgabe steht unten. Finde die Ursache, behebe sie und führe die Prüfung danach selbst erneut aus.\n\n```\n{output}\n```',
 'review.add': 'Klicken, um diese Zeile zu kommentieren', 'review.placeholder': 'Kommentar zu dieser Zeile…', 'review.send': '{n} Kommentare an die KI senden', 'review.prompt': 'Bitte ändere den Code gemäß den folgenden Review-Kommentaren (Zeilennummern beziehen sich auf die geänderte Datei) und prüfe danach selbst:', 'review.removedAt': '{path} (entfernte Zeile, war Zeile {line})',
 'chat.copy': 'Nachricht kopieren', 'chat.retry': 'Erneut versuchen', 'chat.export': 'Markdown exportieren',

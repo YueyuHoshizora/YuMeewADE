@@ -35,6 +35,7 @@ export const zhTW = {
 'verify.run': '執行驗證', 'verify.running': '驗證中…', 'verify.pass': '通過', 'verify.fail': '失敗',
 'verify.result': '結束碼 {code} · {seconds} 秒', 'verify.timedOut': '驗證逾時，已停止。',
 'verify.truncated': '輸出過長，只顯示最後一段。',
+'verify.latest': '最近驗證', 'verify.none': '目前沒有仍有效的驗證結果（尚未執行，或工作內容已變更）。',
 'verify.sendFix': '交給 AI 修正', 'verify.fixPrompt': '驗證指令失敗（結束碼 {code}），輸出尾段如下。請找出原因並修正，修正後自行再跑一次驗證確認。\n\n```\n{output}\n```',
 'review.add': '點一下對這行留下評論', 'review.placeholder': '寫下對這行的意見…', 'review.send': '把 {n} 則評論交給 AI', 'review.prompt': '請依以下 code review 意見修改（行號為變更後的檔案行號），改完自行驗證：', 'review.removedAt': '{path}（刪除前第 {line} 行）',
 'chat.copy': '複製訊息', 'chat.retry': '重試', 'chat.export': '匯出 Markdown',

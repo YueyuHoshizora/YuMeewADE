@@ -36,6 +36,7 @@ export const zhCN: Record<MessageKey, string> = {
 'verify.run': '执行验证', 'verify.running': '验证中…', 'verify.pass': '通过', 'verify.fail': '失败',
 'verify.result': '退出码 {code} · {seconds} 秒', 'verify.timedOut': '验证超时，已停止。',
 'verify.truncated': '输出过长，只显示最后一段。',
+'verify.latest': '最近验证', 'verify.none': '目前没有仍有效的验证结果（尚未运行，或工作内容已变更）。',
 'verify.sendFix': '交给 AI 修复', 'verify.fixPrompt': '验证命令失败（退出码 {code}），输出尾段如下。请找出原因并修复，修复后自行再跑一次验证确认。\n\n```\n{output}\n```',
 'review.add': '点一下对这行留下评论', 'review.placeholder': '写下对这行的意见…', 'review.send': '把 {n} 条评论交给 AI', 'review.prompt': '请依以下 code review 意见修改（行号为变更后的文件行号），改完自行验证：', 'review.removedAt': '{path}（删除前第 {line} 行）',
 'chat.copy': '复制消息', 'chat.retry': '重试', 'chat.export': '导出 Markdown',

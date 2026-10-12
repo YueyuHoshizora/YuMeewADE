@@ -21,6 +21,7 @@ import { aiLabel, effortLabel, localTime, modelLabel } from '../components/displ
 import { shouldSend } from '../components/composer.ts';
 import { stream } from '../components/stream.ts';
 import { parseDiff, type DiffLine } from '../components/diff.ts';
+import { verificationSteps } from '../components/verification-view.ts';
 import { sideDiff } from '../components/side-diff.ts';
 import { buildReviewPrompt, type ReviewItem } from '../components/review.ts';
 import { openFileBrowser } from '../components/editor-loader.ts';
@@ -124,16 +125,6 @@ export function taskView(
   }
   function hasVerification(): boolean {
     return !!project.verify?.trim() || !!project.checks?.length;
-  }
-  function verificationSteps(result: Pick<VerifyResult, 'steps'>): HTMLElement[] {
-    return (result.steps ?? []).map(step => disclosure(
-      `${step.name} · ${t(step.ok ? 'verify.pass' : 'verify.fail')}`,
-      el('code', '', step.command),
-      el('p', '', t('verify.result', { code: step.exitCode ?? t('common.none'), seconds: (step.ms / 1000).toFixed(1) })),
-      ...(step.timedOut ? [el('p', 'warning', t('verify.timedOut'))] : []),
-      ...(step.truncated ? [el('p', 'warning', t('verify.truncated'))] : []),
-      el('pre', 'verify-output', step.output),
-    ));
   }
   function updateHeaderActions(): void {
     verifyButton.hidden = !hasVerification() || !!busy;

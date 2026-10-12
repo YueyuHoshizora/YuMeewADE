@@ -36,6 +36,7 @@ export const fr: Record<MessageKey, string> = {
 'verify.run': 'Lancer la vérification', 'verify.running': 'Vérification…', 'verify.pass': 'Réussie', 'verify.fail': 'Échouée',
 'verify.result': 'Code de sortie {code} · {seconds} s', 'verify.timedOut': 'Délai dépassé ; vérification arrêtée.',
 'verify.truncated': 'Sortie trop longue ; seule la fin est affichée.',
+'verify.latest': 'Dernière vérification', 'verify.none': 'Aucun résultat de vérification valide (jamais lancée, ou contenu de travail modifié).',
 'verify.sendFix': 'Demander à l’IA de corriger', 'verify.fixPrompt': 'La commande de vérification a échoué (code de sortie {code}). La fin de sa sortie est ci-dessous. Trouve la cause et corrige-la, puis relance toi-même la vérification pour confirmer.\n\n```\n{output}\n```',
 'review.add': 'Cliquer pour commenter cette ligne', 'review.placeholder': 'Écris ton commentaire sur cette ligne…', 'review.send': 'Envoyer {n} commentaires à l’IA', 'review.prompt': 'Modifie le code selon les commentaires de revue ci-dessous (les numéros de ligne renvoient au fichier modifié), puis vérifie toi-même :', 'review.removedAt': '{path} (ligne supprimée, c’était la ligne {line})',
 'chat.copy': 'Copier le message', 'chat.retry': 'Réessayer', 'chat.export': 'Exporter en Markdown',

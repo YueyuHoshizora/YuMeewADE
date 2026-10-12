@@ -1,8 +1,9 @@
-import type { UsageScope, WorkflowPlan, WorkflowStep } from '../../shared/types.ts';
+import type { UsageScope, VerifyStatus, WorkflowPlan, WorkflowStep } from '../../shared/types.ts';
 import { query, request } from '../api.ts';
 import { t } from '../i18n/index.ts';
 import { area, button, confirmModal, el, field, modal, row, run, select, taskHash, UserError, type ViewContext } from './dom.ts';
 import { confirmUsageRound, workflowBudgetRisk } from './usage-history.ts';
+import { readonlyDiffView, verificationStatusView } from './verification-view.ts';
 import { renderWorkflowTimeline } from './workflow-timeline.ts';
 
 export function workflowButton(context: ViewContext, project: string, task: string): HTMLElement {
@@ -73,12 +74,12 @@ export function workflowButton(context: ViewContext, project: string, task: stri
         if (result.evidence) block.append(el('p', '', result.evidence));
         if (result.output) { const details = el('details'); details.append(el('summary', '', t('workflow.output')), el('pre', '', result.output)); block.append(details); }
         if (result.request && !result.reviewSnapshot) block.append(button(t('copy.diff'), async () => {
-          const diff = await request<unknown>(query('/api/chat/turn-diff', { project, task: result.task ?? task, request: result.request }));
-          modal(t('copy.diff'), el('pre', '', JSON.stringify(diff, null, 2)));
+          const diff = await request<{ diff: string; truncated: boolean }>(query('/api/chat/turn-diff', { project, task: result.task ?? task, request: result.request }));
+          modal(t('copy.diff'), readonlyDiffView(diff));
         }));
-        block.append(button(t('verify.run'), async () => {
-          const verification = await request<unknown>(query('/api/task/verify', { project, task: result.task ?? task }));
-          modal(t('verify.run'), el('pre', '', JSON.stringify(verification, null, 2)));
+        block.append(button(t('verify.latest'), async () => {
+          const verification = await request<VerifyStatus | null>(query('/api/task/verify', { project, task: result.task ?? task }));
+          modal(t('verify.latest'), ...verificationStatusView(verification));
         }));
         if ((result.step ?? index) < plan.steps.length) block.append(button(t('workflow.rerun'), async () => {
           if (!await confirmModal(t('workflow.rerun'), t('workflow.preserve'), t('workflow.rerun'))) return;

@@ -36,6 +36,7 @@ export const it: Record<MessageKey, string> = {
 'verify.run': 'Esegui verifica', 'verify.running': 'Verifica in corso…', 'verify.pass': 'Superata', 'verify.fail': 'Fallita',
 'verify.result': 'Codice di uscita {code} · {seconds} s', 'verify.timedOut': 'Tempo scaduto; verifica interrotta.',
 'verify.truncated': 'Output troppo lungo; viene mostrata solo la parte finale.',
+'verify.latest': 'Ultima verifica', 'verify.none': 'Nessun risultato di verifica valido (mai eseguita o contenuto di lavoro modificato).',
 'verify.sendFix': 'Chiedi all’IA di correggere', 'verify.fixPrompt': 'Il comando di verifica è fallito (codice di uscita {code}). In fondo trovi la parte finale dell’output. Trova la causa e correggila, poi riesegui tu stesso la verifica per confermare.\n\n```\n{output}\n```',
 'review.add': 'Clicca per commentare questa riga', 'review.placeholder': 'Scrivi il tuo commento su questa riga…', 'review.send': 'Invia {n} commenti all’IA', 'review.prompt': 'Modifica il codice secondo i commenti di revisione qui sotto (i numeri di riga si riferiscono al file modificato), poi verifica tu stesso:', 'review.removedAt': '{path} (riga rimossa, era la riga {line})',
 'chat.copy': 'Copia messaggio', 'chat.retry': 'Riprova', 'chat.export': 'Esporta Markdown',
