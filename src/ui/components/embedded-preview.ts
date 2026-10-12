@@ -19,7 +19,11 @@ export function embeddedPreviewWorkbench(context: WorkbenchPanelContext): HTMLEl
   let stopped = false;
   const scope = { project: context.project, task: context.task };
   const start = button(t('preview.start'), async () => {
-    const parsed: unknown = JSON.parse(args.value);
+    // Invalid JSON is the user's input, not a network failure: mark the field instead of showing a generic error.
+    let parsed: unknown;
+    try { parsed = JSON.parse(args.value); } catch { parsed = undefined; }
+    if (!Array.isArray(parsed) || parsed.some(arg => typeof arg !== 'string')) { args.setCustomValidity(t('execution.argsInvalid')); args.reportValidity(); return; }
+    args.setCustomValidity('');
     current = await request<EmbeddedPreviewState>('/api/embedded-preview/start', { ...scope, command: command.value, args: parsed });
     render(); poll();
   });
