@@ -565,3 +565,10 @@ body.terminal-dock-open { grid-template-rows: 64px minmax(0, 1fr) var(--terminal
 .find-bar input { width: 220px; }
 ::highlight(find-match) { background-color: rgb(255 214 10 / 35%); }
 ::highlight(find-current) { background-color: rgb(255 150 0 / 80%); color: #000; }
+/* Settings use nearly the whole main column; each tab lays its cards out in as many columns as fit. */
+.page.settings-page { max-width: none; padding-left: 28px; padding-right: 28px; }
+.settings-tabs { position: sticky; top: 0; z-index: 2; gap: 6px; padding: 8px 0; margin-bottom: 4px; border-bottom: 1px solid var(--border); background: var(--c-10121b); }
+.settings-tabs [role="tab"][aria-selected="true"] { border-color: var(--accent); color: var(--accent); }
+.settings-panel:not([hidden]) { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 560px), 1fr)); column-gap: 20px; align-items: start; }
+.settings-panel > .card { margin: 16px 0 0; min-width: 0; }
+.settings-panel > :not(.card) { grid-column: 1 / -1; justify-self: start; margin-top: 16px; }

@@ -236,6 +236,7 @@ export const it: Record<MessageKey, string> = {
 'ai.source': 'Fonte {source} · Aggiornato {at}',
 'ai.fullAccess': 'Accesso completo',
 'ai.warning': 'L’accesso completo salta le conferme per i comandi e l’accesso ai file. L’IA può modificare file ed eseguire comandi con i tuoi permessi. Attivalo solo per progetti attendibili.',
+'settings.tabs': 'Sezioni impostazioni', 'settings.tab.ai': 'Strumenti IA e modelli', 'settings.tab.usage': 'Utilizzo', 'settings.tab.editor': 'Editor', 'settings.tab.maintenance': 'Manutenzione',
 'settings.general': 'Generali',
 'settings.language': 'Lingua',
 'settings.root': 'Cartella radice dell’area di lavoro',

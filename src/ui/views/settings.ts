@@ -14,9 +14,11 @@ import { editorLspPanel } from '../components/editor-lsp-panel.ts';
 import { mountProviderCapabilities } from '../components/provider-capabilities.ts';
 import { openUsageDetails } from '../components/usage-details.ts';
 import { budgetSettingsPanel, usageHistoryPanel } from '../components/usage-history.ts';
+type SettingsTab = 'general' | 'ai' | 'roles' | 'usage' | 'editor' | 'mcp' | 'maintenance' | 'log';
 
 export function settingsView(context: ViewContext, redraw: () => void): View {
   const { state } = context; const node = el('div', 'page settings-page'); node.append(el('h1', '', t('nav.settings')));
+  const sections: Record<SettingsTab, HTMLElement> = { general: el('div'), ai: el('div'), roles: el('div'), usage: el('div'), editor: el('div'), mcp: el('div'), maintenance: el('div'), log: el('div') };
   const language = select(LOCALES.map(value => ({ value, label: localeName(value) })), getLocale());
   language.onchange = () => { setLocale(language.value as Locale); redraw(); };
   const theme = select(
@@ -36,19 +38,17 @@ export function settingsView(context: ViewContext, redraw: () => void): View {
     if (!await confirmModal(t('settings.rootConfirmTitle'), t('settings.rootConfirm', { root: value }), t('settings.rootApply'))) return;
     await api.workspace(value); await context.refresh(); redraw(); toast(t('settings.rootChanged'));
   });
-  node.append(card(t('settings.general'), field(t('settings.language'), language), field(t('settings.theme'), theme), field(t('settings.enterToSend'), enter), field(t('settings.notifications'), notifications), permission, field(t('settings.root'), root), row(...pickRoot, applyRoot), el('p', 'muted', t('settings.rootHint'))));
-  node.append(carePanel(context), archiveButton(context));
-  node.append(cliGuidance(context));
-  node.append(card(t('usage.details'), button(t('usage.details'), () => openUsageDetails(() => context.state, () => context.state.usage, context.refresh, undefined, false, true))), usageHistoryPanel(), budgetSettingsPanel());
-  const mcp = mcpPanel(context); node.append(mcp.node);
-  node.append(editorPreferencesPanel());
-  node.append(editorLspPanel(context));
-  node.append(mountProviderCapabilities());
+  sections.general.append(card(t('settings.general'), field(t('settings.language'), language), field(t('settings.theme'), theme), field(t('settings.enterToSend'), enter), field(t('settings.notifications'), notifications), permission, field(t('settings.root'), root), row(...pickRoot, applyRoot), el('p', 'muted', t('settings.rootHint'))));
+  sections.maintenance.append(carePanel(context), archiveButton(context));
+  sections.ai.append(cliGuidance(context));
+  sections.usage.append(card(t('usage.details'), button(t('usage.details'), () => openUsageDetails(() => context.state, () => context.state.usage, context.refresh, undefined, false, true))), usageHistoryPanel(), budgetSettingsPanel());
+  const mcp = mcpPanel(context); sections.mcp.append(mcp.node);
+  sections.editor.append(editorPreferencesPanel(), editorLspPanel(context));
   const initial = aiPicker(state, state.settings.initial);
   const saveInitial = button(t('common.save'), async () => { await api.settings({ initial: initial.value() }); await context.refresh(); toast(t('common.saved')); }, 'primary');
   // With no usable AI the picker is empty; saving would only send an invalid choice.
   setLocked(saveInitial, !initial.value().ai);
-  node.append(card(t('settings.initial'), initial.node, saveInitial));
+  sections.ai.append(card(t('settings.initial'), initial.node, saveInitial));
   const aiSection = card(t('settings.ais'));
   for (const info of state.ais.filter(ai => ai.name !== 'mock')) {
     const access = input(); access.type = 'checkbox'; access.checked = state.settings.fullAccess[info.name] ?? info.fullAccess;
@@ -70,7 +70,7 @@ export function settingsView(context: ViewContext, redraw: () => void): View {
     ), field(t('ai.fullAccess'), access), el('p', 'warning', t('ai.warning')));
     aiSection.append(panel);
   }
-  node.append(aiSection);
+  sections.ai.append(aiSection);
   const modelsSection = card(t('settings.models'));
   const modelPanels: ((state: AppState) => void)[] = [];
   for (const info of state.ais.filter(ai => ai.name !== 'mock')) {
@@ -119,7 +119,7 @@ export function settingsView(context: ViewContext, redraw: () => void): View {
     } render(); panel.append(list); modelsSection.append(panel);
     modelPanels.push(source => { if (key(source.settings) !== shown) render(); });
   }
-  node.append(modelsSection);
+  sections.ai.append(modelsSection, mountProviderCapabilities());
   const roles = card(t('settings.roles')); const roleList = el('div', 'role-list');
   const drafts: { node: HTMLElement; value: () => RoleInput }[] = [];
   function addRole(role: RoleInput): void {
@@ -144,7 +144,7 @@ export function settingsView(context: ViewContext, redraw: () => void): View {
   roles.append(roleList, row(button(t('settings.addRole'), () => addRole({ name: '', job: '', main: { cli: state.settings.initial.ai, model: state.settings.initial.model, effort: state.settings.initial.effort } })), button(t('common.save'), async () => {
     if (JSON.stringify(context.state.roles.roles) !== rolesBase && !await confirmModal(t('settings.rolesChanged'), t('settings.rolesChangedMessage'), t('settings.rolesOverwrite'))) return;
     await api.roles(drafts.map(d => d.value())); await context.refresh(); buildRoles(context.state); toast(t('common.saved'));
-  }, 'primary'))); node.append(roles);
+  }, 'primary'))); sections.roles.append(roles);
   const logs = el('div', 'op-log'); let alive = true;
   const actionLabel = (action: string) => {
     const key = `log.${action}`; if (hasMessage(key)) return t(key);
@@ -152,7 +152,36 @@ export function settingsView(context: ViewContext, redraw: () => void): View {
     const cut = action.lastIndexOf('.'); const family = `log.${action.slice(0, cut)}`;
     return cut > 0 && hasMessage(family) ? `${t(family)}（${action.slice(cut + 1)}）` : action;
   };
-  void run(async () => { const entries = await api.log(); if (!alive) return; for (const entry of entries) { const line = el('div', 'log-entry'); line.append(el('time', 'muted', localTime(entry.at)), el('strong', '', actionLabel(entry.action)), el('span', '', [entry.project, entry.task].filter(Boolean).join(' / '))); logs.append(line); } if (!entries.length) logs.append(el('p', 'muted', t('common.empty'))); }); node.append(card(t('settings.log'), logs));
+  void run(async () => { const entries = await api.log(); if (!alive) return; for (const entry of entries) { const line = el('div', 'log-entry'); line.append(el('time', 'muted', localTime(entry.at)), el('strong', '', actionLabel(entry.action)), el('span', '', [entry.project, entry.task].filter(Boolean).join(' / '))); logs.append(line); } if (!entries.length) logs.append(el('p', 'muted', t('common.empty'))); }); sections.log.append(card(t('settings.log'), logs));
+  const labels: Record<SettingsTab, string> = { general: t('settings.general'), ai: t('settings.tab.ai'), roles: t('settings.roles'), usage: t('settings.tab.usage'), editor: t('settings.tab.editor'), mcp: t('mcp.title'), maintenance: t('settings.tab.maintenance'), log: t('settings.log') };
+  const keys = Object.keys(sections) as SettingsTab[];
+  const tabList = el('div', 'row settings-tabs'); tabList.setAttribute('role', 'tablist'); tabList.setAttribute('aria-label', t('settings.tabs'));
+  const tabs = keys.map(key => {
+    const tab = button(labels[key], () => showTab(key)); tab.setAttribute('role', 'tab'); tab.id = `settings-tab-${key}`;
+    tab.setAttribute('aria-controls', `settings-panel-${key}`);
+    sections[key].id = `settings-panel-${key}`; sections[key].className = 'settings-panel'; sections[key].setAttribute('role', 'tabpanel'); sections[key].setAttribute('aria-labelledby', tab.id);
+    return tab;
+  });
+  // Language changes redraw the whole page; the chosen section survives that and later visits.
+  function showTab(key: SettingsTab): void {
+    storeLocal('yumeewade.settingsTab', key);
+    for (const [index, other] of keys.entries()) {
+      const selected = other === key;
+      tabs[index]!.setAttribute('aria-selected', String(selected)); tabs[index]!.tabIndex = selected ? 0 : -1; sections[other].hidden = !selected;
+    }
+  }
+  // Roving tabindex: Tab reaches only the selected tab, arrows move between tabs (WAI-ARIA tabs pattern).
+  tabList.addEventListener('keydown', event => {
+    const index = tabs.indexOf(event.target as HTMLButtonElement);
+    if (index < 0 || event.altKey || event.ctrlKey || event.metaKey) return;
+    const last = keys.length - 1;
+    const next = { ArrowRight: index === last ? 0 : index + 1, ArrowLeft: index === 0 ? last : index - 1, Home: 0, End: last }[event.key];
+    if (next === undefined) return;
+    event.preventDefault(); showTab(keys[next]!); tabs[next]!.focus();
+  });
+  tabList.append(...tabs); node.append(tabList, ...keys.map(key => sections[key]));
+  const saved = readLocal<string>('yumeewade.settingsTab', 'general');
+  showTab(keys.find(key => key === saved) ?? 'general');
   return { node, dispose: () => { alive = false; }, update: state => {
     context.state = state; mcp.update(state); for (const follow of modelPanels) follow(state);
     if (JSON.stringify(state.roles.roles) !== rolesBase && formValue() === rolesForm && !roleList.contains(document.activeElement)) buildRoles(state);
