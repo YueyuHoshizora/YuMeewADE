@@ -120,3 +120,11 @@ test('a file name quoted in its decomposed macOS form is found by the composed s
   const reverse = await search(readers([user('menu café')], 'Work'), 'CAFÉ'.normalize('NFD'));
   assert.equal(reverse.hits.length, 1);
 });
+
+test('a question the AI asked, and its options, are found in that reply', async () => {
+  const reply: ChatRow = { role: 'assistant', at: 'now', text: 'Looked around.', ai: 'codex', request: 'r', ms: 1, asks: [{ question: 'Which database?', options: ['SQLite', 'Postgres'], multi: false }] };
+  for (const query of ['which database', 'postgres']) {
+    const result = await search(readers([reply], 'Work'), query);
+    assert.deepEqual(result.hits.map(hit => [hit.kind, hit.index]), [['chat', 0]], query);
+  }
+});

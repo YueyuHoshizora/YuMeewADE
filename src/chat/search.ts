@@ -63,7 +63,9 @@ export async function search(readers: SearchReaders, value: unknown, scanRows = 
         if (++scanned > scanRows) return { hits, truncated: false, partial: true };
         const row = rows[index]!;
         if (row.role !== 'user' && row.role !== 'assistant') continue;
-        const body = row.text.normalize('NFC');
+        // Questions are parsed out of the reply text into `asks`; they are part of what the AI said.
+        const asks = row.role === 'assistant' ? (row.asks ?? []).map(ask => [ask.question, ...ask.options].join('\n')) : [];
+        const body = [row.text, ...asks].filter(Boolean).join('\n').normalize('NFC');
         const match = body.toLocaleLowerCase().indexOf(query);
         if (match === -1) continue;
         hits.push({
