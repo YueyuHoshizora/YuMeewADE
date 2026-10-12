@@ -512,6 +512,8 @@ export function openFileBrowser(project: string, task: string, workspace = activ
   }
   async function search(replace: boolean): Promise<void> {
     const needle = sourceSearch.value; const serial = ++searchSerial;
+    // Nothing to look for: clear old hits instead of asking the core, which rejects an empty query.
+    if (!needle) { output.replaceChildren(); return; }
     // Empty scope fields mean "no filter"; the API rejects empty strings rather than treating them as a wildcard.
     const options = { caseSensitive: String(caseSensitive.checked), wholeWord: String(wholeWord.checked), regex: String(regex.checked), ...(include.value.trim() ? { include: include.value } : {}), ...(exclude.value.trim() ? { exclude: exclude.value } : {}), mode: mode.value, page: String(searchPage), pageSize: '100' };
     const found = await request<EditorSearchResult & { total: number; page: number; pageSize: number; truncated: boolean }>(query('/api/editor/search', { ...ids, q: needle, ...options }));
