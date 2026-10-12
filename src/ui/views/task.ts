@@ -939,8 +939,11 @@ export function taskView(
         await request('/api/task/memo', { project: project.id, task: task.id, text: memo.value.trim() });
         await context.refresh();
       });
-    footer.title = task.memo;
-    footer.replaceChildren(row(state, phase, detail, memo, leaveMemo), metadataEditor(project.id, task, () => context.refresh()));
+    // The ledger keeps the AI's "next" section and the memo log; show the first next step and the newest memo instead of hiding them in a tooltip.
+    // Both sections hold raw markdown lines; drop the list marker the ledger writes in front of each entry.
+    const plain = (line: string) => line.replace(/^\s*[-*+]\s+/, '');
+    const notes = [task.next && labelValue(t('tasks.next'), plain(task.next)), task.memo && labelValue(t('tasks.latestMemo'), plain(task.memo))].filter(Boolean) as string[];
+    footer.replaceChildren(...notes.map(text => { const line = el('p', 'muted task-notes', text); line.title = text; return line; }), row(state, phase, detail, memo, leaveMemo), metadataEditor(project.id, task, () => context.refresh()));
   }
   const composerControls = row(pick.node, upload.node, snippetsButton(draft), contextButton(project.id, task.id, () => pick.value()));
   void run(async () => {
