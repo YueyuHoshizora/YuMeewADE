@@ -722,6 +722,8 @@ export function openFileBrowser(project: string, task: string, workspace = activ
   treeResize.oninput = () => { layout.tree = Number(treeResize.value); applyLayout(); };
   const splitResize = input(); splitResize.type = 'range'; splitResize.min = '20'; splitResize.max = '80'; splitResize.value = '50'; splitResize.setAttribute('aria-label', `${t('ew.split')} · ${t('editorUI.resize')}`);
   splitResize.oninput = () => { if (views.length === 2) { views[0]!.node.style.flex = splitResize.value; views[1]!.node.style.flex = String(100 - Number(splitResize.value)); } schedulePersist(); };
+  // The sliders carry no visible label; show the accessible name as a tooltip too.
+  for (const slider of [resize, treeResize, splitResize]) slider.title = slider.getAttribute('aria-label')!;
   function applyLayout(): void {
     if (!workbenchMount) return;
     workbenchMount.style.width = layout.dock === 'right' ? `${layout.width}%` : '100%'; workbenchMount.dataset.dock = layout.dock;
