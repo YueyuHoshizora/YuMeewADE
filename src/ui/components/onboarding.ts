@@ -33,7 +33,7 @@ export function cliGuidance(context: ViewContext): HTMLElement {
   void run(refresh); return panel;
 }
 export function onboardingBanner(context: ViewContext): HTMLElement {
-  const node = el('aside', 'warning'); node.hidden = true;
+  const node = el('aside', 'warning onboarding-banner'); node.hidden = true;
   const key = `yumeewade.onboarding.dismissed.${context.state.root}`;
   const refresh = async () => {
     if (readLocal(key, false)) return;

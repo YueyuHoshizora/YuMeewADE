@@ -257,6 +257,7 @@
 
 /* A zero flex-basis let the header buttons squeeze the task title to a few characters; reserve room so they wrap instead. */
 .title-input{flex:1 1 220px;min-width:0}
+.onboarding-banner{margin-bottom:16px}
 /* 固定外殼尺寸；只有各畫面的捲動區能捲動，聊天控制項不擠壓整個頁面。 */
 html, body { width: 100%; height: 100%; overflow: hidden; }
 body { height: 100dvh; display: grid; grid-template-rows: 64px minmax(0, 1fr) auto; }
