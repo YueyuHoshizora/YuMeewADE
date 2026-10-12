@@ -26,15 +26,16 @@ export interface WorkbenchEditorHost {
   applyEditsAll(changes: { expected: { path: string; revision: string; text: string }; edits: { from: number; to: number; text: string }[] }[]): boolean;
 }
 export interface WorkbenchPanelContext { project: string; task: string; node: HTMLElement; open(path: string, line?: number): Promise<void>; editor: WorkbenchEditorHost; }
-const panelFactories = new Map<string, (context: WorkbenchPanelContext) => HTMLElement>();
-export function registerWorkbenchPanel(id: string, factory: (context: WorkbenchPanelContext) => HTMLElement): void {
-  panelFactories.set(id, factory);
+/** `taskOnly` panels drive per-task processes (runs, preview servers), which the core only accepts inside a task. */
+const panelFactories = new Map<string, { factory: (context: WorkbenchPanelContext) => HTMLElement; taskOnly: boolean }>();
+export function registerWorkbenchPanel(id: string, factory: (context: WorkbenchPanelContext) => HTMLElement, taskOnly = false): void {
+  panelFactories.set(id, { factory, taskOnly });
   window.dispatchEvent(new Event('yumeewade:workbench-panels'));
 }
-registerWorkbenchPanel('debugger', debuggerWorkbench);
+registerWorkbenchPanel('debugger', debuggerWorkbench, true);
 registerWorkbenchPanel('proposals', mountEditorProposals);
 registerWorkbenchPanel('segments', segmentPanel);
-registerWorkbenchPanel('preview', embeddedPreviewWorkbench);
+registerWorkbenchPanel('preview', embeddedPreviewWorkbench, true);
 let workbenchMount: HTMLElement | undefined;
 let activeWorkspace = '';
 /** A window's recovery record counts as live while its heartbeat (refreshed by the 5 s sync and every edit) is this recent. */
@@ -770,7 +771,7 @@ export function openFileBrowser(project: string, task: string, workspace = activ
     }
   };
   const mountedPanels = new Set<string>();
-  const mountPanels = () => { for (const [id, factory] of panelFactories) if (!mountedPanels.has(id)) { mountedPanels.add(id); panelHost.append(factory({ project, task, node: dialog, open: (path, line) => show(path, line === undefined ? undefined : line - 1), editor })); } };
+  const mountPanels = () => { for (const [id, { factory, taskOnly }] of panelFactories) if (!mountedPanels.has(id) && (task || !taskOnly)) { mountedPanels.add(id); panelHost.append(factory({ project, task, node: dialog, open: (path, line) => show(path, line === undefined ? undefined : line - 1), editor })); } };
   window.addEventListener('yumeewade:workbench-panels', mountPanels); mountPanels();
   const dock = button(t('editorUI.dock'), () => { layout.dock = layout.dock === 'right' ? 'bottom' : 'right'; applyLayout(); });
   let layout = normalizeLayout(undefined);
