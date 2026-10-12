@@ -142,6 +142,36 @@ test('project restore reuses an empty leftover ledger folder but refuses one wit
   assert.deepEqual(await archive.list(), []);
 }));
 
+test('restore refuses archived chat files or attachments that are links to outside files', () => withTmpWorkspace(async (ws, dir) => {
+  const { projects, tasks, archive } = services(ws);
+  await projects.create({ name: 'P' });
+  const outside = path.join(dir, 'outside.jsonl');
+  await fs.writeFile(outside, 'outside original\n');
+  for (const member of ['chat', 'attachment'] as const) {
+    const task = await tasks.create('P', { title: member, workspace: 'direct' });
+    await tasks.archive('P', task.id);
+    const entry = (await archive.list('P')).find(item => item.task === task.id)!;
+    const trash = path.join(ws.projectDir('P'), '.ai', 'trash', entry.key);
+    if (member === 'chat') await fs.symlink(outside, path.join(trash, `${task.id}.jsonl`));
+    else { await fs.mkdir(path.join(trash, 'attachments')); await fs.symlink(outside, path.join(trash, 'attachments', 'image.png')); }
+    await assert.rejects(archive.restore(entry.key, 'P'), { detail: 'archive_unsafe_path' });
+    await assert.rejects(fs.access(ws.taskFile('P', task.id)));
+    assert.equal((await archive.list('P')).some(item => item.key === entry.key), true);
+  }
+  assert.equal(await fs.readFile(outside, 'utf8'), 'outside original\n');
+  // The same check covers a whole archived project's ledger.
+  await fs.rm(path.join(ws.projectDir('P'), '.ai', 'trash'), { recursive: true, force: true });
+  await projects.archive('P');
+  const [projectEntry] = await archive.list();
+  const link = path.join(ws.projectsDir, '.trash', projectEntry!.key, '.ai', 'notes.md');
+  await fs.symlink(outside, link);
+  await assert.rejects(archive.restore(projectEntry!.key), { detail: 'archive_unsafe_path' });
+  await assert.rejects(projects.get('P'));
+  await fs.rm(link);
+  await archive.restore(projectEntry!.key);
+  assert.equal((await projects.get('P')).name, 'P');
+}));
+
 test('recovery ignores incomplete staging names and refuses path escape', () => withTmpWorkspace(async ws => {
   const store = new RecoveryStore(ws);
   const root = path.join(ws.internalDir, 'recovery', 'P', '20260101-001');

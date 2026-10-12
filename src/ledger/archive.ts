@@ -31,6 +31,13 @@ export class ArchiveService {
     if ((await fs.lstat(dir)).isSymbolicLink() || !isInside(await fs.realpath(this.ws.projectsDir), real) || !isInside(await fs.realpath(root), real)) throw new AppError('conflict', 'archive_unsafe_path');
     return dir;
   }
+  /** Restored ledger files are later written and read through ordinary paths; a link would redirect those to outside files. */
+  private async assertNoLinks(target: string): Promise<void> {
+    const stat = await fs.lstat(target).catch((error: NodeJS.ErrnoException) => { if (error.code === 'ENOENT') return null; throw error; });
+    if (!stat) return;
+    if (stat.isSymbolicLink()) throw new AppError('conflict', 'archive_unsafe_path');
+    if (stat.isDirectory()) for (const name of await fs.readdir(target)) await this.assertNoLinks(path.join(target, name));
+  }
   async list(project?: string): Promise<ArchiveEntry[]> {
     if (project) await this.projects.get(project);
     const root = this.root(project);
@@ -99,6 +106,7 @@ export class ArchiveService {
         if (await pathExists(target) && (await fs.readdir(target).catch(() => ['.'])).length === 0) await fs.rmdir(target);
         if (await pathExists(target) || (await this.projects.list()).some(item => item.name.toLowerCase() === entry.name.toLowerCase())) throw new AppError('conflict', 'archive_restore_conflict');
         // External body paths remain untouched; only the ledger directory is moved.
+        await this.assertNoLinks(path.join(source, '.ai'));
         await fs.rename(source, target);
         completedMoves.push([source, target]);
       } else {
@@ -109,7 +117,8 @@ export class ArchiveService {
           if (await pathExists(from)) moves.push([from, this.ws.chatFile(project, entry.task, kind)]);
         }
         if (await pathExists(path.join(source, 'attachments'))) moves.push([path.join(source, 'attachments'), this.ws.attachmentsDir(project, entry.task)]);
-        for (const [, to] of moves) {
+        for (const [from, to] of moves) {
+          await this.assertNoLinks(from);
           if (await fs.lstat(to).catch((error: NodeJS.ErrnoException) => { if (error.code === 'ENOENT') return null; throw error; })) throw new AppError('conflict', 'archive_restore_conflict');
         }
         for (const [, to] of moves) {
