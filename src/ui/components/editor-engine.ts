@@ -1,6 +1,6 @@
 import { basicSetup } from 'codemirror';
 import { EditorState, EditorSelection, Compartment } from '@codemirror/state';
-import { EditorView, keymap, rectangularSelection, crosshairCursor, gutter, GutterMarker, ViewPlugin, Decoration, type DecorationSet } from '@codemirror/view';
+import { EditorView, keymap, rectangularSelection, crosshairCursor, gutter, GutterMarker, ViewPlugin, Decoration, WidgetType, type DecorationSet } from '@codemirror/view';
 import { indentWithTab } from '@codemirror/commands';
 import { javascript } from '@codemirror/lang-javascript';
 import { python } from '@codemirror/lang-python';
@@ -65,6 +65,12 @@ class DebugMarker extends GutterMarker {
   constructor(active: boolean, breakpoint: boolean) { super(); this.active = active; this.breakpoint = breakpoint; }
   override toDOM(): HTMLElement { const marker = document.createElement('span'); marker.className = 'debug-breakpoint'; marker.textContent = this.active ? '▶' : this.breakpoint ? '●' : '·'; return marker; }
 }
+class InlayHintWidget extends WidgetType {
+  readonly label: string;
+  constructor(label: string) { super(); this.label = label; }
+  override eq(other: InlayHintWidget): boolean { return this.label === other.label; }
+  override toDOM(): HTMLElement { const node = document.createElement('span'); node.className = 'editor-inlay-hint'; node.textContent = this.label; node.style.cssText = 'color:var(--muted);background:var(--panel);font-size:.85em;padding:0 .3em;'; return node; }
+}
 
 /** Compatibility surface for the workbench's v3 recovery coordinates; text lives only in CM. */
 export class EditorContent {
@@ -74,6 +80,7 @@ export class EditorContent {
   private preferences = new Compartment();
   private debug = new Compartment();
   private proposals = new Compartment();
+  private inlays = new Compartment();
   private pendingRanges: { from: number; to: number }[] = [];
   private format: EditorResolvedFormatPreferences | undefined;
   private breakpoints: number[] = [];
@@ -132,6 +139,18 @@ export class EditorContent {
       }, { decorations: plugin => plugin.decorations })
     ]) });
   }
+  inlayHints(hints: { line: number; character: number; label: string }[]): void {
+    const doc = this.view.state.doc;
+    const decorations = Decoration.set(hints.flatMap(hint => {
+      if (!Number.isSafeInteger(hint.line) || hint.line < 0 || hint.line >= doc.lines || !Number.isSafeInteger(hint.character) || hint.character < 0) return [];
+      const line = doc.line(hint.line + 1);
+      return [Decoration.widget({ widget: new InlayHintWidget(hint.label), side: 1 }).range(line.from + Math.min(line.length, hint.character))];
+    }), true);
+    this.view.dispatch({ effects: this.inlays.reconfigure(ViewPlugin.fromClass(class {
+      decorations = decorations;
+      update(update: { docChanged: boolean }): void { if (update.docChanged) this.decorations = Decoration.none; }
+    }, { decorations: plugin => plugin.decorations })) });
+  }
   private state(text: string): EditorState {
     return EditorState.create({ doc: text, extensions: [
       basicSetup, syntaxHighlighting(appHighlight), rectangularSelection(), crosshairCursor(),
@@ -139,6 +158,7 @@ export class EditorContent {
       keymap.of([indentWithTab]), this.language.of([]), this.editable.of(EditorState.readOnly.of(true)), this.preferences.of(this.preferenceExtensions()),
       this.debug.of(this.debugExtensions()),
       this.proposals.of([]),
+      this.inlays.of([]),
       lintGutter(), autocompletion({ override: [context => this.complete?.(context) ?? null] }),
       EditorView.theme({
         '&': { backgroundColor: 'var(--panel)', color: 'var(--c-e7eaf4)' },

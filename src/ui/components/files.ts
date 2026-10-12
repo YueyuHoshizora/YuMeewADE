@@ -10,6 +10,7 @@ import { fileHierarchy, normalizeLayout, pendingProposalRanges } from './editor-
 import { preferenceCommand, readPreferences, serializeEol } from './editor-preferences.ts';
 import { debuggerWorkbench } from './debugger.ts';
 import { mountEditorProposals } from './editor-proposals.ts';
+import { renderAdvancedLanguage } from './editor-language-results.ts';
 
 export interface WorkbenchEditorHost {
   snapshot(): { path: string; revision: string; text: string; selection: { from: number; to: number } } | null;
@@ -438,6 +439,8 @@ export function openFileBrowser(project: string, task: string, workspace = activ
     views.forEach((_, index) => capture(index));
     const result = await request<EditorActionResult>('/api/editor/language', { ...ids, path: buffer.document.path, revision: buffer.document.revision, text: buffer.text, buffers: editor.snapshots().map(({ path, revision, text }) => ({ path, revision, text })), line: before.length - 1, character: before.at(-1)!.length, action, newName: newName.value });
     output.replaceChildren(...result.locations.map(location => button(`${location.path}:${location.line + 1}`, () => show(location.path, location.line, location.character))), ...result.diagnostics.map(item => button(`${item.line + 1} ${item.message}`, () => show(buffer.document.path, item.line, item.character))));
+    renderAdvancedLanguage(output, result, buffer.document.path, show);
+    if (buffer.text === snapshot && result.inlayHints) for (const view of views) if (view.path === buffer.document.path) view.content.inlayHints(result.inlayHints);
     for (const symbol of result.symbols ?? []) output.append(button(`${symbol.container ? `${symbol.container} · ` : ''}${symbol.name} · ${symbol.path}:${symbol.line + 1}`, () => show(symbol.path, symbol.line, symbol.character)));
     if (result.hover) output.append(el('pre', '', result.hover));
     for (const suggestion of result.suggestions ?? []) output.append(button(`${suggestion.label} ${suggestion.detail ?? ''}`, () => {
@@ -566,6 +569,7 @@ export function openFileBrowser(project: string, task: string, workspace = activ
   actions.append(send);
   actions.append(button(t('editorUI.outline'), () => language('documentSymbols')), button(t('editorUI.symbols'), () => language('workspaceSymbols')));
   actions.append(button(t('editorFront.history'), localHistory));
+  actions.append(...(['signatureHelp', 'implementation', 'inlayHints', 'callHierarchy'] as const).map(action => button(t(`editorFront.${action}`), () => language(action))));
   filter.oninput = () => void run(load);
   const unload = (event: BeforeUnloadEvent) => { views.forEach((_, index) => capture(index)); persist(); if (editReserved || [...buffers.values()].some(dirty)) { event.preventDefault(); event.returnValue = ''; } };
   window.addEventListener('beforeunload', unload);
