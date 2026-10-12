@@ -16,7 +16,7 @@ import { LanguageClient } from './editor-lsp.ts';
 import type { EditorBufferSnapshot, EditorAction, EditorActionResult, EditorChange, EditorMutation, EditorSearchResult, EditorProblem, EditorRevisionResult, EditorMergeResult } from '../shared/editor-workbench.ts';
 import type { EditorSettings, EditorSettingsPatch, EditorResolvedFormatPreferences } from '../shared/editor-preferences.ts';
 import { EditorSettingsStore, validateEditorCommands, DEFAULT_EDITOR_FORMAT, applyEditorConfig } from './editor-settings.ts';
-import { boundedMatches, type SearchOptions } from './editor-search.ts';
+import { createMatcher, type SearchOptions } from './editor-search.ts';
 import { historyEntries, preserveHistory, type HistoryEntry } from './editor-history.ts';
 import { advancedLanguage } from './editor-language-features.ts';
 import { decodeText, detectEncoding, encodeText, validateEncoding, type EditorEncoding } from './editor-encoding.ts';
@@ -49,6 +49,19 @@ async function assertWritable(file: string): Promise<void> {
 function deniedAsNotWritable(error: unknown): never {
   if (['EACCES', 'EPERM', 'EROFS'].includes((error as NodeJS.ErrnoException)?.code ?? '')) throw new AppError('forbidden', 'editor_not_writable');
   throw error;
+}
+function validRelative(relative: string): void {
+  if (!relative || relative.length > 1000 || relative.includes('\\') || relative.split('/').some(part => !part || part === '..' || part === '.' || part === '.git' || part === '.ai' || isLocalSecret(part)) || path.isAbsolute(relative)) throw new AppError('not_found', 'file_missing');
+}
+/** Resolves a validated relative path under `root`, refusing symlinks on the way and anything whose real path leaves the root. */
+async function resolveIn(root: string, relative: string, listed: boolean): Promise<string> {
+  // A tracked file deleted in the working tree is still listed by `git ls-files --cached`; it is missing, not an error.
+  // Unlisted lookups (history and restoring deleted files) keep the raw ENOENT their callers expect.
+  const missing = listed ? missingAs(() => new AppError('not_found', 'file_missing')) : (error: unknown): never => { throw error; };
+  let file = root;
+  for (const part of relative.split('/')) { file = path.join(file, part); if ((await fs.lstat(file).catch(missing)).isSymbolicLink()) throw new AppError('not_found', 'file_missing'); }
+  if (!isInside(root, await fs.realpath(file).catch(missing))) throw new AppError('not_found', 'file_missing');
+  return file;
 }
 /**
  * Servers such as TypeScript answer a bare position with every global (often 1000+ items) and leave filtering to the client.
@@ -176,16 +189,10 @@ export class EditorService {
     return (await gitOk(root, ['ls-files', '--cached', '--others', '--exclude-standard', '-z'])).split('\0').filter(file => !!file && !isLocalSecret(file));
   }
   private async target(project: string, task: string, relative: string, listed = true): Promise<{ root: string; file: string; readonly: boolean }> {
-    if (!relative || relative.length > 1000 || relative.includes('\\') || relative.split('/').some(part => !part || part === '..' || part === '.' || part === '.git' || part === '.ai' || isLocalSecret(part)) || path.isAbsolute(relative)) throw new AppError('not_found', 'file_missing');
+    validRelative(relative);
     const { root, readonly } = await this.root(project, task);
     if (listed && !(await this.files(root)).includes(relative)) throw new AppError('not_found', 'file_missing');
-    // A tracked file deleted in the working tree is still listed by `git ls-files --cached`; it is missing, not an error.
-    // Unlisted lookups (history and restoring deleted files) keep the raw ENOENT their callers expect.
-    const missing = listed ? missingAs(() => new AppError('not_found', 'file_missing')) : (error: unknown): never => { throw error; };
-    let file = root;
-    for (const part of relative.split('/')) { file = path.join(file, part); if ((await fs.lstat(file).catch(missing)).isSymbolicLink()) throw new AppError('not_found', 'file_missing'); }
-    if (!isInside(root, await fs.realpath(file).catch(missing))) throw new AppError('not_found', 'file_missing');
-    return { root, file, readonly };
+    return { root, file: await resolveIn(root, relative, listed), readonly };
   }
   /** Unlisted lookup (folders, parents of new files) where a path missing on disk is the caller's 404, not an internal error. */
   private existing(project: string, task: string, relative: string): Promise<{ root: string; file: string; readonly: boolean }> {
@@ -617,31 +624,35 @@ export class EditorService {
     const page = options.page ?? 1; const pageSize = options.pageSize ?? 50;
     if (!needle || needle.length > 1000 || !Number.isSafeInteger(page) || page < 1 || page > 10000 || !Number.isSafeInteger(pageSize) || pageSize < 1 || pageSize > 200) throw new AppError('bad_request');
     for (const scopes of [options.include, options.exclude]) if (scopes && (scopes.length > 20 || scopes.some(scope => !scope || scope.length > 1000 || scope.includes('\\') || path.isAbsolute(scope) || scope.split('/').some(part => part === '..' || part === '.' || part === '.git' || part === '.ai' || isLocalSecret(part))))) throw new AppError('bad_request');
-    const { root } = await this.root(project, task);
+    const { root, readonly } = await this.root(project, task);
     const files = (await this.files(root)).sort();
     const hits: EditorSearchResult['hits'] = []; let scanned = 0; let bytes = 0; let total = 0; let truncated = files.length > 10000;
     const deadline = Date.now() + 10000;
-    for (const relative of files.slice(0, 10000)) {
-      if (Date.now() >= deadline) { truncated = true; break; }
-      if (options.include?.length && !options.include.some(scope => relative === scope || relative.startsWith(`${scope}/`))) continue;
-      if (options.exclude?.some(scope => relative === scope || relative.startsWith(`${scope}/`))) continue;
-      let document: EditorDocument;
-      try { const target = await this.target(project, task, relative); document = await this.document(target.file, relative, target.readonly); } catch { continue; }
-      if (document.binary || document.truncated) continue;
-      bytes += document.size; if (bytes > 32 * 1024 * 1024) { truncated = true; break; }
-      scanned++;
-      const value = options.mode === 'files' ? relative : document.text;
-      const matches = await boundedMatches(value, needle, options);
-      truncated ||= matches.truncated;
-      const lineStarts = [0]; if (options.mode !== 'files') for (let index = 0; index < value.length; index++) if (value[index] === '\n') lineStarts.push(index + 1);
-      let line = 0;
-      for (const [offset, end] of matches.offsets) {
-        if (options.mode === 'files' && total >= 0 && offset !== matches.offsets[0]?.[0]) break;
-        while (line + 1 < lineStarts.length && lineStarts[line + 1]! <= offset) line++;
-        if (total >= (page - 1) * pageSize && hits.length < pageSize) hits.push({ path: relative, revision: document.revision, line, character: offset - lineStarts[line]!, end, preview: value.slice(lineStarts[line], value.indexOf('\n', offset) < 0 ? undefined : value.indexOf('\n', offset)).slice(0, 500) });
-        total++;
+    const matcher = createMatcher(needle, options);
+    try {
+      for (const relative of files.slice(0, 10000)) {
+        if (Date.now() >= deadline) { truncated = true; break; }
+        if (options.include?.length && !options.include.some(scope => relative === scope || relative.startsWith(`${scope}/`))) continue;
+        if (options.exclude?.some(scope => relative === scope || relative.startsWith(`${scope}/`))) continue;
+        let document: EditorDocument;
+        // The root and the listing are resolved once per search; per-file lookups only re-check the path itself.
+        try { validRelative(relative); document = await this.document(await resolveIn(root, relative, true), relative, readonly); } catch { continue; }
+        if (document.binary || document.truncated) continue;
+        bytes += document.size; if (bytes > 32 * 1024 * 1024) { truncated = true; break; }
+        scanned++;
+        const value = options.mode === 'files' ? relative : document.text;
+        const matches = await matcher.match(value);
+        truncated ||= matches.truncated;
+        const lineStarts = [0]; if (options.mode !== 'files') for (let index = 0; index < value.length; index++) if (value[index] === '\n') lineStarts.push(index + 1);
+        let line = 0;
+        for (const [offset, end] of matches.offsets) {
+          if (options.mode === 'files' && total >= 0 && offset !== matches.offsets[0]?.[0]) break;
+          while (line + 1 < lineStarts.length && lineStarts[line + 1]! <= offset) line++;
+          if (total >= (page - 1) * pageSize && hits.length < pageSize) hits.push({ path: relative, revision: document.revision, line, character: offset - lineStarts[line]!, end, preview: value.slice(lineStarts[line], value.indexOf('\n', offset) < 0 ? undefined : value.indexOf('\n', offset)).slice(0, 500) });
+          total++;
+        }
       }
-    }
+    } finally { matcher.close(); }
     return { hits, scanned, total, page, pageSize, truncated };
   }
   async folderRevision(project: string, task: string, relative: string): Promise<{ revision: string }> {
