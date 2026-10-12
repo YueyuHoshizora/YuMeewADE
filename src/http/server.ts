@@ -26,17 +26,18 @@ function routerFor(app: App): Router {
 
 export function createHttpServer(app: App): HttpCore {
   let router = routerFor(app);
+  let mounted = app;
   const server = http.createServer((req, res) => {
     router
       .handle(req, res)
-      .then((handled) => (handled ? undefined : serveStatic(UI_DIR, req, res)))
+      .then((handled) => (handled ? undefined : serveStatic(UI_DIR, req, res, mounted.embeddedPreview.gatewayOrigin())))
       .catch((err) => {
         log.error('請求處理失敗', err);
         if (!res.headersSent) res.writeHead(500).end();
       });
   });
   server.keepAliveTimeout = 65_000;
-  return { server, mount: next => { router = routerFor(next); } };
+  return { server, mount: next => { router = routerFor(next); mounted = next; } };
 }
 
 export function listen(server: http.Server, host: string, port: number): Promise<void> {

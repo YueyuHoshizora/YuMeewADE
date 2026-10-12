@@ -138,6 +138,21 @@ function createWindow(url: string): BrowserWindow {
   win.on('close', () => { clearTimeout(stateTimer); saveState(); });
   const origin = new URL(url).origin;
   coreOrigin = origin;
+  // A renderer never supplies this allowlist; only the owned core can name preview origins.
+  win.webContents.session.webRequest.onBeforeRequest((details, callback) => {
+    if (details.resourceType !== 'subFrame' && details.resourceType !== 'mainFrame') { callback({}); return; }
+    let target: URL;
+    try { target = new URL(details.url); } catch { callback({ cancel: true }); return; }
+    if (details.resourceType === 'mainFrame') { callback({ cancel: target.origin !== origin }); return; }
+    if (target.protocol !== 'http:' || target.hostname !== '127.0.0.1' || !target.port) { callback({ cancel: true }); return; }
+    void fetch(`${origin}/api/embedded-preview/origins`, { redirect: 'error', signal: AbortSignal.timeout(2000) })
+      .then(async response => {
+        if (!response.ok) return false;
+        const body: unknown = await response.json();
+        return !!body && typeof body === 'object' && 'origins' in body && Array.isArray(body.origins) && body.origins.includes(target.origin);
+      })
+      .then(allowed => callback({ cancel: !allowed }), () => callback({ cancel: true }));
+  });
   mainWindow = win;
   win.on('focus', () => { mainWindow = win; });
   win.on('closed', () => {

@@ -16,7 +16,7 @@ const MIME: Record<string, string> = {
   '.json': 'application/json; charset=utf-8',
 };
 
-export async function serveStatic(dir: string, req: IncomingMessage, res: ServerResponse): Promise<void> {
+export async function serveStatic(dir: string, req: IncomingMessage, res: ServerResponse, frameOrigin?: string): Promise<void> {
   if (req.method !== 'GET' && req.method !== 'HEAD') {
     res.writeHead(405).end();
     return;
@@ -35,12 +35,14 @@ export async function serveStatic(dir: string, req: IncomingMessage, res: Server
     res.writeHead(404, { 'Content-Type': 'text/plain; charset=utf-8' }).end('404');
     return;
   }
+  const frame = frameOrigin ? new URL(frameOrigin) : undefined;
+  if (frame && (frame.protocol !== 'http:' || frame.hostname !== '127.0.0.1' || !frame.port)) throw new Error('Invalid preview gateway');
   res.writeHead(200, {
     'Content-Type': MIME[path.extname(file)] ?? 'application/octet-stream',
     'Content-Length': data.length,
     'Cache-Control': 'no-store',
     'X-Content-Type-Options': 'nosniff',
-    'Content-Security-Policy': "default-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; connect-src 'self'",
+    'Content-Security-Policy': `default-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; connect-src 'self'; frame-src ${frame?.origin ?? "'none'"}`,
   });
   res.end(req.method === 'HEAD' ? undefined : data);
 }

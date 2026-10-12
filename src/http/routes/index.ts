@@ -26,6 +26,7 @@ import { registerMcpRoutes } from './mcp.ts';
 import { registerTerminalRecoveryRoutes } from './terminal-recovery.ts';
 import { registerEditorProposalRoutes } from './editor-proposals.ts';
 import { registerDebuggerExtensionRoutes } from './debugger-extensions.ts';
+import { registerEmbeddedPreviewRoutes } from './embedded-preview.ts';
 
 export function registerRoutes(router: Router, app: App): void {
   const independentlyGuarded = new Set(['/api/care/backup', '/api/care/restore', '/api/care/export', '/api/care/import', '/api/care/delete', '/api/terminal/output', '/api/debugger/variables']);
@@ -64,4 +65,5 @@ export function registerRoutes(router: Router, app: App): void {
   registerTerminalRecoveryRoutes(router, app);
   registerEditorProposalRoutes(router, app);
   registerDebuggerExtensionRoutes(router, app);
+  registerEmbeddedPreviewRoutes(router, app.embeddedPreview);
 }
