@@ -123,6 +123,8 @@ function terminalSession(project: string, task: string, label: string, recover?:
 }
 
 export interface TerminalTabs { node: HTMLElement; add: () => Promise<void>; restore: (tab: TerminalRecoveryTab) => Promise<void>; dispose: () => void }
+/** Page-unique ids for tab ⇄ panel relationships; several task pages may each hold a terminal set. */
+let tabIds = 0;
 export function embeddedTerminal(project: string, task: string): TerminalTabs {
   const node = el('section', 'terminal-tabs');
   const tabs = row(); tabs.setAttribute('role', 'tablist');
@@ -135,13 +137,27 @@ export function embeddedTerminal(project: string, task: string): TerminalTabs {
     for (const item of sessions) {
       item.terminal.node.hidden = item !== entry;
       item.tab.setAttribute('aria-selected', String(item === entry));
+      // Roving tabindex: Tab reaches only the selected tab, arrows move between tabs (WAI-ARIA tabs pattern).
+      item.tab.tabIndex = item === entry ? 0 : -1;
     }
   }
+  tabs.addEventListener('keydown', event => {
+    const index = sessions.findIndex(item => item.tab === event.target);
+    if (index < 0 || event.altKey || event.ctrlKey || event.metaKey) return;
+    const last = sessions.length - 1;
+    const next = { ArrowRight: index === last ? 0 : index + 1, ArrowLeft: index === 0 ? last : index - 1, Home: 0, End: last }[event.key];
+    if (next === undefined) return;
+    event.preventDefault();
+    select(sessions[next]!); sessions[next]!.tab.focus();
+  });
   async function create(recover?: TerminalRecoveryTab): Promise<void> {
     const label = recover?.label ?? `${t('tools.terminal')} ${++serial}`;
     const terminal = terminalSession(project, task, label, recover);
     const entry: typeof sessions[number] = { label, terminal, tab: button('', () => select(entry)) };
     entry.tab.setAttribute('role', 'tab'); entry.tab.textContent = entry.label;
+    entry.tab.id = `terminal-tab-${++tabIds}`; terminal.node.id = `${entry.tab.id}-panel`;
+    entry.tab.setAttribute('aria-controls', terminal.node.id);
+    terminal.node.setAttribute('role', 'tabpanel'); terminal.node.setAttribute('aria-labelledby', entry.tab.id);
     sessions.push(entry); tabs.append(entry.tab); body.append(terminal.node); select(entry);
     try { await terminal.launch(); }
     catch (error) { sessions.splice(sessions.indexOf(entry), 1); terminal.dispose(); terminal.node.remove(); entry.tab.remove(); selected = undefined; if (sessions.length) select(sessions.at(-1)!); throw error; }
