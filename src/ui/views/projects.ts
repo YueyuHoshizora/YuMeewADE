@@ -356,9 +356,11 @@ export function projectView(context: ViewContext, project: ProjectView, params: 
     overview.append(taskBoard(context, project, tasks => {
       const sections = el('div');
       const active = tasks.filter(task => task.state !== '完成');
-      sections.append(card(t('project.activeTasks'), tasksList(active.filter(task => !project.currentPhase || task.phase === project.currentPhase))));
-      const other = active.filter(task => !!project.currentPhase && task.phase !== project.currentPhase);
-      if (other.length) sections.append(disclosure(t('project.otherTasks'), ...Array.from(new Set(other.map(task => task.phase))).map(phase => disclosure(phase || t('common.none'), tasksList(other.filter(task => task.phase === phase))))));
+      // A task without a phase belongs to no other phase, so it stays in the main list instead of a collapsed "none" group.
+      const inCurrent = (task: (typeof tasks)[number]) => !project.currentPhase || !task.phase || task.phase === project.currentPhase;
+      sections.append(card(t('project.activeTasks'), tasksList(active.filter(inCurrent))));
+      const other = active.filter(task => !inCurrent(task));
+      if (other.length) sections.append(disclosure(t('project.otherTasks'), ...Array.from(new Set(other.map(task => task.phase))).map(phase => disclosure(phase, tasksList(other.filter(task => task.phase === phase))))));
       sections.append(disclosure(t('project.completedTasks'), tasksList(tasks.filter(task => task.state === '完成'))));
       return sections;
     }));
