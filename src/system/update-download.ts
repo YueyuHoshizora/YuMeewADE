@@ -41,12 +41,13 @@ export function releaseURL(repo: string, tag: string, name: string): string {
   if (!/^[A-Za-z0-9_-]+\/[A-Za-z0-9_.-]+$/.test(repo) || !/^v?\d+\.\d+\.\d+(?:-[0-9A-Za-z.-]+)?(?:\+[0-9A-Za-z.-]+)?$/.test(tag) || !/^[A-Za-z0-9_. -]{1,180}$/.test(name) || name.includes('..')) throw new Error('Invalid release');
   return `https://github.com/${repo}/releases/download/${encodeURIComponent(tag)}/${encodeURIComponent(name)}`;
 }
-export async function releaseResponse(url: string, fetcher: typeof fetch = fetch): Promise<Response> {
+export async function releaseResponse(url: string, fetcher: typeof fetch = fetch, signal?: AbortSignal): Promise<Response> {
   let current = url;
   for (let i = 0; i < 5; i++) {
     const parsed = new URL(current);
     if (parsed.protocol !== 'https:' || parsed.username || parsed.password || parsed.port || !['github.com', 'release-assets.githubusercontent.com', 'objects.githubusercontent.com'].includes(parsed.hostname)) throw new Error('Untrusted download host');
-    const response = await fetcher(current, { redirect: 'manual', signal: AbortSignal.timeout(120_000) });
+    const timeout = AbortSignal.timeout(120_000);
+    const response = await fetcher(current, { redirect: 'manual', signal: signal ? AbortSignal.any([signal, timeout]) : timeout });
     if ([301, 302, 303, 307, 308].includes(response.status)) {
       const next = response.headers.get('location'); await response.body?.cancel();
       if (!next) throw new Error('Invalid redirect');
@@ -68,6 +69,8 @@ export class UpdateDownloads {
   private busy = false;
   private closed = false;
   private stored: Stored | undefined;
+  private readonly controller = new AbortController();
+  private pending: Promise<void> | undefined;
   private readonly latest: () => UpdateInfo | undefined;
   private readonly repo: string;
   private readonly trust: UpdateTrust;
@@ -78,16 +81,18 @@ export class UpdateDownloads {
     const latest = this.latest(); const asset = latest?.assets.find(a => a.name === name);
     if (!latest || latest.version !== version || !asset) throw new AppError('bad_request');
     this.busy = true;
+    const cleanup = Promise.withResolvers<void>();
+    this.pending = cleanup.promise;
     let directory: string | undefined;
     try {
-      const metadata = parseManifest(await boundedText(await releaseResponse(releaseURL(this.repo, latest.tag, UPDATE_METADATA), this.fetcher)), version);
+      const metadata = parseManifest(await boundedText(await releaseResponse(releaseURL(this.repo, latest.tag, UPDATE_METADATA), this.fetcher, this.controller.signal)), version);
       const entry = metadata.assets.find(a => a.name === name);
       if (!entry || entry.size !== asset.size) throw new Error('Missing checksum');
       directory = await mkdtemp(path.join(tmpdir(), 'yumeewade-update-'));
       const temporary = path.join(directory, 'download.part'); const file = path.join(directory, name);
       const handle = await open(temporary, 'wx', 0o600); const hash = createHash('sha256'); let size = 0;
       try {
-        const response = await releaseResponse(releaseURL(this.repo, latest.tag, name), this.fetcher);
+        const response = await releaseResponse(releaseURL(this.repo, latest.tag, name), this.fetcher, this.controller.signal);
         for await (const chunk of response.body!) { size += chunk.length; if (size > entry.size || size > MAX || this.closed) throw new Error('Download exceeds limit'); hash.update(chunk); await handle.writeFile(chunk); }
         if (size !== entry.size || hash.digest('hex') !== entry.sha256) throw new Error('Checksum mismatch');
         await handle.sync();
@@ -101,8 +106,10 @@ export class UpdateDownloads {
       this.directory = directory; this.stored = { file, result, signed, sha256: entry.sha256 }; return result;
     } catch (cause) { if (directory) await rm(directory, { recursive: true, force: true }); throw new AppError('internal', undefined, { cause }); }
     finally {
-      this.busy = false;
-      if (this.closed && this.directory) await rm(this.directory, { recursive: true, force: true });
+      try {
+        this.busy = false;
+        if (this.closed && this.directory) await rm(this.directory, { recursive: true, force: true });
+      } finally { this.pending = undefined; cleanup.resolve(); }
     }
   }
   private async verifyPlatform(file: string): Promise<boolean> {
@@ -142,5 +149,10 @@ export class UpdateDownloads {
       if (this.closed && this.directory) await rm(this.directory, { recursive: true, force: true });
     }
   }
-  async close(): Promise<void> { this.closed = true; if (!this.busy && this.directory) await rm(this.directory, { recursive: true, force: true }); }
+  async close(): Promise<void> {
+    this.closed = true;
+    this.controller.abort();
+    await this.pending;
+    if (!this.busy && this.directory) await rm(this.directory, { recursive: true, force: true });
+  }
 }

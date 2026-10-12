@@ -3,6 +3,9 @@ import { test } from 'node:test';
 import { createHash, generateKeyPairSync, sign } from 'node:crypto';
 import { UpdateDownloads, manifestPayload, parseManifest, publisherSignature, releaseResponse, releaseURL, type IntegrityManifest } from './update-download.ts';
 import type { UpdateInfo } from '../shared/types.ts';
+import { promises as fs } from 'node:fs';
+import os from 'node:os';
+import path from 'node:path';
 
 const repo = 'YueyuHoshizora/YuMeewADE';
 const name = 'YuMeewADE.Setup.1.2.0.exe';
@@ -64,3 +67,45 @@ test('checksum mismatch, truncated and oversized downloads never yield a launch 
     finally { await downloads.close(); }
   }
 });
+
+for (const stage of ['metadata', 'asset']) {
+  test(`close aborts stalled ${stage} transfers and awaits partial-file cleanup`, { timeout: 5_000 }, async () => {
+    const started = Promise.withResolvers<AbortSignal>();
+    const before = new Set(await fs.readdir(os.tmpdir()));
+    let streamController: ReadableStreamDefaultController<Uint8Array> | undefined;
+    const fetcher: typeof fetch = async (input, init) => {
+      if (stage === 'asset' && String(input).endsWith('.json')) return new Response(JSON.stringify(metadata));
+      const signal = init?.signal;
+      assert.ok(signal);
+      const body = new ReadableStream<Uint8Array>({
+        start(controller) {
+          streamController = controller;
+          if (stage === 'asset') controller.enqueue(bytes.subarray(0, 1));
+          signal.addEventListener('abort', () => controller.error(signal.reason), { once: true });
+        },
+      });
+      started.resolve(signal);
+      return new Response(body);
+    };
+    const downloads = new UpdateDownloads(() => info, repo, {}, fetcher);
+    const outcome = downloads.download('1.2.0', name).then(() => 'fulfilled', () => 'rejected');
+    const signal = await started.promise;
+    let directories: string[] = [];
+    try {
+      if (stage === 'asset') {
+        directories = (await fs.readdir(os.tmpdir())).filter(entry => entry.startsWith('yumeewade-update-') && !before.has(entry));
+        assert.equal(directories.length, 1);
+        assert.deepEqual(await fs.readdir(path.join(os.tmpdir(), directories[0]!)), ['download.part']);
+      }
+      await downloads.close();
+      assert.equal(signal.aborted, true);
+      assert.equal(await outcome, 'rejected');
+      for (const directory of directories) await assert.rejects(fs.stat(path.join(os.tmpdir(), directory)), { code: 'ENOENT' });
+      await assert.rejects(downloads.download('1.2.0', name));
+    } finally {
+      if (!signal.aborted) streamController?.error(new Error('Test cleanup'));
+      await outcome;
+      await downloads.close();
+    }
+  });
+}
