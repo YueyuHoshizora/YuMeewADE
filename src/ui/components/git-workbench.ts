@@ -168,7 +168,7 @@ export function gitWorkbenchButton(context: ViewContext, project: string, task?:
         if (await confirmModal(t('gitPrecision.bypass'), t('gitPrecision.confirmBypass'), t('workbench.commit'))) await mutate('commit', { message: message.value, bypassHooks: true, confirmed: true });
       })), taskComparisonButton(project));
       const branch = input(); branch.maxLength = 200;
-      const existing = select(state.branches.map(name => ({ value: name, label: name })), state.branch);
+      const existing = select(state.branches.map(name => ({ value: name, label: name })), state.branch); existing.setAttribute('aria-label', t('workbench.branch'));
       panel.append(field(t('workbench.branch'), branch), row(button(t('workbench.create'), () => mutate('branch', { name: branch.value, create: true })), existing, button(t('workbench.switch'), () => mutate('branch', { name: existing.value, create: false }))));
       panel.append(row(button(t('gitRemote.rename'), () => mutate('manage-branch', { action: 'rename', name: existing.value, newName: branch.value })), ...[false, true].map(force => button(t(force ? 'gitRemote.force' : 'gitRemote.delete'), async () => {
         if (!await confirmModal(t('gitRemote.delete'), existing.value, t('gitRemote.delete'))) return;

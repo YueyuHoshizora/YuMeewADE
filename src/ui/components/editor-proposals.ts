@@ -3,12 +3,12 @@ import type { ProviderCapability } from '../../shared/types.ts';
 import type { WorkbenchPanelContext } from './files.ts';
 import { request, query } from '../api.ts';
 import { t } from '../i18n/index.ts';
-import { el, button, area, confirmModal, errorMessage, UserError } from './dom.ts';
+import { el, button, area, confirmModal, errorMessage, input, UserError } from './dom.ts';
 export function mountEditorProposals(context: WorkbenchPanelContext): HTMLElement {
   const { project, task, editor } = context;
   const node = el('section'); const instruction = area('', t('proposal.instruction'));
-  const provider = el('select'); const model = el('input'); model.placeholder = t('proposal.model');
-  const effort = el('input'); effort.placeholder = t('proposal.effort');
+  const provider = el('select'); provider.setAttribute('aria-label', t('ai.label')); const model = input('', t('proposal.model'));
+  const effort = input('', t('proposal.effort'));
   const files = el('fieldset'); const results = el('div'); const status = el('p'); status.setAttribute('role', 'status');
   const selected = new Set<string>(); let busy = false;
   const refreshFiles = () => {

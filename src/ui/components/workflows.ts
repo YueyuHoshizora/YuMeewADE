@@ -117,7 +117,7 @@ export function workflowButton(context: ViewContext, project: string, task: stri
     });
     const history = el('div', 'workflow-results');
     const timeline = el('div');
-    const evidence = area(''); evidence.maxLength = 10000; evidence.placeholder = t('review.evidence');
+    const evidence = area('', t('review.evidence')); evidence.maxLength = 10000;
     root.append(el('p', 'muted', t('workflow.help')), status, risk, field(t('workflow.dependencies'), dependencies), steps,
       button(t('workflow.add'), () => addStep()), evidence, row(save, start, stop, approve, rerunCurrent), timeline, history);
     root.prepend(el('p', 'muted', t('workflow.graph.help')));
