@@ -299,7 +299,7 @@ export const de: Record<MessageKey, string> = {
 'detail.worktree_wrong_branch': 'Die Kopie liegt nicht auf ihrem Aufgabenzweig; Archivierung gestoppt, damit keine Arbeit auf einem anderen Zweig landet. Zweig der Kopie zuerst korrigieren',
 'detail.worktree_dirty': 'Arbeitskopie enthält ungespeicherte Änderungen; zuerst mergen oder manuell bereinigen',
 'detail.merge_while_running': 'Laufende Aufgabe vor dem Merge stoppen',
-'detail.rollback_while_running': 'Laufende Aufgabe vor dem Zurücksetzen stoppen',
+'detail.rollback_while_running': 'Laufende Aufgabe vor dem Zurücksetzen stoppen', 'detail.complete_while_running': "Die Aufgabe läuft noch; warte, bis die KI fertig ist, oder stoppe sie, bevor du sie als erledigt markierst",
 'detail.checkpoint_missing': 'Kein Checkpoint für diese Anweisung gefunden; Zurücksetzen nicht möglich',
 'detail.remove_while_running': 'Arbeitskopie kann während der Ausführung nicht entfernt werden',
 'detail.archive_while_running': 'Laufende Aufgabe kann nicht archiviert werden',

@@ -299,7 +299,7 @@ export const en: Record<MessageKey, string> = {
 'detail.worktree_wrong_branch': 'The copy is not on its task branch; archiving stopped so work is not saved onto another branch. Fix the copy’s branch first',
 'detail.worktree_dirty': 'Working copy has unsaved changes; merge or clean it up manually first',
 'detail.merge_while_running': 'Stop the running task before merging',
-'detail.rollback_while_running': 'Stop the running task before restoring',
+'detail.rollback_while_running': 'Stop the running task before restoring', 'detail.complete_while_running': "The task is running; wait for the AI to finish or stop it before marking it done",
 'detail.checkpoint_missing': 'No checkpoint found for this instruction; cannot restore',
 'detail.remove_while_running': 'Cannot remove the working copy while the task is running',
 'detail.archive_while_running': 'Cannot archive a running task',

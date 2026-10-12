@@ -299,7 +299,7 @@ export const zhCN: Record<MessageKey, string> = {
 'detail.worktree_wrong_branch': '副本当前不在作业分支上，为避免成果误存到别的分支，已停止封存；请先处理副本的分支',
 'detail.worktree_dirty': '副本有未保存的更改，请先合并或手动整理',
 'detail.merge_while_running': '任务运行中，请先停止再合并',
-'detail.rollback_while_running': '任务运行中，请先停止再还原',
+'detail.rollback_while_running': '任务运行中，请先停止再还原', 'detail.complete_while_running': "任务运行中，请等 AI 完成或先停止再标为完成",
 'detail.checkpoint_missing': '找不到这条指示的检查点，无法还原',
 'detail.remove_while_running': '任务运行中，不能移除副本',
 'detail.archive_while_running': '任务运行中，不能归档',

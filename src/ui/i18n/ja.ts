@@ -299,7 +299,7 @@ export const ja: Record<MessageKey, string> = {
 'detail.worktree_wrong_branch': 'コピーがタスクのブランチにありません。成果が別のブランチに保存されないよう、アーカイブを中止しました。先にコピーのブランチを直してください',
 'detail.worktree_dirty': '作業コピーに未保存の変更があります。先にマージするか手動で整理してください',
 'detail.merge_while_running': '実行中のタスクを停止してからマージしてください',
-'detail.rollback_while_running': '実行中のタスクを停止してから戻してください',
+'detail.rollback_while_running': '実行中のタスクを停止してから戻してください', 'detail.complete_while_running': "タスクが実行中です。AI の完了を待つか停止してから完了にしてください",
 'detail.checkpoint_missing': 'この指示のチェックポイントが見つからず、戻せません',
 'detail.remove_while_running': 'タスク実行中は作業コピーを削除できません',
 'detail.archive_while_running': '実行中のタスクはアーカイブできません',

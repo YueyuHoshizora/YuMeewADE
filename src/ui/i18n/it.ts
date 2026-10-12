@@ -299,7 +299,7 @@ export const it: Record<MessageKey, string> = {
 'detail.worktree_wrong_branch': 'La copia non è sul ramo dell’attività; archiviazione interrotta per non salvare il lavoro su un altro ramo. Correggi prima il ramo della copia',
 'detail.worktree_dirty': 'La copia contiene modifiche non salvate; prima uniscila o sistemala manualmente',
 'detail.merge_while_running': 'Interrompi l’attività in corso prima di unire',
-'detail.rollback_while_running': 'Interrompi l’attività in corso prima di ripristinare',
+'detail.rollback_while_running': 'Interrompi l’attività in corso prima di ripristinare', 'detail.complete_while_running': "L’attività è in corso: attendi che l’IA finisca o interrompila prima di segnarla come completata",
 'detail.checkpoint_missing': 'Nessun checkpoint per questa istruzione; ripristino impossibile',
 'detail.remove_while_running': 'Impossibile rimuovere la copia durante l’esecuzione',
 'detail.archive_while_running': 'Impossibile archiviare un’attività in corso',

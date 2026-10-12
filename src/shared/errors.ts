@@ -104,6 +104,7 @@ export const DETAIL_MESSAGES = {
   // ---- BackendChat ----
   mode_required: '執行中送出請選擇取消重做、補充說明或做完接續',
   rollback_while_running: '作業執行中，請先停止再還原',
+  complete_while_running: '作業執行中，請等 AI 做完或先停止再標為完成',
   checkpoint_missing: '找不到這則指示的檢查點，無法還原',
   archive_unsafe_path: '封存路徑不安全，已拒絕操作',
   archive_restore_conflict: '還原名稱或檔案衝突，不會覆寫',

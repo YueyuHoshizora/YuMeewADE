@@ -52,9 +52,10 @@ test('bulk archive retains per-task running and working-copy safeguards', async 
     assert.equal((await s.api('POST', '/api/chat/send', { project: p.id, task: running.id, ai: 'mock', text: '[slow] go' })).status, 200);
     const blocked = await s.api('POST', '/api/task/bulk', { project: p.id, tasks: [running.id], action: { kind: 'archive', confirm: true } });
     assert.deepEqual(blocked.json, { results: [{ task: running.id, ok: false, error: 'conflict', detail: 'archive_while_running' }] });
-    // The existing single-task update path permits human state changes while a run is active.
-    assert.equal((await s.api('POST', '/api/task/bulk', { project: p.id, tasks: [running.id], action: { kind: 'state', value: '完成' } })).status, 200);
-    assert.equal(await s.app.completion.isApproved(p.id, running.id), true);
+    // Like the single-task update path, other human state changes still apply while a run is active; completion waits for it.
+    assert.deepEqual((await s.api('POST', '/api/task/bulk', { project: p.id, tasks: [running.id], action: { kind: 'state', value: '暫停' } })).json, { results: [{ task: running.id, ok: true }] });
+    assert.deepEqual((await s.api('POST', '/api/task/bulk', { project: p.id, tasks: [running.id], action: { kind: 'state', value: '完成' } })).json, { results: [{ task: running.id, ok: false, error: 'conflict', detail: 'complete_while_running' }] });
+    assert.equal(await s.app.completion.isApproved(p.id, running.id), false);
     await s.api('POST', '/api/chat/stop', { project: p.id, task: running.id });
     await s.app.runner.whenIdle();
   } finally { await s.close(); }

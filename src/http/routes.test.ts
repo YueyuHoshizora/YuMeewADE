@@ -504,3 +504,25 @@ test('a malformed percent-encoded page path is a bad request, not an internal er
     for (const pathname of ['/%E0%A4%A', '/assets/%ZZ']) assert.equal((await fetch(s.base + pathname)).status, 400);
   } finally { await s.close(); }
 });
+
+test('a task cannot be confirmed done while its AI turn is still running', async () => {
+  const { server: s, project: p, task: t } = await setup();
+  const ids = { project: p.id, task: t.id };
+  try {
+    assert.equal((await s.api('POST', '/api/chat/send', { ...ids, ai: 'mock', text: 'work [slow]' })).status, 200);
+    for (const [route, body] of [
+      ['/api/task/completion', { ...ids, action: 'approve' }],
+      ['/api/task/update', { ...ids, patch: { state: '完成' } }],
+      ['/api/task/bulk', { project: p.id, tasks: [t.id], action: { kind: 'state', value: '完成' } }],
+    ] as const) {
+      const response = await s.api('POST', route, body);
+      const detail = route === '/api/task/bulk' ? (response.json as { results: { detail?: string }[] }).results[0]?.detail : (response.json as { detail?: string }).detail;
+      assert.equal(detail, 'complete_while_running', route);
+    }
+    assert.notEqual((await s.app.tasks.get(p.id, t.id)).state, '完成');
+    assert.equal(await s.app.completion.isApproved(p.id, t.id), false);
+    await s.app.runner.stop(p.id, t.id); await s.app.runner.whenIdle();
+    assert.equal((await s.api('POST', '/api/task/completion', { ...ids, action: 'approve' })).status, 200);
+    assert.equal(await s.app.completion.isApproved(p.id, t.id), true);
+  } finally { await s.close(); }
+});

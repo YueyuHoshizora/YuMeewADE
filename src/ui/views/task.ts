@@ -909,9 +909,11 @@ export function taskView(
   let metadata: { key: string; node: HTMLElement } | undefined;
   function renderFooter(): void {
     const state = select(TASK_STATES.map(value => ({ value, label: t(`state.${value}`) })), task.state);
+    // A refused change (e.g. 完成 while the AI is still running) must not leave the menu showing a state the task lacks.
     state.onchange = () => {
       void run(async () => {
-        await request('/api/task/update', { project: project.id, task: task.id, patch: { state: state.value } });
+        try { await request('/api/task/update', { project: project.id, task: task.id, patch: { state: state.value } }); }
+        catch (error) { state.value = task.state; throw error; }
         await context.refresh();
       });
     };
@@ -921,7 +923,8 @@ export function taskView(
       task.phase);
     phase.onchange = () => {
       void run(async () => {
-        await request('/api/task/update', { project: project.id, task: task.id, patch: { phase: phase.value } });
+        try { await request('/api/task/update', { project: project.id, task: task.id, patch: { phase: phase.value } }); }
+        catch (error) { phase.value = task.phase; throw error; }
         await context.refresh();
       });
     };

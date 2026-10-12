@@ -299,7 +299,7 @@ export const fr: Record<MessageKey, string> = {
 'detail.worktree_wrong_branch': 'La copie n’est pas sur sa branche de tâche ; archivage arrêté pour ne pas enregistrer le travail sur une autre branche. Corrige d’abord la branche de la copie',
 'detail.worktree_dirty': 'La copie contient des modifications non enregistrées ; fusionne ou nettoie-la manuellement d’abord',
 'detail.merge_while_running': 'Arrête la tâche en cours avant de fusionner',
-'detail.rollback_while_running': 'Arrête la tâche en cours avant de restaurer',
+'detail.rollback_while_running': 'Arrête la tâche en cours avant de restaurer', 'detail.complete_while_running': "La tâche est en cours : attends que l’IA ait fini ou arrête-la avant de la marquer comme terminée",
 'detail.checkpoint_missing': 'Aucun point de contrôle pour cette instruction ; restauration impossible',
 'detail.remove_while_running': 'Impossible de retirer la copie pendant l’exécution',
 'detail.archive_while_running': 'Impossible d’archiver une tâche en cours',

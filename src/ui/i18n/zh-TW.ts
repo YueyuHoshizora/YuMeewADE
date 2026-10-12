@@ -142,7 +142,7 @@ export const zhTW = {
 'detail.worktree_wrong_branch': '副本目前不在作業分支上，為避免成果誤存到別的分支，已停止封存；請先處理副本的分支',
 'detail.worktree_dirty': '副本有未儲存的變更，請先合併或手動整理',
 'detail.merge_while_running': '作業執行中，請先停止再合併',
-'detail.rollback_while_running': '作業執行中，請先停止再還原',
+'detail.rollback_while_running': '作業執行中，請先停止再還原', 'detail.complete_while_running': "作業執行中，請等 AI 做完或先停止再標為完成",
 'detail.checkpoint_missing': '找不到這則指示的檢查點，無法還原',
 'detail.remove_while_running': '作業執行中，不能移除副本',
 'detail.archive_while_running': '作業執行中，不能封存',

@@ -192,6 +192,8 @@ export function registerLedgerRoutes(router: Router, app: App): void {
     const fields = ['title', 'state', 'phase', 'role', 'parent', 'cli', 'model', 'effort', 'question', 'due', 'tags'];
     if (Object.keys(patch).some((key) => !fields.includes(key))) throw new AppError('bad_request');
     if (patch.role && !(await app.roles()).roles[patch.role]) throw new AppError('bad_request', 'role_missing');
+    // Choosing 完成 approves completion, so it follows the same rule as the confirmation button.
+    if (patch.state === '完成' && app.runner.isBusy(project, task)) throw new AppError('conflict', 'complete_while_running');
     const result = await app.tasks.update(project, task, patch);
     if (patch.state !== undefined) {
       if (patch.state === '完成') await app.completion.approve(project, task);
@@ -229,6 +231,7 @@ export function registerLedgerRoutes(router: Router, app: App): void {
           const patch: TaskPatch = validated.kind === 'state' ? { state: validated.value }
             : validated.kind === 'phase' ? { phase: validated.value }
             : validated.kind === 'due' ? { due: validated.value } : {};
+          if (patch.state === '完成' && app.runner.isBusy(project, task)) throw new AppError('conflict', 'complete_while_running');
           await app.tasks.update(project, task, patch, validated.kind === 'addTag' || validated.kind === 'removeTag' ? { tag: validated.value, add: validated.kind === 'addTag' } : undefined);
           if (patch.state === '完成') await app.completion.approve(project, task);
           else if (patch.state !== undefined) await app.completion.revoke(project, task);
@@ -271,6 +274,8 @@ export function registerLedgerRoutes(router: Router, app: App): void {
     const current = await app.tasks.get(project, task);
     let result = current;
     if (body.action === 'approve') {
+      // A turn still running can uncheck steps or ask a question; the human confirms finished work, not work in progress.
+      if (app.runner.isBusy(project, task)) throw new AppError('conflict', 'complete_while_running');
       result = await app.tasks.update(project, task, { state: '完成' });
       await app.completion.approve(project, task);
     } else if (body.action === 'continue') {
