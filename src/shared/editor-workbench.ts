@@ -1,7 +1,8 @@
 import type { EditorDocument, EditorLocation, EditorDiagnostic } from './types.ts';
 export type EditorEncoding = 'UTF8' | 'UTF8-BOM' | 'UTF16LE' | 'UTF16BE';
 export interface EditorSegment { text: string; revision: string; offset: number; end: number; size: number; encoding: EditorEncoding }
-export interface EditorHistoryEntry { id: string; path: string; revision: string; text: string; timestamp: number; reason: 'save' | 'apply' | 'mutate' | 'segment'; encoding?: EditorEncoding; range?: { offset: number; end: number } }
+/** `range.sha256` hashes the bytes the edit wrote at `range`: a restore only applies while those exact bytes are still there. */
+export interface EditorHistoryEntry { id: string; path: string; revision: string; text: string; timestamp: number; reason: 'save' | 'apply' | 'mutate' | 'segment'; encoding?: EditorEncoding; range?: { offset: number; end: number; sha256?: string } }
 export type EditorAction = 'definition' | 'references' | 'diagnostics' | 'completion' | 'hover' | 'rename' | 'format' | 'codeActions' | 'documentSymbols' | 'workspaceSymbols' | 'signatureHelp' | 'implementation' | 'callHierarchy' | 'inlayHints';
 export interface EditorBufferSnapshot { path: string; revision: string; text: string }
 export interface EditorChange { path: string; revision: string; text: string; baseText?: string }

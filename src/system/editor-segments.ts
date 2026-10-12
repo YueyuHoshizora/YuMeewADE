@@ -1,7 +1,7 @@
 import { promises as fs, constants } from 'node:fs';
 import type { FileHandle } from 'node:fs/promises';
 import path from 'node:path';
-import { randomUUID } from 'node:crypto';
+import { createHash, randomUUID } from 'node:crypto';
 import { AppError } from '../shared/errors.ts';
 import { decodeText, detectEncoding, encodeText, type EditorEncoding } from './editor-encoding.ts';
 import type { EditorSegment } from '../shared/editor-workbench.ts';
@@ -31,7 +31,7 @@ export async function readSegment(file: string, offset: number, length: number, 
     return { text, revision, offset, end: offset + count, size: stat.size, encoding };
   } finally { await handle.close(); }
 }
-export async function patchSegment(file: string, offset: number, end: number, text: string, encoding: EditorEncoding, check: () => Promise<void>, preserve: (segment: { text: string; end: number }) => Promise<void>): Promise<void> {
+export async function patchSegment(file: string, offset: number, end: number, text: string, encoding: EditorEncoding, check: () => Promise<void>, preserve: (segment: { text: string; end: number; sha256: string }) => Promise<void>, expectedSha256?: string): Promise<void> {
   if (!Number.isSafeInteger(offset) || !Number.isSafeInteger(end) || offset < 0 || end < offset || end - offset > 262144 || Buffer.byteLength(text) > 262144) throw new AppError('bad_request');
   if (encoding.startsWith('UTF16') && (offset % 2 !== 0 || end % 2 !== 0)) throw new AppError('bad_request');
   const source = await fs.open(file, constants.O_RDONLY | constants.O_NOFOLLOW); const tmp = path.join(path.dirname(file), `.editor-${randomUUID()}.tmp`); let output;
@@ -43,6 +43,8 @@ export async function patchSegment(file: string, offset: number, end: number, te
     if (offset > 0 && offset < bomSize) throw new AppError('bad_request');
     const before = Buffer.alloc(end - offset); let read = 0;
     while (read < before.length) { const result = await source.read(before, read, before.length - read, offset + read); if (!result.bytesRead) throw new AppError('conflict', 'editor_conflict'); read += result.bytesRead; }
+    // A history restore names the bytes it expects to replace; anything else there means later edits moved or changed them.
+    if (expectedSha256 !== undefined && createHash('sha256').update(before).digest('hex') !== expectedSha256) throw new AppError('conflict', 'editor_conflict');
     const oldText = decodeText(before, encoding, offset === 0);
     const replacement = encodeText(text, encoding, offset === 0);
     if (replacement.length > 262144 || stat.size - before.length + replacement.length > 128 * 1024 * 1024) throw new AppError('too_large');
@@ -55,7 +57,7 @@ export async function patchSegment(file: string, offset: number, end: number, te
       for (let size = probe.length; size > 0; size--) { try { decodeText(probe.subarray(0, size), encoding, boundary === 0); valid = true; break; } catch { /* partial next character */ } }
       if (!valid) throw new AppError('bad_request');
     }
-    await check(); await preserve({ text: oldText, end: offset + replacement.length });
+    await check(); await preserve({ text: oldText, end: offset + replacement.length, sha256: createHash('sha256').update(replacement).digest('hex') });
     output = await fs.open(tmp, 'wx', stat.mode & 0o777); await output.chmod(stat.mode & 0o777); const chunk = Buffer.alloc(65536);
     const spans: [number, number][] = [[0, offset], [end, stat.size]];
     for (let index = 0; index < spans.length; index++) {

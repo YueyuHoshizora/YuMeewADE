@@ -62,9 +62,28 @@ test('large-file segment CAS includes bytes outside preview; patch and range rec
     assert.equal(patched.end, current.offset + Buffer.byteLength('語😀')); assert.equal(patched.text, '語😀');
     assert.deepEqual(await fs.readFile(file), Buffer.concat([before.subarray(0, current.offset), Buffer.from('語😀'), before.subarray(current.end)]));
     assert.equal((await fs.stat(file)).mode & 0o777, 0o751);
-    const history = await editor.history('P', '', 'large.txt'); assert.deepEqual(history.entries[0]!.range, { offset: current.offset, end: patched.end });
+    const history = await editor.history('P', '', 'large.txt'); assert.deepEqual({ ...history.entries[0]!.range, sha256: undefined }, { offset: current.offset, end: patched.end, sha256: undefined });
     await editor.restoreHistory('P', '', 'large.txt', history.entries[0]!.id, patched.revision); assert.deepEqual(await fs.readFile(file), before);
     assert.equal((await fs.readdir(root)).some(name => name.startsWith('.editor-')), false);
+  } finally { editor.dispose(); }
+}));
+
+test('an older segment edit cannot be restored over bytes a later edit moved or changed', () => withTmpWorkspace(async ws => {
+  const { editor, root } = await fixture(ws); const file = path.join(root, 'a.txt');
+  try {
+    await fs.writeFile(file, 'abcdef');
+    let doc = await editor.read('P', '', 'a.txt');
+    await editor.segmentPatch('P', '', 'a.txt', 0, 1, 'XYZ', doc.revision, 'UTF8');
+    const older = (await editor.history('P', '', 'a.txt')).entries[0]!;
+    doc = await editor.read('P', '', 'a.txt');
+    await editor.segmentPatch('P', '', 'a.txt', 0, 3, 'Q', doc.revision, 'UTF8');
+    doc = await editor.read('P', '', 'a.txt'); assert.equal(doc.text, 'Qbcdef');
+    // The older entry's offsets (0..3) now cover "Qbc": restoring them would silently drop "bc".
+    await assert.rejects(editor.restoreHistory('P', '', 'a.txt', older.id, doc.revision), { code: 'conflict' });
+    assert.equal(await fs.readFile(file, 'utf8'), 'Qbcdef');
+    const newest = (await editor.history('P', '', 'a.txt')).entries[0]!;
+    await editor.restoreHistory('P', '', 'a.txt', newest.id, doc.revision);
+    assert.equal(await fs.readFile(file, 'utf8'), 'XYZbcdef', 'the latest edit still restores');
   } finally { editor.dispose(); }
 }));
 

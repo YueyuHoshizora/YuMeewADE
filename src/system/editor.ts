@@ -260,7 +260,7 @@ export class EditorService {
     if ((await this.document(target.file, relative)).revision !== current.revision) throw new AppError('conflict', 'editor_conflict');
     return result;
   }
-  async segmentPatch(project: string, task: string, relative: string, offset: number, end: number, text: string, revision: string, encoding: EditorEncoding): Promise<EditorSegment> {
+  async segmentPatch(project: string, task: string, relative: string, offset: number, end: number, text: string, revision: string, encoding: EditorEncoding, expectedSha256?: string): Promise<EditorSegment> {
     validateEncoding(encoding);
     if (Buffer.byteLength(JSON.stringify(text)) > this.bodyBytes - 8192) throw new AppError('too_large');
     const repo = await fs.realpath(await this.worktree.bodyPath(project));
@@ -275,7 +275,7 @@ export class EditorService {
           if (checked.file !== target.file || checked.root !== target.root || checked.readonly || current.revision !== revision) throw new AppError('conflict', 'editor_conflict');
           if (current.binary) throw new AppError('bad_request', 'editor_readonly');
         };
-        await patchSegment(target.file, offset, end, text, encoding, check, previous => preserveHistory(target.root, { path: relative, revision, text: previous.text, encoding, range: { offset, end: previous.end }, reason: 'segment' }));
+        await patchSegment(target.file, offset, end, text, encoding, check, previous => preserveHistory(target.root, { path: relative, revision, text: previous.text, encoding, range: { offset, end: previous.end, sha256: previous.sha256 }, reason: 'segment' }), expectedSha256);
         const current = await this.document(target.file, relative, false, encoding);
         return { text, revision: current.revision, offset, end: offset + encodeText(text, encoding, offset === 0).length, size: current.size, encoding };
       });
@@ -340,7 +340,10 @@ export class EditorService {
     const entry = entries.find(item => item.id === id); if (!entry) throw new AppError('not_found');
     if (entry.range) {
       if (revision === 'missing') throw new AppError('bad_request');
-      await this.segmentPatch(project, task, relative, entry.range.offset, entry.range.end, entry.text, revision, entry.encoding ?? 'UTF8');
+      // The range only means something while the bytes that edit wrote are still there; a later edit before or inside it
+      // would make these offsets cut unrelated text. Entries saved before the hash existed cannot be checked.
+      if (!entry.range.sha256) throw new AppError('conflict', 'editor_conflict');
+      await this.segmentPatch(project, task, relative, entry.range.offset, entry.range.end, entry.text, revision, entry.encoding ?? 'UTF8', entry.range.sha256);
       return this.read(project, task, relative, entry.encoding);
     }
     if (revision !== 'missing') return this.save(project, task, relative, entry.text, revision, entry.encoding);
