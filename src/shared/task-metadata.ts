@@ -10,6 +10,12 @@ export function validDue(value: unknown): value is string {
 export function validTag(value: unknown): value is string {
   return typeof value === 'string' && value.length > 0 && value.length <= 60 && value === value.trim() && !/[\r\n\0]/u.test(value);
 }
+/** Tags as written in a task file: the list form, or a hand-written `tags: a, b` scalar split like the tag field. Reading the
+ * scalar as no tags would also lose it, since the next tag or due-date save writes the list back. */
+export function fileTags(value: unknown): string[] {
+  const list: unknown[] = Array.isArray(value) ? value : typeof value === 'string' ? value.split(',').map(tag => tag.trim()) : [];
+  return [...new Set(list.filter(validTag))].slice(0, 32);
+}
 export function taskMetadata(input: { due?: unknown; tags?: unknown }): { due?: string; tags?: string[] } {
   const result: { due?: string; tags?: string[] } = {};
   if (input.due !== undefined) {

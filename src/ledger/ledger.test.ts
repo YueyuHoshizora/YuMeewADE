@@ -157,3 +157,14 @@ test('設定預設取 config、驗證陣列與 AI；排序與釘選；紀錄 new
   await fs.rm(path.join(ws.internalDir, 'log.jsonl')); await fs.mkdir(path.join(ws.internalDir, 'log.jsonl'));
   await assert.doesNotReject(oplog.record({ action: 'still-safe' }));
 }));
+
+test('hand-written comma-separated tags are read as tags and survive tag edits', () => withTmpWorkspace(async ws => {
+  await new ProjectLedger(ws).create({ name: 'P', description: '' });
+  const tasks = new TaskLedger(ws);
+  const task = await tasks.create('P', { title: 'T' });
+  const file = ws.taskFile('P', task.id);
+  await fs.writeFile(file, (await fs.readFile(file, 'utf8')).replace(/^tags:.*$/m, 'tags: important, urgent'));
+  assert.deepEqual((await tasks.get('P', task.id)).tags, ['important', 'urgent']);
+  assert.deepEqual((await tasks.update('P', task.id, {}, { tag: 'later', add: true })).tags, ['important', 'urgent', 'later']);
+  assert.deepEqual((await tasks.update('P', task.id, {}, { tag: 'urgent', add: false })).tags, ['important', 'later']);
+}));
