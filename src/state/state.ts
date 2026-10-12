@@ -25,14 +25,16 @@ export type StateSnapshot = Omit<AppState, 'running' | 'unread' | 'usage'>;
 
 export async function buildState(app: App): Promise<StateSnapshot> {
   const skippedProjects: string[] = []; const unreadable: string[] = [];
-  // A hand-broken roles.yaml is listed with the other unreadable ledger files instead of failing every page; runs that need roles still report it.
-  const loadRoles = app.roles().catch((error: unknown) => {
+  // A broken roles.yaml or sidebar order is listed with the other unreadable ledger files instead of failing every page;
+  // runs that need roles, and reordering or pinning, still report it.
+  const tolerate = <T>(load: Promise<T>, file: string, fallback: () => T): Promise<T> => load.catch((error: unknown) => {
     if (!(error instanceof AppError && error.detail === 'file_corrupt')) throw error;
-    unreadable.push(path.relative(app.ws.root, app.ws.rolesFile));
-    return { roles: Object.create(null) as Roles['roles'] };
+    unreadable.push(path.relative(app.ws.root, file));
+    return fallback();
   });
   const [projects, savedOrder, settings, roles, ais] = await Promise.all([
-    app.projects.list(skippedProjects), app.order.get(), app.settings.get(), loadRoles, app.ai.list(),
+    app.projects.list(skippedProjects), tolerate(app.order.get(), app.order.file, () => ({ order: {}, pins: [] })), app.settings.get(),
+    tolerate(app.roles(), app.ws.rolesFile, () => ({ roles: Object.create(null) as Roles['roles'] })), app.ai.list(),
   ]);
   // Joined directly: a skipped folder name may not pass the project-name whitelist that ws.projectFile enforces.
   for (const id of skippedProjects) unreadable.push(path.relative(app.ws.root, path.join(app.ws.projectsDir, id, 'PROJECT.md')));

@@ -6,11 +6,15 @@ import type { Workspace } from './workspace.ts';
 
 export interface OrderData { order: Record<string, string[]>; pins: string[] }
 export class OrderStore {
-  private readonly file: string;
+  readonly file: string;
   constructor(ws: Workspace) { this.file = path.join(ws.internalDir, 'order.json'); }
   async get(): Promise<OrderData> {
     const value = await readJson<Partial<OrderData>>(this.file, {});
-    return { order: value.order ?? {}, pins: value.pins ?? [] };
+    const order = value.order ?? {}; const pins = value.pins ?? [];
+    const strings = (list: unknown): boolean => Array.isArray(list) && list.every(id => typeof id === 'string');
+    // Valid JSON of the wrong shape would otherwise fail later as an anonymous TypeError while building the state.
+    if (!order || typeof order !== 'object' || Array.isArray(order) || !Object.values(order).every(strings) || !strings(pins)) throw new AppError('internal', 'file_corrupt', { field: path.basename(this.file) });
+    return { order, pins };
   }
   async setOrder(parent: string, order: string[]): Promise<string[]> {
     if (typeof parent !== 'string' || parent && !isValidProjectName(parent) || !Array.isArray(order) || order.some(id => !isValidProjectName(id))) throw new AppError('bad_request', 'field_type');

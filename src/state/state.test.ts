@@ -69,15 +69,17 @@ test('unparseable ledger files are reported instead of silently disappearing, an
     await fs.writeFile(projectFile, '---\nname: [unclosed\n---\n');
     await fs.writeFile(taskFile, '---\nstate: [unclosed\n---\n');
     await fs.writeFile(f.app.ws.rolesFile, 'roles:\n  - name: [unclosed\n');
+    // Valid JSON of the wrong shape: the sidebar order falls back to the default instead of failing every page.
+    await fs.writeFile(f.app.order.file, JSON.stringify({ order: { '': 'Project' }, pins: [] }));
     // Not ledgers, so never reported: an empty project folder and a file whose name is not a task id.
     await fs.mkdir(path.join(f.app.ws.projectsDir, 'Empty'));
     await fs.writeFile(path.join(f.app.ws.tasksDir('Project'), 'my notes.md'), 'scratch');
     f.app.changed();
     const broken = await f.app.state();
     assert.deepEqual(broken.projects.map(project => [project.id, project.tasks.length]), [['Project', 0]]);
-    assert.deepEqual(broken.unreadable, [path.join('Projects', 'Broken', 'PROJECT.md'), path.join('Projects', 'Project', '.ai', 'tasks', `${f.task.id}.md`), 'roles.yaml']);
+    assert.deepEqual(broken.unreadable, [path.join('.yumeewade', 'order.json'), path.join('Projects', 'Broken', 'PROJECT.md'), path.join('Projects', 'Project', '.ai', 'tasks', `${f.task.id}.md`), 'roles.yaml']);
     assert.deepEqual(Object.keys(broken.roles.roles), []);
-    await Promise.all([fs.writeFile(projectFile, projectText), fs.writeFile(taskFile, taskText), fs.writeFile(f.app.ws.rolesFile, rolesText)]);
+    await Promise.all([fs.writeFile(projectFile, projectText), fs.writeFile(taskFile, taskText), fs.writeFile(f.app.ws.rolesFile, rolesText), fs.rm(f.app.order.file)]);
     f.app.changed();
     const fixed = await f.app.state();
     assert.deepEqual(fixed.unreadable, []);
