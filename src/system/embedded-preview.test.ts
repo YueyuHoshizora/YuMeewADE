@@ -39,7 +39,7 @@ function requestStatus(url: string, headers: Record<string, string> = {}): Promi
 
 test('owned preview lifecycle isolates headers, redirects and exact nested navigation origins', async () => {
   let trusted = true;
-  const service = new EmbeddedPreviewService({ cwd: async () => process.cwd(), assertTrusted: async () => { if (!trusted) throw new AppError('forbidden'); }, ideOrigin: 'http://127.0.0.1:3000' });
+  const service = new EmbeddedPreviewService({ cwd: async () => process.cwd(), assertTrusted: async () => { if (!trusted) throw new AppError('forbidden'); }, ideOrigins: ['http://127.0.0.1:3000', 'http://localhost:3000'] });
   await service.init();
   const gateway = service.gatewayOrigin();
   try {
@@ -55,6 +55,9 @@ test('owned preview lifecycle isolates headers, redirects and exact nested navig
     const origin = service.origins().find(value => value !== gateway);
     assert.ok(origin);
     assert.match(wrapper.headers.get('content-security-policy') ?? '', new RegExp(`frame-src ${origin.replaceAll('.', '\\.')};`));
+    // The IDE may be open on any loopback alias the core answers on; each one may frame the preview.
+    assert.match(wrapper.headers.get('content-security-policy') ?? '', /frame-ancestors http:\/\/127\.0\.0\.1:3000 http:\/\/localhost:3000;/);
+    assert.equal((await fetch(view.url, { headers: { Origin: 'http://localhost:3000' } })).status, 200);
     assert.match(await wrapper.text(), /sandbox="allow-scripts"/);
     const response = await fetch(origin + '/home', { headers: { Origin: 'null' } });
     assert.match(await response.text(), /Owned preview/);
@@ -98,7 +101,7 @@ test('owned preview lifecycle isolates headers, redirects and exact nested navig
 });
 
 test('preview cannot attach to supplied remote URLs or preexisting ports and requires explicit trust', async () => {
-  const service = new EmbeddedPreviewService({ cwd: async () => process.cwd(), assertTrusted: async () => { throw new AppError('forbidden'); }, ideOrigin: 'http://127.0.0.1:3000' });
+  const service = new EmbeddedPreviewService({ cwd: async () => process.cwd(), assertTrusted: async () => { throw new AppError('forbidden'); }, ideOrigins: ['http://127.0.0.1:3000'] });
   try {
     await assert.rejects(service.start('project', 'task', { command: process.execPath, args: ['-e', serverCode, '--', '3000'] }));
     await assert.rejects(service.start('project', 'task', { command: process.execPath, args: ['-e', serverCode, '--', '{port}'] }));
@@ -109,7 +112,7 @@ test('preview cannot attach to supplied remote URLs or preexisting ports and req
 test('pending starts block global destructive work without counting an idle gateway', async () => {
   const entered = Promise.withResolvers<void>();
   const gate = Promise.withResolvers<void>();
-  const service = new EmbeddedPreviewService({ cwd: async () => process.cwd(), assertTrusted: async () => undefined, beforeStart: async () => { entered.resolve(); await gate.promise; throw new AppError('conflict'); }, ideOrigin: 'http://127.0.0.1:3000' });
+  const service = new EmbeddedPreviewService({ cwd: async () => process.cwd(), assertTrusted: async () => undefined, beforeStart: async () => { entered.resolve(); await gate.promise; throw new AppError('conflict'); }, ideOrigins: ['http://127.0.0.1:3000'] });
   await service.init();
   assert.equal(service.isBusy(), false);
   const start = service.start('project', 'task', { command: process.execPath, args: ['-e', serverCode, '--', '{port}'] });
@@ -124,7 +127,7 @@ test('pending starts block global destructive work without counting an idle gate
 });
 
 test('finished preview runs are bounded while live runs are never evicted', async () => {
-  const service = new EmbeddedPreviewService({ cwd: async () => process.cwd(), assertTrusted: async () => undefined, ideOrigin: 'http://127.0.0.1:3000' });
+  const service = new EmbeddedPreviewService({ cwd: async () => process.cwd(), assertTrusted: async () => undefined, ideOrigins: ['http://127.0.0.1:3000'] });
   await service.init();
   try {
     const live = await service.start('project', 'task', { command: process.execPath, args: ['-e', serverCode, '--', '{port}'] });

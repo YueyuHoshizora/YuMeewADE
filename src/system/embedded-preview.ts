@@ -13,7 +13,8 @@ export interface EmbeddedPreviewOptions {
   cwd(project: string, task: string): Promise<string>;
   assertTrusted(project: string): Promise<void>;
   beforeStart?(project: string, task: string): Promise<void>;
-  ideOrigin: string;
+  /** Every origin the IDE can be opened on (the core answers on each loopback alias). */
+  ideOrigins: string[];
   concurrent?: number;
 }
 async function listen(server: Server | NetServer): Promise<number> {
@@ -66,14 +67,14 @@ export class EmbeddedPreviewService {
     this.gatewayUrl = `http://127.0.0.1:${port}`;
   }
   private async wrapper(req: IncomingMessage, res: ServerResponse): Promise<void> {
-    if (req.headers.host !== new URL(this.gatewayUrl).host || !['GET', 'HEAD'].includes(req.method ?? '') || (req.headers.origin !== undefined && !['null', this.options.ideOrigin].includes(req.headers.origin))) { res.writeHead(403); res.end(); return; }
+    if (req.headers.host !== new URL(this.gatewayUrl).host || !['GET', 'HEAD'].includes(req.method ?? '') || (req.headers.origin !== undefined && !['null', ...this.options.ideOrigins].includes(req.headers.origin))) { res.writeHead(403); res.end(); return; }
     const id = new URL(req.url ?? '/', this.gatewayUrl).pathname.slice(1);
     const run = this.runs.get(id);
     if (!run || !['starting', 'running'].includes(run.view.state)) { res.writeHead(404); res.end(); return; }
     await this.options.assertTrusted(run.view.project);
     // The trusted outer document enforces exact child navigation destinations, including in browsers.
     const body = `<!doctype html><html><head><meta charset="utf-8"><style>html,body,iframe{margin:0;width:100%;height:100%;border:0}</style></head><body><iframe title="${run.view.id}" sandbox="allow-scripts" referrerpolicy="no-referrer" src="${run.origin}/"></iframe></body></html>`;
-    res.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8', 'Content-Security-Policy': `default-src 'none'; style-src 'unsafe-inline'; frame-src ${run.origin}; frame-ancestors ${this.options.ideOrigin}; sandbox allow-scripts`, 'Cache-Control': 'no-store', 'X-Content-Type-Options': 'nosniff', 'Referrer-Policy': 'no-referrer' });
+    res.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8', 'Content-Security-Policy': `default-src 'none'; style-src 'unsafe-inline'; frame-src ${run.origin}; frame-ancestors ${this.options.ideOrigins.join(' ')}; sandbox allow-scripts`, 'Cache-Control': 'no-store', 'X-Content-Type-Options': 'nosniff', 'Referrer-Policy': 'no-referrer' });
     res.end(req.method === 'HEAD' ? undefined : body);
   }
   origins(): string[] { return [this.gatewayUrl, ...[...this.runs.values()].filter(run => ['starting', 'running'].includes(run.view.state)).map(run => run.origin)].filter(Boolean); }
@@ -153,7 +154,7 @@ export class EmbeddedPreviewService {
   }
   private accept(run: Run, req: IncomingMessage): boolean {
     const origin = run.origin;
-    return req.headers.host === new URL(origin).host && (req.headers.origin === undefined || req.headers.origin === 'null' || req.headers.origin === origin || req.headers.origin === this.options.ideOrigin) && typeof req.url === 'string' && req.url.startsWith('/') && !req.url.startsWith('//') && !/[\0\r\n\\]/u.test(req.url);
+    return req.headers.host === new URL(origin).host && (req.headers.origin === undefined || req.headers.origin === 'null' || req.headers.origin === origin || this.options.ideOrigins.includes(req.headers.origin)) && typeof req.url === 'string' && req.url.startsWith('/') && !req.url.startsWith('//') && !/[\0\r\n\\]/u.test(req.url);
   }
   /** Drops the oldest finished runs whose process already exited; live or still-stopping runs are never evicted. */
   private pruneFinished(): void {

@@ -48,9 +48,14 @@ export function sendError(res: ServerResponse, err: unknown): void {
   sendJson(res, 500, { error: 'internal', message: '內部錯誤' });
 }
 
+/** Every authority the core answers on; the UI may be opened through any of them. */
+export function loopbackAuthorities(port: number): string[] {
+  return [`127.0.0.1:${port}`, `localhost:${port}`, `[::1]:${port}`];
+}
+
 /** Host 必須是 127.0.0.1:{port}／localhost:{port}；非 GET 若帶 Origin 必須同源。 */
 export function checkOrigin(req: IncomingMessage, opts: RouterOptions): void {
-  const allowedHosts = [`127.0.0.1:${opts.port}`, `localhost:${opts.port}`, `[::1]:${opts.port}`];
+  const allowedHosts = loopbackAuthorities(opts.port);
   const host = req.headers.host ?? '';
   if (!allowedHosts.includes(host)) throw new AppError('forbidden');
   if (req.method !== 'GET' && req.method !== 'HEAD') {

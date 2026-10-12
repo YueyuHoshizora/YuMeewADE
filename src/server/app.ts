@@ -25,7 +25,8 @@ import { TaskLedger } from '../ledger/tasks.ts';
 import { Workspace } from '../ledger/workspace.ts';
 import { LedgerWatcher } from '../ledger/watch.ts';
 import { loadRoles } from '../roles/roles.ts';
-import { hostAuthority, type Config } from '../shared/config.ts';
+import type { Config } from '../shared/config.ts';
+import { loopbackAuthorities } from '../http/router.ts';
 import { AppError } from '../shared/errors.ts';
 import { log } from '../shared/log.ts';
 import type { AppState, ChatEvent, Roles, UsageState, McpAi } from '../shared/types.ts';
@@ -183,7 +184,7 @@ export class App {
         if (trust.state !== 'trusted' || trust.rootChanged) throw new AppError('forbidden', 'project_restricted');
       },
       beforeStart: async (p, t) => { if (this.taskBusy(p, t)) throw new AppError('conflict', 'task_busy'); },
-      ideOrigin: `http://${hostAuthority(config.server.host, config.server.port)}`,
+      ideOrigins: loopbackAuthorities(config.server.port).map(authority => `http://${authority}`),
       concurrent: config.limits.concurrentRuns,
     });
     this.gitWorkbench = new GitWorkbench({ ws: this.ws, projects: this.projects, tasks: this.tasks, isRunning: project => this.taskBusy(project) });
