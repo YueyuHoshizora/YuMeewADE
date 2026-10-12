@@ -30,7 +30,7 @@ test('stream-json steps become deltas, deduped tool labels, summed usage, and a 
   assert.deepEqual(events.filter(ev => ev.type === 'delta').map(ev => ev.text), ['Hello ', 'world', '\n']);
   assert.deepEqual(events.filter(ev => ev.type === 'tool'), [{ type: 'tool', text: 'run_command: ls -la' }]);
   assert.deepEqual(events.find(ev => ev.type === 'session'), { type: 'session', id: 'conv' });
-  assert.deepEqual(events.find(ev => ev.type === 'usage'), { type: 'usage', usage: { input: 30, output: 12, cached: 2 } });
+  assert.deepEqual(events.filter(ev => ev.type === 'usage').at(-1), { type: 'usage', usage: { input: 30, output: 12, cached: 2 } }, 'the last snapshot is the turn total');
   assert.deepEqual(events.filter(ev => ev.type === 'result'), [{ type: 'result', text: 'Hello world\n' }]);
   assert.deepEqual(events.filter(ev => ev.type === 'tokens').map(ev => ev.count), [5, 12]);
 });
@@ -45,6 +45,17 @@ test('error results and missing conversation ids never become success', () => {
   assert.equal(geminiOutcome({ ok: true, stopped: false }, false, false).ok, false);
   assert.equal(geminiOutcome({ ok: true, stopped: false }, true, true).ok, false);
   assert.equal(geminiOutcome({ ok: true, stopped: false }, true, false).ok, true);
+});
+
+test('usage already measured survives a failed or unfinished turn', () => {
+  const events: CliEvent[] = [];
+  const parse = createGeminiParser(ev => events.push(ev), () => 100);
+  parse(step({ step_index: 1, state: 'DONE', step_type: 'agent_response', usage: { input_tokens: 10, output_tokens: 5, cache_read_tokens: 2 } }));
+  // A replayed snapshot of the same step does not change the total.
+  parse(step({ step_index: 1, state: 'DONE', step_type: 'agent_response', usage: { input_tokens: 10, output_tokens: 5, cache_read_tokens: 2 } }));
+  parse({ event: 'result', result: { conversation_id: 'conv', status: 'ERROR', error: 'tool failed' } });
+  assert.deepEqual(events.filter(ev => ev.type === 'usage').at(-1), { type: 'usage', usage: { input: 10, output: 5, cached: 2 } });
+  assert.equal(events.filter(ev => ev.type === 'error').length, 1);
 });
 
 test('args honor permission mode, model, effort, resume and extra directories; the prompt only travels over stdin', () => {

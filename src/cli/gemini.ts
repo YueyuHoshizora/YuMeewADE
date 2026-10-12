@@ -69,6 +69,9 @@ export function createGeminiParser(onEvent: (ev: CliEvent) => void, now: () => n
           output += current.output - (previous?.output ?? 0);
           cached += current.cached - (previous?.cached ?? 0);
           measured.set(index, current);
+          // Usage is a replaceable snapshot: publishing it as soon as a step is measured keeps it when the turn later
+          // fails, is stopped or never sends a result.
+          if (input + output > 0) onEvent({ type: 'usage', usage: { input, output, ...(cached ? { cached } : {}) } satisfies TurnUsage });
           // step_update carries snapshots: replaying or correcting a step must not add it twice.
           if (previous?.output === current.output) return;
           const at = now();
@@ -93,7 +96,6 @@ export function createGeminiParser(onEvent: (ev: CliEvent) => void, now: () => n
       return;
     }
     onEvent({ type: 'session', id });
-    if (input + output > 0) onEvent({ type: 'usage', usage: { input, output, ...(cached ? { cached } : {}) } satisfies TurnUsage });
     onEvent({ type: 'result', text: typeof result['response'] === 'string' ? result['response'] : text });
   };
 }

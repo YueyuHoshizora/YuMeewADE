@@ -169,7 +169,7 @@ test('Gemini 重複 step 不灌水或延長計時，修正用量取代且不同 
     clock = 3000; done(3, 30, 30, 2);
     assert.equal(board.snapshot().tokensPerSecond, 23.3);
     parse({ event: 'result', result: { conversation_id: 'conv', status: 'SUCCESS', response: 'Done', usage: { input_tokens: 999, output_tokens: 999 } } });
-    assert.deepEqual(events.find(ev => ev.type === 'usage'), { type: 'usage', usage: { input: 50, output: 70, cached: 7 } });
+    assert.deepEqual(events.filter(ev => ev.type === 'usage').at(-1), { type: 'usage', usage: { input: 50, output: 70, cached: 7 } });
     assert.equal(board.snapshot().tokensPerSecond, 23.3);
     assert.equal(board.rateAt(7000), null);
   } finally { board.close(); }
