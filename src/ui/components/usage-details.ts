@@ -3,7 +3,6 @@ import { api, request } from '../api.ts';
 import { getLocale, t } from '../i18n/index.ts';
 import { aiLabel, cloudCreditsLabel, extraUsageLabel, localDateTime, localTime, prepaidLabel, quotaLabel } from './display.ts';
 import { button, confirmModal, el, field, iconButton, input, row, run } from './dom.ts';
-import { budgetSettingsPanel, usageHistoryPanel } from './usage-history.ts';
 
 function accountUsage(usage: AiUsage | undefined): HTMLElement {
   const node = el('div', 'account-quota');
@@ -36,7 +35,7 @@ function accountUsage(usage: AiUsage | undefined): HTMLElement {
 }
 
 /** Read live UI state only; quota queries remain owned by the core scheduler. */
-export function openUsageDetails(getState: () => AppState, getUsage: () => UsageState, refresh: () => Promise<void>, selectedAi?: string, addAccount = false): void {
+export function openUsageDetails(getState: () => AppState, getUsage: () => UsageState, refresh: () => Promise<void>, selectedAi?: string, addAccount = false, manageAccounts = addAccount): void {
   const dialog = el('dialog', 'modal usage-details');
   const title = el('h2', '', t('usage.details')); title.id = 'usage-details-title';
   dialog.setAttribute('aria-labelledby', title.id);
@@ -79,8 +78,10 @@ export function openUsageDetails(getState: () => AppState, getUsage: () => Usage
   }); };
   add.append(el('p', 'muted', t('usage.accountHelp')), form);
   const reload = button(t('usage.refresh'), async () => { await request<UsageState>('/api/accounts/refresh', {}); await refresh(); render(); });
-  dialog.append(row(title, iconButton('×', t('common.close'), () => dialog.close())), el('p', 'muted', t('usage.accountNotice')), reload, accounts, add);
-  dialog.append(usageHistoryPanel(), budgetSettingsPanel());
+  dialog.append(row(title, iconButton('×', t('common.close'), () => dialog.close())));
+  if (manageAccounts) dialog.append(el('p', 'muted', t('usage.accountNotice')));
+  dialog.append(reload, accounts);
+  if (manageAccounts) dialog.append(add);
   let previous = '';
   function render(): void {
     const state = getState(); const usage = getUsage();
@@ -96,8 +97,8 @@ export function openUsageDetails(getState: () => AppState, getUsage: () => Usage
         const card = el('section', 'account-card'); const active = (state.settings.activeAccounts[ai] ?? 'default') === profile.id;
         const heading = row(el('h4', '', profile.name));
         if (active) heading.append(el('span', 'account-active', t('usage.active')));
-        else { const activate = button(t('usage.activate'), async () => { await api.settings({ activeAccounts: { [ai]: profile.id } }); await refresh(); render(); }); activate.dataset['accountAction'] = `${ai}:${profile.id}:activate`; heading.append(activate); }
-        if (profile.id !== 'default') { const remove = button(t('usage.remove'), async () => {
+        else if (manageAccounts) { const activate = button(t('usage.activate'), async () => { await api.settings({ activeAccounts: { [ai]: profile.id } }); await refresh(); render(); }); activate.dataset['accountAction'] = `${ai}:${profile.id}:activate`; heading.append(activate); }
+        if (manageAccounts && profile.id !== 'default') { const remove = button(t('usage.remove'), async () => {
           if (!await confirmModal(t('usage.remove'), t('usage.removeConfirm', { name: profile.name }), t('usage.remove'))) return;
           await request<Settings>('/api/accounts/remove', { ai, id: profile.id }); await refresh(); render();
         }); remove.dataset['accountAction'] = `${ai}:${profile.id}:remove`; heading.append(remove); }

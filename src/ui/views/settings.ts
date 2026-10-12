@@ -12,6 +12,8 @@ import { mcpPanel } from '../components/mcp-management.ts';
 import { editorPreferencesPanel } from '../components/editor-preferences-panel.ts';
 import { editorLspPanel } from '../components/editor-lsp-panel.ts';
 import { mountProviderCapabilities } from '../components/provider-capabilities.ts';
+import { openUsageDetails } from '../components/usage-details.ts';
+import { budgetSettingsPanel, usageHistoryPanel } from '../components/usage-history.ts';
 
 export function settingsView(context: ViewContext, redraw: () => void): View {
   const { state } = context; const node = el('div', 'page settings-page'); node.append(el('h1', '', t('nav.settings')));
@@ -37,6 +39,7 @@ export function settingsView(context: ViewContext, redraw: () => void): View {
   node.append(card(t('settings.general'), field(t('settings.language'), language), field(t('settings.theme'), theme), field(t('settings.enterToSend'), enter), field(t('settings.notifications'), notifications), permission, field(t('settings.root'), root), row(...pickRoot, applyRoot), el('p', 'muted', t('settings.rootHint'))));
   node.append(carePanel(context), archiveButton(context));
   node.append(cliGuidance(context));
+  node.append(card(t('usage.details'), button(t('usage.details'), () => openUsageDetails(() => context.state, () => context.state.usage, context.refresh, undefined, false, true))), usageHistoryPanel(), budgetSettingsPanel());
   node.append(mcpPanel(context));
   node.append(editorPreferencesPanel());
   node.append(editorLspPanel(context));
