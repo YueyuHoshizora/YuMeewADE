@@ -22,7 +22,9 @@ export async function serveStatic(dir: string, req: IncomingMessage, res: Server
     return;
   }
   const url = new URL(req.url ?? '/', 'http://localhost');
-  const rel = url.pathname === '/' ? 'index.html' : decodeURIComponent(url.pathname.slice(1));
+  let rel: string;
+  try { rel = url.pathname === '/' ? 'index.html' : decodeURIComponent(url.pathname.slice(1)); }
+  catch { res.writeHead(400).end(); return; }
   const file = path.join(dir, rel);
   if (!isInside(dir, file)) {
     res.writeHead(404).end();

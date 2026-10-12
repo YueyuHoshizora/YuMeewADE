@@ -497,3 +497,10 @@ test('project order only stores existing projects under an existing parent', asy
     assert.deepEqual(stored.order, { '': [b.id, a.id] });
   } finally { await s.close(); }
 });
+
+test('a malformed percent-encoded page path is a bad request, not an internal error', async () => {
+  const s = await startTestServer();
+  try {
+    for (const pathname of ['/%E0%A4%A', '/assets/%ZZ']) assert.equal((await fetch(s.base + pathname)).status, 400);
+  } finally { await s.close(); }
+});
