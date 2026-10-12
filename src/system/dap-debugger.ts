@@ -14,7 +14,7 @@ import { DapTransport, object } from './dap-transport.ts';
 const text = (value: unknown): string => typeof value === 'string' ? value.slice(0, 8192) : '';
 const integer = (value: unknown): number => Number.isSafeInteger(value) && (value as number) > 0 ? value as number : 0;
 
-interface Entry { view: DapSession; root: string; transport: DapTransport; thread: number; objects: Set<number>; version: number; busy: boolean; closed: boolean; initialized: { promise: Promise<void>; resolve: () => void; reject: (reason: Error) => void }; timer: NodeJS.Timeout }
+interface Entry { view: DapSession; root: string; transport: DapTransport; thread: number; objects: Map<string, { ref: number; frame: number }>; version: number; busy: boolean; closed: boolean; initialized: { promise: Promise<void>; resolve: () => void; reject: (reason: Error) => void }; timer: NodeJS.Timeout }
 export class DapDebugger {
   private sessions = new Map<string, Entry>();
   private closed = false;
@@ -60,7 +60,7 @@ export class DapDebugger {
       // Observe the gate immediately: exit can precede the initialize response.
       void initialized.promise.catch(() => undefined);
       const child = spawnCli(command, argv.slice(1), { cwd: root, env, detached: process.platform !== 'win32', windowsHide: true, stdio: ['pipe', 'pipe', 'pipe'] });
-      const e: Entry = { view, root, thread: 0, objects: new Set(), version: 0, busy: false, closed: false, initialized, transport: undefined as unknown as DapTransport, timer: setTimeout(() => this.end(e, 'timeout'), 3_600_000) };
+      const e: Entry = { view, root, thread: 0, objects: new Map(), version: 0, busy: false, closed: false, initialized, transport: undefined as unknown as DapTransport, timer: setTimeout(() => this.end(e, 'timeout'), 3_600_000) };
       e.transport = new DapTransport(child, (event, body) => this.event(e, event, body), reason => this.end(e, reason));
       for (const [oldId, old] of this.sessions) if (old.closed && this.sessions.size >= 64) this.sessions.delete(oldId);
       this.sessions.set(id, e);
@@ -101,7 +101,7 @@ export class DapDebugger {
     const result = await e.transport.request('stackTrace', { threadId: e.thread, startFrame: 0, levels: 64 });
     if (!Array.isArray(result.stackFrames)) { this.end(e, 'malformed'); throw new AppError('unavailable', undefined, { field: 'stackTrace' }); }
     const frames: DebugSession['frames'] = [];
-    const objects = new Set<number>();
+    const objects: Entry['objects'] = new Map();
     for (const item of Array.isArray(result.stackFrames) ? result.stackFrames.slice(0, 64) : []) {
       const frame = object(item); if (!Number.isSafeInteger(frame.id) || (frame.id as number) < 0) continue;
       const source = object(frame.source); let relative = '';
@@ -111,8 +111,9 @@ export class DapDebugger {
       const scopes = await e.transport.request('scopes', { frameId: frame.id });
       if (!Array.isArray(scopes.scopes)) { this.end(e, 'malformed'); throw new AppError('unavailable', undefined, { field: 'scopes' }); }
       frames.push({ id: String(frame.id), name: text(frame.name), url: relative, location: { scriptId: relative, line: integer(frame.line) || 1, column: integer(frame.column) || 1, ...(relative ? { source: { path: relative, line: integer(frame.line) || 1, column: integer(frame.column) || 1 } } : {}) }, scopes: (Array.isArray(scopes.scopes) ? scopes.scopes.slice(0, 16) : []).map(value => {
-        const scope = object(value); const ref = integer(scope.variablesReference); if (ref && objects.size < 2048) objects.add(ref);
-        return { name: text(scope.name), type: text(scope.presentationHint), ...(ref && objects.has(ref) ? { objectId: String(ref) } : {}) };
+        const scope = object(value); const ref = integer(scope.variablesReference); const key = `${frame.id}:${ref}`;
+        if (ref && objects.size < 2048) objects.set(key, { ref, frame: frame.id as number });
+        return { name: text(scope.name), type: text(scope.presentationHint), ...(ref && objects.has(key) ? { objectId: key } : {}) };
       }) });
     }
     if (e.closed || e.version !== version || e.view.status !== 'paused') return;
@@ -155,25 +156,35 @@ export class DapDebugger {
     } finally { e.busy = false; }
   }
   async variables(project: string, task: string, id: string, reference: string): Promise<DebugValue[]> {
-    const e = this.get(project, task, id); const ref = Number(reference); const version = e.version;
-    if (e.view.status !== 'paused' || !e.objects.has(ref)) throw new AppError('bad_request');
-    const result = await e.transport.request('variables', { variablesReference: ref, start: 0, count: 256 });
-    if (version !== e.version || e.view.status !== 'paused') throw new AppError('conflict');
-    if (!Array.isArray(result.variables)) { this.end(e, 'malformed'); throw new AppError('unavailable', undefined, { field: 'variables' }); }
-    return (Array.isArray(result.variables) ? result.variables.slice(0, 256) : []).map(value => this.value(e, object(value)));
+    const e = this.get(project, task, id); const target = e.objects.get(reference); const version = e.version;
+    if (e.view.status !== 'paused' || !target) throw new AppError('bad_request');
+    if (e.busy) throw new AppError('conflict'); e.busy = true;
+    try {
+      // LLDB reuses scope references between frames; select the owning frame before reading.
+      await e.transport.request('scopes', { frameId: target.frame });
+      if (version !== e.version || e.view.status !== 'paused') throw new AppError('conflict');
+      const result = await e.transport.request('variables', { variablesReference: target.ref, start: 0, count: 256 });
+      if (version !== e.version || e.view.status !== 'paused') throw new AppError('conflict');
+      if (!Array.isArray(result.variables)) { this.end(e, 'malformed'); throw new AppError('unavailable', undefined, { field: 'variables' }); }
+      return result.variables.slice(0, 256).map(value => this.value(e, object(value), target.frame));
+    } finally { e.busy = false; }
   }
-  private value(e: Entry, value: Record<string, unknown>): DebugValue {
-    const ref = integer(value.variablesReference); if (ref && e.objects.size < 2048) e.objects.add(ref);
-    return { name: text(value.name), type: text(value.type), value: text(value.value ?? value.result), ...(ref && e.objects.has(ref) ? { objectId: String(ref) } : {}) };
+  private value(e: Entry, value: Record<string, unknown>, frame: number): DebugValue {
+    const ref = integer(value.variablesReference); const key = `${frame}:${ref}`;
+    if (ref && e.objects.size < 2048) e.objects.set(key, { ref, frame });
+    return { name: text(value.name), type: text(value.type), value: text(value.value ?? value.result), ...(ref && e.objects.has(key) ? { objectId: key } : {}) };
   }
   async watch(project: string, task: string, id: string, frame: string, expression: string): Promise<DebugValue> {
     await this.options.beforeMutate?.(project, task); const e = this.get(project, task, id); const version = e.version;
     if (!e.view.capabilities.evaluate) throw new AppError('bad_request', undefined, { field: 'evaluate' });
     if (e.view.status !== 'paused' || !e.view.frames.some(f => f.id === frame) || typeof expression !== 'string' || !expression || expression.length > 512 || expression.includes('\0')) throw new AppError('bad_request');
-    const result = await e.transport.request('evaluate', { frameId: Number(frame), expression, context: 'watch' });
-    if (version !== e.version || e.view.status !== 'paused') throw new AppError('conflict');
-    if (typeof result.result !== 'string') { this.end(e, 'malformed'); throw new AppError('unavailable', undefined, { field: 'evaluate' }); }
-    return { ...this.value(e, result), name: expression };
+    if (e.busy) throw new AppError('conflict'); e.busy = true;
+    try {
+      const result = await e.transport.request('evaluate', { frameId: Number(frame), expression, context: 'watch' });
+      if (version !== e.version || e.view.status !== 'paused') throw new AppError('conflict');
+      if (typeof result.result !== 'string') { this.end(e, 'malformed'); throw new AppError('unavailable', undefined, { field: 'evaluate' }); }
+      return { ...this.value(e, result, Number(frame)), name: expression };
+    } finally { e.busy = false; }
   }
   detach(project: string, task: string, id: string): void {
     const e = this.get(project, task, id); if (e.closed) return;

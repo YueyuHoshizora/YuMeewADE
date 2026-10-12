@@ -63,3 +63,42 @@ test('real installed debugpy stdio launch, conditional breakpoint, scopes, evalu
     assert.equal(state().status, 'closed');
   } finally { service.close(); await execution.stopAll(); }
 }));
+
+// Opt-in native smoke: set YUMEEWADE_DAP_LLDB and YUMEEWADE_DAP_CLANG to installed tool paths.
+test('real LLDB keeps reused scope references bound to their stack frame', { skip: !process.env['YUMEEWADE_DAP_LLDB'] || !process.env['YUMEEWADE_DAP_CLANG'] }, () => withTmpWorkspace(async ws => {
+  const projects = new ProjectLedger(ws); const tasks = new TaskLedger(ws); await projects.create({ name: 'Native' });
+  const task = await tasks.create('Native', { title: 'LLDB', workspace: 'direct' });
+  const execution = new ExecutionService({ ws, projects, tasks }); const service = new DebuggerService(execution);
+  const root = await execution.cwd('Native', task.id);
+  await fs.writeFile(path.join(root, 'main.c'), ['int main(void) {', '  int value = 10;', '  value += 2;', '  value += 3;', '  return value;', '}'].join('\n'));
+  try {
+    const args = [...(process.env['YUMEEWADE_DAP_SYSROOT'] ? ['-isysroot', process.env['YUMEEWADE_DAP_SYSROOT']!] : []), '-g', '-O0', 'main.c', '-o', 'main'];
+    const child = spawnCli(process.env['YUMEEWADE_DAP_CLANG']!, args, { cwd: root, env: minimalEnv([]), stdio: ['ignore', 'ignore', 'pipe'] });
+    const compiled = Promise.withResolvers<number | null>(); let diagnostics = '';
+    child.stderr?.on('data', data => { diagnostics += String(data); });
+    child.once('error', compiled.reject); child.once('exit', compiled.resolve);
+    assert.equal(await compiled.promise, 0, diagnostics);
+    const session = await service.launchDap('Native', task.id, { adapter: [process.env['YUMEEWADE_DAP_LLDB']!], type: 'lldb', program: 'main', stopOnEntry: false, breakpoints: [{ path: 'main.c', line: 3 }] });
+    const state = () => service.state('Native', task.id, session.id);
+    async function paused(): Promise<void> {
+      for (let i = 0; i < 400; i++) { if (state().status === 'paused' && state().frames.length) return; await delay(25); }
+      assert.fail(`native adapter did not pause: ${JSON.stringify(state())}`);
+    }
+    await paused();
+    const frame = state().frames[0]!; const local = frame.scopes.find(scope => scope.type === 'locals')!;
+    assert.equal(frame.location.source?.path, 'main.c'); assert.equal(frame.location.line, 3);
+    assert.ok(state().frames.length > 1);
+    const callerLocal = state().frames[1]!.scopes.find(scope => scope.type === 'locals')!;
+    assert.notEqual(local.objectId, callerLocal.objectId);
+    await service.variables('Native', task.id, session.id, callerLocal.objectId!);
+    const variables = await service.variables('Native', task.id, session.id, local.objectId!);
+    assert.ok(variables.some(value => value.name === 'value' && value.value === '10'));
+    assert.equal((await service.watch('Native', task.id, session.id, frame.id, 'value')).value, '10');
+    await service.action('Native', task.id, session.id, 'stepOver'); await paused();
+    assert.equal(state().frames[0]!.location.line, 4);
+    assert.equal((await service.watch('Native', task.id, session.id, state().frames[0]!.id, 'value')).value, '12');
+    service.detach('Native', task.id, session.id);
+    for (let i = 0; i < 400 && !['closed', 'failed'].includes(state().status); i++) await delay(25);
+    assert.equal(state().status, 'closed');
+  } finally { service.close(); await execution.stopAll(); }
+}));
