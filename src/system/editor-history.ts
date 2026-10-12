@@ -24,6 +24,7 @@ async function load(file: string): Promise<HistoryEntry[]> {
     if (!Array.isArray(entries) || entries.length > 200 || entries.some(item => !item || typeof item.id !== 'string' || typeof item.path !== 'string' || typeof item.text !== 'string' || typeof item.revision !== 'string' || !Number.isSafeInteger(item.timestamp))) throw new AppError('bad_request');
     for (const item of entries) {
       if (item.encoding !== undefined) validateEncoding(item.encoding);
+      if (item.bom !== undefined && typeof item.bom !== 'boolean') throw new AppError('bad_request');
       if (item.range !== undefined && (!item.range || !Number.isSafeInteger(item.range.offset) || !Number.isSafeInteger(item.range.end) || item.range.offset < 0 || item.range.end < item.range.offset || item.range.end - item.range.offset > 262144 || item.range.sha256 !== undefined && !/^[a-f0-9]{64}$/u.test(item.range.sha256))) throw new AppError('bad_request');
       if (item.reason === 'segment' && !item.range) throw new AppError('bad_request');
     }

@@ -49,6 +49,15 @@ for (const encoding of ['UTF16LE', 'UTF16BE'] as EditorEncoding[]) {
       const next = await editor.read('P', '', 'plain.txt', encoding);
       await editor.save('P', '', 'plain.txt', 'changed', next.revision, encoding);
       assert.deepEqual(await fs.readFile(file), encodeText('changed', encoding, false));
+      // A segment edit at offset 0 and recreating the deleted file from history keep it unmarked too.
+      const segment = await editor.segment('P', '', 'plain.txt', 0, 64, encoding);
+      await editor.segmentPatch('P', '', 'plain.txt', segment.offset, segment.end, segment.text, segment.revision, encoding);
+      assert.deepEqual(await fs.readFile(file), encodeText('changed', encoding, false), 'an unchanged segment save keeps the bytes');
+      const saved = (await editor.history('P', '', 'plain.txt')).entries.find(entry => entry.reason === 'save')!;
+      const current = await editor.read('P', '', 'plain.txt', encoding);
+      await editor.mutate('P', '', { action: 'delete', path: 'plain.txt', confirmation: 'plain.txt', revision: current.revision });
+      await editor.restoreHistory('P', '', 'plain.txt', saved.id, 'missing');
+      assert.deepEqual(await fs.readFile(file), encodeText(saved.text, encoding, false));
     } finally { editor.dispose(); }
   }));
 }

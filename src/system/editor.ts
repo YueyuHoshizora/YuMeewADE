@@ -359,7 +359,7 @@ export class EditorService {
       const file = path.join(root, relative);
       const tmp = path.join(path.dirname(file), `.editor-${randomUUID()}.tmp`);
       const handle = await fs.open(tmp, 'wx', 0o600);
-      try { await handle.writeFile(encodeText(entry.text, entry.encoding ?? 'UTF8')); await handle.sync(); await handle.close(); if (parent !== '.') await this.target(project, task, parent, false); await fs.link(tmp, file); }
+      try { await handle.writeFile(encodeText(entry.text, entry.encoding ?? 'UTF8', entry.bom !== false)); await handle.sync(); await handle.close(); if (parent !== '.') await this.target(project, task, parent, false); await fs.link(tmp, file); }
       catch (error) { if ((error as NodeJS.ErrnoException).code === 'EEXIST') throw new AppError('conflict', 'editor_conflict'); throw error; }
       finally { await handle.close().catch(() => undefined); await fs.rm(tmp, { force: true }); }
       return this.document(file, relative);
@@ -383,7 +383,7 @@ export class EditorService {
       if (current.binary || current.truncated) throw new AppError('bad_request', 'editor_readonly');
       await assertWritable(target.file);
       if (current.revision !== revision) throw new AppError('conflict', 'editor_conflict');
-      await preserveHistory(target.root, { path: relative, revision: current.revision, text: current.text, encoding: current.encoding ?? 'UTF8', reason: 'save' });
+      await preserveHistory(target.root, { path: relative, revision: current.revision, text: current.text, encoding: current.encoding ?? 'UTF8', ...(unmarked && encoding.startsWith('UTF16') ? { bom: false } : {}), reason: 'save' });
       const stat = await fs.stat(target.file);
       const tmp = path.join(path.dirname(target.file), `.editor-${randomUUID()}.tmp`);
       const handle = await fs.open(tmp, 'wx', stat.mode & 0o777);

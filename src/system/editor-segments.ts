@@ -47,8 +47,10 @@ export async function patchSegment(file: string, offset: number, end: number, te
     while (read < before.length) { const result = await source.read(before, read, before.length - read, offset + read); if (!result.bytesRead) throw new AppError('conflict', 'editor_conflict'); read += result.bytesRead; }
     // A history restore names the bytes it expects to replace; anything else there means later edits moved or changed them.
     if (expectedSha256 !== undefined && createHash('sha256').update(before).digest('hex') !== expectedSha256) throw new AppError('conflict', 'editor_conflict');
-    const oldText = decodeText(before, encoding, offset === 0);
-    const replacement = encodeText(text, encoding, offset === 0);
+    // A BOM is written back only where the file has one: an unmarked UTF-16 file (encoding named, not detected) stays unmarked.
+    const atBom = offset === 0 && bomSize > 0;
+    const oldText = decodeText(before, encoding, atBom);
+    const replacement = encodeText(text, encoding, atBom);
     if (replacement.length > 262144 || stat.size - before.length + replacement.length > 128 * 1024 * 1024) throw new AppError('too_large');
     // Both boundaries must also begin independently decodable characters.
     for (const boundary of new Set([offset, end])) {
