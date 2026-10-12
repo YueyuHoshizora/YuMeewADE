@@ -24,6 +24,18 @@ test('HTTP roleless send, snapshot first, stop queue and attachment preview', as
     assert.equal((await fetch(`${s.base}/api/attachment?project=P&task=${task.id}&name=..%2FPROJECT.md`)).status, 400);
   } finally { await s.close(); }
 });
+test('a chat stream refused at the SSE connection limit leaves the result unread', async () => {
+  const s = await startTestServer('limits:\n  sseConnections: 1\n', { providers: { codex: new MockCliProvider({ chunkMs: 1, text: 'reply' }) } });
+  const held = new AbortController();
+  try {
+    await s.api('POST', '/api/project/new', { name: 'P' });
+    const task = (await s.api('POST', '/api/task/new', { project: 'P', title: 'T', workspace: 'direct' })).json as Task;
+    await s.api('POST', '/api/chat/send', { project: 'P', task: task.id, text: 'hello' }); await s.app.runner.whenIdle();
+    await fetch(`${s.base}/api/events`, { signal: held.signal });
+    assert.equal((await s.api('GET', `/api/chat/stream?project=P&task=${task.id}`)).status, 503);
+    assert.equal(s.app.runner.unread().length, 1);
+  } finally { held.abort(); await s.close(); }
+});
 test('quickstart creates current-phase task, saves selection; settings and roles endpoints', async () => {
   const s = await startTestServer();
   try {
