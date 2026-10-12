@@ -5,7 +5,7 @@ export function validatePreferences(value: unknown): EditorPreferences {
   const v = value as EditorPreferences;
   if (typeof v.fontFamily !== 'string' || !/^[a-zA-Z0-9 ,_\-]{1,120}$/.test(v.fontFamily) || !Number.isInteger(v.fontSize) || v.fontSize < 8 || v.fontSize > 40 || !Number.isInteger(v.tabSize) || v.tabSize < 1 || v.tabSize > 8 || typeof v.insertSpaces !== 'boolean' || typeof v.wrap !== 'boolean' || !['preserve','lf','crlf'].includes(v.eol)) throw new Error('Invalid preferences');
   if (!v.keys || typeof v.keys.save !== 'string' || typeof v.keys.selection !== 'string') throw new Error('Invalid keybindings');
-  const reserved = ['Mod-k', 'Mod-Shift-p', 'Mod-Shift-f', 'Mod-c', 'Mod-v', 'Mod-x', 'Mod-z', 'Mod-a', 'Mod-f', 'Mod-Shift-z', 'Mod-y', 'Mod-r', 'Mod-w', 'Mod-t', 'Mod-n', 'Mod-q'];
+  const reserved = ['Mod-k', 'Mod-p', 'Mod-Shift-p', 'Mod-Shift-f', 'Mod-c', 'Mod-v', 'Mod-x', 'Mod-z', 'Mod-a', 'Mod-f', 'Mod-Shift-z', 'Mod-y', 'Mod-r', 'Mod-w', 'Mod-t', 'Mod-n', 'Mod-q'];
   for (const key of Object.values(v.keys)) if (!/^Mod-(Shift-)?[a-z]$/.test(key) || reserved.includes(key)) throw new Error('Invalid keybindings');
   if (v.keys.save === v.keys.selection) throw new Error('Conflicting keybindings');
   return { fontFamily: v.fontFamily, fontSize: v.fontSize, tabSize: v.tabSize, insertSpaces: v.insertSpaces, wrap: v.wrap, eol: v.eol, keys: { ...v.keys } };

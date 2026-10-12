@@ -22,6 +22,10 @@
 - 本機 stdio DAP 除錯：以使用者已安裝 adapter 的明確 argv 啟動（例如 debugpy、lldb-dap），支援條件斷點、stack／scopes／variables、evaluate、step；拒絕遠端附加與反向啟動。修正 LLDB 在不同 frame 重用 scope 參照導致讀到錯誤 frame 變數。
 - 內嵌網頁預覽：信任專案可在隔離 proxy origin 的 `allow-scripts` iframe 中執行 SPA、模組與 WebSocket 即時重載，剝除 Cookie／認證並拒絕重新導向；IDE CSP 與 Electron 主程序只允許核心回報的精確預覽 origin。
 - 終端 VT 相容性：捲動區、origin mode、替代畫面、插入／刪除行字、寬字元、DEC 圖形、bracketed paste 與鍵盤回報；heavy route／編輯器模組延後載入。
+- 快速開檔：工作台內 Ctrl/⌘+P 聚焦檔案篩選，依檔名開頭／包含、路徑包含、檔名內與跨目錄依序字元排序（`fts` → `files.ts`），Enter 開啟第一筆、方向鍵移動；`Mod-p` 列為保留快捷鍵。
+- 錯誤訊息：本地驗證／草稿衝突等已翻譯的錯誤、備份匯入匯出與更新下載的伺服器錯誤顯示實際原因，不再一律顯示「網路錯誤」或「檔案已變更」；確認對話框一律標示實際動作（刪除、匯入、重跑等），不再預設「儲存」。
+- 測試探索執行期間顯示執行中與經過秒數並防止重複送出；常用指示刪除按鈕提供螢幕閱讀器名稱。
+- 核心初始化中途失敗會關閉已開啟的預覽 gateway 等資源再釋放工作區鎖；切換工作區後即使操作紀錄寫入失敗，也回報成功並收尾舊工作區與其鎖。
 
 ### 驗證、審查與工作流程
 

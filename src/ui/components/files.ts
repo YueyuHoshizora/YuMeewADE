@@ -599,6 +599,27 @@ export function openFileBrowser(project: string, task: string, workspace = activ
   };
   actions.append(encoding);
   filter.oninput = () => void run(load);
+  // Quick open: Ctrl/⌘+P jumps to the ranked file filter; Enter opens the best match, arrows walk the results.
+  filter.setAttribute('aria-keyshortcuts', 'Control+P Meta+P');
+  dialog.addEventListener('keydown', event => {
+    if (event.isComposing || event.altKey || event.shiftKey || !(event.ctrlKey || event.metaKey) || event.key.toLowerCase() !== 'p') return;
+    event.preventDefault(); filter.focus(); filter.select();
+  });
+  filter.addEventListener('keydown', event => {
+    if (event.isComposing) return;
+    const first = results.querySelector<HTMLButtonElement>('.file-result');
+    if (event.key === 'Enter' && first) { event.preventDefault(); first.click(); }
+    else if (event.key === 'ArrowDown' && first) { event.preventDefault(); first.focus(); }
+  });
+  results.addEventListener('keydown', event => {
+    if (event.key !== 'ArrowDown' && event.key !== 'ArrowUp') return;
+    const items = [...results.querySelectorAll<HTMLButtonElement>('.file-result')];
+    const at = items.indexOf(document.activeElement as HTMLButtonElement);
+    if (at < 0) return;
+    event.preventDefault();
+    if (event.key === 'ArrowUp' && at === 0) filter.focus();
+    else items[Math.min(items.length - 1, Math.max(0, at + (event.key === 'ArrowDown' ? 1 : -1)))]!.focus();
+  });
   const unload = (event: BeforeUnloadEvent) => { views.forEach((_, index) => capture(index)); persist(); if (editReserved || [...buffers.values()].some(dirty)) { event.preventDefault(); event.returnValue = ''; } };
   window.addEventListener('beforeunload', unload);
   const panelHost = el('div', 'editor-extension-panels');
