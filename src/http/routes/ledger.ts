@@ -83,6 +83,8 @@ export function registerLedgerRoutes(router: Router, app: App): void {
       if (typeof patch.verify !== 'string' || /[\r\n\0]/u.test(patch.verify)) throw new AppError('bad_request', 'field_type', { field: 'verify' });
       if (patch.verify.trim().length > 500) throw new AppError('bad_request', 'field_too_long', { field: 'verify' });
     }
+    // Running work holds the current folder (worktrees, terminals, AI); it must stop before the project points elsewhere.
+    if (patch.body !== undefined && app.taskBusy(project)) throw new AppError('conflict', 'git_workbench_running');
     const result = await app.projects.update(project, patch as ProjectPatch);
     await changed('project.update', project);
     return result;

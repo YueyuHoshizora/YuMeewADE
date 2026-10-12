@@ -143,6 +143,29 @@ test('a draft image whose file was removed outside the app is not found rather t
   } finally { await s.close(); }
 });
 
+test('a moved main folder is flagged in the state and the project can be pointed at its new location', async () => {
+  const s = await startTestServer('', { providers: { mock: new MockCliProvider({ chunkMs: 50, text: () => 'x'.repeat(40) }) } });
+  try {
+    const body = path.join(s.dir, 'code'); await fs.mkdir(body); await gitOk(body, ['init', '-q']);
+    const project = (await s.api('POST', '/api/project/new', { name: 'Ext', body })).json as Project;
+    const flagged = async () => ((await s.api('GET', '/api/state')).json as AppState).projects.find(p => p.id === project.id)!.bodyMissing;
+    assert.equal(await flagged(), false);
+    const moved = path.join(s.dir, 'moved'); await fs.rename(body, moved);
+    assert.equal(await flagged(), true);
+    assert.equal((await s.api('POST', '/api/project/update', { project: project.id, patch: { body: moved } })).status, 200);
+    assert.equal(await flagged(), false);
+    const view = (await s.api('GET', `/api/project/trust?project=${project.id}`)).json as ProjectTrustView;
+    assert.equal(view.root, await fs.realpath(moved));
+    // Work holding the folder must stop before the project points elsewhere.
+    const task = (await s.api('POST', '/api/task/new', { project: project.id, title: 'T', cli: 'mock', workspace: 'direct' })).json as Task;
+    await s.api('POST', '/api/project/trust', { project: project.id, state: 'trusted', overrides: {}, revision: view.revision, confirmed: true });
+    assert.equal((await s.api('POST', '/api/chat/send', { project: project.id, task: task.id, text: 'go', ai: 'mock' })).status, 200);
+    const refused = await s.api('POST', '/api/project/update', { project: project.id, patch: { body } });
+    assert.equal(refused.status, 409);
+    await s.api('POST', '/api/chat/stop', { project: project.id, task: task.id });
+  } finally { await s.close(); }
+});
+
 test('model and effort are validated the same way before any CLI starts', async () => {
   const { server: s, project: p, task: t } = await setup();
   try {

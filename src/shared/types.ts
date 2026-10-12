@@ -213,6 +213,8 @@ export interface ProjectView extends Project {
   isGit: boolean;
   /** 解析後的主資料夾絕對路徑（body 為空時＝台帳資料夾）。 */
   bodyPath: string;
+  /** The main folder is gone (moved or deleted outside the app); execution and Git need a new location. */
+  bodyMissing: boolean;
   /** 台帳資料夾絕對路徑。 */
   dir: string;
   /** 快速開始上次的選擇。 */

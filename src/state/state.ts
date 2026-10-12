@@ -43,10 +43,11 @@ export async function buildState(app: App): Promise<StateSnapshot> {
     const bodyPath = app.projects.bodyPath(project);
     const currentPhase = app.projects.currentPhase(project);
     const group = phaseTasks(project, tasks);
-    const [isGit, startPick, continued] = await Promise.all([
+    const [isGit, startPick, continued, body] = await Promise.all([
       pathExists(path.join(bodyPath, '.git')), readJson<AiPick | null>(app.ws.startPickFile(project.id), null), app.completion.phaseContinued(project.id),
+      fs.stat(bodyPath).catch(() => null),
     ]);
-    return { ...project, tasks: taskViews, currentPhase, phaseOffer: Boolean(currentPhase) && group.length > 0 && group.every((task) => task.state === '完成') && continued !== phaseKey(group), isGit, bodyPath, dir: app.ws.projectDir(project.id), startPick, pinned: savedOrder.pins.includes(project.id) };
+    return { ...project, tasks: taskViews, currentPhase, phaseOffer: Boolean(currentPhase) && group.length > 0 && group.every((task) => task.state === '完成') && continued !== phaseKey(group), isGit, bodyPath, bodyMissing: !body?.isDirectory(), dir: app.ws.projectDir(project.id), startPick, pinned: savedOrder.pins.includes(project.id) };
   }));
   const order: Record<string, string[]> = {};
   for (const project of projects) {

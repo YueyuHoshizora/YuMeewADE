@@ -324,13 +324,21 @@ export function projectView(context: ViewContext, project: ProjectView, params: 
       if (related === null || JSON.stringify(related) === JSON.stringify(project.related)) return;
       await request('/api/project/update', { project: project.id, patch: { related } }); await context.refresh();
     });
+    // Pointing the project at a moved main folder; the desktop app offers its folder picker instead of a typed path.
+    const editBody = () => button(t('project.editBody'), async () => {
+      const body = window.yumeewade?.pickFolder ? await window.yumeewade.pickFolder() : await textModal(`${t('project.editBody')} — ${t('project.bodyHint')}`, project.body || project.bodyPath, 4096, 2);
+      if (!body || body.trim() === project.body) return;
+      await request('/api/project/update', { project: project.id, patch: { body: body.trim() } }); await context.refresh();
+    });
     const editNotes = button(t('project.editNotes'), async () => {
       const original = (await request<{ text: string }>(query('/api/project/notes', { project: project.id }))).text;
       const text = await textModal(t('project.editNotes'), original, 20_000, 14);
       if (text === null || text === original.trim()) return;
       await request('/api/project/notes', { project: project.id, text, previous: original }); await context.refresh();
     });
-    overview.append(header, actions, disclosure(t('project.notes'), markdown(project.description + '\n\n' + project.notes), row(editDescription, editNotes, editRelated)));
+    if (project.bodyMissing) overview.append(header, el('p', 'warning', t('project.bodyMissing', { path: project.bodyPath })), row(editBody()));
+    else overview.append(header);
+    overview.append(actions, disclosure(t('project.notes'), markdown(project.description + '\n\n' + project.notes), row(editDescription, editNotes, editRelated, editBody())));
     if (project.issues.length) {
       const localIssues = el('div', 'form');
       for (const issue of project.issues) localIssues.append(el('p', '', `${issue.level ? `[${issue.level}] ` : ''}${issue.text}`));

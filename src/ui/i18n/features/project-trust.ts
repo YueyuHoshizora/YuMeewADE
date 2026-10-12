@@ -1,10 +1,10 @@
-const bodyMissingZhTW = { 'detail.project_body_missing': '找不到專案的主資料夾，可能已被移動或刪除；請在專案設定改回正確位置' };
-const bodyMissingZhCN = { 'detail.project_body_missing': '找不到项目的主目录，可能已被移动或删除；请在项目设置改回正确位置' };
-const bodyMissingEn = { 'detail.project_body_missing': 'The project’s main folder is missing (moved or deleted?); point the project back to it in its settings' };
-const bodyMissingJa = { 'detail.project_body_missing': 'プロジェクトのメインフォルダーが見つかりません（移動または削除された可能性があります）。プロジェクト設定で正しい場所に戻してください' };
-const bodyMissingDe = { 'detail.project_body_missing': 'Der Hauptordner des Projekts fehlt (verschoben oder gelöscht?); bitte in den Projekteinstellungen wieder auf ihn verweisen' };
-const bodyMissingFr = { 'detail.project_body_missing': 'Le dossier principal du projet est introuvable (déplacé ou supprimé ?) ; indique de nouveau son emplacement dans les réglages du projet' };
-const bodyMissingIt = { 'detail.project_body_missing': 'La cartella principale del progetto non esiste (spostata o eliminata?); reimposta la posizione nelle impostazioni del progetto' };
+const bodyMissingZhTW = { 'detail.project_body_missing': '找不到專案的主資料夾，可能已被移動或刪除；請在專案頁按「變更主資料夾」指到新位置' };
+const bodyMissingZhCN = { 'detail.project_body_missing': '找不到项目的主目录，可能已被移动或删除；请在项目页点“更改主文件夹”指到新位置' };
+const bodyMissingEn = { 'detail.project_body_missing': 'The project’s main folder is missing (moved or deleted?); use “Change main folder” on the project page to point to its new location' };
+const bodyMissingJa = { 'detail.project_body_missing': 'プロジェクトのメインフォルダーが見つかりません（移動または削除された可能性があります）。プロジェクトページの「メインフォルダーを変更」で新しい場所を指定してください' };
+const bodyMissingDe = { 'detail.project_body_missing': 'Der Hauptordner des Projekts fehlt (verschoben oder gelöscht?); auf der Projektseite mit „Hauptordner ändern“ den neuen Ort angeben' };
+const bodyMissingFr = { 'detail.project_body_missing': 'Le dossier principal du projet est introuvable (déplacé ou supprimé ?) ; utilise « Changer le dossier principal » sur la page du projet pour indiquer son nouvel emplacement' };
+const bodyMissingIt = { 'detail.project_body_missing': 'La cartella principale del progetto non esiste (spostata o eliminata?); usa «Cambia cartella principale» nella pagina del progetto per indicare la nuova posizione' };
 export const featureZhTW = { ...bodyMissingZhTW,
   'trust.title': '專案信任與執行邊界', 'trust.unreviewed': '沿用全域權限（未個別檢查）', 'trust.trusted': '已明確信任', 'trust.restricted': '限制執行', 'trust.user': '執行帳號：{user}', 'trust.root': '程式碼來源：{root}', 'trust.cwd': '工作位置：{cwd}', 'trust.additional': 'AI 額外資料夾：{dirs}', 'trust.warning': '完整權限不是沙箱，AI、終端與指令以你的帳號執行，可存取工作位置以外的資料。限制執行會阻止 AI、驗證、終端及可執行程式碼的 Git 操作；仍可檢視與手動編輯檔案。唯讀審查另使用既有強制限制。', 'trust.changed': '程式碼路徑已改變，原信任失效；必須重新確認。', 'trust.inherit': '沿用全域', 'trust.safe': 'CLI 安全旗標', 'trust.full': '完整權限', 'trust.confirm': '確認此來源與執行權限？正在執行的作業不會變更；請先停止再修改。', 'detail.project_trust_invalid': '專案信任設定不合法，請重新檢查', 'detail.project_trust_changed': '專案路徑或信任設定已改變，請重新確認', 'detail.project_restricted': '此專案已限制執行；請檢查來源並明確信任後再執行' };
 export const featureZhCN = { ...bodyMissingZhCN,
