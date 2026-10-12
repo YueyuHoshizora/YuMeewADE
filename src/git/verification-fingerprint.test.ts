@@ -68,3 +68,17 @@ test("a main folder's own .ai/verification files are content; only the ledger's 
     assert.equal(await verificationFingerprint(root, '', undefined, ledger), before);
   } finally { await fs.rm(root, { recursive: true, force: true }); }
 });
+
+test('with declared inputs, new folders holding no inputs (inside outputs or not) are not drift; a new input is', async () => {
+  const root = await fs.mkdtemp(path.join(os.tmpdir(), 'verify-dirs-'));
+  try {
+    await fs.writeFile(path.join(root, 'a.ts'), 'source');
+    const model = { inputs: ['**/*.ts'], outputs: ['dist/**'] };
+    const before = await verificationFingerprint(root, '', model);
+    await fs.mkdir(path.join(root, 'dist', 'assets'), { recursive: true }); await fs.writeFile(path.join(root, 'dist', 'assets', 'a.js'), 'built');
+    await fs.mkdir(path.join(root, 'cache', 'deep'), { recursive: true });
+    assert.equal(await verificationFingerprint(root, '', model), before);
+    await fs.writeFile(path.join(root, 'cache', 'deep', 'b.ts'), 'new input');
+    assert.notEqual(await verificationFingerprint(root, '', model), before);
+  } finally { await fs.rm(root, { recursive: true, force: true }); }
+});

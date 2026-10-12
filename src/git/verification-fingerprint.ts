@@ -57,8 +57,10 @@ export async function verificationFingerprint(root: string, configuration: strin
     if (canonical !== root && !isInside(root, canonical)) throw new AppError('bad_request');
     const directory = await fs.stat(dir);
     // Directory timestamps change when atomic history writes rename temporary files.
-    // Names/content still fingerprint every non-managed entry, including ignored inputs.
-    digest.update(JSON.stringify([path.relative(root, dir), directory.mode, directory.ino, directory.dev]));
+    // Names/content still fingerprint every non-managed entry, including ignored inputs. With declared inputs only the
+    // matching files count: folders are just walked (an excluded output folder may hold an explicit input), so creating
+    // or replacing a folder with no inputs in it is not drift.
+    if (!inputs) digest.update(JSON.stringify([path.relative(root, dir), directory.mode, directory.ino, directory.dev]));
     const entries = await fs.readdir(dir, { withFileTypes: true });
     entries.sort((a, b) => a.name.localeCompare(b.name));
     for (const entry of entries) {
@@ -71,7 +73,7 @@ export async function verificationFingerprint(root: string, configuration: strin
       if (excluded(portable) && (!directoryLike || !inputs || !mayContain(portable))) continue;
       if (directoryLike ? !mayContain(portable) : !included(portable)) continue;
       const stat = await fs.lstat(file);
-      digest.update(JSON.stringify(stat.isDirectory()
+      if (!stat.isDirectory() || !inputs) digest.update(JSON.stringify(stat.isDirectory()
         ? [relative, stat.mode, stat.ino, stat.dev]
         : [relative, stat.mode, stat.size, stat.mtimeMs, stat.ctimeMs, stat.ino, stat.dev]));
       if (stat.isSymbolicLink()) {
