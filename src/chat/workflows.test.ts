@@ -101,6 +101,54 @@ test('two independent human gates are approved one after the other and then comp
   assert.equal(second.state, 'completed');
 }));
 
+test('approved human failure recovery completes a workflow with a handled failed expert', () => withTmpWorkspace(async ws => {
+  const s = await fixture(ws, async (_p, task) => ({ request: task, ai: 'mock', text: 'failed', ok: false, approved: false, structured: true }));
+  await s.workflow.configure('P', s.task.id, [], [node('expert'), node('recover', ['expert'], { role: 'human', condition: { node: 'expert', outcome: 'failure' } })]);
+  s.reset(); await s.workflow.start('P', s.task.id); await s.idle();
+  const approved = await s.workflow.approveHuman('P', s.task.id, 'Inspected and recovered', 'recover');
+  assert.equal(approved.state, 'completed');
+  assert.equal(approved.reason, undefined);
+  assert.deepEqual(approved.nodeStates, { expert: 'failed', recover: 'succeeded' });
+}));
+
+test('saving unchanged human gates preserves pause and allows approval without another Start', () => withTmpWorkspace(async ws => {
+  const s = await fixture(ws, async () => { throw new Error('no AI node'); });
+  await s.workflow.configure('P', s.task.id, [], [node('human', [], { role: 'human' })]);
+  s.reset(); await s.workflow.start('P', s.task.id); await s.idle();
+  const paused = await s.workflow.get('P', s.task.id);
+  const saved = await s.workflow.configure('P', s.task.id, [], paused.steps, paused.revision);
+  assert.deepEqual([saved.state, saved.reason, saved.nodeStates], ['paused', 'workflow_human', { human: 'human' }]);
+  const approved = await s.workflow.approveHuman('P', s.task.id, 'Inspected', 'human', saved.revision);
+  assert.equal(approved.state, 'completed');
+}));
+
+test('configure preserves a busy question-answer branch and rejects invalidation with workflow_busy', () => withTmpWorkspace(async ws => {
+  const busy = new Set<string>();
+  let tasks: TaskLedger;
+  const runner = {
+    isRunning: (_p: string, t: string) => busy.has(t), stop: async () => {},
+    send: async ({ project, task }: { project: string; task: string }) => {
+      await tasks.update(project, task, { state: '等待回覆' }); return { request: task };
+    },
+    whenTaskIdle: async () => {},
+    outcome: async () => ({ role: 'assistant', text: 'Continue?', asks: [{ question: 'Continue?' }] }),
+  } as unknown as ChatRunner;
+  const s = await fixture(ws, async () => { throw new Error('not a review'); }, { runner, isTaskBusy: (_p, t) => busy.has(t) });
+  tasks = s.tasks;
+  await s.workflow.configure('P', s.task.id, [], [node('ask', [], { review: false })]);
+  s.reset(); await s.workflow.start('P', s.task.id); await s.idle();
+  const paused = await s.workflow.get('P', s.task.id);
+  const branch = paused.branchTasks!.ask!;
+  busy.add(branch);
+  await assert.rejects(s.workflow.configure('P', s.task.id, [], [node('ask', [], { review: false, text: 'replacement' })], paused.revision), { detail: 'workflow_busy' });
+  const retained = await s.workflow.get('P', s.task.id);
+  assert.deepEqual(retained, paused);
+  busy.clear();
+  const changed = await s.workflow.configure('P', s.task.id, [], [node('ask', [], { review: false, text: 'replacement' })], paused.revision);
+  assert.equal(changed.nodeStates?.ask, 'pending');
+  assert.equal(changed.branchTasks?.ask, undefined);
+}));
+
 test('resolving the conflict of a final integration node completes the workflow', () => withTmpWorkspace(async ws => {
   const tasks = new TaskLedger(ws); const worktree = new WorktreeService({ ws, projects: new ProjectLedger(ws), tasks, diffBytes: 100000 });
   const s = await fixture(ws, async (p, t, input) => {
@@ -131,6 +179,33 @@ test('stop drains concurrent nodes and never starts a dependent without a new ex
   assert.equal(paused.state, 'paused'); assert.equal(paused.reason, 'workflow_stopped'); assert.equal(calls, 1);
   assert.equal(paused.nodeStates?.join, 'pending');
   await s.workflow.get('P', s.task.id); assert.equal(calls, 1);
+}));
+
+test('Stop during next-wave freshness checking leaves dependent integration pending until a new Start', () => withTmpWorkspace(async ws => {
+  const entered = Promise.withResolvers<void>(); const release = Promise.withResolvers<void>();
+  let freshnessCalls = 0; let integrationCalls = 0;
+  const integration = {
+    create: async (_p: string, _t: string, _r: string, sources: string[]) => {
+      integrationCalls++;
+      return { task: sources[0]!, base: 'base', head: 'head', sources: [], conflicts: [], state: 'ready', diff: 'diff', truncated: false };
+    },
+  } as unknown as WorkflowIntegrationService;
+  const s = await fixture(ws, async (_p, task) => ({ request: task, ai: 'mock', text: 'source', ok: true, approved: true, structured: true }), {
+    integration, verify: async () => ({ ok: true, id: 'verified' }),
+    currentVerification: async () => {
+      if (++freshnessCalls === 2) { entered.resolve(); await release.promise; }
+      return true;
+    },
+  });
+  await s.workflow.configure('P', s.task.id, [], [node('source'), node('verify', ['source'], { kind: 'verify', review: false }), node('merge', ['source', 'verify'], { kind: 'integration', upstream: ['source'], review: false })]);
+  s.reset(); await s.workflow.start('P', s.task.id); await entered.promise;
+  const stopping = s.workflow.stop('P', s.task.id); release.resolve(); await stopping;
+  const paused = await s.workflow.get('P', s.task.id);
+  assert.equal(integrationCalls, 0);
+  assert.deepEqual([paused.state, paused.reason, paused.nodeStates?.merge, paused.branchTasks?.merge], ['paused', 'workflow_stopped', 'pending', undefined]);
+  s.reset(); await s.workflow.start('P', s.task.id); await s.idle();
+  assert.equal(integrationCalls, 1);
+  assert.equal((await s.workflow.get('P', s.task.id)).state, 'completed');
 }));
 
 test('a native gate still preparing when the workflow stops never starts', () => withTmpWorkspace(async ws => {

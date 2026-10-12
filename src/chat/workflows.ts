@@ -97,13 +97,19 @@ export class WorkflowService {
       for (const old of prior.steps) if (JSON.stringify(old) !== JSON.stringify(steps.find(s => s.id === old.id))) for (const id of downstreamNodes(prior.steps, old.id!)) changed.add(id);
       for (const step of steps) if (!prior.steps.some(s => s.id === step.id)) changed.add(step.id!);
       if (JSON.stringify(dependencies) !== JSON.stringify(prior.dependencies)) steps.forEach(s => changed.add(s.id!));
+      const affectedBranches = [...changed].flatMap(id => Object.hasOwn(prior.branchTasks!, id) ? [prior.branchTasks![id]!] : []);
+      const assertIdle = (): void => {
+        if (this.isBusy(p, t) || this.deps.isTaskBusy(p, t) || affectedBranches.some(branch => this.isBusy(p, branch) || this.deps.isTaskBusy(p, branch))) throw new AppError('conflict', 'workflow_busy');
+      };
+      assertIdle();
       const at = new Date().toISOString();
       for (const result of prior.results) if (changed.has(result.node ?? prior.steps[result.step ?? 0]?.id ?? '')) result.invalidatedAt ??= at;
       for (const id of changed) { delete prior.candidates?.[id]; delete prior.branchTasks?.[id]; }
       for (const id of changed) appendWorkflowEvent(prior, { type: 'node.invalidated', node: id, outcome: 'pending' });
-      if (this.isBusy(p, t) || this.deps.isTaskBusy(p, t)) throw new AppError('conflict', 'workflow_busy');
       const plan: WorkflowPlan = { ...prior, dependencies: [...dependencies], steps, revision: prior.revision! + 1, state: 'ready', nodeStates: Object.fromEntries(steps.map(s => [s.id!, changed.has(s.id!) ? 'pending' : prior.nodeStates![s.id!] ?? 'pending'])) };
-      delete plan.reason; this.updateCursor(plan); await this.refreshDelivery(p, plan); await writeJson(this.file(p, t), plan); this.deps.changed(p, t); return plan;
+      this.afterHuman(plan); await this.refreshDelivery(p, plan);
+      assertIdle();
+      await writeJson(this.file(p, t), plan); this.deps.changed(p, t); return plan;
     });
   }
   async assertDependencies(p: string, t: string): Promise<void> {
@@ -234,6 +240,7 @@ export class WorkflowService {
     }
     if (step.kind === 'integration') {
       if (!this.deps.integration) throw new AppError('unavailable', 'workflow_invalid');
+      if (job.stopped) return;
       const sources = step.upstream!.map(node => this.latest(plan, node)?.task);
       if (sources.some(task => !task)) throw new AppError('conflict', 'workflow_invalid');
       plan.nodeStates![id] = 'running';
@@ -301,6 +308,7 @@ export class WorkflowService {
       while (!job.stopped) {
         await this.assertDependencies(p, t);
         await this.assertFreshGates(p, plan);
+        if (job.stopped) break;
         if (Object.values(plan.nodeStates!).includes('human')) { plan.state = 'paused'; plan.reason = 'workflow_human'; break; }
         const ready = this.ready(plan);
         for (const step of ready) {
@@ -318,12 +326,13 @@ export class WorkflowService {
         this.updateCursor(plan);
         if (!runnable.length) {
           if (this.ready(plan).length) continue;
-          const failed = plan.steps.some(s => plan.nodeStates![s.id!] === 'failed' && !plan.steps.some(next => next.condition?.node === s.id && next.condition?.outcome === 'failure' && plan.nodeStates![next.id!] === 'succeeded'));
-          plan.state = failed || Object.values(plan.nodeStates!).includes('pending') ? 'failed' : 'completed';
-          if (plan.state === 'failed') plan.reason = 'workflow_step_failed'; break;
+          plan.state = this.terminalState(plan) ?? 'failed';
+          if (plan.state === 'failed') plan.reason = 'workflow_step_failed'; else delete plan.reason;
+          break;
         }
         // Every runnable owns a different isolated worktree; a bounded wave really overlaps.
         const wave = runnable.slice(0, Math.max(1, Math.min(20, this.deps.maxParallel)));
+        if (job.stopped) break;
         const settled = await Promise.allSettled(wave.map(step => this.executeNode(p, t, plan, step, job)));
         const rejected = settled.find(result => result.status === 'rejected');
         if (rejected?.status === 'rejected') throw rejected.reason;
@@ -385,11 +394,17 @@ export class WorkflowService {
       this.updateCursor(plan); await writeJson(this.file(p, t), plan); this.deps.changed(p, t); return plan;
     });
   }
+  private terminalState(plan: WorkflowPlan): 'completed' | 'failed' | undefined {
+    if (!plan.steps.length || plan.steps.some(step => ['pending', 'running', 'human'].includes(plan.nodeStates![step.id!]!))) return undefined;
+    const failed = plan.steps.some(step => plan.nodeStates![step.id!] === 'failed' && !plan.steps.some(next => next.condition?.node === step.id && next.condition?.outcome === 'failure' && plan.nodeStates![next.id!] === 'succeeded'));
+    return failed ? 'failed' : 'completed';
+  }
   /** After a person finished a node: keep waiting while another node still needs a person, complete when every node is done, otherwise continue. */
   private afterHuman(plan: WorkflowPlan): void {
     this.updateCursor(plan);
     if (Object.values(plan.nodeStates!).includes('human')) { plan.state = 'paused'; plan.reason = 'workflow_human'; return; }
-    plan.state = plan.cursor === plan.steps.length ? 'completed' : 'ready'; delete plan.reason;
+    plan.state = this.terminalState(plan) ?? 'ready';
+    if (plan.state === 'failed') plan.reason = 'workflow_step_failed'; else delete plan.reason;
   }
   async stop(p: string, t: string): Promise<void> {
     const job = this.jobs.get(this.key(p, t)); if (!job) return;
