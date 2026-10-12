@@ -56,14 +56,16 @@ export class WorktreeService {
       // Git canonicalizes macOS /var aliases; ledger paths retain the configured root.
       const dir = isInside(realRoot, listed) ? path.join(this.ws.root, path.relative(realRoot, listed)) : listed;
       const resolved = path.resolve(dir);
-      const task = records.find(record => record.workspace !== 'direct' && [record.workdir, this.ws.worktreeDir(project, record.id)].filter(Boolean).some(value => path.resolve(value) === resolved));
-      const archivedTask = archived.find(record => this.ws.worktreeDir(project, record.task) === resolved);
-      const main = entries.length === 0 || resolved === path.resolve(repo);
+      // path.relative folds case on Windows, where Git may report a drive letter or folder in another case than the ledger.
+      const same = (value: string) => path.relative(path.resolve(value), resolved) === '';
+      const task = records.find(record => record.workspace !== 'direct' && [record.workdir, this.ws.worktreeDir(project, record.id)].filter(Boolean).some(same));
+      const archivedTask = archived.find(record => same(this.ws.worktreeDir(project, record.task)));
+      const main = entries.length === 0 || same(repo);
       const missing = !(await pathExists(dir));
       const locked = fields.some(value => value === 'locked' || value.startsWith('locked '));
       const kind = main ? 'main' : task ? 'active' : archivedTask ? 'archived' : 'orphan';
       const dirty = missing ? null : (await gitOk(dir, ['status', '--porcelain', '--untracked-files=all', '--ignored'])).length > 0;
-      const managed = path.dirname(resolved) === path.join(this.ws.workDir, project);
+      const managed = path.relative(path.dirname(resolved), path.join(this.ws.workDir, project)) === '';
       entries.push({ path: dir, branch: fields.find(value => value.startsWith('branch '))?.slice(7).replace(/^refs\/heads\//, '') ?? '', kind, task: task?.id ?? archivedTask?.task ?? '', locked, prunable: missing && !locked, dirty, removable: managed && !main && !task && !missing && !locked && dirty === false });
     }
     return entries;

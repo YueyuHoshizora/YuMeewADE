@@ -5,7 +5,15 @@ import { promises as fs } from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { test } from 'node:test';
-import { acquireWorkspaceLock, atomicWrite, readJson } from './fsx.ts';
+import { acquireWorkspaceLock, atomicWrite, isInside, readJson } from './fsx.ts';
+
+test('isInside keeps names that merely start with two dots inside, and still refuses the parent and the base itself', () => {
+  assert.equal(isInside('/work/repo', '/work/repo/..env.bak'), true);
+  assert.equal(isInside('/work/repo', '/work/repo/src/..'), false);
+  assert.equal(isInside('/work/repo', '/work/repo/../other'), false);
+  assert.equal(isInside('/work/repo', '/work'), false);
+  assert.equal(isInside('/work/repo', '/work/repository'), false);
+});
 
 test('workspace ownership is exclusive, refuses a live PID and takes over a dead PID', async () => {
   const root = await fs.mkdtemp(path.join(os.tmpdir(), 'ym-lock-'));

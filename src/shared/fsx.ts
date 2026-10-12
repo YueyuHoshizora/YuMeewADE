@@ -104,10 +104,10 @@ export async function appendLine(file: string, line: string): Promise<void> {
   } finally { await handle.close(); }
 }
 
-/** 確認 target 位於 base 之內（防路徑逃逸）。 */
+/** 確認 target 位於 base 之內（防路徑逃逸）。名稱以 `..` 開頭的一般檔案（例如 `..env.bak`）仍在裡面。 */
 export function isInside(base: string, target: string): boolean {
   const rel = path.relative(path.resolve(base), path.resolve(target));
-  return rel !== '' && !rel.startsWith('..') && !path.isAbsolute(rel);
+  return rel !== '' && rel !== '..' && !rel.startsWith(`..${path.sep}`) && !path.isAbsolute(rel);
 }
 
 /** Exclusive workspace writer ownership; a hard-link claim serializes stale-lock removal across processes. */

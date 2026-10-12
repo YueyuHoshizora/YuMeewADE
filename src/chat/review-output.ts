@@ -3,6 +3,7 @@ import { promises as fs } from 'node:fs';
 import path from 'node:path';
 import { git, gitOk, isRepo } from '../git/git.ts';
 import { AppError } from '../shared/errors.ts';
+import { isInside } from '../shared/fsx.ts';
 import type { ReviewFinding } from '../shared/review-types.ts';
 
 export const REVIEW_PROTOCOL = 'Return ONLY a JSON object: {"schema":1,"approved":boolean,"findings":[{"severity":"critical|major|minor|info","path":"relative/file","line":1,"message":"finding","evidence":"specific evidence"}]}. Approval must be explicit; approve only when no unresolved critical or major findings exist. Never change files.';
@@ -50,9 +51,9 @@ export async function reviewFingerprint(cwd: string): Promise<{ revision: string
   for (const name of [...new Set(files)].sort()) {
     if (name.split('/').includes('.ai')) continue;
     const file = path.resolve(cwd, name);
-    if (!file.startsWith(absoluteRoot + path.sep)) throw new AppError('conflict');
+    if (!isInside(absoluteRoot, file)) throw new AppError('conflict');
     const parent = await fs.realpath(path.dirname(file)).catch((error: NodeJS.ErrnoException) => { if (error.code === 'ENOENT') return null; throw error; });
-    if (parent && parent !== root && !parent.startsWith(root + path.sep)) throw new AppError('conflict');
+    if (parent && parent !== root && !isInside(root, parent)) throw new AppError('conflict');
     hash.update(name + '\0');
     try {
       const stat = await fs.lstat(file);
