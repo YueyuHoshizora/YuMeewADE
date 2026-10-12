@@ -283,6 +283,13 @@ export class App {
       || this.review.isBusy(project, task) || this.workflows.isBusy(project, task) || this.testExplorer.isRunning(project, task) || this.editorProposals.isBusy(project, task);
   }
 
+  /** Long-lived terminals/dev servers do not own editor files; CAS detects their external edits. */
+  editorWriteBusy(project: string, task?: string): boolean {
+    return this.runner.isBusy(project, task) || this.verify.isRunning(project, task)
+      || this.review.isBusy(project, task) || this.workflows.isBusy(project, task)
+      || this.testExplorer.isRunning(project, task) || this.editorProposals.isBusy(project, task);
+  }
+
   async init(): Promise<void> {
     await this.ws.init();
     if (this.accounts) {

@@ -5,6 +5,7 @@
 ## [Unreleased]
 
 ### IDE 與本機工具
+- 分離編輯写入與行程存活的互斥政策：終端／開發行程可與 revision 綁定儲存並行，AI／審查／流程／驗證仍阻擋編輯寫入；外部修改拒絕覆寫，封存與 Git 操作仍保留原執行中防護。
 
 - 多文件工作台支援最多 50 文件、雙分割、依工作區／主資料夾／作業根隔離的 4 MiB v3 復原，含所有開啟文件／clean 分頁中繼資料、dirty 文字、兩面板路徑、焦點與各面板游標選取／捲動位置；revision 原子儲存及外部變更明確採用新基底。新增檔案／資料夾 CRUD、有界 literal 搜尋、取代預覽與多文件套用；執行中禁止儲存。
 - 原生 stdio LSP 增加 completion、hover、rename、format、code actions、專案 Problems 與來源行段／搜尋命中釘選；workspace edits 必須基於已儲存快照，dirty 文件先儲存，否則 editor_conflict。TS／JS 使用已安裝 TypeScript 7 `tsc --lsp -stdio`，其他可信任 server 使用 `YUMEEWADE_LSP_COMMANDS`，缺少時明確不可用。
