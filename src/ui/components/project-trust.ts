@@ -6,7 +6,7 @@ import { button, confirmModal, el, field, iconButton, row, select } from './dom.
 export function projectTrustButton(project: string, task?: string): HTMLButtonElement {
   return button(t('trust.title'), async () => {
     let current = await request<ProjectTrustView>(query('/api/project/trust', { project, ...(task ? { task } : {}) }));
-    const dialog = el('dialog', 'modal');
+    const dialog = el('dialog', 'modal'); dialog.setAttribute('aria-label', t('trust.title'));
     const state = select(['unreviewed', 'trusted', 'restricted'].map(value => ({ value, label: t(`trust.${value as ProjectTrustState}`) })), current.state);
     const overview = el('div'); const overrides = el('div', 'form-grid');
     const choices = new Map<string, HTMLSelectElement>();

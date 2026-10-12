@@ -83,14 +83,20 @@ export function showError(error: unknown): void {
   if (error instanceof ApiFailure && error.body.conflicts?.length) modal(t('copy.conflict'), el('pre', '', error.body.conflicts.join('\n')));
 }
 export async function run(action: () => Promise<unknown>): Promise<void> { try { await action(); } catch (error) { showError(error); } }
+let dialogIds = 0;
+/** The heading names the dialog for screen readers, which otherwise announce only "dialog". */
+function dialogHeading(dialog: HTMLDialogElement, title: string): HTMLElement {
+  const heading = el('h2', '', title); heading.id = `dialog-title-${++dialogIds}`; dialog.setAttribute('aria-labelledby', heading.id); return heading;
+}
 export function modal(title: string, ...content: Node[]): void {
-  const dialog = el('dialog', 'modal'); dialog.append(row(el('h2', '', title), button(t('common.close'), () => dialog.close())), ...content); dialog.addEventListener('close', () => dialog.remove()); document.body.append(dialog); dialog.showModal();
+  const dialog = el('dialog', 'modal'); dialog.append(row(dialogHeading(dialog, title), button(t('common.close'), () => dialog.close())), ...content); dialog.addEventListener('close', () => dialog.remove()); document.body.append(dialog); dialog.showModal();
 }
 /** Escape、取消與關閉都會完成 Promise，不讓原生對話框阻塞 renderer。 */
 export function confirmModal(title: string, message: string, acceptLabel: string): Promise<boolean> {
   const { promise, resolve } = Promise.withResolvers<boolean>();
   const dialog = el('dialog', 'modal decision-modal'); let accepted = false;
-  dialog.append(el('h2', '', title), el('p', '', message), row(
+  const body = el('p', '', message); body.id = `dialog-body-${dialogIds + 1}`; dialog.setAttribute('aria-describedby', body.id);
+  dialog.append(dialogHeading(dialog, title), body, row(
     button(t('common.cancel'), () => dialog.close()),
     button(acceptLabel, () => { accepted = true; dialog.close(); }, 'primary'),
   ));
@@ -126,7 +132,7 @@ export function renameModal(value: string): Promise<string | null> {
   let result: string | null = null;
   form.append(field(t('common.name'), name), row(button(t('common.cancel'), () => dialog.close()), save));
   form.onsubmit = event => { event.preventDefault(); if (name.value.trim()) { result = name.value.trim(); dialog.close(); } };
-  dialog.append(el('h2', '', t('common.rename')), form);
+  dialog.append(dialogHeading(dialog, t('common.rename')), form);
   dialog.addEventListener('close', () => { dialog.remove(); resolve(result); }, { once: true });
   document.body.append(dialog); dialog.showModal(); name.focus(); name.select();
   return promise;
@@ -139,7 +145,7 @@ export function textModal(title: string, value: string, maxLength: number, rows 
   let result: string | null = null;
   form.append(text, row(button(t('common.cancel'), () => dialog.close()), save));
   form.onsubmit = event => { event.preventDefault(); result = text.value.trim(); dialog.close(); };
-  dialog.append(el('h2', '', title), form);
+  dialog.append(dialogHeading(dialog, title), form);
   dialog.addEventListener('close', () => { dialog.remove(); resolve(result); }, { once: true });
   document.body.append(dialog); dialog.showModal(); text.focus();
   return promise;
@@ -152,7 +158,7 @@ export function selectModal(title: string, label: string, options: { value: stri
   let result: string | null = null;
   form.append(field(label, choice), row(button(t('common.cancel'), () => dialog.close()), save));
   form.onsubmit = event => { event.preventDefault(); result = choice.value; dialog.close(); };
-  dialog.append(el('h2', '', title), form);
+  dialog.append(dialogHeading(dialog, title), form);
   dialog.addEventListener('close', () => { dialog.remove(); resolve(result); }, { once: true });
   document.body.append(dialog); dialog.showModal(); choice.focus();
   return promise;
@@ -166,7 +172,7 @@ export function checksModal(title: string, options: { value: string; label: stri
   let result: string[] | null = null;
   form.append(options.length ? grid : el('p', 'muted', t('common.empty')), row(button(t('common.cancel'), () => dialog.close()), save));
   form.onsubmit = event => { event.preventDefault(); result = boxes.filter(box => box.checked).map(box => box.value); dialog.close(); };
-  dialog.append(el('h2', '', title), form);
+  dialog.append(dialogHeading(dialog, title), form);
   dialog.addEventListener('close', () => { dialog.remove(); resolve(result); }, { once: true });
   document.body.append(dialog); dialog.showModal(); boxes[0]?.focus();
   return promise;

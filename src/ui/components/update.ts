@@ -44,7 +44,7 @@ export function updateChip(info: UpdateInfo, current: string, redraw: () => void
 }
 
 export function openUpdateDialog(info: UpdateInfo, current: string, redraw: () => void): void {
-  const dialog = el('dialog', 'modal update-modal');
+  const dialog = el('dialog', 'modal update-modal'); dialog.setAttribute('aria-label', t('update.title'));
   const notes = info.notes.trim() ? [el('h3', '', t('update.notes')), (() => { const body = markdown(info.notes); body.classList.add('update-notes'); return body; })()] : [];
   const downloads = info.assets.length ? info.assets.map(asset => download(asset, info)) : [el('p', 'muted', t('update.noAsset'))];
   dialog.append(

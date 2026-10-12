@@ -7,7 +7,7 @@ import { embeddedDebugger } from './debugger.ts';
 
 export function executionButton(_context: ViewContext, project: string, task: string): HTMLElement {
   return button(t('execution.title'), () => {
-    const dialog = el('dialog', 'modal');
+    const dialog = el('dialog', 'modal'); dialog.setAttribute('aria-label', t('execution.title'));
     const executable = input('node');
     const args = area('["--version"]');
     const preview = input('http://127.0.0.1:3000');
