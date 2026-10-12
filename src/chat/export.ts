@@ -9,10 +9,12 @@ const RECORD_HEADINGS: [keyof TaskSections, string][] = [['done', '做了什麼'
  * The export is meant to be handed to someone else: the workspace root and then the home folder (account name) are masked.
  */
 export function formatTranscript(title: string, rows: ChatRow[], workspaceRoot: string, tools = false, ledger?: { steps: Step[]; sections: TaskSections }, home = ''): string {
-  // Only a whole path segment counts: `/Users/al` must not eat the start of `/Users/alice`.
-  const homePattern = home.length > 1 ? new RegExp(`${home.replace(/[\\^$.*+?()[\]{}|]/gu, '\\$&')}(?![\\p{L}\\p{N}_-])`, 'gu') : undefined;
+  // Only a whole path segment counts: `/Users/al` must not eat the start of `/Users/alice`, nor `/tmp/work` of `/tmp/work-other`.
+  const segment = (root: string) => new RegExp(`${root.replace(/[\\^$.*+?()[\]{}|]/gu, '\\$&')}(?![\\p{L}\\p{N}_-]|\\.[\\p{L}\\p{N}_-])`, 'gu');
+  const workspacePattern = workspaceRoot ? segment(workspaceRoot) : undefined;
+  const homePattern = home.length > 1 ? segment(home) : undefined;
   const safe = (text: string) => {
-    const masked = text.replaceAll(workspaceRoot, '[工作區]');
+    const masked = workspacePattern ? text.replace(workspacePattern, '[工作區]') : text;
     return homePattern ? masked.replace(homePattern, '~') : masked;
   };
   const block = (text: string) => closeFence(safe(text));

@@ -27,6 +27,11 @@ test('Markdown export includes turn metadata, usage and only image basenames', (
   assert.match(tools, /Read \[工作區\]\/file.ts/u);
 });
 
+test('Markdown export masks only the workspace folder itself, not siblings that share its name prefix', () => {
+  const rows: ChatRow[] = [{ role: 'user', at: 'now', text: 'Compare /tmp/work/a.ts, /tmp/work-other/b.ts, /tmp/work.bak/c and /tmp/work.', to: 'codex', request: 'r' }];
+  assert.match(formatTranscript('Task', rows, '/tmp/work'), /Compare \[工作區\]\/a\.ts, \/tmp\/work-other\/b\.ts, \/tmp\/work\.bak\/c and \[工作區\]\./u);
+});
+
 test('Markdown export keeps the questions the AI asked, with their options, after the reply text', () => {
   const rows: ChatRow[] = [
     { role: 'assistant', at: 'now', text: 'Two ways to go.', ai: 'codex', request: 'r', ms: 1, asks: [{ question: 'Which store under /private/work?', options: ['SQLite', 'Files'], multi: false }, { question: 'Also add?（可複選）', options: ['Tests', 'Docs'], multi: true }] },
