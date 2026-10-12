@@ -22,6 +22,11 @@ import { decodeText, detectEncoding, encodeText, validateEncoding, type EditorEn
 import { readSegment, patchSegment, type EditorSegment } from './editor-segments.ts';
 
 const LANGUAGE: Record<string, string> = { ts: 'typescript', tsx: 'typescriptreact', js: 'javascript', jsx: 'javascriptreact', mjs: 'javascript', cjs: 'javascript', json: 'json', py: 'python', rs: 'rust', go: 'go', css: 'css', scss: 'scss', html: 'html', vue: 'html', md: 'markdown', c: 'c', h: 'c', cpp: 'cpp', hpp: 'cpp', java: 'java', kt: 'kotlin', php: 'php', sql: 'sql', xml: 'xml', svg: 'xml', yaml: 'yaml', yml: 'yaml', toml: 'toml', sh: 'shellscript', bash: 'shellscript', zsh: 'shellscript', rb: 'ruby', swift: 'swift', lua: 'lua', ini: 'ini' };
+/** Two paths naming the same file system entry (same device and inode), without following symlinks. */
+async function sameEntry(a: string, b: string): Promise<boolean> {
+  const [left, right] = await Promise.all([fs.lstat(a), fs.lstat(b)]);
+  return left.dev === right.dev && left.ino === right.ino;
+}
 export class EditorService {
   private clients = new Map<string, LanguageClient>();
   private versions = new Map<string, number>();
@@ -612,12 +617,14 @@ export class EditorService {
     await withFileLocks([repo], async () => {
       const { root, readonly } = await this.root(project, task); if (readonly) throw new AppError('bad_request', 'editor_readonly');
       const creation = mutation.action === 'createFile' || mutation.action === 'createFolder';
-      const validateNew = async (relative: string): Promise<string> => {
+      // `renaming` is the source of a rename: on case-insensitive file systems (macOS default) a case-only rename finds the
+      // source itself at the destination, which is not another file to protect.
+      const validateNew = async (relative: string, renaming?: { relative: string; file: string }): Promise<string> => {
         if (!relative || relative.length > 1000 || path.isAbsolute(relative) || relative.includes('\\') || relative.split('/').some(part => !part || part === '.' || part === '..' || part === '.git' || part === '.ai' || isLocalSecret(part))) throw new AppError('bad_request');
         const parent = path.posix.dirname(relative);
         if (parent !== '.') await this.existing(project, task, parent);
         const file = path.join(root, relative);
-        if (await pathExists(file)) throw new AppError('conflict', 'editor_conflict');
+        if (await pathExists(file) && !(renaming && relative !== renaming.relative && relative.toLowerCase() === renaming.relative.toLowerCase() && await sameEntry(file, renaming.file))) throw new AppError('conflict', 'editor_conflict');
         return file;
       };
       if (creation) {
@@ -640,7 +647,7 @@ export class EditorService {
         const current = await this.read(project, task, relative).catch((error: unknown) => { if (error instanceof AppError && error.status === 404) return undefined; throw error; });
         if (current && !current.binary && !current.truncated) await preserveHistory(root, { path: relative, revision: current.revision, text: current.text, encoding: current.encoding ?? 'UTF8', reason: 'mutate' });
       }
-      if (mutation.action === 'rename') await fs.rename(target.file, await validateNew(mutation.destination ?? ''));
+      if (mutation.action === 'rename') await fs.rename(target.file, await validateNew(mutation.destination ?? '', { relative: mutation.path, file: target.file }));
       else if (mutation.action === 'delete') {
         if (stat.isDirectory()) {
           const staged = path.join(root, `.editor-delete-${randomUUID()}`);

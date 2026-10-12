@@ -96,6 +96,21 @@ test('editor CRUD, folder revisions and preview-bound multidocument replacement'
   } finally { editor.dispose(); }
 }));
 
+test('renaming only the letter case works on case-insensitive file systems and still refuses other existing files', () => withTmpWorkspace(async ws => {
+  const projects = new ProjectLedger(ws); const tasks = new TaskLedger(ws); await projects.create({ name: 'P' });
+  const editor = new EditorService(new WorktreeService({ ws, projects, tasks, diffBytes: 100000 }), tasks, {});
+  const root = ws.projectDir('P');
+  try {
+    await editor.mutate('P', '', { action: 'createFile', path: 'readme.md' });
+    await editor.mutate('P', '', { action: 'createFile', path: 'other.md' });
+    const rename = async (from: string, to: string) => editor.mutate('P', '', { action: 'rename', path: from, destination: to, confirmation: from, revision: (await editor.read('P', '', from)).revision });
+    await rename('readme.md', 'README.md');
+    assert.deepEqual((await fs.readdir(root)).filter(name => /\.md$/i.test(name) && name !== 'AGENTS.md' && name !== 'CLAUDE.md' && name !== 'PROJECT.md').sort(), ['README.md', 'other.md']);
+    await assert.rejects(rename('README.md', 'other.md'), (error: unknown) => error instanceof AppError && error.detail === 'editor_conflict');
+    assert.equal(await fs.readFile(path.join(root, 'other.md'), 'utf8'), '');
+  } finally { editor.dispose(); }
+}));
+
 test('editor LSP exposes completion hover formatting rename actions and project diagnostics', () => withTmpWorkspace(async ws => {
   const projects = new ProjectLedger(ws); const tasks = new TaskLedger(ws); await projects.create({ name: 'P' });
   for (const name of ['a.ts', 'b.ts']) await fs.writeFile(path.join(ws.projectDir('P'), name), 'old');
