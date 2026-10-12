@@ -1,6 +1,6 @@
 import type { AiPick, AppState, RoleInput, RoleSlot, Settings } from '../../shared/types.ts';
 import { api } from '../api.ts';
-import { getLocale, hasMessage, LOCALES, localeName, setLocale, t, type Locale } from '../i18n/index.ts';
+import { getLocale, hasMessage, labelValue, LOCALES, localeName, setLocale, t, type Locale } from '../i18n/index.ts';
 import { aiPicker } from '../components/picker.ts';
 import { button, card, confirmModal, el, field, input, readLocal, row, run, select, setLocked, storeLocal, toast, type View, type ViewContext } from '../components/dom.ts';
 import { aiLabel, localTime, sourceLabel } from '../components/display.ts';
@@ -106,9 +106,14 @@ export function settingsView(context: ViewContext, redraw: () => void): View {
           if (from < 0 || to < 0 || to >= latest.length) return;
           [latest[from], latest[to]] = [latest[to]!, latest[from]!];
           await save({ order: latest }); render();
+          // Keep focus on the moved model; at the top or bottom its same-direction button is disabled, so use the other one.
+          const own = (key: 'tree.up' | 'tree.down') => list.querySelector<HTMLButtonElement>(`button[aria-label="${CSS.escape(labelValue(t(key), model.label))}"]`);
+          const same = own(direction < 0 ? 'tree.up' : 'tree.down');
+          (same && !same.disabled ? same : own(direction < 0 ? 'tree.down' : 'tree.up'))?.focus();
         }
-        const up = button('↑', () => move(-1)); up.setAttribute('aria-label', t('tree.up')); up.disabled = at === 0;
-        const down = button('↓', () => move(1)); down.setAttribute('aria-label', t('tree.down')); down.disabled = at === order.length - 1;
+        // The model name tells screen readers which row moves and lets button() return focus to this model's button after the redraw.
+        const up = button('↑', () => move(-1)); up.setAttribute('aria-label', labelValue(t('tree.up'), model.label)); up.disabled = at === 0;
+        const down = button('↓', () => move(1)); down.setAttribute('aria-label', labelValue(t('tree.down'), model.label)); down.disabled = at === order.length - 1;
         return row(field(model.label, check), el('code', 'muted', model.id), up, down);
       }));
     } render(); panel.append(list); modelsSection.append(panel);
