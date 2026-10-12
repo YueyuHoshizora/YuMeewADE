@@ -229,6 +229,25 @@ export function openFileBrowser(project: string, task: string, workspace = activ
     } catch { output.replaceChildren(el('p', 'warning', t('ew.recoveryLimit'))); toast(t('ew.recoveryLimit')); }
   }
   function capture(index: number): void { const view = views[index]!; const buffer = view.path ? buffers.get(view.path) : undefined; if (buffer && !isImage(buffer.document.path)) { buffer.text = view.content.value; buffer.start = view.content.selectionStart; buffer.end = view.content.selectionEnd; buffer.top = view.content.scrollTop; buffer.left = view.content.scrollLeft; } }
+  type Position = { path: string; start: number; end: number; top: number; left: number };
+  const navigation: { entries: Position[]; cursor: number }[] = [];
+  let replaying = false;
+  function position(index: number): Position | undefined { const view = views[index]!; return view.path ? { path: view.path, start: view.content.selectionStart, end: view.content.selectionEnd, top: view.content.scrollTop, left: view.content.scrollLeft } : undefined; }
+  function recordPosition(index: number): void {
+    const entry = position(index); const history = navigation[index]; if (!entry || !history || replaying) return;
+    const previous = history.entries[history.cursor];
+    if (previous && previous.path === entry.path && previous.start === entry.start && previous.end === entry.end) { history.entries[history.cursor] = entry; return; }
+    history.entries.splice(history.cursor + 1); history.entries.push(entry);
+    if (history.entries.length > 200) history.entries.shift();
+    history.cursor = history.entries.length - 1;
+  }
+  async function navigatePosition(delta: number): Promise<void> {
+    if (editReserved) return;
+    const index = focused; const history = navigation[index]!; const target = history.cursor + delta; const entry = history.entries[target]; if (!entry) return;
+    const currentPosition = position(index); if (currentPosition && history.cursor >= 0) history.entries[history.cursor] = currentPosition;
+    replaying = true;
+    try { await show(entry.path); if (disposed) return; activate(entry.path, index); const content = views[index]!.content; content.setSelectionRange(entry.start, entry.end); content.scrollTop = entry.top; content.scrollLeft = entry.left; history.cursor = target; capture(index); schedulePersist(); } finally { replaying = false; }
+  }
   function refreshTabs(): void {
     for (const view of views) view.tabs.replaceChildren(...[...buffers].map(([path, buffer]) => row(
       button(`${path}${dirty(buffer) ? ' *' : ''} · ${t('editor.diagnostics')}: ${live.get(path)?.diagnostics.length ?? 0}`, () => activate(path, views.indexOf(view))),
@@ -247,6 +266,8 @@ export function openFileBrowser(project: string, task: string, workspace = activ
   function activate(path: string, index = focused, line?: number, character = 0): void {
     if (editReserved) return;
     capture(index); const buffer = buffers.get(path); if (!buffer) return;
+    recordPosition(index);
+    const wasReplaying = replaying; replaying = true;
     const view = views[index]!; view.path = path; view.content.open(path, buffer.text); view.content.readOnly = isImage(path) || buffer.document.readonly || buffer.document.binary || buffer.document.truncated;
     view.content.resolvedFormat(formats.get(path));
     view.preview.open(path, buffer.text, buffer.document.size);
@@ -255,6 +276,8 @@ export function openFileBrowser(project: string, task: string, workspace = activ
     } else view.content.revealLine(line + 1, character);
     if (!isImage(path)) view.content.focus(); focused = index; refreshTabs();
     capture(index); schedulePersist();
+    replaying = wasReplaying;
+    recordPosition(index);
     renderDebug();
     renderProposals(path);
     window.dispatchEvent(new CustomEvent('yumeewade:editor-active', { detail: { project, task, path, content: view.content } }));
@@ -277,6 +300,8 @@ export function openFileBrowser(project: string, task: string, workspace = activ
   function pane(): void {
     const index = views.length; const code = el('div', 'editor-code'); const content = new EditorContent(code, t('editor.content'));
     const tabs = el('div'); const node = el('div'); const body = el('div'); const preview = new FilePreview(code, ids); body.append(code, preview.node); node.style.minWidth = '0'; node.style.flex = '1'; node.append(tabs, body); views.push({ path: undefined, content, preview, tabs, node }); panes.append(node);
+    navigation.push({ entries: [], cursor: -1 });
+    node.prepend(row(button(t('editorFront.back'), () => { focused = index; return navigatePosition(-1); }), button(t('editorFront.forward'), () => { focused = index; return navigatePosition(1); })));
     schedulePersist();
     content.ongutter = line => { const path = views[index]!.path; if (path) window.dispatchEvent(new CustomEvent('yumeewade:debug-gutter', { detail: { project, task, path, line } })); };
     content.complete = async context => {
@@ -303,7 +328,7 @@ export function openFileBrowser(project: string, task: string, workspace = activ
       if (path) { const state = live.get(path); if (state) state.diagnostics = []; renderDiagnostics(path); refreshTabs(); scheduleDiagnostics(path); }
     };
     content.onscroll = () => { capture(index); schedulePersist(); };
-    content.onselect = () => { capture(index); schedulePersist(); };
+    content.onselect = () => { capture(index); schedulePersist(); if (!replaying) recordPosition(index); };
     content.onkeydown = event => {
       const command = preferenceCommand(event, readPreferences());
       if (command === 'selection' && task) { event.preventDefault(); sendSelection(); }
