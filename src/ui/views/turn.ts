@@ -7,6 +7,8 @@ import { openProjectFromFolder } from './projects.ts';
 
 export function turnView(context: ViewContext): View {
   const node = el('div', 'page'); const tabs = el('div', 'tabs'); const list = el('div', 'turn-list'); const hint = el('p', 'muted'); let selected: 'reply' | 'confirm' = 'reply';
+  // Until the user picks a tab, show whichever one has work instead of an empty "reply" list.
+  let picked = false;
   // A workspace without projects has nothing to triage; point at the two ways to get one instead of an empty list.
   const welcome = el('section', 'card welcome');
   welcome.append(el('h2', '', t('turn.welcomeTitle')), el('p', 'muted', t('turn.welcomeBody')), row(button(t('project.new'), () => { location.hash = '#/new'; }, 'primary'), button(t('project.openExisting'), () => openProjectFromFolder(context))));
@@ -17,7 +19,8 @@ export function turnView(context: ViewContext): View {
     welcome.hidden = !empty; for (const part of [heading, tabs, hint, list]) part.hidden = empty;
     const items = context.state.projects.flatMap(project => project.tasks.map(task => ({ project, task, waiting: context.state.running.some(r => r.project === project.id && r.task === task.id && !!r.approvals?.length) })));
     const reply = items.filter(({ task, waiting }) => waiting || needsReply(task)); const confirm = items.filter(({ task, waiting }) => task.confirm && !waiting && !needsReply(task));
-    tabs.replaceChildren(button(t('turn.reply', { n: reply.length }), () => { selected = 'reply'; render(); }, selected === 'reply' ? 'active' : ''), button(t('turn.confirm', { n: confirm.length }), () => { selected = 'confirm'; render(); }, selected === 'confirm' ? 'active' : ''));
+    if (!picked) selected = !reply.length && confirm.length ? 'confirm' : 'reply';
+    tabs.replaceChildren(button(t('turn.reply', { n: reply.length }), () => { selected = 'reply'; picked = true; render(); }, selected === 'reply' ? 'active' : ''), button(t('turn.confirm', { n: confirm.length }), () => { selected = 'confirm'; picked = true; render(); }, selected === 'confirm' ? 'active' : ''));
     hint.textContent = t(selected === 'reply' ? 'turn.replyHint' : 'turn.confirmHint');
     list.replaceChildren(...(selected === 'reply' ? reply : confirm).map(({ project, task, waiting }) => {
       const item = el('div', 'turn-item'); item.append(el('p', 'muted', project.name), link(task.title, taskHash(project.id, task.id), 'turn-title'));
