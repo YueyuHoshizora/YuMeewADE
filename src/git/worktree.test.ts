@@ -450,6 +450,24 @@ test('revertFile restores one file to the fork point and only touches files that
   }
 }));
 
+test('a renamed file shows and reverts as the original deletion plus the new file', () => withTmpWorkspace(async ws => {
+  const projects = new ProjectLedger(ws); const tasks = new TaskLedger(ws);
+  await projects.create({ name: 'P' });
+  const task = await tasks.create('P', { title: '改名' });
+  const wt = new WorktreeService({ ws, projects, tasks, diffBytes: 100_000 });
+  const dir = await wt.prepare('P', task.id);
+  const original = await fs.readFile(path.join(dir, 'AGENTS.md'), 'utf8');
+  await gitOk(dir, ['mv', 'AGENTS.md', 'RENAMED.md']);
+  await wt.checkpoint('P', task.id);
+  assert.deepEqual((await wt.preview('P', task.id))?.paths, ['AGENTS.md', 'RENAMED.md']);
+  assert.match((await wt.diff('P', task.id)).diff, /^deleted file mode/m, 'the diff names the original path too');
+  await wt.revertFile('P', task.id, 'AGENTS.md');
+  assert.equal(await fs.readFile(path.join(dir, 'AGENTS.md'), 'utf8'), original);
+  await wt.revertFile('P', task.id, 'RENAMED.md');
+  await assert.rejects(fs.access(path.join(dir, 'RENAMED.md')));
+  assert.deepEqual((await wt.preview('P', task.id))?.paths, []);
+}));
+
 test('revertFile treats a file name with glob characters literally', () => withTmpWorkspace(async ws => {
   const projects = new ProjectLedger(ws); const tasks = new TaskLedger(ws);
   await projects.create({ name: 'P' });

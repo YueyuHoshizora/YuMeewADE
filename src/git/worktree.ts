@@ -198,8 +198,9 @@ export class WorktreeService {
     // The merge first commits pending edits on both sides (commitAll), so the preview is computed on those snapshots:
     // they hold untracked files but not newly added local secrets, even ones staged by hand, which the merge leaves out.
     const [mainSnapshot, workSnapshot] = await Promise.all([snapshotCommit(repo), snapshotCommit(dir)]);
-    const stat = await gitOk(dir, ['diff', '--shortstat', base, workSnapshot]);
-    const paths = splitNull(await gitOk(dir, ['diff', '--name-only', '-z', base, workSnapshot]));
+    // --no-renames: a rename is listed as the original's deletion plus the new file, each revertable on its own (revertFile).
+    const stat = await gitOk(dir, ['diff', '--shortstat', '--no-renames', base, workSnapshot]);
+    const paths = splitNull(await gitOk(dir, ['diff', '--name-only', '--no-renames', '-z', base, workSnapshot]));
     const tree = await git(repo, ['merge-tree', '--write-tree', '--name-only', '--no-messages', '-z', mainSnapshot, workSnapshot]);
     if ((tree.code !== 0 && tree.code !== 1) || tree.truncated) throw new AppError('internal', 'git_failed');
     const branch = (await gitOk(dir, ['rev-parse', '--abbrev-ref', 'HEAD'])).trim();
@@ -229,7 +230,7 @@ export class WorktreeService {
         await this.verifyFamily(repo, other.workdir);
         const base = (await gitOk(repo, ['merge-base', 'HEAD', (await gitOk(other.workdir, ['rev-parse', 'HEAD'])).trim()])).trim();
         const changed = [
-          ...splitNull(await gitOk(other.workdir, ['diff', '--name-only', '-z', base])),
+          ...splitNull(await gitOk(other.workdir, ['diff', '--name-only', '--no-renames', '-z', base])),
           ...splitNull(await gitOk(other.workdir, ['ls-files', '--others', '--exclude-standard', '-z'])).filter(f => !isLocalSecret(f)),
         ];
         const shared = [...new Set(changed.filter(p => mine.has(p)))];
@@ -249,7 +250,7 @@ export class WorktreeService {
       const head = (await gitOk(dir, ['rev-parse', 'HEAD'])).trim();
       const base = (await gitOk(repo, ['merge-base', 'HEAD', head])).trim();
       const changed = new Set([
-        ...splitNull(await gitOk(dir, ['diff', '--name-only', '-z', base])),
+        ...splitNull(await gitOk(dir, ['diff', '--name-only', '--no-renames', '-z', base])),
         ...splitNull(await gitOk(dir, ['ls-files', '--others', '--exclude-standard', '-z'])).filter(file => !isLocalSecret(file)),
       ]);
       if (!changed.has(relative)) throw new AppError('not_found', 'file_missing');
@@ -271,7 +272,7 @@ export class WorktreeService {
     await this.verifyFamily(repo, dir);
     const head = (await gitOk(dir, ['rev-parse', 'HEAD'])).trim();
     const base = (await gitOk(repo, ['merge-base', 'HEAD', head])).trim();
-    const result = await git(dir, ['diff', base], { maxBytes: this.diffBytes });
+    const result = await git(dir, ['diff', '--no-renames', base], { maxBytes: this.diffBytes });
     if (result.code !== 0) throw new AppError('internal', 'git_failed');
     let diff = result.stdout;
     let truncated = result.truncated ?? false;
