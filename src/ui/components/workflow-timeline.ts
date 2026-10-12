@@ -1,6 +1,7 @@
 import type { WorkflowTimeline, WorkflowEvent } from '../../shared/types.ts';
 import { t } from '../i18n/index.ts';
 import { el } from './dom.ts';
+import { localDateTime } from './display.ts';
 const LABEL: Record<WorkflowEvent['type'], Parameters<typeof t>[0]> = {
   'run.started': 'workflow.start', 'run.finished': 'workflow.event.runFinished', 'run.interrupted': 'workflow.state.paused',
   'node.started': 'workflow.state.running', 'node.finished': 'workflow.output', 'node.invalidated': 'workflow.invalidated',
@@ -16,7 +17,8 @@ export function renderWorkflowTimeline(plan: WorkflowTimeline): HTMLElement {
   const list = el('ol');
   for (const event of plan.events ?? []) {
     const item = el('li');
-    item.append(el('time', '', event.at), el('span', '', ` · #${event.sequence} · ${t(LABEL[event.type])} · ${event.run}${event.node ? ` · ${event.node}` : ''}${event.task ? ` · ${event.task}` : ''}${event.source ? ` · ${event.source}` : ''}`));
+    const time = el('time', '', localDateTime(event.at)); time.dateTime = event.at;
+    item.append(time, el('span', '', ` · #${event.sequence} · ${t(LABEL[event.type])} · ${event.run}${event.node ? ` · ${event.node}` : ''}${event.task ? ` · ${event.task}` : ''}${event.source ? ` · ${event.source}` : ''}`));
     if (event.outcome) item.append(el('span', '', ` · ${t(OUTCOME[event.outcome] ?? 'workflow.outcome.unknown')}`));
     if (event.request || event.snapshot) item.append(el('code', '', ` · ${event.request ?? ''}${event.snapshot ? ` · ${event.snapshot}` : ''}`));
     list.append(item);

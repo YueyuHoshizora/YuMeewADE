@@ -2,6 +2,7 @@ import type { CareBackup, CareHealth, CareCapacity, CareLifecycle } from '../../
 import { ApiFailure, api, request } from '../api.ts';
 import { t } from '../i18n/index.ts';
 import { button, card, confirmModal, el, errorMessage, field, input, modal, readLocal, row, storeLocal, toast, type ViewContext } from './dom.ts';
+import { formatBytes, localDateTime } from './display.ts';
 import { logViewer } from './log-viewer.ts';
 
 export function carePanel(context: ViewContext): HTMLElement {
@@ -32,7 +33,7 @@ export function carePanel(context: ViewContext): HTMLElement {
   };
   const showSchedule = (value: CareLifecycle) => {
     enabled.checked = value.schedule.enabled; interval.value = String(value.schedule.intervalHours); retention.value = String(value.schedule.retention);
-    scheduleStatus.textContent = `${t('care.lastSuccess')}: ${value.lastSuccess ?? t('care.unknown')} · ${t('care.nextAttempt')}: ${value.nextAttempt ?? t('care.no')}${value.lastFailure ? ` · ${t('care.scheduleFailed')}` : ''}`;
+    scheduleStatus.textContent = `${t('care.lastSuccess')}: ${value.lastSuccess ? localDateTime(value.lastSuccess) : t('care.unknown')} · ${t('care.nextAttempt')}: ${value.nextAttempt ? localDateTime(value.nextAttempt) : t('care.no')}${value.lastFailure ? ` · ${t('care.scheduleFailed')}` : ''}`;
     scheduleStatus.className = value.lastFailure ? 'warning' : '';
   };
   const yes = (value: boolean) => t(value ? 'care.yes' : 'care.no');
@@ -52,10 +53,10 @@ export function carePanel(context: ViewContext): HTMLElement {
   const refresh = async () => {
     const entries = (await request<{ backups: CareBackup[] }>('/api/care/backups')).backups;
     const disk = await request<CareCapacity>('/api/care/capacity');
-    capacity.textContent = `${t('care.capacity')}: ${disk.usedBytes.toLocaleString()} / ${disk.availableBytes.toLocaleString()} ${t('care.bytesAvailable')}`;
+    capacity.textContent = `${t('care.capacity')}: ${formatBytes(disk.usedBytes)} / ${formatBytes(disk.availableBytes)} ${t('care.available')}`;
     showSchedule(await request<CareLifecycle>('/api/care/schedule'));
     backups.replaceChildren(...entries.map(backup => row(
-      el('span', '', `${backup.createdAt} · ${t(backup.complete ? 'care.complete' : 'care.partial')} · ${backup.externalCount} · ${backup.bytes.toLocaleString()}`),
+      el('span', '', `${localDateTime(backup.createdAt)} · ${t(backup.complete ? 'care.complete' : 'care.partial')} · ${t('care.externalCount', { n: backup.externalCount })} · ${formatBytes(backup.bytes)}`),
       button(t('care.restore'), async () => {
         if (!await confirmModal(t('care.restore'), t('care.restoreConfirm'), t('care.restore'))) return;
         const restored = await request<{ root: string }>('/api/care/restore', { id: backup.id, destination: destination.value.trim() });

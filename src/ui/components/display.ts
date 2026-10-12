@@ -54,6 +54,13 @@ export function localDateTime(value: string): string {
   const pad = (n: number) => String(n).padStart(2, '0');
   return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())} ${pad(date.getHours())}:${pad(date.getMinutes())}`;
 }
+/** Binary-scaled size (e.g. 1.5 GB) in the given locale's unit format. */
+export function formatBytes(bytes: number, locale = getLocale()): string {
+  const units = ['byte', 'kilobyte', 'megabyte', 'gigabyte', 'terabyte'] as const;
+  let value = bytes; let unit = 0;
+  while (value >= 1024 && unit < units.length - 1) { value /= 1024; unit++; }
+  return new Intl.NumberFormat(locale, { style: 'unit', unit: units[unit], unitDisplay: 'short', maximumFractionDigits: unit ? 1 : 0 }).format(value);
+}
 
 export function localTime(value: string): string {
   if (!value) return '—';
