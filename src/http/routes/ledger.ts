@@ -12,6 +12,7 @@ import { PHASES_MAX, PROJECT_EXPECTATION_KEYS, TASK_STATES, type BulkTaskAction,
 import { validDue, validTag } from '../../shared/task-metadata.ts';
 import { isValidTaskId } from '../../shared/names.ts';
 import { log } from '../../shared/log.ts';
+import { withFileLocks } from '../../shared/fsx.ts';
 
 function object(value: unknown): Record<string, unknown> {
   if (!value || typeof value !== 'object' || Array.isArray(value)) throw new AppError('bad_request', 'patch_not_object');
@@ -155,12 +156,17 @@ export function registerLedgerRoutes(router: Router, app: App): void {
     if (!Array.isArray(phases) || phases.length > PHASES_MAX || phases.some(entry => !entry || typeof entry !== 'object' || typeof entry.name !== 'string' || (entry.from !== undefined && typeof entry.from !== 'string'))) {
       throw new AppError('bad_request', 'field_type', { field: 'phases' });
     }
-    const { project: result, renamed } = await app.projects.setPhases(project, body.previous as string[], (phases as { name: string; from?: string }[]).map(entry => ({ name: entry.name, ...(entry.from === undefined ? {} : { from: entry.from }) })));
-    // Tasks follow a renamed phase; tasks of a removed phase keep their label and show under other phases.
-    if (renamed.size) for (const task of await app.tasks.list(project)) {
-      const to = renamed.get(task.phase);
-      if (to !== undefined) await app.tasks.update(project, task.id, { phase: to });
-    }
+    // Replacing the phase list and moving its tasks is one step per project: a second rename committed in between would
+    // migrate first and leave this one's tasks on a phase that no longer exists (A→B, then B→C, tasks stay on B).
+    const result = await withFileLocks([path.join(app.ws.projectDir(project), '.ai', 'phases.lock')], async () => {
+      const { project: result, renamed } = await app.projects.setPhases(project, body.previous as string[], (phases as { name: string; from?: string }[]).map(entry => ({ name: entry.name, ...(entry.from === undefined ? {} : { from: entry.from }) })));
+      // Tasks follow a renamed phase; tasks of a removed phase keep their label and show under other phases.
+      if (renamed.size) for (const task of await app.tasks.list(project)) {
+        const to = renamed.get(task.phase);
+        if (to !== undefined) await app.tasks.update(project, task.id, { phase: to });
+      }
+      return result;
+    });
     await changed('project.phases', project);
     return result;
   });
