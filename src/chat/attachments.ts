@@ -7,7 +7,7 @@ import type { UploadResult } from '../shared/types.ts';
 import { isValidProjectName, isValidTaskId } from '../shared/names.ts';
 import type { ChatStore } from './store.ts';
 import { draftFile, type Drafts } from './drafts.ts';
-import { readJson, withFileLocks } from '../shared/fsx.ts';
+import { pathExists, readJson, withFileLocks, writeJson } from '../shared/fsx.ts';
 export const UPLOAD_TTL_MS = 24 * 60 * 60 * 1000;
 const ID = /^[0-9a-f-]{36}\.(png|jpe?g|webp|gif)$/u;
 export const IMAGE_TYPES: Record<string, string> = { png: 'image/png', jpg: 'image/jpeg', jpeg: 'image/jpeg', webp: 'image/webp', gif: 'image/gif' };
@@ -63,7 +63,13 @@ export async function cleanupUploads(ws: Workspace, store: ChatStore, now = Date
     await withFileLocks([draftFile(ws, project.name)], async () => {
     const referenced = new Set<string>();
     const drafts = await readJson<Drafts>(draftFile(ws, project.name), {});
-    for (const draft of Object.values(drafts)) for (const image of draft.images) referenced.add(image.id);
+    // An archived task's draft can no longer be opened or cleared, so its staged images expire like any unsent upload
+    // instead of being kept forever; the draft drops them below so a restored task does not offer missing images.
+    const archived: string[] = [];
+    for (const [scope, draft] of Object.entries(drafts)) {
+      if (scope !== 'quickstart' && (!isValidTaskId(scope) || !await pathExists(ws.taskFile(project.name, scope)))) { archived.push(scope); continue; }
+      for (const image of draft.images) referenced.add(image.id);
+    }
     const chatDir = path.join(ws.projectDir(project.name), '.ai', 'chat');
     const queues = await fs.readdir(chatDir).catch((err: NodeJS.ErrnoException) => {
       if (err.code === 'ENOENT') return [];
@@ -87,6 +93,14 @@ export async function cleanupUploads(ws: Workspace, store: ChatStore, now = Date
         if ((err as NodeJS.ErrnoException).code !== 'ENOENT') throw err;
       }
     }
+    let pruned = false;
+    for (const scope of archived) {
+      const draft = drafts[scope]!;
+      const kept: typeof draft.images = [];
+      for (const image of draft.images) if (referenced.has(image.id) || await pathExists(path.join(dir, image.id))) kept.push(image);
+      if (kept.length !== draft.images.length) { draft.images = kept; pruned = true; }
+    }
+    if (pruned) await writeJson(draftFile(ws, project.name), drafts);
     });
   }
 }

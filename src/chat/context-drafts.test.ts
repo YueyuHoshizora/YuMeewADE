@@ -31,6 +31,21 @@ test('draft references survive cleanup and attachment preparation until successf
   }
 }));
 
+test('an archived task draft no longer keeps its staged images forever; the draft forgets the expired ones', () => withTmpWorkspace(async ws => {
+  await new ProjectLedger(ws).create({ name: 'P' });
+  const tasks = new TaskLedger(ws);
+  const task = await tasks.create('P', { title: 'T' });
+  const image = await saveUpload(ws, 'P', 'draft.png', Buffer.from('89504e470d0a1a0a', 'hex'));
+  await addDraftImage(ws, 'P', task.id, image, 10);
+  const expired = new Date(Date.now() - UPLOAD_TTL_MS - 1000);
+  await fs.utimes(uploadPath(ws, 'P', image.id), expired, expired);
+  await tasks.archive('P', task.id);
+  await cleanupUploads(ws, new ChatStore(ws));
+  await assert.rejects(fs.access(uploadPath(ws, 'P', image.id)), { code: 'ENOENT' });
+  const drafts = JSON.parse(await fs.readFile(path.join(ws.projectDir('P'), '.ai', 'drafts.json'), 'utf8')) as Record<string, { images: unknown[]; reviews: unknown[] }>;
+  assert.deepEqual(drafts[task.id]?.images, []);
+}));
+
 test('source paths are read-only bounded and reject escape and symlink paths', () => withTmpWorkspace(async ws => {
   await new ProjectLedger(ws).create({ name: 'P' });
   const task = await new TaskLedger(ws).create('P', { title: 'T' });
