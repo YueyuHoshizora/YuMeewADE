@@ -1,7 +1,7 @@
 import { randomBytes, randomUUID, timingSafeEqual } from 'node:crypto';
 import path from 'node:path';
 import * as pty from 'node-pty';
-import { findExecutable, killDescendants, minimalEnv } from '../cli/process.ts';
+import { findExecutable, killDescendants, minimalEnv, signalTree } from '../cli/process.ts';
 import { AppError } from '../shared/errors.ts';
 import type { TerminalLease, TerminalRequest, TerminalSession } from '../shared/execution-tools.ts';
 import type { TerminalRecoveryLease, TerminalRecoveryTab } from '../shared/terminal-recovery.ts';
@@ -13,7 +13,7 @@ export interface TerminalOptions {
   isRunning?: (project: string, task: string) => boolean;
   beforeStart?: (project: string, task: string) => Promise<void>;
 }
-interface Entry { view: TerminalSession; owner: Buffer; process: pty.IPty; bytes: number; touched: number; inputAt: number; inputBytes: number; done: Promise<void>; finish: () => void; stopping?: Promise<void> }
+interface Entry { view: TerminalSession; owner: Buffer; process: pty.IPty; cleanup?: Promise<void>; bytes: number; touched: number; inputAt: number; inputBytes: number; done: Promise<void>; finish: () => void; stopping?: Promise<void> }
 const dimension = (value: unknown, fallback: number): number => { if (value === undefined) return fallback; if (!Number.isSafeInteger(value) || typeof value !== 'number' || value < 2 || value > 300) throw new AppError('bad_request'); return value; };
 interface Recovery { binding: string; renderer: string; ticket: Buffer; label: string; expires: number }
 
@@ -58,7 +58,18 @@ export class TerminalService {
       const entry: Entry = { view, owner, process: child, bytes: 0, touched: Date.now(), inputAt: Date.now(), inputBytes: 0, done: promise, finish: resolve };
       this.sessions.set(view.id, entry);
       child.onData(text => this.capture(entry, text));
-      child.onExit(event => { view.exitCode = event.exitCode; if (view.status === 'running') view.status = entry.stopping ? 'stopped' : 'exited'; entry.finish(); });
+      child.onExit(event => {
+        view.exitCode = event.exitCode;
+        if (process.platform !== 'win32') {
+          // Reparented ordinary children remain in the PTY leader's group; no process-table polling is needed.
+          signalTree(child, 'SIGTERM');
+          const cleanup = Promise.withResolvers<void>();
+          entry.cleanup = cleanup.promise;
+          setTimeout(() => { signalTree(child, 'SIGKILL'); cleanup.resolve(); }, 3000);
+        }
+        if (view.status === 'running') view.status = entry.stopping ? 'stopped' : 'exited';
+        entry.finish();
+      });
       return { session: this.snapshot(entry), owner: owner.toString('hex') };
     } finally { this.pending.delete(key); }
   }
@@ -131,13 +142,13 @@ export class TerminalService {
   }
   private async terminate(e: Entry): Promise<void> {
     if (e.stopping) return e.stopping;
-    if (e.view.status !== 'running') return;
+    if (e.view.status !== 'running') { await e.cleanup; return; }
     e.stopping = (async () => {
       // Interactive shells create separate foreground job groups, so the whole descendant tree is killed, not just the shell's group.
       await killDescendants(e.process.pid);
       try { e.process.kill(process.platform === 'win32' ? undefined : 'SIGKILL'); } catch { /* Exit raced stop. */ }
       const timer = setTimeout(e.finish, 1500);
-      try { await e.done; } finally { clearTimeout(timer); e.view.status = 'stopped'; }
+      try { await e.done; await e.cleanup; } finally { clearTimeout(timer); e.view.status = 'stopped'; }
     })();
     return e.stopping;
   }

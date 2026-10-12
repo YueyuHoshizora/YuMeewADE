@@ -82,7 +82,7 @@ export class ExecutionService {
         if (settled) return;
         settled = true;
         clearTimeout(entry.timer);
-        // Kill surviving descendants even if the parent exits first.
+        // Natural completion kills the process group only; detached descendants are found on explicit stop while still linked.
         signalTree(child, 'SIGKILL');
         view.exitCode = code;
         view.status = entry.stopping ? 'stopped' : failed ? 'failed' : 'exited';
