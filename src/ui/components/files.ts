@@ -410,6 +410,28 @@ export function openFileBrowser(project: string, task: string, workspace = activ
       } finally { release(); }
     }));
   }
+  async function localHistory(): Promise<void> {
+    const buffer = current(); if (!buffer || editReserved) return;
+    const path = buffer.document.path;
+    const result = await request<{ entries: { id: string; path: string; revision: string; text: string; timestamp: string; reason: string }[] }>(query('/api/editor/history', { ...ids, path }));
+    output.replaceChildren(...result.entries.map(entry => button(`${entry.timestamp} · ${entry.revision.slice(0, 8)}`, () => {
+      views.forEach((_, index) => capture(index));
+      const expected = { path, revision: buffer.document.revision, text: buffer.text };
+      const before = area(entry.text); before.readOnly = true; before.setAttribute('aria-label', t('editorUI.base'));
+      const after = area(buffer.text); after.readOnly = true; after.setAttribute('aria-label', t('editorUI.local'));
+      output.replaceChildren(row(before, after), button(t('editorFront.restore'), async () => {
+        if (!await confirmModal(t('editorFront.restore'), dirty(buffer) ? t('editor.dirty') : t('ew.confirm'), t('editorFront.restore'))) return;
+        const release = editor.reserveAll([expected]); if (!release) throw new Error(t('detail.editor_conflict'));
+        pendingWrites++;
+        try {
+          const document = await request<EditorDocument>('/api/editor/history/restore', { ...ids, path, id: entry.id, revision: expected.revision });
+          buffer.document = document; buffer.text = document.text;
+          for (const view of views) if (view.path === path) { view.content.value = document.text; view.preview.update(document.text); }
+          persist(); refreshTabs(); output.replaceChildren();
+        } finally { pendingWrites--; release(); }
+      }));
+    })));
+  }
   const newName = input('', t('ew.newName'));
   async function language(action: EditorAction): Promise<void> {
     const buffer = current(); if (!buffer) return; const snapshot = buffer.text; const start = buffer.start; const end = buffer.end; const before = snapshot.slice(0, start).split('\n');
@@ -543,6 +565,7 @@ export function openFileBrowser(project: string, task: string, workspace = activ
     })] : []));
   actions.append(send);
   actions.append(button(t('editorUI.outline'), () => language('documentSymbols')), button(t('editorUI.symbols'), () => language('workspaceSymbols')));
+  actions.append(button(t('editorFront.history'), localHistory));
   filter.oninput = () => void run(load);
   const unload = (event: BeforeUnloadEvent) => { views.forEach((_, index) => capture(index)); persist(); if (editReserved || [...buffers.values()].some(dirty)) { event.preventDefault(); event.returnValue = ''; } };
   window.addEventListener('beforeunload', unload);
