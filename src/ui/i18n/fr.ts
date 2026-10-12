@@ -244,7 +244,7 @@ export const fr: Record<MessageKey, string> = {
 'settings.main': 'IA principale',
 'settings.backup': 'IA de secours',
 'settings.job': 'Responsabilités',
-'settings.addRole': 'Ajouter un rôle',
+'settings.addRole': 'Ajouter un rôle', 'settings.rolesChanged': "Rôles modifiés ailleurs", 'settings.rolesChangedMessage': "L’enregistrement remplace les rôles par ce formulaire et écrase les modifications faites dans une autre fenêtre ou dans roles.yaml.", 'settings.rolesOverwrite': "Écraser",
 'settings.log': 'Activité récente',
 'state.未開始': 'Non commencé',
 'state.進行中': 'En cours',

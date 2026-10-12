@@ -244,7 +244,7 @@ export const it: Record<MessageKey, string> = {
 'settings.main': 'IA principale',
 'settings.backup': 'IA di riserva',
 'settings.job': 'Responsabilità',
-'settings.addRole': 'Aggiungi ruolo',
+'settings.addRole': 'Aggiungi ruolo', 'settings.rolesChanged': "Ruoli modificati altrove", 'settings.rolesChangedMessage': "Salvando, i ruoli vengono sostituiti da questo modulo e le modifiche fatte in un’altra finestra o in roles.yaml vengono sovrascritte.", 'settings.rolesOverwrite': "Sovrascrivi",
 'settings.log': 'Attività recenti',
 'state.未開始': 'Non iniziata',
 'state.進行中': 'In corso',

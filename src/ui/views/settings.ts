@@ -1,4 +1,4 @@
-import type { AiPick, RoleInput, RoleSlot } from '../../shared/types.ts';
+import type { AiPick, AppState, RoleInput, RoleSlot } from '../../shared/types.ts';
 import { api } from '../api.ts';
 import { getLocale, hasMessage, LOCALES, localeName, setLocale, t, type Locale } from '../i18n/index.ts';
 import { aiPicker } from '../components/picker.ts';
@@ -101,8 +101,20 @@ export function settingsView(context: ViewContext, redraw: () => void): View {
     const entry = { node: panel, value: (): RoleInput => ({ name: name.value.trim(), job: job.value.trim(), main: slot(main.value()), ...(backup.value().ai !== '人' ? { backup: slot(backup.value()) } : {}) }) };
     panel.append(row(field(t('common.name'), name), field(t('settings.job'), job), button(t('common.remove'), () => { drafts.splice(drafts.indexOf(entry), 1); panel.remove(); }, 'danger')), field(t('settings.main'), main.node), field(t('settings.backup'), backup.node)); drafts.push(entry); roleList.append(panel);
   }
-  for (const [name, role] of Object.entries(state.roles.roles)) addRole({ name, ...role });
-  roles.append(roleList, row(button(t('settings.addRole'), () => addRole({ name: '', job: '', main: { cli: state.settings.initial.ai, model: state.settings.initial.model, effort: state.settings.initial.effort } })), button(t('common.save'), async () => { await api.roles(drafts.map(d => d.value())); await context.refresh(); toast(t('common.saved')); }, 'primary'))); node.append(roles);
+  // The save replaces the whole roles.yaml, so the form must not silently restore a list changed elsewhere (another window,
+  // a hand edit of roles.yaml): untouched forms follow the change; edited ones ask before overwriting it.
+  const formValue = () => JSON.stringify(drafts.map(d => d.value()));
+  let rolesBase = ''; let rolesForm = '';
+  function buildRoles(source: AppState): void {
+    drafts.length = 0; roleList.replaceChildren();
+    for (const [name, role] of Object.entries(source.roles.roles)) addRole({ name, ...role });
+    rolesBase = JSON.stringify(source.roles.roles); rolesForm = formValue();
+  }
+  buildRoles(state);
+  roles.append(roleList, row(button(t('settings.addRole'), () => addRole({ name: '', job: '', main: { cli: state.settings.initial.ai, model: state.settings.initial.model, effort: state.settings.initial.effort } })), button(t('common.save'), async () => {
+    if (JSON.stringify(context.state.roles.roles) !== rolesBase && !await confirmModal(t('settings.rolesChanged'), t('settings.rolesChangedMessage'), t('settings.rolesOverwrite'))) return;
+    await api.roles(drafts.map(d => d.value())); await context.refresh(); buildRoles(context.state); toast(t('common.saved'));
+  }, 'primary'))); node.append(roles);
   const logs = el('div', 'op-log'); let alive = true;
   const actionLabel = (action: string) => {
     const key = `log.${action}`; if (hasMessage(key)) return t(key);
@@ -111,5 +123,8 @@ export function settingsView(context: ViewContext, redraw: () => void): View {
     return cut > 0 && hasMessage(family) ? `${t(family)}（${action.slice(cut + 1)}）` : action;
   };
   void run(async () => { const entries = await api.log(); if (!alive) return; for (const entry of entries) { const line = el('div', 'log-entry'); line.append(el('time', 'muted', localTime(entry.at)), el('strong', '', actionLabel(entry.action)), el('span', '', [entry.project, entry.task].filter(Boolean).join(' / '))); logs.append(line); } if (!entries.length) logs.append(el('p', 'muted', t('common.empty'))); }); node.append(card(t('settings.log'), logs));
-  return { node, dispose: () => { alive = false; }, update: state => { context.state = state; } };
+  return { node, dispose: () => { alive = false; }, update: state => {
+    context.state = state;
+    if (JSON.stringify(state.roles.roles) !== rolesBase && formValue() === rolesForm && !roleList.contains(document.activeElement)) buildRoles(state);
+  } };
 }

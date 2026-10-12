@@ -244,7 +244,7 @@ export const en: Record<MessageKey, string> = {
 'settings.main': 'Primary AI',
 'settings.backup': 'Backup AI',
 'settings.job': 'Responsibilities',
-'settings.addRole': 'Add role',
+'settings.addRole': 'Add role', 'settings.rolesChanged': "Roles changed elsewhere", 'settings.rolesChangedMessage': "Saving replaces the roles with this form, overwriting changes made in another window or in roles.yaml.", 'settings.rolesOverwrite': "Overwrite",
 'settings.log': 'Recent activity',
 'state.未開始': 'Not started',
 'state.進行中': 'In progress',

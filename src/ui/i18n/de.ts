@@ -244,7 +244,7 @@ export const de: Record<MessageKey, string> = {
 'settings.main': 'Haupt-KI',
 'settings.backup': 'Ersatz-KI',
 'settings.job': 'Zuständigkeit',
-'settings.addRole': 'Rolle hinzufügen',
+'settings.addRole': 'Rolle hinzufügen', 'settings.rolesChanged': "Rollen wurden an anderer Stelle geändert", 'settings.rolesChangedMessage': "Beim Speichern werden die Rollen durch dieses Formular ersetzt; Änderungen aus einem anderen Fenster oder in roles.yaml gehen verloren.", 'settings.rolesOverwrite': "Überschreiben",
 'settings.log': 'Letzte Aktionen',
 'state.未開始': 'Nicht begonnen',
 'state.進行中': 'In Bearbeitung',

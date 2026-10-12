@@ -244,7 +244,7 @@ export const zhCN: Record<MessageKey, string> = {
 'settings.main': '主要 AI',
 'settings.backup': '备用 AI',
 'settings.job': '职责',
-'settings.addRole': '添加角色',
+'settings.addRole': '添加角色', 'settings.rolesChanged': "角色分工已在别处更改", 'settings.rolesChangedMessage': "保存后角色分工将改为这里的内容，覆盖在其他窗口或 roles.yaml 中所做的更改。", 'settings.rolesOverwrite': "覆盖",
 'settings.log': '最近操作',
 'state.未開始': '未开始',
 'state.進行中': '进行中',

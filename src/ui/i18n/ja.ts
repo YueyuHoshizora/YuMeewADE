@@ -244,7 +244,7 @@ export const ja: Record<MessageKey, string> = {
 'settings.main': 'メイン AI',
 'settings.backup': '予備 AI',
 'settings.job': '担当',
-'settings.addRole': '役割を追加',
+'settings.addRole': '役割を追加', 'settings.rolesChanged': "役割が別の場所で変更されました", 'settings.rolesChangedMessage': "保存するとこのフォームの内容で置き換わり、別のウィンドウや roles.yaml での変更は上書きされます。", 'settings.rolesOverwrite': "上書き",
 'settings.log': '最近の操作',
 'state.未開始': '未開始',
 'state.進行中': '進行中',
