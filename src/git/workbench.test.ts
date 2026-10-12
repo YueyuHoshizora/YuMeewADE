@@ -264,6 +264,20 @@ test('stash with untracked files leaves local secrets in the folder and out of G
   await assert.rejects(fs.access(path.join(root, 'fresh.txt')));
 }));
 
+test('a merge resolved entirely in favour of this side can still be committed; with no merge, nothing staged is refused', () => withTmpWorkspace(async ws => {
+  const projects = new ProjectLedger(ws); const tasks = new TaskLedger(ws); await projects.create({ name: 'P' });
+  const root = ws.projectDir('P'); const workbench = new GitWorkbench({ ws, projects, tasks, isRunning: () => false });
+  await fs.writeFile(path.join(root, 'file.txt'), 'base\n'); await commitAll(root, 'base');
+  await assert.rejects(workbench.commit('P', undefined, 'empty'), { detail: 'git_nothing_staged' });
+  await gitOk(root, ['switch', '-q', '-c', 'topic']); await fs.writeFile(path.join(root, 'file.txt'), 'theirs\n'); await commitAll(root, 'theirs');
+  await gitOk(root, ['switch', '-q', 'main']); await fs.writeFile(path.join(root, 'file.txt'), 'ours\n'); await commitAll(root, 'ours');
+  await git(root, ['merge', 'topic']);
+  await fs.writeFile(path.join(root, 'file.txt'), 'ours\n');
+  await workbench.resolve('P', undefined, 'file.txt');
+  await workbench.commit('P', undefined, 'merge topic, keep ours');
+  assert.equal((await gitOk(root, ['rev-list', '--parents', '-n', '1', 'HEAD'])).trim().split(' ').length, 3);
+}));
+
 test('遠端新增、改名、fetch/push URL及移除驗證與確認', () => withTmpWorkspace(async ws => {
   const projects = new ProjectLedger(ws); const tasks = new TaskLedger(ws); await projects.create({ name: 'P' });
   const workbench = new GitWorkbench({ ws, projects, tasks, isRunning: () => false });

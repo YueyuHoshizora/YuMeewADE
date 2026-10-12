@@ -419,7 +419,8 @@ export class GitWorkbench {
       const files = await this.files(root);
       if (files.some(file => file.conflict)) throw new AppError('conflict', 'merge_conflict');
       if (files.some(file => file.staged && file.secret) || split(await this.command(root, ['diff', '--cached', '--name-only', '-z'])).some(isLocalSecret)) throw new AppError('forbidden', 'git_workbench_secret');
-      if (!files.some(file => file.staged)) throw new AppError('conflict', 'git_nothing_staged');
+      // A merge whose conflicts were resolved in favour of this side changes no file, yet still needs its merge commit.
+      if (!files.some(file => file.staged) && (await git(root, ['rev-parse', '-q', '--verify', 'MERGE_HEAD'])).code !== 0) throw new AppError('conflict', 'git_nothing_staged');
       const committed = await this.run(root, [...(options.bypassHooks ? ['-c', 'core.hooksPath=/dev/null'] : []), 'commit', ...(options.bypassHooks ? ['--no-verify'] : []), '-m', message]);
       // Hook output stays local (errors are generic); naming the cause points at the terminal or the confirmed bypass.
       if (committed.code !== 0 || committed.truncated) throw new AppError('conflict', !options.bypassHooks && await commitHooks(root) ? 'git_hook_failed' : 'git_failed');
