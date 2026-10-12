@@ -47,3 +47,12 @@ test('whole-word search treats supplementary Unicode letters as word characters 
     } finally { matcher.close(); }
   }
 });
+
+test('whole-word regex alternatives and lazy quantifiers can expand to the word boundary', async () => {
+  for (const query of ['a|ab', 'a\\w*?']) {
+    const matcher = createMatcher(query, { regex: true, wholeWord: true });
+    try {
+      assert.deepEqual(await matcher.match('ab a'), { offsets: [[0, 2], [3, 4]], truncated: false });
+    } finally { matcher.close(); }
+  }
+});
