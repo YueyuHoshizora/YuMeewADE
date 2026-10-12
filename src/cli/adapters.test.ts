@@ -347,9 +347,10 @@ test('codex：從 rollout 讀額度，指定會話時往舊日期找，最新額
     await put('2026/10/11', 'rollout-2026-10-11T01-00-00-other.jsonl', [tokenCount('2026-10-11T01:00:00Z', 20), tokenCount('2026-10-11T01:00:05Z', null), '{"broken']);
     // 續聊的舊會話追加在 9/30 的檔；最新日期的檔找不到這個 thread 不能誤用。
     assert.equal((await readCodexQuota(home, TID))?.windows[0]?.usedPercent, 40);
+    // Without a thread the latest report wins, even one a resumed older session appended after newer files were made.
     const latest = await readCodexQuota(home);
-    assert.equal(latest?.at, '2026-10-11T01:00:00Z');
-    assert.equal(latest?.windows[0]?.usedPercent, 20);
+    assert.equal(latest?.at, '2026-10-11T09:00:00Z');
+    assert.equal(latest?.windows[0]?.usedPercent, 40);
     assert.equal(await readCodexQuota(home, 'missing-thread'), null);
   } finally {
     await fs.rm(home, { recursive: true, force: true });

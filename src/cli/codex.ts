@@ -191,11 +191,13 @@ async function namesDesc(dir: string, pattern: RegExp): Promise<string[]> {
 
 /**
  * Codex 把每回合的 rate_limits 寫進 `{home}/sessions/YYYY/MM/DD/rollout-{時間}-{thread}.jsonl`（exec --json 不輸出額度）。
- * 給 thread 時找該會話的檔（resume 會追加到原檔，所以要往舊日期翻）；不給則取最新幾個檔中最近的一筆。
+ * 給 thread 時找該會話的檔（resume 會追加到原檔，所以要往舊日期翻）；不給則在最新幾個檔中取時間最新的一筆——
+ * 前一天建立、今天 resume 的會話排在後面，但它追加的回報可能比較新的檔更晚。
  */
 export async function readCodexQuota(home: string, thread?: string): Promise<QuotaEvent | null> {
   const root = path.join(home, 'sessions');
   let checked = 0;
+  let latest: QuotaEvent | null = null;
   for (const year of await namesDesc(root, /^\d{4}$/u)) {
     for (const month of await namesDesc(path.join(root, year), /^\d{2}$/u)) {
       for (const day of await namesDesc(path.join(root, year, month), /^\d{2}$/u)) {
@@ -206,12 +208,13 @@ export async function readCodexQuota(home: string, thread?: string): Promise<Quo
             continue;
           }
           const quota = await rolloutQuota(path.join(dir, name));
-          if (quota || ++checked >= LATEST_ROLLOUTS) return quota;
+          if (quota && (!latest || Date.parse(quota.at) > Date.parse(latest.at))) latest = quota;
+          if (++checked >= LATEST_ROLLOUTS) return latest;
         }
       }
     }
   }
-  return null;
+  return latest;
 }
 
 // exec 回合結束才給實際用量；測量整個回合的平均（包含等待／工具），不冒充即時解碼速度。
