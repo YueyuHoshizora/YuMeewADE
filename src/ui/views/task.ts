@@ -23,7 +23,7 @@ import { stream } from '../components/stream.ts';
 import { parseDiff, type DiffLine } from '../components/diff.ts';
 import { sideDiff } from '../components/side-diff.ts';
 import { buildReviewPrompt, type ReviewItem } from '../components/review.ts';
-import { openFileBrowser } from '../components/files.ts';
+import { openFileBrowser } from '../components/editor-loader.ts';
 import { attachComposeInsert, attachMention } from '../components/mention.ts';
 import { snippetsButton } from '../components/snippet-menu.ts';
 import { attachSlashCommands } from '../components/slash-menu.ts';

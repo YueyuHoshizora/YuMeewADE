@@ -1,12 +1,8 @@
-import { MergeView } from '@codemirror/merge';
-import { EditorState } from '@codemirror/state';
-import { EditorView, lineNumbers } from '@codemirror/view';
-import { syntaxHighlighting } from '@codemirror/language';
+import type { MergeView } from '@codemirror/merge';
 import type { GitDiffContents } from '../../shared/types.ts';
 import { query, request } from '../api.ts';
 import { t } from '../i18n/index.ts';
 import { button, el, row, run } from './dom.ts';
-import { appHighlight, editorLanguage } from './editor-engine.ts';
 
 const preference = 'yumeewade:side-diff';
 /** Unified remains available for review comments and precise line staging. */
@@ -33,6 +29,9 @@ export function sideDiff(unified: HTMLElement, ids: { project: string; task?: st
     if (contents.binary || contents.truncated) {
       notice.textContent = t(contents.binary ? 'sideDiff.binary' : 'sideDiff.large'); notice.hidden = false; return;
     }
+    // Load CodeMirror only after the user requests the heavy comparison view.
+    const [{ MergeView }, { EditorState }, { EditorView, lineNumbers }, { syntaxHighlighting }, { appHighlight, editorLanguage }] = await Promise.all([import('@codemirror/merge'), import('@codemirror/state'), import('@codemirror/view'), import('@codemirror/language'), import('./editor-engine.ts')]);
+    if (current !== serial || closed) return;
     const extensions = [lineNumbers(), editorLanguage(ids.path), syntaxHighlighting(appHighlight), EditorState.readOnly.of(true), EditorView.editable.of(false), EditorView.theme({ '&': { backgroundColor: 'var(--panel)', color: 'var(--c-e7eaf4)' }, '.cm-scroller': { overflow: 'visible' } })];
     unified.hidden = true; host.hidden = false; side = true;
     host.append(row(el('strong', '', t('sideDiff.before')), el('strong', '', t('sideDiff.after'))));

@@ -5,8 +5,7 @@ import { openProjectFromFolder } from '../views/projects.ts';
 import { archiveButton } from './archive.ts';
 import { button, confirmModal, el, input, projectHash, row, run, taskHash, type ViewContext } from './dom.ts';
 import { executionButton } from './execution.ts';
-import { openFileBrowser } from './files.ts';
-import { gitWorkbenchButton } from './git-workbench.ts';
+import { openFileBrowser } from './editor-loader.ts';
 import { fileQuery, rank, routeScope } from './palette-logic.ts';
 
 type Command = { label: string; action: () => unknown };
@@ -68,7 +67,7 @@ export function openCommandPalette(context: ViewContext): void {
   const scope = routeScope(location.hash);
   const project = context.state.projects.find(project => project.id === scope?.project);
   if (scope && project && (!scope.task || project.tasks.some(task => task.id === scope.task))) {
-    commands.push({ label: t('palette.files'), action: () => openFileBrowser(scope.project, scope.task) }, { label: t('workbench.title'), action: () => gitWorkbenchButton(context, scope.project, scope.task || undefined).click() });
+    commands.push({ label: t('palette.files'), action: () => openFileBrowser(scope.project, scope.task) }, { label: t('workbench.title'), action: async () => (await import('./git-workbench.ts')).gitWorkbenchButton(context, scope.project, scope.task || undefined).click() });
     if (scope.task) commands.push({ label: t('execution.title'), action: () => executionButton(context, scope.project, scope.task).click() });
   }
   if (context.state.running.length) commands.push({ label: t('running.stopAll'), action: async () => {

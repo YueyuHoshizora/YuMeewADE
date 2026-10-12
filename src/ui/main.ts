@@ -6,12 +6,8 @@ import { aiLabel, localDateTime, localTime, quotaLabel } from './components/disp
 import { quotaAlerts, quotaCountdowns, type QuotaAlert } from './components/quota-alert.ts';
 import { needsReply, tree } from './components/tree.ts';
 import { newProjectView, openProjectFromFolder, openProjectView, projectView } from './views/projects.ts';
-import { taskView } from './views/task.ts';
-import { turnView } from './views/turn.ts';
-import { settingsView } from './views/settings.ts';
 import { stream } from './components/stream.ts';
 import { attention } from './components/attention.ts';
-import { searchView } from './views/search.ts';
 import { usageBar } from './components/usage.ts';
 import { runningChip } from './components/running.ts';
 import { openUpdateDialog, updateChip, visibleUpdate } from './components/update.ts';
@@ -19,13 +15,18 @@ import { openUsageDetails } from './components/usage-details.ts';
 import { showInitialCare } from './components/care.ts';
 import { mountTerminalDock, toggleTerminalDock } from './components/terminal-dock.ts';
 import { openCommandPalette, paletteShortcut } from './components/palette.ts';
-import { overviewView } from './views/overview.ts';
-import { mountEditorWorkbench, setWorkbenchScope } from './components/files.ts';
+import { mountEditorWorkbench, setWorkbenchScope } from './components/editor-loader.ts';
 
 const header = document.getElementById('header')!; const sidebar = document.getElementById('sidebar')!; const main = document.getElementById('main')!; const footer = document.getElementById('footer')!;
 mountTerminalDock();
 mountEditorWorkbench(main);
 let state: AppState | null = null; let usage: UsageState = { ais: [], tokensPerSecond: null }; let view: View | null = null; let route = ''; let viewTarget = ''; let refreshJob: Promise<void> | null = null; let refreshAgain = false; let debounce: number | undefined;
+// Route modules are intentionally deferred until their view is actually visited.
+function lazyView(load: () => Promise<View>): View {
+  const node = el('div', 'page', t('common.loading')); let disposed = false; let mounted: View | undefined; let latest: AppState | undefined;
+  void run(async () => { const next = await load(); if (disposed) { next.dispose?.(); return; } mounted = next; node.replaceChildren(next.node); if (latest) next.update?.(latest); });
+  return { node, update: next => { latest = next; mounted?.update?.(next); }, dispose: () => { disposed = true; mounted?.dispose?.(); } };
+}
 let initialCareShown = false;
 function notify(previous: AppState | null, next: AppState): void {
   const items = attention(next); window.yumeewade?.setBadge?.(items.length);
@@ -115,12 +116,12 @@ function navigate(force = false): void {
   if (waiting) view = { node: el('div', 'page empty', t('common.loading')) };
   else if (parts[0] === 'new') view = newProjectView(context, params);
   else if (parts[0] === 'open') view = openProjectView(context);
-  else if (parts[0] === 'settings') view = settingsView(context, () => { drawShell(); navigate(true); });
-  else if (parts[0] === 'search') view = searchView();
-  else if (parts[0] === 'overview') view = overviewView(context);
+  else if (parts[0] === 'settings') view = lazyView(async () => (await import('./views/settings.ts')).settingsView(context, () => { drawShell(); navigate(true); }));
+  else if (parts[0] === 'search') view = lazyView(async () => (await import('./views/search.ts')).searchView());
+  else if (parts[0] === 'overview') view = lazyView(async () => (await import('./views/overview.ts')).overviewView(context));
   else if (parts[0] === 'p' && project) view = projectView(context, project, params);
-  else if (parts[0] === 't' && project && task) view = taskView(context, project, task, params);
-  else view = turnView(context);
+  else if (parts[0] === 't' && project && task) view = lazyView(async () => (await import('./views/task.ts')).taskView(context, project, task, params));
+  else view = lazyView(async () => (await import('./views/turn.ts')).turnView(context));
   main.classList.toggle('task-main', parts[0] === 't' && !waiting);
   main.replaceChildren(view.node); main.scrollTop = 0; document.body.classList.remove('sidebar-open'); drawShell();
   setWorkbenchScope(project?.id ?? '', task?.id ?? '', state.root);
