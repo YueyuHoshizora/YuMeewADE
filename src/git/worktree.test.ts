@@ -117,9 +117,13 @@ test('external non-repo is initialized, secrets copied but never newly committed
   assert.equal((await wt.preview('P', task.id))?.files, 0);
   assert.doesNotMatch((await wt.diff('P', task.id)).diff, /SECRET|TOKEN/);
   await fs.writeFile(path.join(dir, 'app.txt'), 'changed\n');
+  // A new secret staged by hand is still left out of the merge, so the preview must not list it either.
+  await fs.writeFile(path.join(dir, '.ENV.production'), 'SECRET=three\n'); await gitOk(dir, ['add', '-f', '.ENV.production']);
+  const preview = await wt.preview('P', task.id);
+  assert.deepEqual([preview?.files, preview?.paths], [1, ['app.txt']]);
   await wt.merge('P', task.id);
   assert.equal(await fs.readFile(path.join(body, 'app.txt'), 'utf8'), 'changed\n');
-  assert.doesNotMatch(await gitOk(body, ['ls-files']), /\.env|\.npmrc/);
+  assert.doesNotMatch(await gitOk(body, ['ls-files']), /\.env|\.npmrc/iu);
 }));
 
 test('direct saves tracked edits, preserves tracked secrets and excludes new secrets', () => withTmpWorkspace(async ws => {

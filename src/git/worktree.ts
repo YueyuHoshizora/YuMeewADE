@@ -195,26 +195,25 @@ export class WorktreeService {
     const mainHead = (await gitOk(repo, ['rev-parse', 'HEAD'])).trim();
     const workHead = (await gitOk(dir, ['rev-parse', 'HEAD'])).trim();
     const base = (await gitOk(repo, ['merge-base', mainHead, workHead])).trim();
-    const stat = await gitOk(dir, ['diff', '--shortstat', base]);
-    const untracked = splitNull(await gitOk(dir, ['ls-files', '--others', '--exclude-standard', '-z'])).filter(f => !isLocalSecret(f));
-    const paths = splitNull(await gitOk(dir, ['diff', '--name-only', '-z', base]));
-    // The merge first commits pending edits on both sides (commitAll), so conflicts are judged on those snapshots.
+    // The merge first commits pending edits on both sides (commitAll), so the preview is computed on those snapshots:
+    // they hold untracked files but not newly added local secrets, even ones staged by hand, which the merge leaves out.
     const [mainSnapshot, workSnapshot] = await Promise.all([snapshotCommit(repo), snapshotCommit(dir)]);
+    const stat = await gitOk(dir, ['diff', '--shortstat', base, workSnapshot]);
+    const paths = splitNull(await gitOk(dir, ['diff', '--name-only', '-z', base, workSnapshot]));
     const tree = await git(repo, ['merge-tree', '--write-tree', '--name-only', '--no-messages', '-z', mainSnapshot, workSnapshot]);
     if ((tree.code !== 0 && tree.code !== 1) || tree.truncated) throw new AppError('internal', 'git_failed');
     const branch = (await gitOk(dir, ['rev-parse', '--abbrev-ref', 'HEAD'])).trim();
     const target = (await gitOk(repo, ['rev-parse', '--abbrev-ref', 'HEAD'])).trim();
-    const all = [...new Set([...paths, ...untracked])];
     return {
       branch,
       target,
-      files: Number(stat.match(/(\d+) files? changed/)?.[1] ?? 0) + untracked.length,
+      files: Number(stat.match(/(\d+) files? changed/)?.[1] ?? 0),
       added: Number(stat.match(/(\d+) insertions?/)?.[1] ?? 0),
       removed: Number(stat.match(/(\d+) deletions?/)?.[1] ?? 0),
       conflict: tree.code === 1,
       conflictPaths: tree.code === 1 ? splitNull(tree.stdout).slice(1) : [],
-      paths: all,
-      overlaps: await this.overlaps(project, task, repo, all),
+      paths,
+      overlaps: await this.overlaps(project, task, repo, paths),
       mainDirty: (await gitOk(repo, ['status', '--porcelain'])).length > 0,
     };
   }
