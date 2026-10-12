@@ -13,7 +13,8 @@ export function registerMemoryRoutes(router: Router, app: App): void {
     const project = reqString(body, 'project', 120); const name = reqString(body, 'name', 120);
     if (app.runner.isBusy(project)) throw new AppError('conflict', 'editor_running');
     if (body.revision !== null && typeof body.revision !== 'string') throw new AppError('bad_request');
-    if (typeof body.text !== 'string' || body.text.length > MEMORY_MAX_BYTES) throw new AppError('bad_request', 'field_type', { field: 'text' });
+    if (typeof body.text !== 'string') throw new AppError('bad_request', 'field_type', { field: 'text' });
+    if (body.text.length > MEMORY_MAX_BYTES) throw new AppError('bad_request', 'field_too_long', { field: 'text' });
     const result = await app.memory.save(project, name, body.text, body.revision as string | null);
     await app.oplog.record({ action: 'project.memory.save', project }); app.changed(project);
     return result;

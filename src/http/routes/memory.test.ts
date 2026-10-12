@@ -14,6 +14,11 @@ test('memory endpoints round-trip, reject stale writes and require delete confir
     assert.deepEqual((await server.api('GET', '/api/project/memory?project=P&name=note.md')).json, note);
     assert.equal((await server.api('POST', '/api/project/memory', { project: 'P', name: 'note.md', text: 'overwrite', revision: null })).status, 409);
     assert.equal((await server.api('POST', '/api/project/memory', { project: 'P', name: 'note.md', text: 123, revision: note.revision })).status, 400);
+    // Over the byte cap is reported as too long, whether in characters or only in UTF-8 bytes.
+    for (const text of ['x'.repeat(256 * 1024 + 1), 'é'.repeat(140_000)]) {
+      const tooLong = await server.api('POST', '/api/project/memory', { project: 'P', name: 'note.md', text, revision: note.revision });
+      assert.equal(tooLong.status, 400); assert.equal((tooLong.json as { detail?: string }).detail, 'field_too_long');
+    }
     assert.equal((await server.api('POST', '/api/project/memory/delete', { project: 'P', name: 'note.md', revision: note.revision })).status, 400);
     assert.equal((await server.api('POST', '/api/project/memory/delete', { project: 'P', name: 'note.md', revision: note.revision, confirm: true })).status, 200);
     assert.equal((await server.api('GET', '/api/project/memory?project=P&name=note.md')).status, 404);
