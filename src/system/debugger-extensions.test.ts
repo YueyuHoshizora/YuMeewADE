@@ -86,3 +86,20 @@ test('real transpiled JS maps TS conditional breakpoint, stack and watches and r
     assert.deepEqual(JSON.parse(await fs.readFile(metadata, 'utf8')).breakpoints, []);
   } finally { debuggerService.close(); await execution.stopAll(); }
 }));
+
+test('Inspector attachment survives delayed metadata resolution and reaches the initial pause', () => withTmpWorkspace(async (ws, dir) => {
+  const projects = new ProjectLedger(ws); const tasks = new TaskLedger(ws); await projects.create({ name: 'Debug' });
+  const task = await tasks.create('Debug', { title: 'Delayed metadata', workspace: 'direct' });
+  const execution = new ExecutionService({ ws, projects, tasks });
+  const debuggerService = new DebuggerService(execution, { metadataFile: async () => { await delay(200); return path.join(dir, 'breakpoints.json'); } });
+  try {
+    const run = await execution.start('Debug', task.id, { command: 'node', kind: 'debug', args: ['-e', 'setInterval(() => {}, 1000)'] });
+    const session = await debuggerService.attach('Debug', task.id, run.id);
+    const state = () => debuggerService.state('Debug', task.id, session.id);
+    await until(() => state().status === 'paused');
+    assert.ok(state().frames[0]?.scopes.some(scope => scope.objectId));
+    await debuggerService.action('Debug', task.id, session.id, 'resume');
+    await until(() => state().status === 'running');
+    assert.deepEqual(state().frames, []);
+  } finally { debuggerService.close(); await execution.stopAll(); }
+}));

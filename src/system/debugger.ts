@@ -53,10 +53,12 @@ export class DebuggerService {
       if (!target.inspectorUrl) throw new AppError('unavailable');
       const url = loopbackUrl(target.inspectorUrl, true);
       if (url.hostname !== '127.0.0.1' || url.protocol !== 'ws:' || !/^\/[a-f0-9-]+$/u.test(url.pathname) || url.search || url.hash) throw new AppError('bad_request');
+      // Resolve filesystem metadata before opening the socket: open/error may arrive during any await.
+      const metadata = await this.options.metadataFile?.(project, task);
       const socket = new WebSocket(url.href);
       const view: DebugSession = { id: randomUUID(), project, task, run, status: 'connecting', reason: '', frames: [], scripts: [], breakpoints: [], revision: 0 };
       const e: Entry = { view, root, socket, next: 0, pending: new Map(), objects: new Set(), breakpointPending: new Set(), pauseVersion: 0, closed: false, maps: new Map(), loading: [] };
-      if (this.options.metadataFile) e.metadata = await this.options.metadataFile(project, task);
+      if (metadata) e.metadata = metadata;
       this.sessions.set(view.id, e);
       socket.addEventListener('message', event => { if (typeof event.data !== 'string' || Buffer.byteLength(event.data) > 1_048_576) { this.disconnect(e, true); return; } this.receive(e, event.data); });
       socket.addEventListener('close', () => this.disconnect(e));
