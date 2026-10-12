@@ -11,6 +11,8 @@ export interface ChatMeta {
   sessions: Record<string, string>;
   models: Record<string, string>;
   seen: Record<string, string>;
+  /** Human attention only; independent of the AI handoff cursors in `seen`. */
+  unread?: true;
   /** Session ownership; absent legacy entries belong to the implicit default account. */
   accounts?: Record<string, string>;
   /** `/fast` per AI; absent means the CLI's own configuration decides. */
@@ -90,19 +92,42 @@ export class ChatStore {
       await appendLine(file, JSON.stringify(row));
       if (row.role === 'assistant') {
         const meta = await this.readMeta(project, task);
-        if (meta.running?.request === row.request) { delete meta.running; await writeJson(metaFile, meta); }
+        if (meta.running?.request === row.request) delete meta.running;
+        meta.unread = true;
+        await writeJson(metaFile, meta);
       }
     });
   }
 
   async readMeta(project: string, task: string): Promise<ChatMeta> {
     const meta = await readJson<Partial<ChatMeta>>(this.ws.chatFile(project, task, 'json'), {});
-    return { sessions: meta.sessions ?? {}, models: meta.models ?? {}, seen: meta.seen ?? {}, ...(meta.accounts ? { accounts: meta.accounts } : {}), ...(meta.fast ? { fast: meta.fast } : {}), ...(meta.running ? { running: meta.running } : {}) };
+    return { sessions: meta.sessions ?? {}, models: meta.models ?? {}, seen: meta.seen ?? {}, ...(meta.unread === true ? { unread: true as const } : {}), ...(meta.accounts ? { accounts: meta.accounts } : {}), ...(meta.fast ? { fast: meta.fast } : {}), ...(meta.running ? { running: meta.running } : {}) };
   }
 
   writeMeta(project: string, task: string, meta: ChatMeta): Promise<void> {
     const file = this.ws.chatFile(project, task, 'json');
-    return withFileLocks([this.ws.projectFile(project), file], async () => { await fs.access(this.ws.projectFile(project)); await fs.access(this.ws.taskFile(project, task)); await writeJson(file, meta); });
+    return withFileLocks([this.ws.projectFile(project), file], async () => {
+      await fs.access(this.ws.projectFile(project));
+      await fs.access(this.ws.taskFile(project, task));
+      // A running turn holds an older snapshot; it must not undo the human's read acknowledgement.
+      const current = await this.readMeta(project, task);
+      const next = { ...meta };
+      if (current.unread) next.unread = true;
+      else delete next.unread;
+      await writeJson(file, next);
+    });
+  }
+
+  markRead(project: string, task: string): Promise<void> {
+    const file = this.ws.chatFile(project, task, 'json');
+    return withFileLocks([this.ws.projectFile(project), file], async () => {
+      await fs.access(this.ws.projectFile(project));
+      await fs.access(this.ws.taskFile(project, task));
+      const meta = await this.readMeta(project, task);
+      if (!meta.unread) return;
+      delete meta.unread;
+      await writeJson(file, meta);
+    });
   }
 
   readQueue(project: string, task: string): Promise<QueueItem[]> {
@@ -127,9 +152,10 @@ export class ChatStore {
   }
 
   /** 啟動只掃小型 meta，不讀整份對話；有 marker 才檢查最後已寫入的回覆。 */
-  async recoverInterrupted(): Promise<void> {
+  async recoverInterrupted(): Promise<{ project: string; task: string }[]> {
     const projects = await fs.readdir(this.ws.projectsDir, { withFileTypes: true });
     const pending: { project: string; task: string }[] = [];
+    const unread: { project: string; task: string }[] = [];
     for (const project of projects) {
       if (!project.isDirectory() || !isValidProjectName(project.name)) continue;
       let entries: string[];
@@ -146,12 +172,15 @@ export class ChatStore {
       await Promise.all(pending.slice(offset, offset + 8).map(async ({ project, task }) => {
         const meta = await this.readMeta(project, task);
         const running = meta.running;
-        if (!running) return;
-        const rows = await this.readLog(project, task);
-        if (!rows.some(row => row.role === 'assistant' && row.request === running.request)) {
-          await this.append(project, task, { role: 'assistant', ai: running.ai, model: running.model ?? '', effort: running.effort ?? '', request: running.request, at: new Date().toISOString(), text: '', error: 'interrupted', ms: 0 });
-        } else { delete meta.running; await this.writeMeta(project, task, meta); }
+        if (running) {
+          const rows = await this.readLog(project, task);
+          if (!rows.some(row => row.role === 'assistant' && row.request === running.request)) {
+            await this.append(project, task, { role: 'assistant', ai: running.ai, model: running.model ?? '', effort: running.effort ?? '', request: running.request, at: new Date().toISOString(), text: '', error: 'interrupted', ms: 0 });
+          } else { delete meta.running; await this.writeMeta(project, task, meta); }
+        }
+        if ((await this.readMeta(project, task)).unread) unread.push({ project, task });
       }));
     }
+    return unread;
   }
 }

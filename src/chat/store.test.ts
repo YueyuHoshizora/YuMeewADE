@@ -7,6 +7,22 @@ import { ChatStore } from './store.ts';
 import { promises as fs } from 'node:fs';
 import type { ChatRow } from '../shared/types.ts';
 
+test('stale AI metadata snapshots neither clear unread replies nor undo human acknowledgement', () => withTmpWorkspace(async ws => {
+  await new ProjectLedger(ws).create({ name: 'P' });
+  const task = await new TaskLedger(ws).create('P', { title: 'T', workspace: 'direct' });
+  const store = new ChatStore(ws);
+  const beforeReply = await store.readMeta('P', task.id);
+  await store.append('P', task.id, { role: 'assistant', at: 'now', request: 'r', ai: 'codex', text: 'done', ms: 1 });
+  await store.writeMeta('P', task.id, { ...beforeReply, seen: { codex: 'r' } });
+  assert.equal((await store.readMeta('P', task.id)).unread, true);
+  const beforeRead = await store.readMeta('P', task.id);
+  await store.markRead('P', task.id);
+  await store.writeMeta('P', task.id, { ...beforeRead, sessions: { codex: 'sid' } });
+  const meta = await store.readMeta('P', task.id);
+  assert.equal(meta.unread, undefined);
+  assert.deepEqual(meta.seen, { codex: 'r' });
+  assert.deepEqual(meta.sessions, { codex: 'sid' });
+}));
 test('重啟補寫 interrupted 回覆且不重試、不改隊列', () => withTmpWorkspace(async ws => {
   await new ProjectLedger(ws).create({ name: 'P' });
   const task = await new TaskLedger(ws).create('P', { title: 'T', workspace: 'direct' });

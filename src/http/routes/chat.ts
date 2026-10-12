@@ -49,7 +49,7 @@ export function registerChatRoutes(router: Router, app: App): void {
     const snapshot = await app.runner.snapshot(p, t);
     // Read only once the stream that shows it is open: a connection refused at the SSE limit delivers nothing.
     app.sse.open(req, res, taskKey(p, t), { event: 'snapshot', data: snapshot });
-    app.runner.markRead(p, t);
+    await app.runner.markRead(p, t);
   });
   router.post('/api/chat/send', async ({ body, ip }) => {
     if (!app.sendLimiter.take(ip)) throw new AppError('too_many_requests');

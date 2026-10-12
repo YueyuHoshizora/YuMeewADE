@@ -305,9 +305,9 @@ export function registerLedgerRoutes(router: Router, app: App): void {
       if (preview.unavailable.length) throw new AppError('conflict', 'archive_cannot_preserve');
       await app.worktree.abandon(project, task);
     }
+    await app.runner.markRead(project, task);
     await app.tasks.archive(project, task);
     await app.completion.revoke(project, task);
-    app.runner.markRead(project, task);
     await changed('task.archive', project, task);
     return { archived: true };
   }
@@ -315,7 +315,7 @@ export function registerLedgerRoutes(router: Router, app: App): void {
   router.post('/api/task/read', async ({ body }) => {
     const { project, task } = ids(body);
     await app.tasks.get(project, task);
-    app.runner.markRead(project, task);
+    await app.runner.markRead(project, task);
     app.changed(project, task);
     return { ok: true };
   });

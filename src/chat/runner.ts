@@ -87,6 +87,13 @@ export class ChatRunner extends EventEmitter {
     this.deps = deps;
   }
 
+  async init(): Promise<void> {
+    this.unreadTasks.clear();
+    for (const item of await this.deps.store.recoverInterrupted()) {
+      this.unreadTasks.set(`${item.project}\0${item.task}`, item);
+    }
+  }
+
   /** A task without a role never reads roles.yaml, so a hand-broken file blocks only the role-based runs it would change. */
   private rolesFor(task: Pick<Task, 'role'>): Promise<Roles> {
     return task.role ? this.deps.roles() : Promise.resolve({ roles: Object.create(null) as Roles['roles'] });
@@ -163,8 +170,15 @@ export class ChatRunner extends EventEmitter {
     return [...this.unreadTasks.values()];
   }
 
-  markRead(p: string, t: string): void {
+  /** Clears the indicator at once (the page already shows the result), then persists the acknowledgement. */
+  async markRead(p: string, t: string): Promise<void> {
     if (this.unreadTasks.delete(`${p}\0${t}`)) this.deps.onChanged(p, t);
+    await this.deps.store.markRead(p, t);
+  }
+
+  /** Whether the finished reply still waits for the human (the page may have acknowledged it already); an unreadable record keeps it unread. */
+  private persistedUnread(p: string, t: string): Promise<boolean> {
+    return this.deps.store.readMeta(p, t).then(meta => !!meta.unread, () => true);
   }
 
   async whenIdle(): Promise<void> {
@@ -470,7 +484,7 @@ export class ChatRunner extends EventEmitter {
         try { await this.deps.store.append(p, t, row); this.publish(p, t, { event: 'row', data: row }); }
         catch (appendError) { log.error('對話收尾失敗', appendError, { project: p, task: t }); }
         // A failed turn is a finished reply like any other: it needs the human's attention until the page is seen.
-        this.unreadTasks.set(`${p}\0${t}`, { project: p, task: t });
+        if (await this.persistedUnread(p, t)) this.unreadTasks.set(`${p}\0${t}`, { project: p, task: t });
         this.publish(p, t, { event: 'idle', data: { request: item.id } });
         this.deps.onChanged(p, t);
       }
@@ -735,7 +749,8 @@ export class ChatRunner extends EventEmitter {
       s.run = null;
       s.partial = '';
       // An open connection is not attention: the window may be in the background. The task page marks it read once seen.
-      this.unreadTasks.set(`${p}\0${t}`, { project: p, task: t });
+      if (await this.persistedUnread(p, t)) this.unreadTasks.set(`${p}\0${t}`, { project: p, task: t });
+      else this.unreadTasks.delete(`${p}\0${t}`);
       this.publish(p, t, { event: 'idle', data: { request: item.id } });
       this.deps.onChanged(p, t);
     }

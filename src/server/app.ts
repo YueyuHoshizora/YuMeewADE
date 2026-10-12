@@ -351,7 +351,7 @@ export class App {
         catch { log.warn('作用中帳號的憑證無法連結預設槽', { ai }); }
       }
     }
-    await this.store.recoverInterrupted();
+    await this.runner.init();
     await this.care.init();
     await cleanupUploads(this.ws, this.store);
     this.uploadTimer = setInterval(() => {

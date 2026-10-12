@@ -61,7 +61,8 @@ test('review provider write request is rejected; transcript persists without cha
   assert.equal(result.session, 'isolated-review-session'); assert.equal(result.ok, true);
   assert.equal(result.approved, false); assert.equal(result.structured, false);
   assert.equal((await service.history('P', task.id)).snapshots[0]?.text, 'Write denied by tool policy');
-  assert.deepEqual(await store.readMeta('P', task.id), meta);
+  // Writing metadata stays untouched; the review reply itself is a result the human has not seen yet.
+  assert.deepEqual(await store.readMeta('P', task.id), { ...meta, unread: true });
   assert.equal((await store.readLog('P', task.id)).length, 2);
   assert.equal(published, 2);
   await assert.rejects(service.run('P', task.id, { ai: 'mock', text: 'review' }));

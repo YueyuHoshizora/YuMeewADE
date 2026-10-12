@@ -18,7 +18,7 @@ import { promises as fs } from 'node:fs';
 import path from 'node:path';
 import { registerChatRoutes } from '../http/routes/chat.ts';
 import type { Ctx, Handler, Router } from '../http/router.ts';
-import type { App } from '../server/app.ts';
+import { App } from '../server/app.ts';
 import { ChatRunner } from './runner.ts';
 import type { RunnerDeps } from './runner.ts';
 import { ChatStore } from './store.ts';
@@ -43,6 +43,49 @@ async function setup(ws: Workspace, options: MockOptions = {}, runSeconds = 600,
   const send = (text: string, extra: Partial<Parameters<ChatRunner['send']>[0]> = {}) => runner.send({ project: 'P', task: task.id, text, ...extra });
   return { runner, store, settings, projects, tasks, task, send, calls, events, usageAccounts, completion, restored, ranges, forks, mock, worktree };
 }
+test('unread results survive App restart until markRead persists the human acknowledgement', async t => {
+  t.mock.method(globalThis, 'fetch', async () => { throw new Error('network disabled in test'); });
+  await withTmpWorkspace(async (ws, dir) => {
+    const config = structuredClone(DEFAULT_CONFIG);
+    config.workspace.root = ws.root;
+    config.update.enabled = false;
+    const options = { home: path.join(dir, 'home'), providers: { codex: new MockCliProvider({ chunkMs: 1, text: 'important result' }) } };
+    let app = new App(config, options);
+    try {
+      await app.init();
+      await app.projects.create({ name: 'P' });
+      const task = await app.tasks.create('P', { title: 'T', workspace: 'direct' });
+      const unread = [{ project: 'P', task: task.id }];
+      const restart = async () => {
+        await app.shutdown();
+        app = new App(config, options);
+        await app.init();
+      };
+      await app.runner.send({ project: 'P', task: task.id, ai: 'codex', text: 'hello' });
+      await app.runner.whenIdle();
+      assert.deepEqual(app.runner.unread(), unread);
+      await restart();
+      assert.deepEqual(app.runner.unread(), unread, 'restarting must not silently acknowledge a result');
+      const seen = (await app.store.readMeta('P', task.id)).seen;
+      await app.runner.markRead('P', task.id);
+      assert.deepEqual(app.runner.unread(), []);
+      assert.deepEqual((await app.store.readMeta('P', task.id)).seen, seen, 'human reading must not alter AI handoff cursors');
+      await restart();
+      assert.deepEqual(app.runner.unread(), [], 'read acknowledgement survives restart');
+      await app.store.append('P', task.id, { role: 'user', at: 'now', text: 'interrupted run', to: 'codex', request: 'crashed' });
+      const meta = await app.store.readMeta('P', task.id);
+      await app.store.writeMeta('P', task.id, { ...meta, running: { request: 'crashed', ai: 'codex', startedAt: 'now' } });
+      await restart();
+      const recovered = (await app.store.readLog('P', task.id)).at(-1);
+      assert.ok(recovered?.role === 'assistant');
+      assert.equal(recovered.error, 'interrupted');
+      assert.deepEqual(app.runner.unread(), unread, 'recovered interrupted reply needs human attention');
+      await app.runner.markRead('P', task.id);
+      await restart();
+      assert.deepEqual(app.runner.unread(), []);
+    } finally { await app.shutdown(); }
+  });
+});
 test('Mock CLI receives numbered file references on first send, resume and provider handoff while stored text stays original', () => withTmpWorkspace(async ws => {
   const s = await setup(ws);
   await fs.writeFile(path.join(ws.projectDir('P'), 'sample.ts'), 'first\nreference payload\nthird');
@@ -225,7 +268,7 @@ test('roleless defaults, tool rows, asks, answer clearing, unread', () => withTm
   await s.send('go'); await s.runner.whenIdle();
   const task = await s.tasks.get('P', s.task.id); assert.equal(task.cli, 'codex'); assert.equal(task.model, 'm'); assert.equal(task.state, '等待回覆'); assert.equal(task.question, 'Which?');
   const rows = await s.store.readLog('P', s.task.id); assert.equal(rows[0]?.role, 'user'); assert.equal(rows[1]?.role, 'event'); assert.equal(rows[2]?.text, 'done');
-  assert.equal(s.runner.unread().length, 1); s.runner.markRead('P', s.task.id);
+  assert.equal(s.runner.unread().length, 1); await s.runner.markRead('P', s.task.id);
   await s.send('answer now', { answer: true }); await s.runner.whenIdle(); assert.equal((await s.tasks.get('P', s.task.id)).question, '');
   // Every finished turn is unread until the task page reports it was seen; an open page in a background window is not.
   assert.deepEqual(s.runner.unread(), [{ project: 'P', task: s.task.id }]);
