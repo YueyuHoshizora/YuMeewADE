@@ -76,3 +76,12 @@ test('舊規則的「已完成的工作」標題與範本空標題並存時合�
   assert.deepEqual(sections.done, ['- legacy']);
   assert.deepEqual(sections.next, ['- go', '### 細節', '- sub']);
 }));
+
+test('沒指定階段的子作業沿用上層作業的階段，明確指定（含空字串）則照指定', () => withTmpWorkspace(async ws => {
+  await new ProjectLedger(ws).create({ name: 'P' });
+  const ledger = new TaskLedger(ws);
+  const parent = await ledger.create('P', { title: 'Parent', phase: '實作' });
+  assert.equal((await ledger.create('P', { title: 'Child', parent: parent.id, kind: 'derived', derivedFrom: parent.id })).phase, '實作');
+  assert.equal((await ledger.create('P', { title: 'Explicit', parent: parent.id, phase: '' })).phase, '');
+  assert.equal((await ledger.create('P', { title: 'Top' })).phase, '');
+}));
