@@ -3,11 +3,11 @@ import { randomUUID } from 'node:crypto';
 import path from 'node:path';
 import type { Workspace } from '../ledger/workspace.ts';
 import { AppError } from '../shared/errors.ts';
-import type { UploadResult } from '../shared/types.ts';
+import type { QueueItem, UploadResult } from '../shared/types.ts';
 import { isValidProjectName, isValidTaskId } from '../shared/names.ts';
 import type { ChatStore } from './store.ts';
 import { draftFile, readDrafts, type Drafts } from './drafts.ts';
-import { pathExists, withFileLocks, writeJson } from '../shared/fsx.ts';
+import { pathExists, readJson, withFileLocks, writeJson } from '../shared/fsx.ts';
 export const UPLOAD_TTL_MS = 24 * 60 * 60 * 1000;
 const ID = /^[0-9a-f-]{36}\.(png|jpe?g|webp|gif)$/u;
 export const IMAGE_TYPES: Record<string, string> = { png: 'image/png', jpg: 'image/jpeg', jpeg: 'image/jpeg', webp: 'image/webp', gif: 'image/gif' };
@@ -60,7 +60,8 @@ export async function cleanupUploads(ws: Workspace, store: ChatStore, now = Date
       if (err.code === 'ENOENT') return null;
       throw err;
     }))?.isDirectory()) continue;
-    await withFileLocks([draftFile(ws, project.name)], async () => {
+    // Serialize with archive/restore and queue edits so a moved queue cannot disappear between the two scans.
+    await withFileLocks([ws.projectFile(project.name), draftFile(ws, project.name)], async () => {
     const referenced = new Set<string>();
     // Unknown references make every upload potentially live: leave this project alone until its drafts file is repaired.
     let drafts: Drafts;
@@ -83,6 +84,24 @@ export async function cleanupUploads(ws: Workspace, store: ChatStore, now = Date
       const task = name.slice(0, -'.queue.json'.length);
       if (!isValidTaskId(task)) continue;
       for (const item of await store.readQueue(project.name, task)) {
+        for (const image of item.images ?? []) referenced.add(image);
+      }
+    }
+    // Archiving is not deletion: staged images remain sendable when its queued instructions are restored.
+    // Scan current archive files rather than recording permanent references, so deleting an archive releases uploads.
+    const trashDir = path.join(ws.projectDir(project.name), '.ai', 'trash');
+    const archives = await fs.readdir(trashDir, { withFileTypes: true }).catch((err: NodeJS.ErrnoException) => {
+      if (err.code === 'ENOENT') return [];
+      throw err;
+    });
+    for (const archive of archives) {
+      if (!archive.isDirectory()) continue;
+      const match = /^(.*)-[a-z0-9]+$/u.exec(archive.name);
+      if (!match || !isValidTaskId(match[1]!)) continue;
+      const task = match[1]!;
+      const archivedDir = path.join(trashDir, archive.name);
+      if (!await pathExists(path.join(archivedDir, `${task}.md`))) continue;
+      for (const item of await readJson<QueueItem[]>(path.join(archivedDir, `${task}.queue.json`), [])) {
         for (const image of item.images ?? []) referenced.add(image);
       }
     }
