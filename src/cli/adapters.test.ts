@@ -433,7 +433,8 @@ test('即時額度查詢：走 initialize → rateLimits/read 取得回應，錯
       let buf = '';
       process.stdin.on('data', d => { buf += d; for (let i = buf.indexOf('\\n'); i >= 0; i = buf.indexOf('\\n')) {
         const m = JSON.parse(buf.slice(0, i)); buf = buf.slice(i + 1);
-        if (m.method === 'initialize') console.log(JSON.stringify({ id: m.id, result: {} }));
+        // Valid JSON that is no message (null, an array) is skipped, not dereferenced.
+        if (m.method === 'initialize') console.log('null\\n[1]\\n' + JSON.stringify({ id: m.id, result: {} }));
         if (m.method === 'account/rateLimits/read') console.log(JSON.stringify({ id: m.id, result: { rateLimits: { primary: { usedPercent: 12, windowDurationMins: 300, resetsAt: null }, secondary: null, rateLimitReachedType: null } } }));
       } });`);
     const quota = await fetchCodexQuota(process.execPath, [ok], process.env);

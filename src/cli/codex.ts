@@ -128,8 +128,12 @@ export async function fetchCodexQuota(command: string, args: string[], env: Node
     for (let nl = buffer.indexOf('\n'); nl >= 0; nl = buffer.indexOf('\n')) {
       const line = buffer.slice(0, nl);
       buffer = buffer.slice(nl + 1);
-      let msg: { id?: unknown; result?: unknown; error?: unknown };
-      try { msg = JSON.parse(line); } catch { continue; }
+      let parsed: unknown;
+      try { parsed = JSON.parse(line); } catch { continue; }
+      // `null`, numbers or arrays are valid JSON but no protocol message; touching `.id` on null would throw in this
+      // stream callback and end the whole process.
+      if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) continue;
+      const msg = parsed as { id?: unknown; result?: unknown; error?: unknown };
       if (msg.id === 1 && !msg.error) {
         child.stdin.write(`${JSON.stringify({ method: 'initialized' })}\n${JSON.stringify({ method: 'account/rateLimits/read', id: 2 })}\n`);
       } else if (msg.id === 1) {
