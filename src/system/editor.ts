@@ -50,6 +50,27 @@ function deniedAsNotWritable(error: unknown): never {
   if (['EACCES', 'EPERM', 'EROFS'].includes((error as NodeJS.ErrnoException)?.code ?? '')) throw new AppError('forbidden', 'editor_not_writable');
   throw error;
 }
+/**
+ * Servers such as TypeScript answer a bare position with every global (often 1000+ items) and leave filtering to the client.
+ * Keep the 200 best matches for the typed identifier (prefix matches first, then in-order subsequences, each by `sortText`) instead of refusing.
+ */
+export function completionCandidates(items: unknown[], text: string, line: number, character: number): unknown[] {
+  if (items.length > 20000) throw new AppError('too_large');
+  const prefix = (/[\w$]*$/u.exec(text.split('\n')[line]?.slice(0, character) ?? '')?.[0] ?? '').toLowerCase();
+  const field = (item: unknown, name: 'filterText' | 'sortText'): string => {
+    if (!item || typeof item !== 'object') return '';
+    const value = (item as Record<string, unknown>)[name] ?? (item as Record<string, unknown>)['label'];
+    return typeof value === 'string' ? value : '';
+  };
+  const subsequence = (value: string): boolean => { let at = 0; for (const char of value) if (char === prefix[at]) at++; return at === prefix.length; };
+  const ranked: { item: unknown; prefixed: boolean; sort: string }[] = [];
+  for (const item of items) {
+    const filter = field(item, 'filterText').toLowerCase();
+    if (filter.startsWith(prefix) || subsequence(filter)) ranked.push({ item, prefixed: filter.startsWith(prefix), sort: field(item, 'sortText') });
+  }
+  ranked.sort((a, b) => Number(b.prefixed) - Number(a.prefixed) || (a.sort < b.sort ? -1 : a.sort > b.sort ? 1 : 0));
+  return ranked.slice(0, 200).map(entry => entry.item);
+}
 export class EditorService {
   private clients = new Map<string, LanguageClient>();
   private versions = new Map<string, number>();
@@ -464,8 +485,7 @@ export class EditorService {
         return { locations, diagnostics, hover };
       }
       if (action === 'completion') {
-        const items = Array.isArray(result) ? result : (result as { items?: unknown[] } | null)?.items ?? [];
-        if (items.length > 200) throw new AppError('too_large');
+        const items = completionCandidates(Array.isArray(result) ? result : (result as { items?: unknown[] } | null)?.items ?? [], text, line, character);
         return { locations, diagnostics, suggestions: items.map(value => {
           const item = value as { label: string; detail?: string; insertText?: string; insertTextFormat?: number; textEdit?: { newText: string; range?: { start: { line: number; character: number }; end: { line: number; character: number } }; replace?: { start: { line: number; character: number }; end: { line: number; character: number } } } };
           if (typeof item.label !== 'string' || item.label.length > 1000 || (item.detail?.length ?? 0) > 2000) throw new AppError('bad_request');

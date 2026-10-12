@@ -7,7 +7,7 @@ import { TaskLedger } from '../ledger/tasks.ts';
 import { WorktreeService } from '../git/worktree.ts';
 import { AppError } from '../shared/errors.ts';
 import { withTmpWorkspace } from '../testing/tmp.ts';
-import { EditorService } from './editor.ts';
+import { EditorService, completionCandidates } from './editor.ts';
 import { withFileLocks } from '../shared/fsx.ts';
 import { gitOk } from '../git/git.ts';
 
@@ -150,6 +150,19 @@ test('creating, renaming or deleting inside a folder without write permission is
     assert.deepEqual(await fs.readdir(folder), ['kept.txt']);
   } finally { await fs.chmod(folder, 0o755).catch(() => undefined); editor.dispose(); }
 }));
+
+test('completion keeps the best 200 matches for the typed prefix instead of refusing large server lists', () => {
+  // TypeScript answers with every global; 1000 unrelated globals plus locals must not fail the request.
+  const globals = Array.from({ length: 1000 }, (_, i) => ({ label: `global${i}`, sortText: '15' }));
+  const items = [...globals, { label: 'documentTitle', sortText: '11' }, { label: 'getElementById', sortText: '15' }, { label: 'docs', sortText: '11', filterText: 'docs' }, { label: 'x', filterText: 'nodoc', sortText: '0' }];
+  const labels = (line: string) => (completionCandidates(items, `const a = 1;\n${line}`, 1, line.length) as { label: string }[]).map(item => item.label);
+  assert.deepEqual(labels('  doc'), ['documentTitle', 'docs', 'x'], 'prefix matches first, then subsequence matches; sortText orders each group');
+  assert.deepEqual(labels('gEBI'), ['getElementById'], 'case-insensitive subsequence keeps abbreviations CodeMirror would match');
+  const bare = labels('');
+  assert.equal(bare.length, 200);
+  assert.deepEqual(bare.slice(0, 3), ['x', 'documentTitle', 'docs'], 'with no prefix, server sortText decides the kept 200');
+  assert.throws(() => completionCandidates(Array.from({ length: 20001 }, () => ({ label: 'a' })), '', 0, 0), (error: unknown) => error instanceof AppError && error.code === 'too_large');
+});
 
 test('editor LSP exposes completion hover formatting rename actions and project diagnostics', () => withTmpWorkspace(async ws => {
   const projects = new ProjectLedger(ws); const tasks = new TaskLedger(ws); await projects.create({ name: 'P' });
