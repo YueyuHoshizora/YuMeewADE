@@ -152,6 +152,24 @@ test('步驟改名保留勾選，移動時連同縮排子項目一起搬且不�
   await assert.rejects(ledger.moveStep('P', task.id, 0, 'A2', 1), /step_changed|conflict|步驟/);
 }));
 
+test('nested steps move with their parent and only between siblings; fenced checklist examples are not steps', () => withTmpWorkspace(async ws => {
+  await new ProjectLedger(ws).create({ name: 'P' });
+  const ledger = new TaskLedger(ws); const task = await ledger.create('P', { title: 'T' });
+  const body = async () => (await fs.readFile(ws.taskFile('P', task.id), 'utf8')).split('---\n').at(-1);
+  await fs.writeFile(ws.taskFile('P', task.id), '---\ntitle: T\n---\n## 步驟\n- [ ] A\n  - [ ] A child\n  - [ ] A second\n- [ ] B\n');
+  await ledger.moveStep('P', task.id, 3, 'B', -1);
+  assert.equal(await body(), '## 步驟\n- [ ] B\n- [ ] A\n  - [ ] A child\n  - [ ] A second\n');
+  await ledger.moveStep('P', task.id, 2, 'A child', 1);
+  assert.equal(await body(), '## 步驟\n- [ ] B\n- [ ] A\n  - [ ] A second\n  - [ ] A child\n');
+  // A child has no sibling outside its parent's list.
+  await assert.rejects(ledger.moveStep('P', task.id, 2, 'A second', -1), { detail: 'field_type' });
+  await assert.rejects(ledger.moveStep('P', task.id, 3, 'A child', 1), { detail: 'field_type' });
+  await fs.writeFile(ws.taskFile('P', task.id), '---\ntitle: T\n---\n## 步驟\n- [x] real\n```md\n- [ ] example only\n```\n- [ ] after\n');
+  assert.deepEqual((await ledger.get('P', task.id)).steps, [{ text: 'real', done: true }, { text: 'after', done: false }]);
+  await ledger.setStep('P', task.id, 1, true, 'after');
+  assert.equal(await body(), '## 步驟\n- [x] real\n```md\n- [ ] example only\n```\n- [x] after\n');
+}));
+
 test('備註超過上限時保留最新的 500 行', () => withTmpWorkspace(async ws => {
   await new ProjectLedger(ws).create({ name: 'P' });
   const ledger = new TaskLedger(ws); const task = await ledger.create('P', { title: 'T' });

@@ -21,11 +21,12 @@ export const STEP_TEXT_MAX = 2000;
 export const STEPS_MAX = 500;
 /** One title bound for creating, renaming and saving as a template; GitHub-prefilled titles fit within it. */
 export const TITLE_MAX = 300;
-const STEP_ROW = /^\s*[-*]\s*\[[ xX]\]\s*(.+)$/;
+/** A checklist row: indentation, check mark, text. */
+const STEP = /^(\s*)[-*]\s*\[([ xX])\]\s*(.+)$/;
 /** The caller names the step it saw; if the list changed meanwhile (another window, the AI), no other step is touched. */
 function stepRow(rows: string[], indices: number[], index: number, expected: string): number {
   const row = indices[index];
-  if (row === undefined || STEP_ROW.exec(rows[row]!)?.[1] !== expected) throw new AppError('conflict', 'step_changed');
+  if (row === undefined || STEP.exec(rows[row]!)?.[3] !== expected) throw new AppError('conflict', 'step_changed');
   return row;
 }
 const HEADINGS = {
@@ -38,22 +39,30 @@ const SECTION_LINES_MAX = 500;
 const SECTION_LINE_CHARS = 2000;
 
 /**
- * Each row's `##` heading name ('' for a bare `##`), or undefined for content. A `## 注意` inside a fenced code block
- * (an example the AI quotes) is content, not a section break; a fence that never closes is ignored, so one stray ```
- * cannot hide every section after it.
+ * Rows inside a closed fenced code block (fence lines included): examples the AI quotes are content, never headings
+ * or steps. A fence that never closes is ignored, so one stray ``` cannot hide everything after it.
  */
-function headings(rows: string[]): (string | undefined)[] {
-  const marks: (string | undefined)[] = [];
+function fencedRows(rows: string[]): boolean[] {
+  const fenced = rows.map(() => false);
   for (let i = 0; i < rows.length; i++) {
     const open = /^ {0,3}(`{3,}|~{3,})/.exec(rows[i]!)?.[1];
-    if (open) {
-      let close = i + 1;
-      for (; close < rows.length; close++) { const marker = /^ {0,3}(`{3,}|~{3,})\s*$/.exec(rows[close]!)?.[1]; if (marker && marker[0] === open[0] && marker.length >= open.length) break; }
-      if (close < rows.length) { for (; i <= close; i++) marks.push(undefined); i--; continue; }
-    }
-    marks.push(/^##\s/.test(rows[i]!) ? /^##\s+(.+?)\s*$/.exec(rows[i]!)?.[1] ?? '' : undefined);
+    if (!open) continue;
+    let close = i + 1;
+    for (; close < rows.length; close++) { const marker = /^ {0,3}(`{3,}|~{3,})\s*$/.exec(rows[close]!)?.[1]; if (marker && marker[0] === open[0] && marker.length >= open.length) break; }
+    if (close < rows.length) { fenced.fill(true, i, close + 1); i = close; }
   }
-  return marks;
+  return fenced;
+}
+/** Each row's `##` heading name ('' for a bare `##`), or undefined for content (including a `## 注意` inside a fence). */
+function headings(rows: string[]): (string | undefined)[] {
+  const fenced = fencedRows(rows);
+  return rows.map((row, i) => !fenced[i] && /^##\s/.test(row) ? /^##\s+(.+?)\s*$/.exec(row)?.[1] ?? '' : undefined);
+}
+/** Row numbers of the checklist items in `rows[start+1, end)`, skipping fenced examples. */
+function stepIndices(rows: string[], start: number, end: number): number[] {
+  const fenced = fencedRows(rows), indices: number[] = [];
+  for (let i = start + 1; i < end; i++) if (!fenced[i] && STEP.test(rows[i]!)) indices.push(i);
+  return indices;
 }
 
 interface BodySection { rows: string[]; start: number; end: number }
@@ -81,7 +90,7 @@ function sectionLines(body: string, kind: keyof typeof HEADINGS): string[] {
 export function parseSteps(body: string): Step[] {
   const { rows, start, end } = section(body, 'steps');
   if (start < 0) return [];
-  return rows.slice(start + 1, end).flatMap(row => { const m = /^\s*[-*]\s*\[([ xX])\]\s*(.+)$/.exec(row); return m ? [{ text: m[2]!, done: m[1] !== ' ' }] : []; });
+  return stepIndices(rows, start, end).map(i => { const m = STEP.exec(rows[i]!)!; return { text: m[3]!, done: m[2] !== ' ' }; });
 }
 
 export class TaskLedger {
@@ -202,8 +211,7 @@ export class TaskLedger {
       const fm = parseFrontmatter(await this.readRaw(project, id));
       let part = section(fm.body, 'steps');
       if (part.start < 0) { fm.body += '\n## 步驟\n'; part = section(fm.body, 'steps'); }
-      const indices: number[] = [];
-      for (let i = part.start + 1; i < part.end; i++) if (/^\s*[-*]\s*\[[ xX]\]\s*.+$/.test(part.rows[i]!)) indices.push(i);
+      const indices = stepIndices(part.rows, part.start, part.end);
       change(part.rows, indices, part.start, part.end);
       await atomicWrite(this.ws.taskFile(project, id), serializeFrontmatter(patchHeaderLines(fm.headerLines, { updated: nowMinute() }), part.rows.join('\n')));
       return this.get(project, id);
@@ -231,15 +239,21 @@ export class TaskLedger {
     // A replacer function keeps `$` sequences in the new text literal.
     return this.editSteps(project, id, (rows, indices) => { const row = stepRow(rows, indices, index, expected); rows[row] = rows[row]!.replace(/^(\s*[-*]\s*\[[ xX]\]\s*).+$/, (_, head: string) => head + clean); });
   }
-  /** Swaps a step with its neighbour, carrying any indented lines under each step along with it. */
+  /** Swaps a step with its neighbour at the same nesting depth, carrying its nested steps and indented lines along. */
   async moveStep(project: string, id: string, index: number, expected: string, offset: number): Promise<Task> {
     if (!Number.isInteger(index) || typeof expected !== 'string' || (offset !== -1 && offset !== 1)) throw new AppError('bad_request', 'field_type', { field: 'move' });
     return this.editSteps(project, id, (rows, indices, _start, end) => {
       stepRow(rows, indices, index, expected);
-      const upper = offset < 0 ? index - 1 : index;
-      if (upper < 0 || upper + 1 >= indices.length) throw new AppError('bad_request', 'field_type', { field: 'move' });
-      const a = indices[upper]!, b = indices[upper + 1]!;
-      let c = indices[upper + 2] ?? end;
+      const depth = (k: number) => STEP.exec(rows[indices[k]!]!)![1]!.replace(/\t/g, '    ').length;
+      // The sibling is the nearest step at the same depth; reaching a shallower step means leaving the parent list.
+      let sibling = index + offset;
+      while (sibling >= 0 && sibling < indices.length && depth(sibling) > depth(index)) sibling += offset;
+      if (sibling < 0 || sibling >= indices.length || depth(sibling) !== depth(index)) throw new AppError('bad_request', 'field_type', { field: 'move' });
+      const upper = Math.min(index, sibling), lower = Math.max(index, sibling);
+      let next = lower + 1;
+      while (next < indices.length && depth(next) > depth(lower)) next++;
+      const a = indices[upper]!, b = indices[lower]!;
+      let c = indices[next] ?? end;
       while (c > b + 1 && !rows[c - 1]!.trim()) c--;
       rows.splice(a, c - a, ...rows.slice(b, c), ...rows.slice(a, b));
     });
