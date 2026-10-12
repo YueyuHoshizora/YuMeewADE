@@ -21,7 +21,7 @@ export function cliGuidance(context: ViewContext): HTMLElement {
       const installer = installers[cli.name];
       if (!cli.available && installer) {
         const docs = el('a', 'button', t('onboarding.docs')); docs.href = installer.url; docs.target = '_blank'; docs.rel = 'noopener noreferrer';
-        const command = input(); command.readOnly = true; command.value = /Win/i.test(window.yumeewade?.platform ?? navigator.platform) ? installer.windows : installer.unix; command.onfocus = () => command.select();
+        const command = input(); command.readOnly = true; command.value = /Win/i.test(window.yumeewade?.platform ?? navigator.platform) ? installer.windows : installer.unix; command.onfocus = () => command.select(); command.setAttribute('aria-label', `${aiLabel(cli.name)} · ${t('onboarding.command')}`);
         item.append(docs, command, button(t('onboarding.copy'), () => navigator.clipboard.writeText(command.value)));
       } else if (cli.loginState !== 'stored') {
         item.append(button(t('usage.addAccount'), () => openUsageDetails(() => context.state, () => context.state.usage, context.refresh, cli.name, true)));

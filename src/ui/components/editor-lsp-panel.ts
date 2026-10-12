@@ -3,7 +3,7 @@ import { query, request } from '../api.ts';
 import { t } from '../i18n/index.ts';
 import { area, button, card, el, field, input, run, select, UserError, type ViewContext } from './dom.ts';
 export function editorLspPanel(context: ViewContext): HTMLElement {
-  const project = select(context.state.projects.map(p => ({value:p.id,label:p.name})), context.state.projects[0]?.id ?? '');
+  const project = select(context.state.projects.map(p => ({value:p.id,label:p.name})), context.state.projects[0]?.id ?? ''); project.setAttribute('aria-label', t('nav.projects'));
   const commands = area(); commands.spellcheck = false; const status = el('div'); let settings: EditorSettings | undefined; let serial = 0;
   const tabSize = input('4'); tabSize.type = 'number'; tabSize.min = '1'; tabSize.max = '16';
   const spaces = input(); spaces.type = 'checkbox';

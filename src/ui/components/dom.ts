@@ -22,16 +22,20 @@ export function statusRegion(): HTMLElement {
   node.setAttribute('aria-atomic', 'true');
   return node;
 }
+// A placeholder is often the only visible description of a bare control, so it doubles as the accessible name
+// until field() wraps the control in a visible label, which then names it instead.
 export function input(value = '', placeholder = ''): HTMLInputElement {
-  const node = el('input'); node.value = value; node.placeholder = placeholder; return node;
+  const node = el('input'); node.value = value; node.placeholder = placeholder; if (placeholder) node.setAttribute('aria-label', placeholder); return node;
 }
 export function area(value = '', placeholder = ''): HTMLTextAreaElement {
-  const node = el('textarea'); node.value = value; node.placeholder = placeholder; node.rows = 4; return node;
+  const node = el('textarea'); node.value = value; node.placeholder = placeholder; node.rows = 4; if (placeholder) node.setAttribute('aria-label', placeholder); return node;
 }
 export function select(options: { value: string; label: string }[], value = ''): HTMLSelectElement {
   const node = el('select'); for (const o of options) { const opt = el('option', '', o.label); opt.value = o.value; node.append(opt); } node.value = value; return node;
 }
 export function field(label: string, control: HTMLElement): HTMLLabelElement {
+  const placeholder = 'placeholder' in control ? (control as HTMLInputElement).placeholder : '';
+  if (placeholder && control.getAttribute('aria-label') === placeholder) control.removeAttribute('aria-label');
   const node = el('label', 'field'); node.append(el('span', 'field-label', label), control); return node;
 }
 export function disclosure(title: string, ...children: Node[]): HTMLDetailsElement {

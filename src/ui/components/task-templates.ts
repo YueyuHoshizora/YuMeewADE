@@ -7,7 +7,7 @@ export function taskTemplates(context: ViewContext, project: ProjectView): HTMLE
   const list = el('div'); const name = input(); name.maxLength = 60;
   const source = select(project.tasks.map(task => ({ value: task.id, label: task.title })));
   const instruction = area(); instruction.maxLength = 10000;
-  const scope = select([{ value: 'project', label: t('tasks.projectTemplate') }, { value: 'workspace', label: t('tasks.workspaceTemplate') }]);
+  const scope = select([{ value: 'project', label: t('tasks.projectTemplate') }, { value: 'workspace', label: t('tasks.workspaceTemplate') }]); scope.setAttribute('aria-label', `${t('tasks.projectTemplate')} / ${t('tasks.workspaceTemplate')}`);
   async function reload(): Promise<void> {
     const response = await request<{ templates: TaskTemplate[] }>(query('/api/task/templates', { project: project.id }));
     list.replaceChildren(...response.templates.map(template => row(

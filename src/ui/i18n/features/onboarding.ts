@@ -6,6 +6,7 @@ export const featureZhTW = {
   "onboarding.noAccount": "已安裝，但尚無帳號",
   "onboarding.installed": "已安裝；帳號狀態未知",
   "onboarding.docs": "官方安裝文件",
+  "onboarding.command": "安裝指令",
   "onboarding.copy": "複製指令",
   "onboarding.banner": "目前沒有可用的 AI。請先安裝 CLI 並新增帳號。",
   "onboarding.dismiss": "略過提醒"
@@ -18,6 +19,7 @@ export const featureZhCN = {
   "onboarding.noAccount": "已安装，但尚无账号",
   "onboarding.installed": "已安装；账号状态未知",
   "onboarding.docs": "官方安装文档",
+  "onboarding.command": "安装命令",
   "onboarding.copy": "复制命令",
   "onboarding.banner": "目前没有可用的 AI。请先安装 CLI 并新增账号。",
   "onboarding.dismiss": "忽略提醒"
@@ -30,6 +32,7 @@ export const featureEn = {
   "onboarding.noAccount": "Installed, no account",
   "onboarding.installed": "Installed; account status unknown",
   "onboarding.docs": "Official installation docs",
+  "onboarding.command": "Install command",
   "onboarding.copy": "Copy command",
   "onboarding.banner": "No AI is usable yet. Install a CLI and add an account.",
   "onboarding.dismiss": "Dismiss"
@@ -42,6 +45,7 @@ export const featureJa = {
   "onboarding.noAccount": "インストール済み、アカウントなし",
   "onboarding.installed": "インストール済み、アカウント状態不明",
   "onboarding.docs": "公式インストール手順",
+  "onboarding.command": "インストールコマンド",
   "onboarding.copy": "コマンドをコピー",
   "onboarding.banner": "利用可能な AI がありません。CLI をインストールし、アカウントを追加してください。",
   "onboarding.dismiss": "閉じる"
@@ -54,6 +58,7 @@ export const featureDe = {
   "onboarding.noAccount": "Installiert, kein Konto",
   "onboarding.installed": "Installiert; Kontostatus unbekannt",
   "onboarding.docs": "Offizielle Installationsanleitung",
+  "onboarding.command": "Installationsbefehl",
   "onboarding.copy": "Befehl kopieren",
   "onboarding.banner": "Noch keine AI nutzbar. Installieren Sie eine CLI und fügen Sie ein Konto hinzu.",
   "onboarding.dismiss": "Ausblenden"
@@ -66,6 +71,7 @@ export const featureFr = {
   "onboarding.noAccount": "Installé, aucun compte",
   "onboarding.installed": "Installé ; état du compte inconnu",
   "onboarding.docs": "Instructions officielles",
+  "onboarding.command": "Commande d’installation",
   "onboarding.copy": "Copier la commande",
   "onboarding.banner": "Aucune IA utilisable. Installez une CLI et ajoutez un compte.",
   "onboarding.dismiss": "Masquer"
@@ -78,6 +84,7 @@ export const featureIt = {
   "onboarding.noAccount": "Installato, nessun account",
   "onboarding.installed": "Installato; stato account sconosciuto",
   "onboarding.docs": "Istruzioni ufficiali",
+  "onboarding.command": "Comando di installazione",
   "onboarding.copy": "Copia comando",
   "onboarding.banner": "Nessuna IA utilizzabile. Installare una CLI e aggiungere un account.",
   "onboarding.dismiss": "Nascondi"

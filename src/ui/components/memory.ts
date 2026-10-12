@@ -6,7 +6,7 @@ import { markdown } from './markdown.ts';
 
 export function memoryPanel(project: string): HTMLDetailsElement {
   const list = el('div'); const name = input(); name.maxLength = 120; name.placeholder = 'INDEX.md';
-  const text = area(); text.rows = 14; text.maxLength = 262144;
+  const text = area(); text.rows = 14; text.maxLength = 262144; text.setAttribute('aria-label', t('memory.title'));
   const preview = el('div'); let revision: string | null = null; let selected = ''; let loaded = false;
   const status = el('p', 'muted', t('memory.hint'));
   const save = button(t('common.save'), async () => {
