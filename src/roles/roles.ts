@@ -54,10 +54,16 @@ export async function writeRoles(file: string, inputs: RoleInput[]): Promise<Rol
   }
   // A byte order mark would keep the existing `roles:` line from matching and a second block would be appended.
   const text = (await fs.readFile(file, 'utf8').catch((error: NodeJS.ErrnoException) => { if (error.code === 'ENOENT') return ''; throw error; })).replace(/^\uFEFF/, '');
-  const old = text.split('\n'); const start = old.findIndex(x => /^roles\s*:/u.test(x));
+  // The top-level key may be written quoted by hand (`"roles":`); the YAML subset reads both forms as the same key.
+  const old = text.split('\n'); const start = old.findIndex(x => /^(?:roles|"roles"|'roles')\s*:/u.test(x));
   let end = start + 1; while (end < old.length && !/^[^\s#][^:]*:/u.test(old[end] ?? '')) end++;
   const next = start < 0 ? `${text.trimEnd()}\n\n${lines.join('\n')}\n` : [...old.slice(0, start), ...lines, '', ...old.slice(end)].join('\n');
-  await atomicWrite(file, next); return parseRoles(next);
+  // Validate before writing: a save that cannot be read back (the rest of the file is broken) leaves the file untouched
+  // and names it for repair, like loading does.
+  let roles: Roles;
+  try { roles = parseRoles(next); }
+  catch (cause) { throw new AppError('internal', 'file_corrupt', { field: path.basename(file), cause }); }
+  await atomicWrite(file, next); return roles;
 }
 export interface Launch { cli: string; model: string; effort: string }
 export function resolveLaunch(roles: Roles, task: Pick<Task, 'role' | 'cli' | 'model' | 'effort'>, override: Partial<Launch>, initial: AiPick): Launch {

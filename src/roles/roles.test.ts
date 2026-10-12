@@ -60,6 +60,21 @@ test('saving roles into a file that starts with a byte order mark replaces its r
   assert.deepEqual(Object.keys(parseRoles(await fs.readFile(ws.rolesFile, 'utf8')).roles), ['新']);
 }));
 
+test('a hand-quoted roles key is replaced in place, and a save that cannot be read back leaves the file untouched', () => withTmpWorkspace(async ws => {
+  for (const key of ['"roles"', "'roles'"]) {
+    await fs.writeFile(ws.rolesFile, `# header\n${key}:\n  old: { main: [codex, old-model, high] }\n`);
+    await writeRoles(ws.rolesFile, [{ name: 'new', main: { cli: 'codex', model: 'new-model', effort: 'high' }, job: '' }]);
+    const text = await fs.readFile(ws.rolesFile, 'utf8');
+    assert.ok(text.startsWith('# header\n'));
+    assert.deepEqual(Object.keys((await loadRoles(ws.rolesFile)).roles), ['new']);
+  }
+  // A duplicate key elsewhere makes the result unreadable: refuse and keep the original bytes.
+  const broken = 'roles:\n  a: { main: [codex, m, high] }\nother: 1\nother: 2\n';
+  await fs.writeFile(ws.rolesFile, broken);
+  await assert.rejects(writeRoles(ws.rolesFile, [{ name: 'b', main: { cli: 'codex', model: '', effort: '' }, job: '' }]), { detail: 'file_corrupt', field: 'roles.yaml' });
+  assert.equal(await fs.readFile(ws.rolesFile, 'utf8'), broken);
+}));
+
 test('a hand-broken roles.yaml names the file to repair, a deleted one means no roles, and saving recreates it', () => withTmpWorkspace(async ws => {
   for (const broken of ['roles:\n  - name: [unclosed\n', 'roles:\n  "x":\n    main: [nosuchcli, "m", high]\n']) {
     await fs.writeFile(ws.rolesFile, broken);
