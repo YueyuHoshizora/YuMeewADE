@@ -365,7 +365,7 @@ export class ChatRunner extends EventEmitter {
       ...(chosen.answer ? { mode: 'answer' } : chosen.mode ? { mode: chosen.mode } : {}),
     };
     // Dequeue only once the user row is about to be written; a failure before that point must not lose the instruction.
-    let dequeued: QueueItem | undefined; let appended = false;
+    let dequeued: QueueItem | undefined; let appended = false; let launched = false;
     try {
       const cwd = await this.deps.worktree.prepare(p, t);
       assertActive();
@@ -440,6 +440,7 @@ export class ChatRunner extends EventEmitter {
         request: item.id, ai: item.ai, ...(item.model === undefined ? {} : { model: item.model }), context: taskContext,
         handoff: inspectHandoff(selectedHistory, this.deps.limits.handoffChars, prior.length - selectedHistory.length),
       }, checkpoint, cancelled);
+      launched = true;
       this.trackQueuedRun(p, t, s);
       return { request: item.id, queued: false };
     } catch (err) {
@@ -447,6 +448,13 @@ export class ChatRunner extends EventEmitter {
       s.run = null;
       s.partial = '';
       this.deps.onChanged(p, t);
+      if (appended && !launched) {
+        // Clients already saw the instruction and `busy`; record the failed turn and end it so nothing waits on a run that never started.
+        const row: ChatRow = { at: new Date().toISOString(), role: 'assistant', ai: item.ai, model: item.model ?? '', effort: item.effort ?? '', text: '', ms: 0, request: item.id, error: 'internal' };
+        try { await this.deps.store.append(p, t, row); this.publish(p, t, { event: 'row', data: row }); }
+        catch (appendError) { log.error('對話收尾失敗', appendError, { project: p, task: t }); }
+        this.publish(p, t, { event: 'idle', data: { request: item.id } });
+      }
       const restore = !appended ? dequeued : undefined;
       if (restore) {
         // stop() clears the queue under the same lock afterwards, so a restored item never outlives a stop.

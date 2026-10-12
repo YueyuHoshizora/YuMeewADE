@@ -330,6 +330,22 @@ test('queued instruction that fails before its turn starts stays queued with the
   assert.equal((await s.store.readLog('P', s.task.id)).filter(row => row.role === 'user' && row.text === 'queued').length, 1);
 }));
 
+test('a launch failure after the instruction was recorded closes the turn instead of leaving it running', () => withTmpWorkspace(async ws => {
+  const s = await setup(ws);
+  const writeMeta = s.store.writeMeta.bind(s.store); let failed = false;
+  s.store.writeMeta = async (p, t, meta) => { if (!failed && meta.running) { failed = true; throw new Error('disk failure'); } await writeMeta(p, t, meta); };
+  const sent = s.send('first');
+  await assert.rejects(sent, /disk failure/u);
+  // Clients saw `busy` for this request, so they must also see it end, with a failed reply in the transcript.
+  const busy = s.events.find(e => e.event === 'busy'); assert.ok(busy?.event === 'busy');
+  assert.ok(s.events.some(e => e.event === 'idle' && e.data.request === busy.data.request));
+  const rows = await s.store.readLog('P', s.task.id);
+  assert.deepEqual(rows.map(row => row.role === 'assistant' ? [row.role, row.request, row.error] : [row.role, row.request]), [['user', busy.data.request], ['assistant', busy.data.request, 'internal']]);
+  assert.equal(s.runner.isRunning('P', s.task.id), false);
+  await s.send('second'); await s.runner.whenIdle();
+  assert.equal((await s.store.readLog('P', s.task.id)).at(-1)?.text, 'ok');
+}));
+
 test('歷史分頁與 snapshot 邊界依解析後行索引計算', () => withTmpWorkspace(async ws => {
   const s = await setup(ws);
   const rows = Array.from({ length: HISTORY_PAGE * 2 + 1 }, (_, index) => ({
