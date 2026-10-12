@@ -28,3 +28,15 @@ test('專案與工作區範本往返，不複製步驟完成，禁止覆寫與�
   await fs.symlink(ws.taskFile('P', source.id), path.join(ws.root, 'templates', 'linked.md'));
   await assert.rejects(templates.get('P', 'workspace', 'linked'));
 }));
+
+test('a template or template folder removed outside the app is reported as not found', () => withTmpWorkspace(async ws => {
+  await new ProjectLedger(ws).create({ name: 'P' });
+  const templates = new TaskTemplates(ws);
+  await assert.rejects(templates.get('P', 'project', 'gone'), { status: 404 });
+  await assert.rejects(templates.remove('P', 'project', 'gone'), { status: 404 });
+  const source = await new TaskLedger(ws).create('P', { title: 'T' });
+  await templates.saveFromTask('P', source.id, 'Kept', '', 'project');
+  await fs.rm(path.join(ws.projectDir('P'), '.ai', 'templates', 'Kept.md'));
+  await assert.rejects(templates.get('P', 'project', 'Kept'), { status: 404 });
+  await assert.rejects(templates.remove('P', 'project', 'Kept'), { status: 404 });
+}));

@@ -2,6 +2,7 @@ import { promises as fs } from 'node:fs';
 import path from 'node:path';
 import type { App } from '../../server/app.ts';
 import { AppError } from '../../shared/errors.ts';
+import { missingAs } from '../../shared/fsx.ts';
 import { reqString, type Router } from '../router.ts';
 import { readContext, readContextManifest, saveContext, validateContext } from '../../chat/context.ts';
 import { draftImagePath, readDraft, updateDraft, validateReviews } from '../../chat/drafts.ts';
@@ -50,7 +51,7 @@ export function registerContextRoutes(router: Router, app: App): void {
     const project = reqString(query, 'project', 100); const task = reqString(query, 'scope', 100);
     await scope(project, task);
     const file = await draftImagePath(app.ws, project, task, reqString(query, 'id', 100));
-    const data = await fs.readFile(file);
+    const data = await fs.readFile(file).catch(missingAs(() => new AppError('not_found')));
     res.writeHead(200, { 'Content-Type': IMAGE_TYPES[path.extname(file).slice(1)]!, 'Content-Length': data.length, 'Cache-Control': 'no-store', 'X-Content-Type-Options': 'nosniff' }); res.end(data);
   });
 }

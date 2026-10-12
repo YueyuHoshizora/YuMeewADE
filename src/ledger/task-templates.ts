@@ -2,11 +2,13 @@ import { promises as fs } from 'node:fs';
 import path from 'node:path';
 import { AppError } from '../shared/errors.ts';
 import { parseFrontmatter, patchHeaderLines, serializeFrontmatter } from '../shared/frontmatter.ts';
-import { atomicWrite, isInside, withFileLocks } from '../shared/fsx.ts';
+import { atomicWrite, isInside, missingAs, withFileLocks } from '../shared/fsx.ts';
 import type { TaskTemplate } from '../shared/types.ts';
 import type { Workspace } from './workspace.ts';
 import { parseSteps, STEP_TEXT_MAX, TaskLedger, TITLE_MAX } from './tasks.ts';
 
+/** A template (or its folder) deleted outside the app is simply not there. */
+const notFound = missingAs(() => new AppError('not_found'));
 export class TaskTemplates {
   private readonly ws: Workspace;
   constructor(ws: Workspace) { this.ws = ws; }
@@ -30,7 +32,7 @@ export class TaskTemplates {
     return file;
   }
   async get(project: string, scope: 'project' | 'workspace', name: string): Promise<TaskTemplate> {
-    const { data, body } = parseFrontmatter(await fs.readFile(await this.file(project, scope, name), 'utf8'));
+    const { data, body } = parseFrontmatter(await this.file(project, scope, name).then(file => fs.readFile(file, 'utf8')).catch(notFound));
     if (typeof data['title'] !== 'string' || !data['title'].trim() || data['title'].length > TITLE_MAX || (data['instruction'] !== undefined && (typeof data['instruction'] !== 'string' || data['instruction'].length > 10000))) throw new AppError('bad_request', 'field_type');
     return { name, scope, title: data['title'], instruction: typeof data['instruction'] === 'string' ? data['instruction'] : '', steps: parseSteps(body).map(step => step.text) };
   }
@@ -59,7 +61,7 @@ export class TaskTemplates {
     });
   }
   async remove(project: string, scope: 'project' | 'workspace', name: string): Promise<void> {
-    const file = await this.file(project, scope, name);
-    await withFileLocks([this.ws.projectFile(project), file], async () => { await fs.unlink(file); });
+    const file = await this.file(project, scope, name).catch(notFound);
+    await withFileLocks([this.ws.projectFile(project), file], async () => { await fs.unlink(file).catch(notFound); });
   }
 }

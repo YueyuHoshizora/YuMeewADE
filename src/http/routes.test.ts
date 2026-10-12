@@ -130,6 +130,19 @@ test('steps can be renamed and reordered only with the text shown and one change
   } finally { await s.close(); }
 });
 
+test('a draft image whose file was removed outside the app is not found rather than an internal error', async () => {
+  const { server: s, project: p, task: t } = await setup();
+  try {
+    const png = Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg==', 'base64');
+    const res = await fetch(`${s.base}/api/upload?${new URLSearchParams({ project: p.id, scope: t.id, name: 'a.png' })}`, { method: 'POST', headers: { 'Content-Type': 'image/png' }, body: png });
+    const image = await res.json() as { id: string };
+    const url = `/api/chat/draft-image?${new URLSearchParams({ project: p.id, scope: t.id, id: image.id })}`;
+    assert.equal((await s.api('GET', url)).status, 200);
+    await fs.rm(path.join(s.app.ws.uploadsDir(p.id), image.id));
+    assert.equal((await s.api('GET', url)).status, 404);
+  } finally { await s.close(); }
+});
+
 test('model and effort are validated the same way before any CLI starts', async () => {
   const { server: s, project: p, task: t } = await setup();
   try {

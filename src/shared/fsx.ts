@@ -25,6 +25,18 @@ export async function pathExists(p: string): Promise<boolean> {
   }
 }
 
+/** True for the errors a path that does not exist (or whose parent is not a folder) produces. */
+export function isMissing(error: unknown): boolean {
+  return ['ENOENT', 'ENOTDIR'].includes((error as NodeJS.ErrnoException)?.code ?? '');
+}
+/**
+ * For `.catch(missingAs(...))`: a path removed outside the app is an ordinary request outcome, so it becomes the given
+ * client error instead of a 500; every other failure is rethrown unchanged.
+ */
+export function missingAs(replacement: () => Error): (error: unknown) => never {
+  return error => { throw isMissing(error) ? replacement() : error; };
+}
+
 /** 讀取 JSON 檔；檔案不存在回 fallback，內容壞掉則丟錯（不冒充資料）。 */
 export async function readJson<T>(file: string, fallback: T): Promise<T> {
   let text: string;

@@ -4,7 +4,7 @@ import { createHash, randomUUID } from 'node:crypto';
 import { Workspace } from './workspace.ts';
 import { ProjectLedger } from './projects.ts';
 import { TaskLedger } from './tasks.ts';
-import { isInside, withFileLocks, writeJson } from '../shared/fsx.ts';
+import { isInside, missingAs, withFileLocks, writeJson } from '../shared/fsx.ts';
 import { AppError } from '../shared/errors.ts';
 import { git } from '../git/git.ts';
 import type { CareBackup } from '../shared/types.ts';
@@ -15,10 +15,7 @@ interface Manifest { format: 1; id: string; createdAt: string; root: string; ori
 const excluded = (name: string) => /^(credentials\.sqlite(?:[-.].*)?|credentials\.key|master\.key|core\.lock|cli-accounts|auth\.json|\.credentials\.json|\.device-keys\.json|antigravity-oauth-token)$/i.test(name);
 const fail = (detail: 'care_changed' | 'care_backup_invalid' | 'care_destination_exists' | 'care_external_required' | 'care_repository_unsupported') => new AppError('conflict', detail);
 /** A backup id or destination parent that does not exist is invalid input, not an internal error. */
-const invalidIfMissing = (error: unknown): never => {
-  if (['ENOENT', 'ENOTDIR'].includes((error as NodeJS.ErrnoException).code ?? '')) throw fail('care_backup_invalid');
-  throw error;
-};
+const invalidIfMissing = missingAs(() => fail('care_backup_invalid'));
 const inside = (root: string, file: string) => root === file || isInside(root, file);
 
 /** Private snapshots intentionally contain prompts and local .env files; never served as downloads. */
