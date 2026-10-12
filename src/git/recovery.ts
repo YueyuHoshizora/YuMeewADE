@@ -65,7 +65,9 @@ export class RecoveryStore {
       for (const entry of await fs.readdir(path.join(source, relative), { withFileTypes: true })) {
         if (entry.name === '.git' && !relative) continue;
         const rel = path.join(relative, entry.name);
-        const from = path.join(source, rel), to = path.join(destination, rel);
+        // Targets are built under the canonical root: on macOS `/var/…` is `/private/var/…`, and a link resolved from the
+        // alias would look as if it pointed outside the copy.
+        const from = path.join(source, rel), to = path.join(root, rel);
         if (entry.isDirectory()) {
           await fs.mkdir(to, { mode: 0o700 });
           if (!isInside(root, await fs.realpath(to))) throw new AppError('conflict', 'archive_unsafe_path');
