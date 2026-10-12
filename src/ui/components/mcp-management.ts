@@ -1,16 +1,21 @@
-import type { McpAi, McpInput, McpList, McpTransport } from '../../shared/types.ts';
+import type { AppState, McpAi, McpInput, McpList, McpTransport } from '../../shared/types.ts';
 import { query, request } from '../api.ts';
 import { labelValue, t } from '../i18n/index.ts';
 import { area, button, card, confirmModal, el, field, input, row, select, UserError, type ViewContext } from './dom.ts';
 import { aiLabel } from './display.ts';
 
-export function mcpPanel(context: ViewContext): HTMLElement {
+/** `update` follows account switches: the routes act on the account active at request time, so a list left from the previous
+ * account would show its servers while Remove/Add change the new account's configuration. */
+export function mcpPanel(context: ViewContext): { node: HTMLElement; update: (state: AppState) => void } {
   const panel = card(t('mcp.title')); panel.append(el('p', 'muted', t('mcp.accountHint')));
+  const followers: ((state: AppState) => void)[] = [];
   for (const info of context.state.ais.filter(ai => ai.available && ['claude', 'codex', 'grok', 'gemini'].includes(ai.name))) {
     const ai = info.name as McpAi; const node = el('details'); node.append(el('summary', '', aiLabel(ai)));
     const content = el('div'); node.append(content); panel.append(node);
-    let loaded = false;
+    const accountOf = (state: AppState) => state.settings.activeAccounts[ai] ?? 'default';
+    let loaded = false; let shown = accountOf(context.state);
     async function load(): Promise<void> {
+      shown = accountOf(context.state);
       const result = await request<McpList>(query('/api/mcp/list', { ai }));
       content.replaceChildren();
       if (!result.supported) { content.append(el('p', 'muted', t('mcp.unsupported'))); return; }
@@ -51,7 +56,12 @@ export function mcpPanel(context: ViewContext): HTMLElement {
         await request('/api/mcp/add', { ai, server }); env.value = ''; headers.value = ''; await load();
       }, 'primary')));
     }
-    node.ontoggle = () => { if (node.open && !loaded) { loaded = true; void load().catch(() => { loaded = false; content.replaceChildren(el('p', 'warning', t('mcp.failed')), button(t('mcp.refresh'), load)); }); } };
+    const open = () => { loaded = true; void load().catch(() => { loaded = false; content.replaceChildren(el('p', 'warning', t('mcp.failed')), button(t('mcp.refresh'), load)); }); };
+    node.ontoggle = () => { if (node.open && !loaded) open(); };
+    followers.push(state => {
+      if (!loaded || accountOf(state) === shown) return;
+      if (node.open) open(); else { loaded = false; content.replaceChildren(); }
+    });
   }
-  return panel;
+  return { node: panel, update: state => { for (const follow of followers) follow(state); } };
 }

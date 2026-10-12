@@ -40,7 +40,7 @@ export function settingsView(context: ViewContext, redraw: () => void): View {
   node.append(carePanel(context), archiveButton(context));
   node.append(cliGuidance(context));
   node.append(card(t('usage.details'), button(t('usage.details'), () => openUsageDetails(() => context.state, () => context.state.usage, context.refresh, undefined, false, true))), usageHistoryPanel(), budgetSettingsPanel());
-  node.append(mcpPanel(context));
+  const mcp = mcpPanel(context); node.append(mcp.node);
   node.append(editorPreferencesPanel());
   node.append(editorLspPanel(context));
   node.append(mountProviderCapabilities());
@@ -124,7 +124,7 @@ export function settingsView(context: ViewContext, redraw: () => void): View {
   };
   void run(async () => { const entries = await api.log(); if (!alive) return; for (const entry of entries) { const line = el('div', 'log-entry'); line.append(el('time', 'muted', localTime(entry.at)), el('strong', '', actionLabel(entry.action)), el('span', '', [entry.project, entry.task].filter(Boolean).join(' / '))); logs.append(line); } if (!entries.length) logs.append(el('p', 'muted', t('common.empty'))); }); node.append(card(t('settings.log'), logs));
   return { node, dispose: () => { alive = false; }, update: state => {
-    context.state = state;
+    context.state = state; mcp.update(state);
     if (JSON.stringify(state.roles.roles) !== rolesBase && formValue() === rolesForm && !roleList.contains(document.activeElement)) buildRoles(state);
   } };
 }
