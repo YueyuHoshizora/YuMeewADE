@@ -9,16 +9,18 @@ export function stepsHash(steps: Step[]): string { return createHash('sha256').u
 export function phaseKey(tasks: Task[]): string {
   return createHash('sha256').update(JSON.stringify(tasks.map(t => [t.id, t.state]).sort((a,b) => a[0]!.localeCompare(b[0]!)))).digest('hex');
 }
+/** Keys are project names, and `__proto__` is a valid one: plain objects would turn its assignment into a prototype change. */
+const dict = (value: Record<string, string> | undefined): Record<string, string> => Object.assign(Object.create(null) as Record<string, string>, value);
 export class CompletionStore {
   private readonly file: string;
   constructor(ws: Workspace) { this.file = path.join(ws.internalDir, 'completion.json'); }
   private async data(): Promise<CompletionData> {
     const value = await readJson<Partial<CompletionData>>(this.file, {});
-    return { approved: value.approved ?? {}, continued: value.continued ?? {}, phaseContinued: value.phaseContinued ?? {} };
+    return { approved: dict(value.approved), continued: dict(value.continued), phaseContinued: dict(value.phaseContinued) };
   }
   private async change(fn: (data: CompletionData) => void): Promise<void> {
     await updateJson<CompletionData>(this.file, { approved: {}, continued: {}, phaseContinued: {} }, data => {
-      data.approved ??= {}; data.continued ??= {}; data.phaseContinued ??= {}; fn(data);
+      data.approved = dict(data.approved); data.continued = dict(data.continued); data.phaseContinued = dict(data.phaseContinued); fn(data);
     });
   }
   async isApproved(p: string, t: string): Promise<boolean> { return !!(await this.data()).approved[`${p}/${t}`]; }

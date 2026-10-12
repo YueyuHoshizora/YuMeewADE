@@ -151,6 +151,9 @@ test('完成核可、continue hash、階段 key 與多實例寫入不互相覆�
   const a = await tasks.create('P', { title: 'A' }), b = await tasks.create('P', { title: 'B' });
   assert.equal(phaseKey([a,b]), phaseKey([b,a]));
   await one.setPhaseContinued('P', phaseKey([a,b])); assert.equal(await two.phaseContinued('P'), phaseKey([a,b]));
+  // `__proto__` is a valid project name: its entry is stored like any other, and a second store reads it back.
+  await one.setPhaseContinued('__proto__', 'key'); assert.equal(await two.phaseContinued('__proto__'), 'key');
+  assert.equal(await two.phaseContinued('P'), phaseKey([a,b]));
 }));
 
 test('設定預設取 config、驗證陣列與 AI；排序與釘選；紀錄 newest-first 上限', () => withTmpWorkspace(async ws => {
