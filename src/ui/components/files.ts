@@ -671,7 +671,7 @@ export function openFileBrowser(project: string, task: string, workspace = activ
     return node;
   };
   const codeTools = row(...(['definition', 'references', 'diagnostics', 'completion', 'hover', 'rename', 'format', 'codeActions'] as const).map(action => button(t(action === 'definition' || action === 'references' || action === 'diagnostics' ? `editor.${action}` : `ew.${action}`), () => language(action))), newName,
-    button(t('ew.problems'), async () => { const problems = await request<EditorProblem[]>(query('/api/editor/problems', ids)); output.replaceChildren(...problems.map(problem => button(`${problem.path}:${problem.line + 1} ${problem.message}`, () => show(problem.path, problem.line, problem.character)))); }), ...(task ? [button(t('ew.pin'), async () => {
+    button(t('ew.problems'), async () => { const { problems, truncated } = await request<{ problems: EditorProblem[]; truncated: boolean }>(query('/api/editor/problems', ids)); output.replaceChildren(...problems.map(problem => button(`${problem.path}:${problem.line + 1} ${problem.message}`, () => show(problem.path, problem.line, problem.character)))); if (truncated) output.append(el('p', 'muted', t('editorUI.resultsTruncated', { n: problems.length }))); }), ...(task ? [button(t('ew.pin'), async () => {
       const buffer = current(); if (!buffer) return;
       if (dirty(buffer)) throw new UserError(t('ew.saveFirst'));
       await pin(buffer.document.path, buffer.text.slice(0, buffer.start).split('\n').length, buffer.text.slice(0, buffer.end).split('\n').length, buffer.document.revision);

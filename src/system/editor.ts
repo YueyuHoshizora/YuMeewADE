@@ -742,23 +742,26 @@ export class EditorService {
       else throw new AppError('bad_request');
     }).catch(deniedAsNotWritable);
   }
-  async problems(project: string, task: string): Promise<EditorProblem[]> {
-    const { root } = await this.root(project, task); const output: EditorProblem[] = [];
+  /** Stops at 1000 problems or 32 MiB of source and says so (`truncated`); files the editor cannot open as text are skipped. */
+  async problems(project: string, task: string): Promise<{ problems: EditorProblem[]; truncated: boolean }> {
+    const { root } = await this.root(project, task); const output: EditorProblem[] = []; let truncated = false;
     const commands = (await this.configured(project)).commands;
     const paths = (await this.files(root)).filter(relative => !!commands[LANGUAGE[path.extname(relative).slice(1).toLowerCase()] ?? 'plaintext']);
     if (paths.length > 1000) throw new AppError('too_large', 'editor_problems_too_many');
     const checked = new Set<string>(); let bytes = 0; const lookup = await this.listedLookup(project, task);
-    for (const relative of paths) {
+    const add = (problem: EditorProblem): boolean => { if (output.length >= 1000) { truncated = true; return false; } output.push(problem); return true; };
+    scan: for (const relative of paths) {
       const document = await this.read(project, task, relative);
-      if (document.binary || document.truncated) throw new AppError('bad_request', 'editor_readonly');
-      bytes += document.size; if (bytes > 32 * 1024 * 1024) throw new AppError('too_large');
+      if (document.binary || document.truncated) continue;
+      bytes += document.size; if (bytes > 32 * 1024 * 1024) { truncated = true; break; }
       const uri = pathToFileURL(await lookup(relative)).href;
       const text = this.snapshots.get(`${root}\0${uri}`)?.text ?? document.text;
       const result = await this.language(project, task, relative, text, 0, 0, 'diagnostics');
       checked.add(relative);
-      for (const diagnostic of result.diagnostics) { output.push({ path: relative, ...diagnostic }); if (output.length > 1000) throw new AppError('too_large'); }
+      if (result.truncated) truncated = true;
+      for (const diagnostic of result.diagnostics) if (!add({ path: relative, ...diagnostic })) break scan;
     }
-    for (const [key, client] of this.clients) {
+    if (!truncated) for (const [key, client] of this.clients) {
       if (!key.startsWith(`${root}\0`)) continue;
       for (const [uri, items] of client.diagnostics) {
         let relative: string;
@@ -767,12 +770,11 @@ export class EditorService {
         for (const value of items) {
           const item = value as { range?: { start?: { line: number; character: number } }; message?: string; severity?: number };
           if (!item.range?.start || typeof item.message !== 'string') continue;
-          output.push({ path: relative, line: item.range.start.line, character: item.range.start.character, message: item.message.slice(0, 4000), severity: item.severity ?? 1 });
-          if (output.length > 1000) throw new AppError('too_large');
+          if (!add({ path: relative, line: item.range.start.line, character: item.range.start.character, message: item.message.slice(0, 4000), severity: item.severity ?? 1 })) return { problems: output, truncated };
         }
       }
     }
-    return output;
+    return { problems: output, truncated };
   }
   private evictClient(key: string, client: LanguageClient): void {
     if (this.clients.get(key) !== client) return;

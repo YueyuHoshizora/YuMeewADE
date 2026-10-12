@@ -166,6 +166,30 @@ test('completion keeps the best 200 matches for the typed prefix instead of refu
   assert.throws(() => completionCandidates(Array.from({ length: 20001 }, () => ({ label: 'a' })), '', 0, 0), (error: unknown) => error instanceof AppError && error.code === 'too_large');
 });
 
+test('project problems stop at 1000 and say so instead of refusing a broken project', () => withTmpWorkspace(async ws => {
+  const projects = new ProjectLedger(ws); const tasks = new TaskLedger(ws); await projects.create({ name: 'P' });
+  for (const name of ['a.ts', 'b.ts']) await fs.writeFile(path.join(ws.projectDir('P'), name), 'broken');
+  // Every file reports 600 problems, as a project mid-refactor might.
+  const script = String.raw`
+    let buffer = Buffer.alloc(0);
+    const send = message => { const body = JSON.stringify({jsonrpc:'2.0', ...message}); process.stdout.write('Content-Length: '+Buffer.byteLength(body)+'\r\n\r\n'+body); };
+    process.stdin.on('data', chunk => { buffer = Buffer.concat([buffer,chunk]); for (;;) {
+      const end = buffer.indexOf('\r\n\r\n'); if (end < 0) return;
+      const size = Number(/Content-Length:\s*(\d+)/i.exec(buffer.subarray(0,end).toString())[1]);
+      if (buffer.length < end+4+size) return;
+      const message = JSON.parse(buffer.subarray(end+4,end+4+size).toString()); buffer=buffer.subarray(end+4+size);
+      if (!message.id) continue;
+      const result = message.method==='initialize' ? {capabilities:{}} : message.method==='textDocument/diagnostic' ? {items:Array.from({length:600},(_,i)=>({range:{start:{line:0,character:0}},message:'p'+i,severity:1}))} : null;
+      send({id:message.id,result});
+    }});
+  `;
+  const editor = new EditorService(new WorktreeService({ ws, projects, tasks, diffBytes: 100000 }), tasks, { typescript: [process.execPath, '-e', script] });
+  try {
+    const { problems, truncated } = await editor.problems('P', '');
+    assert.equal(problems.length, 1000); assert.equal(truncated, true);
+  } finally { editor.dispose(); }
+}));
+
 test('editor LSP exposes completion hover formatting rename actions and project diagnostics', () => withTmpWorkspace(async ws => {
   const projects = new ProjectLedger(ws); const tasks = new TaskLedger(ws); await projects.create({ name: 'P' });
   for (const name of ['a.ts', 'b.ts']) await fs.writeFile(path.join(ws.projectDir('P'), name), 'old');
@@ -212,7 +236,7 @@ test('editor LSP exposes completion hover formatting rename actions and project 
     assert.equal(many.symbols?.length, 500); assert.equal(many.truncated, true);
     const references = await editor.language('P', '', 'a.ts', 'old', 0, 0, 'references');
     assert.equal(references.locations.length, 500); assert.equal(references.truncated, true);
-    assert.equal((await editor.problems('P', '')).length, 2);
+    assert.equal((await editor.problems('P', '')).problems.length, 2);
     await assert.rejects(editor.language('P', '', 'a.ts', 'unsaved', 0, 0, 'rename', 'new'));
     const rename = await editor.language('P', '', 'a.ts', 'old', 0, 0, 'rename', 'new');
     assert.equal(rename.changes?.length, 2);
@@ -368,11 +392,11 @@ test('Problems preserves dirty snapshots across language clients and close resto
   try {
     await editor.language('P', '', 'a.ts', 'export const tsValue: number = "wrong";\n', 0, 0, 'diagnostics');
     await editor.language('P', '', 'b.js', '/** @type {number} */\nexport const jsValue = "wrong";\n', 1, 0, 'diagnostics');
-    const problems = await editor.problems('P', '');
+    const { problems } = await editor.problems('P', '');
     assert.ok(problems.some(item => item.path === 'a.ts' && item.severity === 1));
     assert.ok(problems.some(item => item.path === 'b.js' && item.severity === 1));
     await editor.close('P', '', 'a.ts');
-    const afterClose = await editor.problems('P', '');
+    const { problems: afterClose } = await editor.problems('P', '');
     assert.ok(!afterClose.some(item => item.path === 'a.ts' && item.severity === 1));
     assert.ok(afterClose.some(item => item.path === 'b.js' && item.severity === 1));
     assert.equal(await fs.readFile(path.join(root, 'a.ts'), 'utf8'), savedTs);
