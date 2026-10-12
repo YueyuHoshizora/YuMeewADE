@@ -1,19 +1,20 @@
 /** 輸入框的 `@檔名` 提及：判斷游標前的 @token、套用選擇、並管理候選清單。 */
+import { mentionNeedsQuotes } from '../../shared/mention-syntax.ts';
 export interface Mention {
   /** `@` 所在的位置。 */
   start: number;
   query: string;
 }
 
-/** `@` 必須在字首或空白之後，token 不含空白。 */
+/** `@` 必須在字首、空白或左括號之後（與核心解析相同），token 不含空白。 */
 export function mentionAt(text: string, caret: number): Mention | null {
-  const found = /(?:^|\s)@([^\s@]*)$/.exec(text.slice(0, caret));
+  const found = /(?:^|[\s(（「『【〈《])@([^\s@]*)$/u.exec(text.slice(0, caret));
   return found ? { start: caret - found[1]!.length - 1, query: found[1]! } : null;
 }
 
-/** `@path` reference text; a path with whitespace is quoted so the core reads it as one reference, not its first word. */
+/** `@path` reference text; a path the core would split (whitespace, CJK or trailing punctuation) is quoted. */
 export function mentionText(target: string): string {
-  return /\s/u.test(target) ? `@"${target}"` : `@${target}`;
+  return mentionNeedsQuotes(target) ? `@"${target}"` : `@${target}`;
 }
 
 export function applyMention(text: string, mention: Mention, caret: number, file: string): { text: string; caret: number } {

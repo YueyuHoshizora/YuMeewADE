@@ -11,6 +11,7 @@ test('mentionAt only fires for an @token right before the caret', () => {
   assert.equal(mentionAt('@src/a done', 11), null, 'a space ends the token');
   assert.equal(mentionAt('@a', 0), null, 'caret before the @');
   assert.deepEqual(mentionAt('x @a rest', 4), { start: 2, query: 'a' }, 'text after the caret is ignored');
+  assert.deepEqual(mentionAt('請看（@src', 7), { start: 3, query: 'src' }, 'an opening bracket starts a mention, as the core reads it');
 });
 
 test('applyMention replaces just the token and moves the caret past the inserted path', () => {
