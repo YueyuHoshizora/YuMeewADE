@@ -386,11 +386,22 @@ test('discarding a file drops only its unstaged changes and refuses stale, secre
   assert.equal(await gitOk(root, ['show', ':file.txt']), 'staged\n');
   // A tracked file deleted in the working tree comes back; an untracked file is removed.
   await fs.rm(gone);
+  // Recreating the deleted file after the confirmation, even with the bytes `absent`, makes the confirmation stale.
+  const deleted = await fingerprint('gone.txt'); await fs.writeFile(gone, 'absent');
+  await assert.rejects(workbench.discard('P', undefined, 'gone.txt', deleted), refused);
+  assert.equal(await fs.readFile(gone, 'utf8'), 'absent'); await fs.rm(gone);
   await workbench.discard('P', undefined, 'gone.txt', await fingerprint('gone.txt'));
   assert.equal(await fs.readFile(gone, 'utf8'), 'keep me\n');
   await fs.writeFile(path.join(root, 'scratch.txt'), 'temp\n');
   await workbench.discard('P', undefined, 'scratch.txt', await fingerprint('scratch.txt'));
   await assert.rejects(fs.access(path.join(root, 'scratch.txt')));
+  // So does flipping the executable bit, which is a change of its own.
+  if (process.platform !== 'win32') {
+    await fs.writeFile(file, 'staged\nmore\n'); const viewed = await fingerprint('file.txt'); await fs.chmod(file, 0o755);
+    await assert.rejects(workbench.discard('P', undefined, 'file.txt', viewed), refused);
+    assert.equal((await fs.stat(file)).mode & 0o111, 0o111);
+    await workbench.discard('P', undefined, 'file.txt', await fingerprint('file.txt')); await fs.chmod(file, 0o644);
+  }
   // Local secrets are never deleted through the workbench, and nothing happens to a file without unstaged changes.
   await fs.writeFile(path.join(root, '.env'), 'TOKEN=1\n');
   await assert.rejects(workbench.discard('P', undefined, '.env', 'x'.repeat(64)), refused);

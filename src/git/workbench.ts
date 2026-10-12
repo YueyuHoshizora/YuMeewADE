@@ -248,12 +248,16 @@ export class GitWorkbench {
     const indexStat = await fs.stat(index).catch((error: NodeJS.ErrnoException) => { if (error.code === 'ENOENT') return null; throw error; });
     if (indexStat && indexStat.size > 10 * 1024 * 1024) throw new AppError('too_large');
     const hash = createHash('sha256');
-    hash.update(await fs.readFile(index).catch((error: NodeJS.ErrnoException) => { if (error.code === 'ENOENT') return Buffer.alloc(0); throw error; }));
+    // Length-prefixed parts: a deleted file and one that now holds the bytes `absent` must not hash alike.
+    const part = (value: string | Buffer) => { const bytes = typeof value === 'string' ? Buffer.from(value) : value; hash.update(`${bytes.length}:`); hash.update(bytes); };
+    part(await fs.readFile(index).catch((error: NodeJS.ErrnoException) => { if (error.code === 'ENOENT') return Buffer.alloc(0); throw error; }));
     const full = path.join(root, relative);
     const stat = await fs.stat(full).catch((error: unknown) => { if (isMissing(error)) return null; throw error; });
     if (stat && (!stat.isFile() || stat.size > 1024 * 1024)) throw new AppError('too_large');
-    hash.update(stat ? await fs.readFile(full) : 'absent');
-    hash.update(await this.command(root, ['rev-parse', '--verify', 'HEAD']).catch(() => 'unborn'));
+    // The executable bit is a Git-visible change of its own, so flipping it after confirming also invalidates the confirmation.
+    part(stat ? `file ${stat.mode & 0o111 ? 'x' : '-'}` : 'absent');
+    if (stat) part(await fs.readFile(full));
+    part(await this.command(root, ['rev-parse', '--verify', 'HEAD']).catch(() => 'unborn'));
     return hash.digest('hex');
   }
   private async fileDiff(root: string, relative: string, staged: boolean): Promise<GitFileDiff> {
