@@ -66,7 +66,7 @@ export const zhCN: Record<MessageKey, string> = {
 'settings.theme': '外观', 'settings.theme.system': '跟随系统', 'settings.theme.light': '浅色', 'settings.theme.dark': '深色',
 'settings.notifications': '作业完成或需要回答时通知', 'settings.notificationPermission': '允许系统通知', 'notification.done': 'AI 已完成回复', 'notification.answer': 'AI 需要你的回答',
 'connection.reconnecting': '核心连接中断，正在重新连接…',
-'usage.region': '账号额度与输出速度', 'usage.none': '暂无额度数据；发送一次指示后更新', 'usage.quotaAt': '额度数据时间 {at}', 'usage.window': '{label} 时间窗已用 {percent}，{reset} 重置', 'usage.windowNoReset': '{label} 时间窗已用 {percent}', 'usage.windowReset': '{label} 时间窗已于 {reset} 重置，等待下一次回报', 'usage.limited': '已达上限',
+'usage.region': '账号额度与输出速度', 'usage.none': '暂无额度数据；发送一次指示后更新', 'usage.quotaAt': '额度数据时间 {at}', 'usage.window': '{label} 时间窗已用 {percent}，{reset} 重置', 'usage.windowNoReset': '{label} 时间窗已用 {percent}', 'usage.windowReset': '{label} 时间窗已于 {reset} 重置，等待下一次回报', 'usage.resetCountdown': '{duration} 后重置', 'usage.resetPending': '重置时间待定', 'usage.limited': '已达上限',
 'usage.alertTitle': '额度提醒', 'usage.alertFull': '{ai} 额度已用满（{windows}），{reset} 重置', 'usage.alertFullNoReset': '{ai} 额度已用满（{windows}）', 'usage.alertRecovered': '{ai} 额度已恢复，可以继续使用',
 'usage.alertLow': '{ai} 额度剩余低于 {threshold}%（{windows}，剩 {remaining}%）', 'usage.alertSoon': '{ai} 额度将在 {minutes} 分钟内恢复（{reset}）',
 'tree.search': '搜索项目与作业…',

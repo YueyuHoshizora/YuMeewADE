@@ -65,7 +65,7 @@ export const zhTW = {
 'settings.theme': '外觀', 'settings.theme.system': '跟隨系統', 'settings.theme.light': '淺色', 'settings.theme.dark': '深色',
 'settings.notifications': '作業完成或需要回答時通知', 'settings.notificationPermission': '允許系統通知', 'notification.done': 'AI 已完成回覆', 'notification.answer': 'AI 需要你的回答',
 'connection.reconnecting': '核心連線中斷，重新連線中…',
-'usage.region': '帳號額度與輸出速度', 'usage.none': '尚無額度資料；送出一次指示後更新', 'usage.quotaAt': '額度資料時間 {at}', 'usage.window': '{label} 時間窗已用 {percent}，{reset} 重置', 'usage.windowNoReset': '{label} 時間窗已用 {percent}', 'usage.windowReset': '{label} 時間窗已於 {reset} 重置，等待下一次回報', 'usage.limited': '已達上限',
+'usage.region': '帳號額度與輸出速度', 'usage.none': '尚無額度資料；送出一次指示後更新', 'usage.quotaAt': '額度資料時間 {at}', 'usage.window': '{label} 時間窗已用 {percent}，{reset} 重置', 'usage.windowNoReset': '{label} 時間窗已用 {percent}', 'usage.windowReset': '{label} 時間窗已於 {reset} 重置，等待下一次回報', 'usage.resetCountdown': '{duration} 後重置', 'usage.resetPending': '重置時間待定', 'usage.limited': '已達上限',
 'usage.alertTitle': '額度提醒', 'usage.alertFull': '{ai} 額度已用滿（{windows}），{reset} 重置', 'usage.alertFullNoReset': '{ai} 額度已用滿（{windows}）', 'usage.alertRecovered': '{ai} 額度已恢復，可以繼續使用',
 'usage.alertLow': '{ai} 額度剩餘低於 {threshold}%（{windows}，剩 {remaining}%）', 'usage.alertSoon': '{ai} 額度將在 {minutes} 分鐘內恢復（{reset}）',
 'tree.search': '搜尋專案與作業…',

@@ -3,6 +3,7 @@ import { api, request } from '../api.ts';
 import { getLocale, t } from '../i18n/index.ts';
 import { aiLabel, cloudCreditsLabel, extraUsageLabel, localDateTime, localTime, prepaidLabel, quotaLabel } from './display.ts';
 import { button, confirmModal, el, field, iconButton, input, row, run } from './dom.ts';
+import { quotaCountdown, updateQuotaCountdowns } from './quota-countdown.ts';
 
 function accountUsage(usage: AiUsage | undefined): HTMLElement {
   const node = el('div', 'account-quota');
@@ -16,7 +17,13 @@ function accountUsage(usage: AiUsage | undefined): HTMLElement {
     const text = expired ? `${t('usage.windowNoReset', { label, percent: `${Math.round(window.usedPercent)}%` })} · ${t('usage.windowReset', { label, reset: localTime(window.resetsAt!) })}`
       : window.resetsAt ? t('usage.window', { label, percent: `${Math.round(window.usedPercent)}%`, reset: localTime(window.resetsAt) })
         : t('usage.windowNoReset', { label, percent: `${Math.round(window.usedPercent)}%` });
-    node.append(el('p', expired ? 'muted' : '', expired ? text : `${text} · ${t('usage.remaining', { percent: Math.max(0, Math.round(100 - window.usedPercent)) })}`));
+    const line = el('p', expired ? 'muted' : '', text);
+    if (window.resetsAt) {
+      const countdown = quotaCountdown(window.resetsAt);
+      if (countdown) line.append(' · ', countdown);
+    }
+    if (!expired) line.append(` · ${t('usage.remaining', { percent: Math.max(0, Math.round(100 - window.usedPercent)) })}`);
+    node.append(line);
   }
   if (usage.ai !== 'grok' && usage.prepaidCents !== undefined) node.append(el('p', '', prepaidLabel(usage.prepaidCents)));
   if (usage.extraUsage) node.append(el('p', '', extraUsageLabel(usage.extraUsage)));
@@ -91,7 +98,7 @@ export function openUsageDetails(getState: () => AppState, getUsage: () => Usage
     const state = getState(); const usage = getUsage();
     const expired = usage.ais.map(entry => entry.windows.map(window => !!window.resetsAt && Date.parse(window.resetsAt) <= Date.now()));
     const snapshot = JSON.stringify([state.settings.accounts, state.settings.activeAccounts, usage.ais, usage.codexReset, getLocale(), expired]);
-    if (snapshot === previous) return; previous = snapshot;
+    if (snapshot === previous) { updateQuotaCountdowns(accounts); return; } previous = snapshot;
     // Preserve keyboard focus when a quota update replaces the account cards.
     const focused = accounts.contains(document.activeElement) ? (document.activeElement as HTMLElement).dataset['accountAction'] : undefined;
     const sections = ['claude', 'codex', 'grok', 'gemini'].map(ai => {

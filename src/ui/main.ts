@@ -9,6 +9,7 @@ import { newProjectView, openProjectFromFolder, openProjectView, projectView } f
 import { stream } from './components/stream.ts';
 import { attention } from './components/attention.ts';
 import { usageBar } from './components/usage.ts';
+import { updateQuotaCountdowns } from './components/quota-countdown.ts';
 import { runningChip } from './components/running.ts';
 import { openUpdateDialog, updateChip, visibleUpdate } from './components/update.ts';
 import { openUsageDetails } from './components/usage-details.ts';
@@ -207,13 +208,14 @@ window.addEventListener('focus', () => { void load(true); });
 document.addEventListener('visibilitychange', () => { if (!document.hidden) void load(true); });
 window.setInterval(() => { if (!document.hidden) void load(true); }, 15_000);
 window.setInterval(() => { deliverQuota(quotaCountdowns(usage, Date.now(), firedCountdowns)); }, 15_000);
+const quotaTimer = window.setInterval(() => { if (!document.hidden) updateQuotaCountdowns(footer); }, 1_000);
 const events = stream('/api/events', {
   changed: () => { window.clearTimeout(debounce); debounce = window.setTimeout(() => { void refresh(); }, 150); },
   usage: event => { const next = JSON.parse(event.data) as UsageState; announceQuota(next); usage = next; drawFooter(); },
   care_backup_failed: () => toast(t('care.scheduleFailed')),
   usage_record_failed: () => toast(t('usageHistory.recordFailed')),
 }, () => { void refresh(); });
-window.addEventListener('pagehide', () => { events.close(); view?.dispose?.(); });
+window.addEventListener('pagehide', () => { window.clearInterval(quotaTimer); events.close(); view?.dispose?.(); });
 void refresh();
 window.yumeewade?.onMenuCommand?.(command => {
   window.dispatchEvent(new CustomEvent('yumeewade:menu', { detail: { command } }));

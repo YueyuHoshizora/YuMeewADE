@@ -66,7 +66,7 @@ export const ja: Record<MessageKey, string> = {
 'settings.theme': '外観', 'settings.theme.system': 'システム', 'settings.theme.light': 'ライト', 'settings.theme.dark': 'ダーク',
 'settings.notifications': '作業の完了や回答が必要なときに通知', 'settings.notificationPermission': 'システム通知を許可', 'notification.done': 'AI の返信が完了しました', 'notification.answer': 'AI があなたの回答を待っています',
 'connection.reconnecting': 'コアとの接続が切れました。再接続中…',
-'usage.region': 'アカウントの利用枠と出力速度', 'usage.none': '利用枠データはまだありません。次の指示を送ると更新されます', 'usage.quotaAt': '利用枠データの時刻 {at}', 'usage.window': '{label} 枠：{percent} 使用、{reset} にリセット', 'usage.windowNoReset': '{label} 枠：{percent} 使用', 'usage.windowReset': '{label} 枠は {reset} にリセット済み。次の報告を待っています', 'usage.limited': '上限到達',
+'usage.region': 'アカウントの利用枠と出力速度', 'usage.none': '利用枠データはまだありません。次の指示を送ると更新されます', 'usage.quotaAt': '利用枠データの時刻 {at}', 'usage.window': '{label} 枠：{percent} 使用、{reset} にリセット', 'usage.windowNoReset': '{label} 枠：{percent} 使用', 'usage.windowReset': '{label} 枠は {reset} にリセット済み。次の報告を待っています', 'usage.resetCountdown': '{duration} 後にリセット', 'usage.resetPending': 'リセット時刻未定', 'usage.limited': '上限到達',
 'usage.alertTitle': '利用枠のお知らせ', 'usage.alertFull': '{ai} の利用枠を使い切りました（{windows}）。{reset} にリセット', 'usage.alertFullNoReset': '{ai} の利用枠を使い切りました（{windows}）', 'usage.alertRecovered': '{ai} の利用枠が回復しました。続行できます',
 'usage.alertLow': '{ai} の利用枠の残りが {threshold}% を下回りました（{windows}、残り {remaining}%）', 'usage.alertSoon': '{ai} の利用枠は {minutes} 分以内に回復します（{reset}）',
 'tree.search': 'プロジェクトと作業を検索…',

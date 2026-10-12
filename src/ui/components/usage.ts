@@ -2,6 +2,7 @@ import type { AiUsage, AppState, QuotaWindow, UsageState } from '../../shared/ty
 import { t } from '../i18n/index.ts';
 import { aiLabel, localDateTime, localTime, prepaidLabel, quotaLabel } from './display.ts';
 import { button, el } from './dom.ts';
+import { quotaCountdown } from './quota-countdown.ts';
 
 /** 已用比例到這裡開始提醒／警告。 */
 const WARN_PERCENT = 70;
@@ -11,21 +12,40 @@ function quotaWindow(window: QuotaWindow, now: number): HTMLElement {
   const node = el('span', 'usage-window');
   const percent = `${Math.round(window.usedPercent)}%`;
   const label = quotaLabel(window.label);
+  const expired = !!window.resetsAt && Date.parse(window.resetsAt) <= now;
   // 重置時間已過：CLI 還沒回報新窗口的用量，舊比例不能再當真。
-  if (window.resetsAt && Date.parse(window.resetsAt) <= now) {
+  if (expired) {
     node.classList.add('stale');
     node.append(el('span', 'usage-window-label', label), el('span', 'usage-percent', '—'));
-    node.title = t('usage.windowReset', { label, reset: localTime(window.resetsAt) });
-    return node;
+  } else {
+    if (window.usedPercent >= DANGER_PERCENT) node.classList.add('danger');
+    else if (window.usedPercent >= WARN_PERCENT) node.classList.add('warn');
+    const meter = el('span', 'usage-meter'); const fill = el('span', 'usage-meter-fill');
+    fill.style.width = `${Math.min(100, window.usedPercent)}%`; meter.append(fill);
+    node.append(el('span', 'usage-window-label', label), meter, el('span', 'usage-percent', percent));
   }
-  if (window.usedPercent >= DANGER_PERCENT) node.classList.add('danger');
-  else if (window.usedPercent >= WARN_PERCENT) node.classList.add('warn');
-  const meter = el('span', 'usage-meter'); const fill = el('span', 'usage-meter-fill');
-  fill.style.width = `${Math.min(100, window.usedPercent)}%`; meter.append(fill);
-  node.append(el('span', 'usage-window-label', label), meter, el('span', 'usage-percent', percent));
-  node.title = window.resetsAt
+  const activeTitle = window.resetsAt
     ? t('usage.window', { label, percent, reset: localTime(window.resetsAt) })
     : t('usage.windowNoReset', { label, percent });
+  node.title = activeTitle;
+  if (window.resetsAt) {
+    const resetTime = localTime(window.resetsAt);
+    const expiredTitle = t('usage.windowReset', { label, reset: resetTime });
+    if (expired) node.title = expiredTitle;
+    const countdown = quotaCountdown(window.resetsAt, now, (text, stale) => {
+      node.title = `${stale ? expiredTitle : activeTitle} · ${text}`;
+      if (stale && !node.classList.contains('stale')) {
+        node.classList.remove('warn', 'danger'); node.classList.add('stale');
+        node.querySelector('.usage-meter')?.remove();
+        const percentage = node.querySelector('.usage-percent');
+        if (percentage) percentage.textContent = '—';
+      }
+    });
+    if (countdown) {
+      const reset = el('span', 'usage-window-reset', `${resetTime} · `);
+      reset.append(countdown); node.append(reset);
+    }
+  }
   return node;
 }
 
