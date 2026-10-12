@@ -1,7 +1,7 @@
 import type { AppState, ProjectView, TaskView } from '../../shared/types.ts';
 import { request } from '../api.ts';
 import { t } from '../i18n/index.ts';
-import { archiveFlow, button, confirmModal, disclosure, el, input, link, projectHash, renameModal, run, taskHash, type ViewContext } from './dom.ts';
+import { archiveFlow, button, confirmModal, disclosure, el, input, link, projectHash, renameModal, run, selectModal, taskHash, type ViewContext } from './dom.ts';
 import { filterTree } from './tree-filter.ts';
 import { metadataBadge } from './task-metadata.ts';
 
@@ -166,6 +166,15 @@ export function tree(context: ViewContext): HTMLElement {
       { label: t(p.pinned ? 'tree.unpin' : 'tree.pin'), action: async () => { await request('/api/pin', { project: p.id, pinned: !p.pinned }); await refresh(); } },
       { label: t('tree.up'), action: () => move(p, -1) }, { label: t('tree.down'), action: () => move(p, 1) },
       { label: t('tree.subproject'), action: () => { location.hash = `#/new?parent=${encodeURIComponent(p.id)}`; } },
+      { label: t('tree.moveParent'), action: async () => {
+        // A project cannot move under itself or one of its descendants; offer only parents that keep the tree acyclic.
+        const blocked = new Set([p.id]);
+        for (let grew = true; grew;) { grew = false; for (const other of state.projects) if (!blocked.has(other.id) && blocked.has(other.parent)) { blocked.add(other.id); grew = true; } }
+        const options = [{ value: '', label: t('common.none') }, ...state.projects.filter(other => !blocked.has(other.id)).map(other => ({ value: other.id, label: other.name }))];
+        const parent = await selectModal(t('tree.moveParent'), t('project.parent'), options, p.parent);
+        if (parent === null || parent === p.parent) return;
+        await request('/api/project/update', { project: p.id, patch: { parent } }); await refresh();
+      } },
       { label: t('common.archive'), action: async () => { if (await archiveFlow('/api/project/archive', { project: p.id }, p.name, 'archive_project_has_worktrees')) await refresh(); } },
     ]));
     wrap.append(line); const notices = badges(p, p.tasks); if (notices.childNodes.length) wrap.append(notices);
