@@ -372,8 +372,9 @@ function isScalar(v: YamlValue): v is string | number | boolean | null {
   return v === null || typeof v !== 'object';
 }
 
-// 行內分隔符與引號不能沿用區塊純量的安全判斷；map 的 key 也以冒號分隔。
+// 行內分隔符與引號不能沿用區塊純量的安全判斷；map 的 key 也以冒號分隔。行內的空值要寫成 null：`[a, ]` 會讀成只有 a。
 function flowScalar(v: string | number | boolean | null): string {
+  if (v === null) return 'null';
   return typeof v === 'string' && /[,[\]{}:'"]/.test(v) ? JSON.stringify(v) : yamlScalar(v);
 }
 

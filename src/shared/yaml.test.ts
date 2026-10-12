@@ -83,6 +83,8 @@ test('序列化後可再解析（往返）', () => {
     issues: [{ text: '有 #號', level: '高' }],
     nested: { k: 'v', n: 3, b: false, nil: null, empty: '' },
     multi: [[1, 2], { x: [1] }],
+    // Null inside inline lists and maps, including in last place, survives the round trip.
+    nulls: [null], trailing: ['a', null], rows: [{ k: null }],
   };
   const text = stringifyYaml(data).join('\n');
   assert.deepEqual(parseYamlMap(text), data);
