@@ -252,3 +252,20 @@ test('verification history survives restart but never verifies changed content',
     assert.equal((await restored.history('P', task.id)).length, 1);
   } finally { await restored.stopAll(); }
 }));
+
+test('a pass recorded with an environment passthrough no longer counts after that setting or its value changes', () => withTmpWorkspace(async ws => {
+  process.env['YUME_VERIFY_FLAG'] = 'yes';
+  const { service, projects, tasks, task } = await setup(ws, nodeCommand("process.exit(process.env.YUME_VERIFY_FLAG === 'yes' ? 0 : 9)"), 'cli:\n  envPassthrough: [YUME_VERIFY_FLAG]\n');
+  try {
+    await projects.update('P', { requireVerification: true });
+    assert.equal((await service.run('P', task.id)).ok, true);
+    await service.requireCurrentPass('P', task.id);
+    await service.stopAll();
+    // Restarted without the passthrough: the check would now fail, so the old pass must not open the merge gate.
+    const without = new VerifyService({ ws, projects, tasks, config: parseConfig('', null), isRunning: () => false });
+    try { await assert.rejects(without.requireCurrentPass('P', task.id), { status: 409 }); } finally { await without.stopAll(); }
+    process.env['YUME_VERIFY_FLAG'] = 'no';
+    const changed = new VerifyService({ ws, projects, tasks, config: parseConfig('cli:\n  envPassthrough: [YUME_VERIFY_FLAG]\n', null), isRunning: () => false });
+    try { await assert.rejects(changed.requireCurrentPass('P', task.id), { status: 409 }); } finally { await changed.stopAll(); }
+  } finally { delete process.env['YUME_VERIFY_FLAG']; }
+}));

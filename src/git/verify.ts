@@ -1,4 +1,4 @@
-import { randomUUID } from 'node:crypto';
+import { createHash, randomUUID } from 'node:crypto';
 import path from 'node:path';
 import { promises as fs } from 'node:fs';
 import { minimalEnv, signalTree, spawnCli } from '../cli/process.ts';
@@ -164,7 +164,11 @@ export class VerifyService {
     const [workspace, body, ledger] = await Promise.all([fs.realpath(ws.root), fs.realpath(projects.bodyPath(project)).catch(() => null), fs.realpath(ws.projectDir(projectId))]);
     if (!cwd || !(await fs.stat(cwd).catch(() => null))?.isDirectory() || (!isInside(workspace, cwd) && !(body && (cwd === body || isInside(body, cwd))))) throw new AppError('bad_request');
     const model = parseVerificationInputModel(project.verificationInputs);
-    return { cwd, checks, model, ledgerData: path.join(ledger, '.ai'), configuration: JSON.stringify([project.verify, checks, project.requireVerification, model]) };
+    // Checks run with `cli.envPassthrough` on top of the minimal environment: a pass only holds for the same names and
+    // values. Hashed, so values never reach the history file; omitted when empty, so default setups keep their passes.
+    const passthrough = this.opts.config.cli.envPassthrough;
+    const environment = passthrough.length ? [createHash('sha256').update(JSON.stringify(passthrough.map(name => [name, process.env[name] ?? null]))).digest('hex')] : [];
+    return { cwd, checks, model, ledgerData: path.join(ledger, '.ai'), configuration: JSON.stringify([project.verify, checks, project.requireVerification, model, ...environment]) };
   }
 
   private async execute(projectId: string, taskId: string, entry: { stop?: (() => void) | undefined; cancelled?: boolean }): Promise<VerifyResult> {
