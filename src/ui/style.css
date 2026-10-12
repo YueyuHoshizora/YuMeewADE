@@ -506,6 +506,9 @@ body.terminal-dock-open { grid-template-rows: 64px minmax(0, 1fr) var(--terminal
 
 .workspace { display: flex; }
 .workspace > #main { flex: 1; min-width: 0; }
+/* Flex replaces the original 288px grid column; without a fixed basis one long task title widens the sidebar over the page. */
+.workspace > .sidebar { flex: 0 0 288px; min-width: 0; }
+@media (max-width: 1050px) { .workspace > .sidebar { flex-basis: 250px; } }
 .editor-workbench-host { flex-shrink: 0; min-width: 260px; border-left: 1px solid var(--border); overflow: auto; }
 .editor-workbench-host:has(> section:not([hidden])) { display: block; }
 .editor-workbench-host:not(:has(> section:not([hidden]))) { display: none; }
