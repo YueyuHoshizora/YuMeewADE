@@ -87,5 +87,7 @@ export async function resolveAvailableLaunch(
   if (override.cli || task.cli || !backup || backup.cli === HUMAN || !await available(backup.cli)) {
     throw new AppError('bad_request', 'cli_unavailable', { field: primary.cli });
   }
-  return { cli: backup.cli, model: override.model ?? backup.model, effort: override.effort ?? backup.effort };
+  // Same normalization as the primary: the 'default' sentinel means "let the CLI choose", never `--model default`.
+  const model = override.model ?? backup.model;
+  return { cli: backup.cli, model: model === 'default' ? '' : model, effort: override.effort ?? backup.effort };
 }

@@ -51,6 +51,9 @@ test('role backup is selected only before execution when the primary is unavaila
   await assert.rejects(resolveAvailableLaunch(roles, { ...task, cli: 'claude' }, {}, initial, available), { detail: 'cli_unavailable' });
   await assert.rejects(resolveAvailableLaunch(roles, task, {}, initial, async () => false), { detail: 'cli_unavailable' });
   await assert.rejects(resolveAvailableLaunch(roles, task, {}, initial, async () => { throw new Error('availability failure'); }), /availability failure/u);
+  // The 'default' model sentinel is cleared for the backup exactly like for the primary.
+  const defaults = parseRoles('roles:\n  build:\n    main: [claude, default, max]\n    backup: [codex, default, high]\n');
+  assert.deepEqual(await resolveAvailableLaunch(defaults, task, {}, initial, available), { cli: 'codex', model: '', effort: 'high' });
 });
 
 test('saving roles into a file that starts with a byte order mark replaces its roles block instead of adding a second one', () => withTmpWorkspace(async ws => {
