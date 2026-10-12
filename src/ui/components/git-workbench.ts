@@ -44,6 +44,11 @@ export function gitWorkbenchButton(context: ViewContext, project: string, task?:
     const refresh = async () => {
       const state = await request<GitWorkbenchStatus>(query('/api/git/status', ids));
       panel.replaceChildren(el('p', '', labelValue(t(state.location === 'main' ? 'workbench.main' : 'workbench.task'), state.root)), el('p', '', labelValue(t('workbench.branch'), state.branch)), el('p', '', `${labelValue(t('workbench.upstream'), state.upstream ?? '—')} / ${state.ahead} / ${state.behind}`), button(t('workbench.refresh'), refresh));
+      // Only offered when fetched upstream commits are waiting; the server still refuses diverged history or overlapping local edits.
+      if (state.upstream && state.behind > 0) panel.append(button(t('workbench.pull'), async () => {
+        const result = await mutate('pull') as { updated?: boolean };
+        toast(t(result.updated ? 'workbench.pullDone' : 'workbench.pullCurrent'));
+      }));
       panel.append(button(t('worktrees.title'), async () => {
         const content = el('div', 'form');
         const reload = async () => {

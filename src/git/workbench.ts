@@ -11,7 +11,7 @@ import type { TaskLedger } from '../ledger/tasks.ts';
 import type { GitWorkbenchStatus, GitWorkbenchFile, GitPullRequestStatus, GitRemote } from '../shared/types.ts';
 import { AppError } from '../shared/errors.ts';
 import { missingAs, withFileLocks } from '../shared/fsx.ts';
-import { git, hasCommits, isLocalSecret } from './git.ts';
+import { git, hasCommits, isLocalSecret, operationInProgress } from './git.ts';
 import { github } from '../cli/github.ts';
 import type { GithubFeedbackInput } from '../shared/github.ts';
 
@@ -405,6 +405,21 @@ export class GitWorkbench {
   }
   async fetch(project: string, task: string | undefined, remote: string): Promise<void> {
     return this.locked(project, task, true, async root => { await this.validateRemote(root, remote); await this.command(root, ['fetch', '--', remote]); });
+  }
+  /** Pull limited to a fast-forward: never creates a merge commit, never touches diverged history, never overwrites local edits. */
+  async fastForward(project: string, task: string | undefined): Promise<{ updated: boolean }> {
+    return this.locked(project, task, true, async root => {
+      if ((await git(root, ['rev-parse', '--abbrev-ref', '--symbolic-full-name', '@{upstream}'])).code !== 0) throw new AppError('conflict', 'git_no_upstream');
+      if (await operationInProgress(root)) throw new AppError('conflict', 'git_operation_in_progress');
+      const [ahead = 0, behind = 0] = (await this.command(root, ['rev-list', '--left-right', '--count', 'HEAD...@{upstream}'])).trim().split(/\s+/).map(Number);
+      if (behind === 0) return { updated: false };
+      if (ahead > 0) throw new AppError('conflict', 'git_not_fast_forward');
+      // Decided up front rather than from git's (possibly localized) refusal message.
+      const incoming = new Set(split(await this.command(root, ['diff', '--name-only', '--no-renames', '-z', 'HEAD', '@{upstream}'])));
+      if ((await this.files(root)).some(file => incoming.has(file.path) || !!file.originalPath && incoming.has(file.originalPath))) throw new AppError('conflict', 'git_pull_local_changes');
+      await this.command(root, ['merge', '--ff-only', '@{upstream}']);
+      return { updated: true };
+    });
   }
   async push(project: string, task: string | undefined, remote: string, confirmed: boolean): Promise<void> {
     if (!confirmed) throw new AppError('bad_request', 'git_confirm_required');

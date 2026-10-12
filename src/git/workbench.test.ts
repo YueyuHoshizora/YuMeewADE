@@ -300,3 +300,35 @@ test('discarding a file drops only its unstaged changes and refuses stale, secre
   assert.equal(await fs.readFile(path.join(root, '.env'), 'utf8'), 'TOKEN=1\n');
   await assert.rejects(workbench.discard('P', undefined, 'file.txt', 'x'.repeat(64)), refused);
 }));
+
+test('pull only fast-forwards and refuses diverged history or local edits upstream would overwrite', () => withTmpWorkspace(async ws => {
+  const projects = new ProjectLedger(ws); const tasks = new TaskLedger(ws); await projects.create({ name: 'P' });
+  const root = ws.projectDir('P'); const workbench = new GitWorkbench({ ws, projects, tasks, isRunning: () => false });
+  const detail = (code: string) => (error: unknown) => error instanceof AppError && error.detail === code;
+  await fs.writeFile(path.join(root, 'shared.txt'), 'base\n'); await fs.writeFile(path.join(root, 'mine.txt'), 'base\n'); await commitAll(root, 'base');
+  await assert.rejects(workbench.fastForward('P', undefined), detail('git_no_upstream'));
+  const remote = path.join(ws.root, 'remote.git'); await fs.mkdir(remote); await gitOk(remote, ['init', '--bare', '-q']);
+  const branch = (await gitOk(root, ['symbolic-ref', '--short', 'HEAD'])).trim();
+  await gitOk(root, ['remote', 'add', 'origin', remote]); await gitOk(root, ['push', '-q', '-u', 'origin', branch]);
+  assert.deepEqual(await workbench.fastForward('P', undefined), { updated: false });
+  const other = path.join(ws.root, 'other'); await gitOk(ws.root, ['clone', '-q', remote, other]);
+  const publish = async (name: string, text: string) => { await fs.writeFile(path.join(other, name), text); await commitAll(other, name); await gitOk(other, ['push', '-q', 'origin', branch]); };
+  await publish('shared.txt', 'upstream\n'); await workbench.fetch('P', undefined, 'origin');
+  // An uncommitted edit to the same file is kept and the branch stays put.
+  await fs.writeFile(path.join(root, 'shared.txt'), 'local draft\n');
+  const head = (await gitOk(root, ['rev-parse', 'HEAD'])).trim();
+  await assert.rejects(workbench.fastForward('P', undefined), detail('git_pull_local_changes'));
+  assert.equal(await fs.readFile(path.join(root, 'shared.txt'), 'utf8'), 'local draft\n');
+  assert.equal((await gitOk(root, ['rev-parse', 'HEAD'])).trim(), head);
+  // Edits to other files ride along with the fast-forward.
+  await gitOk(root, ['checkout', '--', 'shared.txt']); await fs.writeFile(path.join(root, 'mine.txt'), 'local draft\n');
+  assert.deepEqual(await workbench.fastForward('P', undefined), { updated: true });
+  assert.equal((await gitOk(root, ['rev-parse', 'HEAD'])).trim(), (await gitOk(root, ['rev-parse', '@{upstream}'])).trim());
+  assert.equal(await fs.readFile(path.join(root, 'shared.txt'), 'utf8'), 'upstream\n');
+  assert.equal(await fs.readFile(path.join(root, 'mine.txt'), 'utf8'), 'local draft\n');
+  // Once both sides have new commits there is nothing to fast-forward; no merge commit is made.
+  await commitAll(root, 'local'); await publish('shared.txt', 'upstream again\n'); await workbench.fetch('P', undefined, 'origin');
+  const local = (await gitOk(root, ['rev-parse', 'HEAD'])).trim();
+  await assert.rejects(workbench.fastForward('P', undefined), detail('git_not_fast_forward'));
+  assert.equal((await gitOk(root, ['rev-parse', 'HEAD'])).trim(), local);
+}));

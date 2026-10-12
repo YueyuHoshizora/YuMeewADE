@@ -306,7 +306,7 @@ export const ja: Record<MessageKey, string> = {
 'detail.archive_project_has_worktrees': 'すべての作業コピーをマージしてからアーカイブしてください',
 'detail.merge_conflict': 'マージ競合が発生しました。作業コピーで解決してから再度マージしてください',
 'detail.merge_excluded': 'この作業コピーはマージ対象から除外されています',
-'detail.merge_in_progress': '未完了のマージを先に処理してください', 'detail.git_operation_in_progress': '未完了のマージ、リベース、cherry-pick（または競合のままのファイル）があります。先に完了するか中止してください',
+'detail.merge_in_progress': '未完了のマージを先に処理してください', 'detail.git_operation_in_progress': '未完了のマージ、リベース、cherry-pick（または競合のままのファイル）があります。先に完了するか中止してください', 'detail.git_no_upstream': '現在のブランチに上流ブランチが設定されていません', 'detail.git_not_fast_forward': 'ローカルと上流の両方に新しいコミットがあるため早送りできません。リベースするか端末でマージしてください', 'detail.git_pull_local_changes': '未コミットのローカル変更が上流で変更されたファイルと重なっています。先にコミット、stash、または破棄してください',
 'detail.worktree_exists': '作業コピーが存在するため記録を消去できません',
 'detail.mode_required': '実行中の送信では、やり直す・補足・終了後に続けるを選択してください',
 'effort.low': '低', 'effort.medium': '中', 'effort.high': '高', 'effort.xhigh': '非常に高い', 'effort.max': '最大', 'effort.ultra': 'Ultra',

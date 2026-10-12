@@ -106,7 +106,7 @@ export function registerWorkbenchRoutes(router: Router, app: App): void {
     app.changed(project, task);
     return { ok: true };
   });
-  for (const action of ['stage', 'unstage', 'discard', 'resolve', 'commit', 'fetch', 'branch', 'push', 'pr'] as const) {
+  for (const action of ['stage', 'unstage', 'discard', 'resolve', 'commit', 'fetch', 'pull', 'branch', 'push', 'pr'] as const) {
     router.post(`/api/git/${action}`, async ({ body }) => {
       const project = reqString(body, 'project', 120);
       const task = body.task === undefined ? undefined : reqString(body, 'task', 120);
@@ -114,6 +114,7 @@ export function registerWorkbenchRoutes(router: Router, app: App): void {
       switch (action) {
         case 'stage': case 'unstage': await app.gitWorkbench.stage(project, task, reqString(body, 'path', 1000), action === 'unstage'); break;
         case 'discard': await app.gitWorkbench.discard(project, task, reqString(body, 'path', 1000), reqString(body, 'fingerprint', 64)); break;
+        case 'pull': result = await app.gitWorkbench.fastForward(project, task); break;
         case 'resolve': await app.gitWorkbench.resolve(project, task, reqString(body, 'path', 1000)); break;
         case 'commit':
           if (body.bypassHooks !== undefined && typeof body.bypassHooks !== 'boolean') throw new AppError('bad_request');

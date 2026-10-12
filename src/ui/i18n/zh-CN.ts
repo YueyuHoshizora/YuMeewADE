@@ -306,7 +306,7 @@ export const zhCN: Record<MessageKey, string> = {
 'detail.archive_project_has_worktrees': '请先合并所有工作副本再归档',
 'detail.merge_conflict': '合并时发生冲突，请先在副本中解决后再合并',
 'detail.merge_excluded': '此副本已排除合并',
-'detail.merge_in_progress': '已有尚未完成的合并，请先处理', 'detail.git_operation_in_progress': '有尚未完成的合并、rebase 或 cherry-pick（或仍标记冲突的文件），请先完成或中止后再试',
+'detail.merge_in_progress': '已有尚未完成的合并，请先处理', 'detail.git_operation_in_progress': '有尚未完成的合并、rebase 或 cherry-pick（或仍标记冲突的文件），请先完成或中止后再试', 'detail.git_no_upstream': '当前分支没有设置上游分支', 'detail.git_not_fast_forward': '本地与上游分支都有新的提交，无法快进；请使用 rebase 或在终端中合并', 'detail.git_pull_local_changes': '本地未提交的更改与上游修改了相同文件，请先提交、贮藏（stash）或放弃这些更改',
 'detail.worktree_exists': '副本仍存在，不能清除记录',
 'detail.mode_required': '运行中发送请选择取消重做、补充说明或做完接续',
 'effort.low': '低', 'effort.medium': '中', 'effort.high': '高', 'effort.xhigh': '极高', 'effort.max': '最大', 'effort.ultra': 'Ultra',
