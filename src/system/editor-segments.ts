@@ -32,7 +32,9 @@ export async function readSegment(file: string, offset: number, length: number, 
   } finally { await handle.close(); }
 }
 export async function patchSegment(file: string, offset: number, end: number, text: string, encoding: EditorEncoding, check: () => Promise<void>, preserve: (segment: { text: string; end: number; sha256: string }) => Promise<void>, expectedSha256?: string): Promise<void> {
-  if (!Number.isSafeInteger(offset) || !Number.isSafeInteger(end) || offset < 0 || end < offset || end - offset > 262144 || Buffer.byteLength(text) > 262144) throw new AppError('bad_request');
+  // The 256 KiB limit is on the encoded replacement (checked below); UTF-8 length is the wrong measure for UTF-16, where a
+  // restored CJK segment is smaller than its UTF-8 form. Every encoding needs at least one byte per UTF-16 code unit.
+  if (!Number.isSafeInteger(offset) || !Number.isSafeInteger(end) || offset < 0 || end < offset || end - offset > 262144 || text.length > 262144) throw new AppError('bad_request');
   if (encoding.startsWith('UTF16') && (offset % 2 !== 0 || end % 2 !== 0)) throw new AppError('bad_request');
   const source = await fs.open(file, constants.O_RDONLY | constants.O_NOFOLLOW); const tmp = path.join(path.dirname(file), `.editor-${randomUUID()}.tmp`); let output;
   try {

@@ -103,6 +103,18 @@ test('an older segment edit cannot be restored over bytes a later edit moved or 
   } finally { editor.dispose(); }
 }));
 
+test('a UTF-16 segment whose UTF-8 form exceeds 256 KiB can still be replaced and restored', () => withTmpWorkspace(async ws => {
+  const { editor, root } = await fixture(ws); const file = path.join(root, 'cjk.txt');
+  try {
+    // 90,000 CJK characters: 180,002 bytes in UTF-16 (with BOM), 270,000 bytes as UTF-8.
+    const bytes = encodeText('語'.repeat(90000), 'UTF16LE'); await fs.writeFile(file, bytes);
+    const segment = await editor.segment('P', '', 'cjk.txt', 0, 262144); assert.equal(segment.end, bytes.length);
+    const patched = await editor.segmentPatch('P', '', 'cjk.txt', 0, segment.end, 'x', segment.revision, 'UTF16LE');
+    await editor.restoreHistory('P', '', 'cjk.txt', (await editor.history('P', '', 'cjk.txt')).entries[0]!.id, patched.revision);
+    assert.deepEqual(await fs.readFile(file), bytes);
+  } finally { editor.dispose(); }
+}));
+
 for (const encoding of ['UTF8', 'UTF8-BOM', 'UTF16LE', 'UTF16BE'] as EditorEncoding[]) {
   test(`segment ${encoding} boundaries reject split characters and preserve BOM`, () => withTmpWorkspace(async ws => {
     const { editor, root } = await fixture(ws); const file = path.join(root, 'text.txt');
