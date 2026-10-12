@@ -4,7 +4,7 @@ import path from 'node:path';
 import { test } from 'node:test';
 import { AUTO_FIX_MAX, type ProjectPatch } from '../shared/types.ts';
 import { withTmpWorkspace } from '../testing/tmp.ts';
-import { ProjectLedger, RULES_MAX } from './projects.ts';
+import { NOTES_MAX, ProjectLedger, RULES_MAX } from './projects.ts';
 
 test('create reuses an empty leftover folder but never touches one with data', () => withTmpWorkspace(async ws => {
   const projects = new ProjectLedger(ws);
@@ -58,4 +58,18 @@ test('project rules round-trip, can be cleared, and are bounded', () => withTmpW
   await assert.rejects(projects.readRules('Missing'), /不存在/);
   await assert.rejects(projects.writeRules('Missing', 'x'), /不存在/);
   await assert.rejects(fs.access(path.join(ws.projectsDir, 'Missing')));
+}));
+
+test('project notes replace only the body, keep the frontmatter and refuse a body changed since it was read', () => withTmpWorkspace(async ws => {
+  const projects = new ProjectLedger(ws);
+  await projects.create({ name: 'P', description: '說明' });
+  const original = await projects.readNotes('P');
+  const saved = await projects.writeNotes('P', '# 備註\n第一行\n- 第二行', original);
+  assert.equal(saved.name, 'P'); assert.equal(saved.description, '說明'); assert.equal(saved.status, '進行中');
+  assert.equal(saved.notes, '第一行\n- 第二行');
+  assert.equal(await projects.readNotes('P'), '# 備註\n第一行\n- 第二行\n');
+  // A stale editor (it still holds the original body) must not overwrite the newer notes.
+  await assert.rejects(projects.writeNotes('P', 'stale', original), /備註已在別處修改/);
+  await assert.rejects(projects.writeNotes('P', 'x'.repeat(NOTES_MAX + 1), await projects.readNotes('P')), /過長/);
+  assert.equal((await projects.get('P')).notes, '第一行\n- 第二行');
 }));

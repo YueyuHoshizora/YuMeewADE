@@ -217,6 +217,7 @@ HTTP JSON 加 SSE，桌面版與網頁版完全相同。型別定義在 [`src/sh
 | `POST /api/chat/fork` | `{project, task, request}`：從該則指示開始之前分支出新作業（派生作業；副本長自當時的檢查點，帶走之前的對話但不帶附件），回新作業；執行中回 409，沒有檢查點回 404 |
 | `GET /api/chat/turn-diff?project=&task=&request=` | 單輪的變更差異（輪前檢查點 → 該輪結束的檢查點）；沒有檢查點回 404 |
 | `GET /api/project/rules?project=`、`POST /api/project/rules` | 讀寫專案的 AI 規則（`.ai/rules.md`，上限 20,000 字；寫入 `{project, text}`） |
+| `GET /api/project/notes?project=`、`POST /api/project/notes` | 讀寫 PROJECT.md frontmatter 以下的正文（專案頁的備註，上限 20,000 字）；寫入 `{project, text, previous}`，`previous` 必須是讀到的原文，已被別處修改時回 409 `notes_changed`，frontmatter 不受影響 |
 | `GET /api/project/memory?project=&name=`、`POST /api/project/memory`、`POST /api/project/memory/delete` | 不帶 name 列檔；讀取回 `{name,text,revision}`；儲存 `{project,name,text,revision}`（新增 revision=null）；刪除需 revision 與 confirm=true |
 | `GET /api/mcp/list?ai=`、`POST /api/mcp/add`、`POST /api/mcp/remove` | 帳號 MCP 列表／新增 `{ai,server}`／移除 `{ai,name,confirmed:true}`；不回傳機密值 |
 | `POST /api/upload`、`GET /api/upload`、`GET /api/attachment` | 圖片上傳、預覽、對話附件 |

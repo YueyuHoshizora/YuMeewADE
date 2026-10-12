@@ -40,6 +40,7 @@ export const DETAIL_MESSAGES = {
   phase_changed: '專案階段已經變更，請重新整理後再確認',
   phase_duplicate: '階段名稱不能重複',
   step_changed: '步驟清單已經變更，請確認後再操作',
+  notes_changed: '備註已在別處修改，請重新開啟後再編輯',
   project_missing: '專案不存在',
   task_missing: '作業不存在',
   worktree_missing: '尚未建立工作副本',

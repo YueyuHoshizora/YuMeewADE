@@ -16,6 +16,7 @@ export const RULES_MAX = 20_000;
 export const PHASE_NAME_MAX = 200;
 export const DESCRIPTION_MAX = 2000;
 export const RELATED_MAX = 50;
+export const NOTES_MAX = 20_000;
 
 /** Checked where phases are named (create, edit) rather than in `validate`, so hand-edited ledgers with odd names still advance. */
 function checkPhaseNames(names: string[]): void {
@@ -226,6 +227,23 @@ export class ProjectLedger {
     await withFileLocks([this.ws.rulesFile(id)], async () => {
       await this.get(id);
       await atomicWrite(this.ws.rulesFile(id), text);
+    });
+  }
+  /** The PROJECT.md body below the frontmatter (the notes shown on the project page), verbatim. */
+  async readNotes(id: string): Promise<string> {
+    await this.get(id);
+    return parseFrontmatter(await fs.readFile(this.ws.projectFile(id), 'utf8')).body;
+  }
+
+  /** Replaces the body the caller read (`previous`); a body changed meanwhile (hand edit, merge) is a conflict, not overwritten. */
+  async writeNotes(id: string, text: string, previous: string): Promise<Project> {
+    if (text.length > NOTES_MAX) throw new AppError('bad_request', 'field_too_long', { field: 'text' });
+    return withFileLocks([this.ws.projectFile(id)], async () => {
+      await this.get(id);
+      const fm = parseFrontmatter(await fs.readFile(this.ws.projectFile(id), 'utf8'));
+      if (fm.body !== previous) throw new AppError('conflict', 'notes_changed');
+      await atomicWrite(this.ws.projectFile(id), serializeFrontmatter(patchHeaderLines(fm.headerLines, { updated: todayDate() }), text.endsWith('\n') || !text ? text : `${text}\n`));
+      return this.get(id);
     });
   }
 

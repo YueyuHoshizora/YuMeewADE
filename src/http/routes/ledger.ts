@@ -95,6 +95,15 @@ export function registerLedgerRoutes(router: Router, app: App): void {
     await app.oplog.record({ action: 'project.rules', project });
     return { ok: true };
   });
+  router.get('/api/project/notes', async ({ query }) => ({ text: await app.projects.readNotes(reqString(query, 'project', 120)) }));
+  router.post('/api/project/notes', async ({ body }) => {
+    const project = reqString(body, 'project', 120);
+    if (typeof body.text !== 'string') throw new AppError('bad_request', 'field_type', { field: 'text' });
+    if (typeof body.previous !== 'string') throw new AppError('bad_request', 'field_type', { field: 'previous' });
+    const result = await app.projects.writeNotes(project, body.text, body.previous);
+    await changed('project.notes', project);
+    return result;
+  });
   router.post('/api/project/archive', async ({ body }) => {
     const project = reqString(body, 'project', 120);
     const force = body.force === true;

@@ -118,9 +118,9 @@ export function renameModal(value: string): Promise<string | null> {
   return promise;
 }
 /** Multi-line counterpart of renameModal; resolves null on cancel. */
-export function textModal(title: string, value: string, maxLength: number): Promise<string | null> {
+export function textModal(title: string, value: string, maxLength: number, rows = 6): Promise<string | null> {
   const { promise, resolve } = Promise.withResolvers<string | null>();
-  const dialog = el('dialog', 'modal decision-modal'); const text = area(value); text.maxLength = maxLength; text.rows = 6;
+  const dialog = el('dialog', 'modal decision-modal'); const text = area(value); text.maxLength = maxLength; text.rows = rows;
   const form = el('form', 'form'); const save = el('button', 'primary', t('common.save')); save.type = 'submit';
   let result: string | null = null;
   form.append(text, row(button(t('common.cancel'), () => dialog.close()), save));
