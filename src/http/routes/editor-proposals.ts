@@ -25,7 +25,7 @@ export function registerEditorProposalRoutes(router: Router, app: App): void {
       return { ...snapshot(value), selection: { from: selection.from, to: selection.to } };
     });
     const model = optModel(body) || undefined; const effort = optEffort(body) || undefined;
-    return app.editorProposals.generate(project, task, { files, instruction: reqString(body, 'instruction', 100_000), ai: reqString(body, 'ai', 20), ...(model === undefined ? {} : { model }), ...(effort === undefined ? {} : { effort }) });
+    return app.editorProposals.generate(project, task, { files, instruction: reqString(body, 'instruction', app.config.limits.promptChars), ai: reqString(body, 'ai', 20), ...(model === undefined ? {} : { model }), ...(effort === undefined ? {} : { effort }) });
   });
   router.post('/api/editor/proposals/decide', async ({ body }) => {
     if (typeof body.accept !== 'boolean' || typeof body.version !== 'number' || !Number.isSafeInteger(body.version) || !Array.isArray(body.snapshots) || !body.snapshots.length || body.snapshots.length > 16) throw new AppError('bad_request');

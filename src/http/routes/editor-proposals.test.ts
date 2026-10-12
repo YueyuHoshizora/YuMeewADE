@@ -16,3 +16,12 @@ test('proposal generation and workflow start share the per-source AI send budget
     assert.equal(workflow.status, 429);
   } finally { await s.close(); }
 });
+
+test('a proposal instruction longer than limits.promptChars is refused like a chat instruction', async () => {
+  const s = await startTestServer('limits:\n  promptChars: 10\n');
+  try {
+    const project = (await s.api('POST', '/api/project/new', { name: 'Prompt' })).json as Project;
+    const proposal = await s.api('POST', '/api/editor/proposals/generate', { project: project.id, task: '', ai: 'mock', instruction: 'x'.repeat(11), files: [{ path: 'a.ts', revision: 'r', text: '', selection: { from: 0, to: 0 } }] });
+    assert.deepEqual([proposal.status, (proposal.json as { detail?: string }).detail], [400, 'field_too_long']);
+  } finally { await s.close(); }
+});

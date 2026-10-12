@@ -211,7 +211,7 @@ export class App {
       providers: this.providers, editor: this.editor, ws: this.ws, settings: this.settings,
       assertExecutable: p => this.trust.assertExecutable(p),
       isBusy: (p, t) => this.runner.isBusy(p, t || undefined) || this.verify.isRunning(p, t || undefined) || this.execution.isRunning(p, t || undefined) || this.terminal.isRunning(p, t || undefined) || this.debugger.isRunning(p, t || undefined) || this.embeddedPreview.isRunning(p, t || undefined) || this.review.isBusy(p, t || undefined) || this.workflows.isBusy(p, t || undefined) || this.testExplorer.isRunning(p, t || undefined),
-      concurrentRuns: config.limits.concurrentRuns, runSeconds: config.limits.runSeconds, onChanged: (p, t) => this.changed(p, t),
+      concurrentRuns: config.limits.concurrentRuns, runSeconds: config.limits.runSeconds, promptChars: config.limits.promptChars, onChanged: (p, t) => this.changed(p, t),
       beforeRun: (project, task, ai, account) => this.usageHistory.assertProceed({ project, task, ai, account }, this.usage.snapshot()),
       onCompleted: input => this.usageHistory.record({ ...input, ...(input.usage?.claudeUsd !== undefined ? { claudeUsd: input.usage.claudeUsd } : {}), ...(input.usage?.codexCredits !== undefined ? { codexCredits: input.usage.codexCredits } : {}) }),
     });

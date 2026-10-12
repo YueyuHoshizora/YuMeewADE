@@ -52,6 +52,8 @@ interface Dependencies {
   beforeRun?: (project: string, task: string, ai: string, account: string) => Promise<void>;
   onCompleted?: (input: { requestId: string; sessionId?: string; project: string; task: string; ai: string; account: string; usage: TurnUsage | null }) => Promise<void>;
   concurrentRuns: number; runSeconds: number;
+  /** `limits.promptChars`: the longest instruction a new proposal may carry (default 100,000). */
+  promptChars?: number;
   /** Lets the running panel see a proposal start and finish. */
   onChanged?: (project: string, task: string) => void;
 }
@@ -130,7 +132,7 @@ export class EditorProposalService {
       const p = row as EditorProposal;
       if (p.project !== project || typeof p.id !== 'string' || !/^[a-f0-9-]{36}$/u.test(p.id) || identifiers.has(p.id)
         || typeof p.task !== 'string' || p.task.length > 120 || !Number.isSafeInteger(p.version) || p.version < 1
-        || typeof p.ai !== 'string' || p.ai.length > 20 || typeof p.instruction !== 'string' || p.instruction.length > 100_000
+        || typeof p.ai !== 'string' || p.ai.length > 20 || typeof p.instruction !== 'string' || p.instruction.length > Math.max(100_000, this.deps.promptChars ?? 0)
         || typeof p.createdAt !== 'string' || !Number.isFinite(Date.parse(p.createdAt)) || !Array.isArray(p.files)) throw new AppError('bad_request');
       identifiers.add(p.id);
       if (p.files.some(file => !file || typeof file !== 'object' || Array.isArray(file))) throw new AppError('bad_request');
@@ -165,7 +167,7 @@ export class EditorProposalService {
     const provider = this.deps.providers[input.ai];
     if (!provider || !providerCapabilities({ [input.ai]: provider })[0]?.readonly) throw new AppError('bad_request', 'cli_unsupported');
     validateFiles(input.files);
-    if (typeof input.instruction !== 'string' || !input.instruction.trim() || input.instruction.length > 100_000) throw new AppError('bad_request');
+    if (typeof input.instruction !== 'string' || !input.instruction.trim() || input.instruction.length > (this.deps.promptChars ?? 100_000)) throw new AppError('bad_request');
     const settled = Promise.withResolvers<void>();
     const entry: { run?: CliRun; stopped: boolean; done: Promise<void>; info: RunningInfo } = { stopped: false, done: settled.promise,
       info: { kind: 'proposal', project, task, request: randomUUID(), ai: input.ai, startedAt: new Date().toISOString(), ...(input.model ? { model: input.model } : {}), ...(input.effort ? { effort: input.effort } : {}) } };
