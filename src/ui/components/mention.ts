@@ -1,5 +1,5 @@
 /** 輸入框的 `@檔名` 提及：判斷游標前的 @token、套用選擇、並管理候選清單。 */
-import { mentionNeedsQuotes } from '../../shared/mention-syntax.ts';
+import { mentionReference } from '../../shared/mention-syntax.ts';
 export interface Mention {
   /** `@` 所在的位置。 */
   start: number;
@@ -12,13 +12,8 @@ export function mentionAt(text: string, caret: number): Mention | null {
   return found ? { start: caret - found[1]!.length - 1, query: found[1]! } : null;
 }
 
-/** `@path` reference text; a path the core would split (whitespace, CJK or trailing punctuation) is quoted. */
-export function mentionText(target: string): string {
-  return mentionNeedsQuotes(target) ? `@"${target}"` : `@${target}`;
-}
-
 export function applyMention(text: string, mention: Mention, caret: number, file: string): { text: string; caret: number } {
-  const insert = `${mentionText(file)} `;
+  const insert = `${mentionReference(file)} `;
   return { text: text.slice(0, mention.start) + insert + text.slice(caret), caret: mention.start + insert.length };
 }
 

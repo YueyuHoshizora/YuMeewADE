@@ -535,7 +535,7 @@ electron 44.7.0、vite 8.3.4、electron-builder 26.15.3、typescript 7.0.2、@ty
 - Git 工作台增加有界分頁圖形歷史、檔案歷史、提交詳情與 blame；所有新 Git 路由沿用專案信任閘門。
 - Stash 建立／套用／pop／確認刪除；cherry-pick 衝突自動回滾，非互動 rebase dirty 拒絕及三方解決後 continue／abort。
 - CodeMirror 6 工作台取代 textarea／正規式上色，保留 v3 復原、雙面板、revision 原子儲存及既有檔案／LSP 操作；新增行號、摺疊、多游標／矩形選取、undo／redo、括號匹配及內建搜尋面板，涵蓋主要語言。文件上限依 HTTP body 預算（最高 8 MiB）及 JSON 跳脫成本判斷，無法安全儲存者唯讀。
-- `@path`、`@path#L10-20`、`@path#L5` 在每次真正送出時依 CLI cwd 解析，所有 provider／續聊／交接共用引用區。語法在 `src/shared/mention-syntax.ts`（核心解析與輸入框插入共用）：`@` 前為行首、空白或左括號；ASCII 標點僅在其後接空白／結尾時視為句讀，中文標點一律結束引用；含空白、中文標點或以標點結尾的路徑以 `@"…"` 引號保留。realpath 防逃逸、機密名稱與 `.git` 排除、二進位略過；每檔 64 KiB、總計 256 KiB（`limits.mentionFileBytes`／`mentionTotalBytes`），顯示行號及截斷提示；失敗不阻止送出，user 列顯示引用狀態。
+- `@path`、`@path#L10-20`、`@path#L5` 在每次真正送出時依 CLI cwd 解析，所有 provider／續聊／交接共用引用區。語法在 `src/shared/mention-syntax.ts`（核心解析與輸入框插入共用）：`@` 前為行首、空白或左括號；ASCII 標點僅在其後接空白／結尾時視為句讀，中文標點一律結束引用；含空白、中文標點或以標點結尾的路徑以 `@"…"` 引號保留，引號內 `"` 以 `\"` 跳脫（路徑不允許反斜線，故這是唯一跳脫）。realpath 防逃逸、機密名稱與 `.git` 排除、二進位略過；每檔 64 KiB、總計 256 KiB（`limits.mentionFileBytes`／`mentionTotalBytes`），顯示行號及截斷提示；失敗不阻止送出，user 列顯示引用狀態。
 - `yumeewade:compose-insert` 依 project／task 精確匹配已開啟作業輸入框；快速開始匹配 project 且 task 為空字串。取代目前選取、游標移到插入末端、保存草稿並聚焦，離開畫面移除 listener。
 - AI 入門使用 care health 的 CLI 可用性／App 登入狀態，四態呈現、固定官方文件與人工複製安裝指令；帳號引導重用既有新增 modal。首頁與新專案在無可用 AI 時提醒，依工作區可略過，不執行安裝。
 - GET `/api/care/log` 僅讀目前工作區固定 `.yumeewade/yumeewade.log`，拒絕 symlink，尾端 256 KiB／1000 行有界；套用 home／憑證欄位／Bearer／token-like 防禦遮蔽。Care 提供等級／文字篩選、刷新與複製；本機日誌既有堆疊可呈現，不聲稱完美去識別。

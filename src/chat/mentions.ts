@@ -4,7 +4,7 @@ import { isLocalSecret } from '../git/git.ts';
 import { isInside } from '../shared/fsx.ts';
 import type { FileMention } from '../shared/types.ts';
 import { quoteBoundaries } from './prompt.ts';
-import { MENTION_PATTERN } from '../shared/mention-syntax.ts';
+import { MENTION_PATTERN, mentionTarget } from '../shared/mention-syntax.ts';
 
 export const MENTION_FILE_BYTES = 65_536;
 export const MENTION_TOTAL_BYTES = 262_144;
@@ -13,7 +13,7 @@ export function parseMentions(text: string): FileMention[] {
   const seen = new Set<string>();
   // `@"my notes.txt#L3"`: a quoted reference keeps a path with spaces whole (the composer quotes such paths itself).
   for (const match of text.matchAll(MENTION_PATTERN)) {
-    const token = match[1] ?? match[2]!;
+    const token = mentionTarget(match);
     if (seen.has(token)) continue;
     seen.add(token);
     const range = /^(.*)#L(\d+)(?:-(\d+))?$/u.exec(token);
