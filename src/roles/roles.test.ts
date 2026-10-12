@@ -17,6 +17,12 @@ test('switching AI does not inherit another provider effort; explicit CLI defaul
   assert.deepEqual(resolveLaunch(roles, task, { cli: 'grok' }, initial), { cli: 'grok', model: '', effort: '' });
   assert.deepEqual(resolveLaunch(roles, { ...task, cli: 'grok', model: 'saved', effort: 'high' }, { model: '', effort: '' }, initial), { cli: 'grok', model: '', effort: '' });
 });
+test("a role slot's empty model and effort mean the CLI default, not the global initial choice", () => {
+  const roles = parseRoles('roles:\n  build: { main: [codex, "", ""] }\n');
+  assert.deepEqual(resolveLaunch(roles, { role: 'build', cli: '', model: '', effort: '' }, {}, initial), { cli: 'codex', model: '', effort: '' });
+  // Without a role the initial choice still fills in.
+  assert.deepEqual(resolveLaunch(roles, { role: '', cli: '', model: '', effort: '' }, {}, initial), { cli: 'codex', model: initial.model, effort: initial.effort });
+});
 test('role write round-trip retains header and unrelated sections', () => withTmpWorkspace(async ws => {
   await fs.writeFile(ws.rolesFile, '# header\npermissions:\n  auto: true\nroles:\n  old: { main: [人] }\nswitch:\n  auto: false\n');
   const inputs = [{ name: '設計:甲', job: '含 # 與冒號: 工作', main: { cli: 'claude', model: 'claude-opus-5-5', effort: 'max' }, backup: { cli: '人', model: '', effort: '' } }];

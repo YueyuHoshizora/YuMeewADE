@@ -70,8 +70,10 @@ export function resolveLaunch(roles: Roles, task: Pick<Task, 'role' | 'cli' | 'm
   const main = roles.roles[task.role]?.main;
   const cli = override.cli || task.cli || main?.cli || initial.ai;
   if (cli === HUMAN) throw new AppError('bad_request', 'no_cli_for_task');
-  const model = override.model ?? ((!task.cli || cli === task.cli ? task.model : '') || (cli === main?.cli ? main.model : '') || (cli === initial.ai ? initial.model : ''));
-  const effort = override.effort ?? ((!task.cli || cli === task.cli ? task.effort : '') || (cli === main?.cli ? main.effort : '') || (cli === initial.ai ? initial.effort : ''));
+  // A role slot for this CLI decides, even when it leaves model/effort empty (the CLI's own default): settings.initial
+  // only fills in for a CLI no role names.
+  const model = override.model ?? ((!task.cli || cli === task.cli ? task.model : '') || (cli === main?.cli ? main.model : cli === initial.ai ? initial.model : ''));
+  const effort = override.effort ?? ((!task.cli || cli === task.cli ? task.effort : '') || (cli === main?.cli ? main.effort : cli === initial.ai ? initial.effort : ''));
   if (effort && !EFFORTS.includes(effort)) throw new AppError('bad_request', 'invalid_effort');
   return { cli, model: model === 'default' ? '' : model, effort };
 }
