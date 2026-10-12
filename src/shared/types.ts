@@ -445,6 +445,8 @@ export type ChatRow =
       text: string;
       /** 工作副本曾被還原；交接包會帶這一則，避免 AI 沿用過時記憶。 */
       rollback?: boolean;
+      /** `/fast` 設定結果：true／false＝本作業該 AI 的 Fast 模式；null＝依 CLI 自身設定。 */
+      fast?: boolean | null;
       request?: string;
     };
 

@@ -44,6 +44,7 @@ export const ja: Record<MessageKey, string> = {
 'chat.rollback': 'この指示の前に戻す', 'chat.rollbackConfirm': '作業コピーをこの指示の開始前に戻します。この指示以降のファイル変更は破棄されます（会話は残ります）。戻しますか？', 'chat.rollbackDone': '作業コピーを戻しました',
 'chat.fork': 'ここから分岐', 'chat.forked': '分岐タスクを作成しました', 'detail.fork_while_running': '実行中のタスクを停止してから分岐してください', 'log.task.fork': '指示から作業を分岐',
 'chat.timedOut': '実行時間の上限を超えたため停止しました',
+'chat.fastOn': '{ai} の Fast モードをオンにしました。このタスクの以降の指示に適用されます（高速・使用量増）', 'chat.fastOff': '{ai} の Fast モードをオフにしました。このタスクの以降の指示に適用されます', 'chat.fastConfig': '{ai} の Fast モードは CLI 自身の設定に従います',
 'snip.open': 'よく使う指示', 'snip.builtin': '組み込み', 'snip.custom': 'マイ指示', 'snip.empty': '保存した指示はまだありません。', 'snip.name': '名前', 'snip.save': '今の入力をよく使う指示として保存', 'snip.needDraft': '保存する指示を先に入力欄へ書いてください', 'snip.needName': 'この指示に名前を付けてください',
 'snip.plan.name': 'まず計画', 'snip.plan.text': 'まだファイルは変更しないでください。関連するコードを読み、実装計画（手順、変更するファイル、リスクとトレードオフ）を示し、私の確認を待ってから着手してください。',
 'snip.debug.name': '根本原因を探す', 'snip.debug.text': 'この問題を再現して根本原因を突き止めてください（症状だけを抑えない）。根拠を説明したうえで、最小限の修正を行い、効果を検証してください。',

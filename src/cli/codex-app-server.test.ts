@@ -63,7 +63,7 @@ const send = x => console.log(JSON.stringify(x));
 createInterface({input:process.stdin}).on('line', line => {
  const m=JSON.parse(line);
  if(m.method==='initialize') send({id:m.id,result:{}});
- else if(m.method==='thread/start'||m.method==='thread/resume') send({id:m.id,result:{thread:{id:'thread'}}});
+ else if(m.method==='thread/start'||m.method==='thread/resume') { if((m.params.serviceTier??'')!==process.env.FIXTURE_TIER)process.exit(3); send({id:m.id,result:{thread:{id:'thread'}}}); }
  else if(m.method==='turn/start') process.exit(6);
  else if(m.method==='thread/compact/start') {
   if(m.params.threadId!=='thread')process.exit(5);
@@ -82,28 +82,34 @@ createInterface({input:process.stdin}).on('line', line => {
   send({method:'turn/completed',params:{threadId:'thread',turn:{id:'root',status:'completed',error:null}}});
  }
 }).on('close',()=>process.exit(0));`;
-test('app-server runs /compact and /review as thread operations, answering with the review summary only', async () => {
+test('app-server runs /compact and /review as thread operations and carries the /fast tier', async () => {
  const dir = await fs.mkdtemp(path.join(os.tmpdir(), 'codex-commands-'));
  try {
   const file = path.join(dir, 'fixture.ts'); await fs.writeFile(file, commandFixture);
-  for (const [slashCommand, resumeId, target, ok, answer] of [
-   ['/compact', 'thread', '', true, ''],
-   ['/compact', undefined, '', false, ''],
-   ['/review', undefined, '{"type":"uncommittedChanges"}', true, 'No issues.'],
-   ['/review  focus on auth ', 'thread', '{"type":"custom","instructions":"focus on auth"}', true, 'No issues.'],
+  for (const [slashCommand, resumeId, target, ok, answer, fast, tier] of [
+   ['/compact', 'thread', '', true, '', undefined, ''],
+   ['/compact', undefined, '', false, '', undefined, ''],
+   ['/review', undefined, '{"type":"uncommittedChanges"}', true, 'No issues.', true, 'priority'],
+   ['/review  focus on auth ', 'thread', '{"type":"custom","instructions":"focus on auth"}', true, 'No issues.', false, 'default'],
+   ['/fast', 'thread', '', false, '', true, 'priority'],
   ] as const) {
-   const provider = new CodexCliProvider({ ...DEFAULT_CONFIG.cli.codex, command: process.execPath, appServerArgs: [file] }, [], { PATH: process.env.PATH, FIXTURE_TARGET: target });
+   const provider = new CodexCliProvider({ ...DEFAULT_CONFIG.cli.codex, command: process.execPath, appServerArgs: [file] }, [], { PATH: process.env.PATH, FIXTURE_TARGET: target, FIXTURE_TIER: tier });
    const events: CliEvent[] = [];
-   const result = await provider.send({ prompt: 'preamble', cwd: dir, slashCommand, ...(resumeId ? { resumeId } : {}) }, e => events.push(e)).done;
+   const run = () => provider.send({ prompt: 'preamble', cwd: dir, slashCommand, ...(resumeId ? { resumeId } : {}), ...(fast === undefined ? {} : { fast }) }, e => events.push(e));
+   // /fast is resolved by the core into a task setting; reaching the transport is a contract violation.
+   if (slashCommand === '/fast') { assert.throws(run); continue; }
+   const result = await run().done;
    assert.equal(result.ok, ok, slashCommand);
    if (ok) assert.deepEqual(events.find(e => e.type === 'result'), { type: 'result', text: answer });
    else assert.ok(events.some(e => e.type === 'error'));
   }
   const provider = new CodexCliProvider({ ...DEFAULT_CONFIG.cli.codex, command: process.execPath, appServerArgs: [file] }, [], { PATH: process.env.PATH, CODEX_HOME: dir });
-  assert.deepEqual((await provider.commands(dir)).map(c => c.name), ['compact', 'review']);
+  assert.deepEqual((await provider.commands(dir)).map(c => c.name), ['compact', 'fast', 'review']);
   assert.deepEqual(await provider.resolveCommand('/review focus', dir), { text: '/review focus', native: true });
-  await assert.rejects(provider.resolveCommand('/compact now', dir), { detail: 'slash_unsupported' });
-  await assert.rejects(provider.resolveCommand('/model', dir), { detail: 'slash_unsupported' });
+  for (const [text, fast] of [['/fast', 'toggle'], [' /fast ON ', 'on'], ['/fast off', 'off'], ['/fast status', 'status']] as const) {
+    assert.equal((await provider.resolveCommand(text, dir)).fast, fast);
+  }
+  for (const text of ['/compact now', '/fast maybe', '/model']) await assert.rejects(provider.resolveCommand(text, dir), { detail: 'slash_unsupported' });
   const exec = new CodexCliProvider({ ...DEFAULT_CONFIG.cli.codex, mode: 'exec' }, [], { PATH: process.env.PATH, CODEX_HOME: dir });
   assert.deepEqual(await exec.commands(dir), []);
   await assert.rejects(exec.resolveCommand('/compact', dir), { detail: 'slash_unsupported' });

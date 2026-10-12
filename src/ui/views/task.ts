@@ -443,7 +443,7 @@ export function taskView(
     }
     toolGroup = null;
     if (entry.role === 'event') {
-      const eventRow = el('div', 'event-row', entry.text);
+      const eventRow = el('div', 'event-row', entry.fast === undefined ? entry.text : t(entry.fast === null ? 'chat.fastConfig' : entry.fast ? 'chat.fastOn' : 'chat.fastOff', { ai: entry.ai ?? '' }));
       eventRow.dataset['index'] = String(index);
       target.insertBefore(eventRow, before);
       return;

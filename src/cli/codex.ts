@@ -8,7 +8,7 @@ import type { CliCommandConfig } from '../shared/config.ts';
 import { CREDITS_UNIT } from '../shared/types.ts';
 import type { ExtraUsage, QuotaWindow, ResetCredit, ResetCredits, SlashCommand } from '../shared/types.ts';
 import { findExecutable, minimalEnv, runLineProcess, terminateTree } from './process.ts';
-import { quotaTime, type CliEvent, type CliProvider, type CliRun, type SendOptions } from './provider.ts';
+import { quotaTime, type CliEvent, type CliProvider, type CliRun, type FastChange, type SendOptions } from './provider.ts';
 import { codexPrompts, expandCodexPrompt, slashName } from './commands.ts';
 import { AppError } from '../shared/errors.ts';
 import { readonlyConfigured, reviewArgs } from './readonly.ts';
@@ -314,11 +314,13 @@ export function createCodexParser(onEvent: (ev: CliEvent) => void, now: () => nu
   };
 }
 
-/** Codex TUI controls the app-server exposes as thread operations (codex-cli 0.162.1 `thread/compact/start`, `review/start`). */
+/** Codex TUI controls the app-server exposes per thread (codex-cli 0.162.1 `thread/compact/start`, `review/start`, `serviceTier`). */
 const CODEX_APP_COMMANDS: SlashCommand[] = [
   { name: 'compact', description: 'Summarize the conversation to free up context' },
+  { name: 'fast', description: 'Toggle Fast mode for this task (faster, higher usage)', argumentHint: '[on|off|status]' },
   { name: 'review', description: 'Review uncommitted changes, or the given review instructions', argumentHint: '[instructions]' },
 ];
+const FAST_ARGUMENTS: Record<string, FastChange> = { '': 'toggle', on: 'on', off: 'off', status: 'status' };
 
 export class CodexCliProvider implements CliProvider {
   readonly name = 'codex';
@@ -354,8 +356,14 @@ export class CodexCliProvider implements CliProvider {
   async resolveCommand(text: string, _cwd: string, configDir?: string) {
     const name = slashName(text);
     if (this.supportsApprovals && CODEX_APP_COMMANDS.some(command => command.name === name)) {
+      const argument = text.trim().slice(name!.length + 1).trim();
+      // App-server keeps the tier only for the life of one process, so /fast is a task setting the core applies to each send.
+      if (name === 'fast') {
+        if (!Object.hasOwn(FAST_ARGUMENTS, argument.toLowerCase())) throw new AppError('bad_request', 'slash_unsupported');
+        return { text: text.trim(), native: true, fast: FAST_ARGUMENTS[argument.toLowerCase()]! };
+      }
       // /compact acts on the whole thread; arguments would be silently dropped.
-      if (name === 'compact' && text.trim() !== '/compact') throw new AppError('bad_request', 'slash_unsupported');
+      if (name === 'compact' && argument) throw new AppError('bad_request', 'slash_unsupported');
       return { text: text.trim(), native: true };
     }
     const prompt = (await codexPrompts(configDir ?? this.home)).find(command => command.name === name);

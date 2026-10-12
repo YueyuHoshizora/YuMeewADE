@@ -157,7 +157,8 @@ export function codexAppServerRun(cfg: CliCommandConfig, opts: SendOptions, env:
     await request('initialize', { clientInfo: { name: 'yumeewade', title: null, version: '1' }, capabilities: null });
     send({ method: 'initialized' });
     const full = opts.fullAccess ?? cfg.fullAccess;
-    const common = { cwd: opts.cwd, model: opts.model ?? null, approvalPolicy: full ? 'never' : 'on-request', sandbox: full ? 'danger-full-access' : 'workspace-write', approvalsReviewer: 'user' };
+    // The thread holds the tier for its later turns, but a resumed thread does not keep it across processes (0.162.1).
+    const common = { cwd: opts.cwd, model: opts.model ?? null, approvalPolicy: full ? 'never' : 'on-request', sandbox: full ? 'danger-full-access' : 'workspace-write', approvalsReviewer: 'user', ...(opts.fast === undefined ? {} : { serviceTier: opts.fast ? 'priority' : 'default' }) };
     const response = object(await request(opts.resumeId ? 'thread/resume' : 'thread/start', { ...common, ...(opts.resumeId ? { threadId: opts.resumeId, excludeTurns: true } : {}) }));
     const metadata = object(response['thread']); if (typeof metadata['id'] !== 'string' || !metadata['id']) throw new Error('Missing thread id');
     thread = metadata['id']; onEvent({ type: 'session', id: thread });

@@ -13,6 +13,8 @@ export interface ChatMeta {
   seen: Record<string, string>;
   /** Session ownership; absent legacy entries belong to the implicit default account. */
   accounts?: Record<string, string>;
+  /** `/fast` per AI; absent means the CLI's own configuration decides. */
+  fast?: Record<string, boolean>;
   running?: Pick<Busy, 'request' | 'ai' | 'model' | 'effort' | 'startedAt'>;
 }
 
@@ -95,7 +97,7 @@ export class ChatStore {
 
   async readMeta(project: string, task: string): Promise<ChatMeta> {
     const meta = await readJson<Partial<ChatMeta>>(this.ws.chatFile(project, task, 'json'), {});
-    return { sessions: meta.sessions ?? {}, models: meta.models ?? {}, seen: meta.seen ?? {}, ...(meta.accounts ? { accounts: meta.accounts } : {}), ...(meta.running ? { running: meta.running } : {}) };
+    return { sessions: meta.sessions ?? {}, models: meta.models ?? {}, seen: meta.seen ?? {}, ...(meta.accounts ? { accounts: meta.accounts } : {}), ...(meta.fast ? { fast: meta.fast } : {}), ...(meta.running ? { running: meta.running } : {}) };
   }
 
   writeMeta(project: string, task: string, meta: ChatMeta): Promise<void> {

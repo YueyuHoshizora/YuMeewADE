@@ -48,3 +48,42 @@ test('command API and normal send keep account context, dispatch native intact, 
     assert.equal((await server.api('GET', '/api/chat/commands?project=P&task=missing&ai=claude')).status, 404);
   } finally { await server.close(); await fs.rm(profile, { recursive: true, force: true }); }
 });
+
+test('/fast is a task setting: no model turn, session kept, applied to later and queued sends', async () => {
+  const calls: SendOptions[] = [];
+  const provider = Object.assign(new MockCliProvider({ chunkMs: 5, text: opts => { calls.push(opts); return opts.prompt.includes('long running') ? 'word '.repeat(400) : 'done'; } }), {
+    resolveCommand: async (text: string) => {
+      const fast = ({ '/fast': 'toggle', '/fast on': 'on', '/fast off': 'off', '/fast status': 'status' } as const)[text as '/fast'];
+      if (fast) return { text, native: true, fast };
+      throw new AppError('bad_request', 'slash_unsupported');
+    },
+  });
+  const server = await startTestServer('', { providers: { codex: provider } });
+  try {
+    await server.api('POST', '/api/project/new', { name: 'P' });
+    const task = (await server.api('POST', '/api/task/new', { project: 'P', title: 'T', workspace: 'direct', cli: 'codex' })).json as Task;
+    const send = async (text: string, mode?: string) => (await server.api('POST', '/api/chat/send', { project: 'P', task: task.id, ai: 'codex', text, ...(mode ? { mode } : {}) })).status;
+    const fastEvents = async () => (await server.app.store.readLog('P', task.id)).flatMap(row => row.role === 'event' && row.fast !== undefined ? [row.fast] : []);
+    assert.equal(await send('/fast status'), 200);
+    assert.equal(await send('hello'), 200); await server.app.runner.whenIdle();
+    assert.equal(calls[0]!.fast, undefined);
+    const session = (await server.app.store.readMeta('P', task.id)).sessions['codex'];
+    assert.ok(session);
+    assert.equal(await send('/fast'), 200);
+    assert.equal(calls.length, 1);
+    assert.equal(await send('again'), 200); await server.app.runner.whenIdle();
+    assert.equal(calls[1]!.fast, true);
+    assert.equal(calls[1]!.slashCommand, undefined);
+    assert.equal(calls[1]!.resumeId, session);
+    assert.equal(await send('long running'), 200);
+    assert.equal(await send('/fast off', 'queue'), 200);
+    assert.equal(await send('after queue', 'queue'), 200);
+    assert.deepEqual((await server.app.store.readQueue('P', task.id)).map(item => item.text), ['/fast off', 'after queue']);
+    await server.app.runner.whenIdle();
+    assert.deepEqual(calls.slice(2).map(call => call.fast), [true, false]);
+    assert.deepEqual(await fastEvents(), [null, true, false]);
+    assert.deepEqual((await server.app.store.readMeta('P', task.id)).fast, { codex: false });
+    assert.deepEqual(await server.app.store.readQueue('P', task.id), []);
+    assert.equal(await send('/fast maybe'), 400);
+  } finally { await server.close(); }
+});

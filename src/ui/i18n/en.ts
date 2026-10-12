@@ -44,6 +44,7 @@ export const en: Record<MessageKey, string> = {
 'chat.rollback': 'Restore to before this', 'chat.rollbackConfirm': 'The working copy goes back to how it was before this instruction; file changes from it and everything after are discarded (the conversation is kept). Restore?', 'chat.rollbackDone': 'Working copy restored',
 'chat.fork': 'Branch from here', 'chat.forked': 'Branch task created', 'detail.fork_while_running': 'Stop the running task before branching', 'log.task.fork': 'Task branched from an instruction',
 'chat.timedOut': 'Stopped: run time limit exceeded',
+'chat.fastOn': '{ai} Fast mode on for later instructions in this task (faster, higher usage)', 'chat.fastOff': '{ai} Fast mode off for later instructions in this task', 'chat.fastConfig': '{ai} Fast mode follows the CLI’s own configuration',
 'snip.open': 'Prompts', 'snip.builtin': 'Built-in', 'snip.custom': 'Mine', 'snip.empty': 'No saved prompts yet.', 'snip.name': 'Name', 'snip.save': 'Save current input as a prompt', 'snip.needDraft': 'Write the instruction in the input box first', 'snip.needName': 'Give this prompt a name',
 'snip.plan.name': 'Plan first', 'snip.plan.text': 'Do not modify any files yet. Read the relevant code and propose an implementation plan (steps, files to touch, risks and trade-offs), then wait for my confirmation before making changes.',
 'snip.debug.name': 'Find the root cause', 'snip.debug.text': 'Reproduce this problem and find its root cause (do not just treat the symptom). Explain your evidence, then make the smallest fix and verify that it works.',

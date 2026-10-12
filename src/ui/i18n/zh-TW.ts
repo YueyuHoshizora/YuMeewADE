@@ -43,6 +43,7 @@ export const zhTW = {
 'chat.rollback': '還原到此之前', 'chat.rollbackConfirm': '工作副本會回到這則指示開始之前，這則指示及之後的檔案變更都會丟棄（對話紀錄保留）。確定還原？', 'chat.rollbackDone': '已還原工作副本',
 'chat.fork': '從這裡分支', 'chat.forked': '已建立分支作業', 'detail.fork_while_running': '作業執行中，請先停止再分支', 'log.task.fork': '從指示分支作業',
 'chat.timedOut': '超過執行時間上限，已停止',
+'chat.fastOn': '{ai} Fast 模式已開啟，本作業之後的指示適用（較快、用量較高）', 'chat.fastOff': '{ai} Fast 模式已關閉，本作業之後的指示適用', 'chat.fastConfig': '{ai} Fast 模式依 CLI 自身設定',
 'snip.open': '常用指示', 'snip.builtin': '內建', 'snip.custom': '我的', 'snip.empty': '還沒有自訂的常用指示。', 'snip.name': '名稱', 'snip.save': '把目前輸入存成常用指示', 'snip.needDraft': '先在輸入框寫下要存的指示', 'snip.needName': '請替這則常用指示取個名稱',
 'snip.plan.name': '先規劃再動手', 'snip.plan.text': '先不要修改任何檔案。請閱讀相關程式碼，提出實作計畫（步驟、會動到的檔案、風險與取捨），等我確認後再動手。',
 'snip.debug.name': '找出根本原因', 'snip.debug.text': '請重現並找出這個問題的根本原因（不要只處理症狀），說明你的證據，再做最小的修正並驗證修正有效。',

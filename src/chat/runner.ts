@@ -2,7 +2,7 @@
 import { randomUUID } from 'node:crypto';
 import { EventEmitter } from 'node:events';
 import path from 'node:path';
-import type { CliEvent, CliProvider, CliRun } from '../cli/provider.ts';
+import type { CliEvent, CliProvider, CliRun, FastChange } from '../cli/provider.ts';
 import type { Workspace } from '../ledger/workspace.ts';
 import type { ProjectLedger } from '../ledger/projects.ts';
 import { TITLE_MAX, type TaskLedger } from '../ledger/tasks.ts';
@@ -328,7 +328,7 @@ export class ChatRunner extends EventEmitter {
       ? task.workspace !== 'direct' && task.workdir && await pathExists(task.workdir)
         ? task.workdir : await this.deps.worktree.bodyPath(p)
       : '';
-    let command: { text: string; native: boolean; standalone?: boolean } | undefined;
+    let command: { text: string; native: boolean; standalone?: boolean; fast?: FastChange } | undefined;
     if (name) {
       if (!provider.resolveCommand || chosen.answer || (s.busy && chosen.mode !== 'queue')) {
         throw new AppError('bad_request', 'slash_unsupported');
@@ -352,6 +352,7 @@ export class ChatRunner extends EventEmitter {
       this.deps.onChanged(p, t);
       return { request: item.id, queued: true };
     }
+    if (command?.fast) return this.applyFast(p, t, s, item, command.fast, input.fromQueue);
     const fullAccess = await this.deps.resolveFullAccess?.(p, item.ai, settings.fullAccess[item.ai] ?? provider.dangerous) ?? settings.fullAccess[item.ai] ?? provider.dangerous;
     if (s.busy) {
       const previous = s.text.slice(0, 400);
@@ -442,6 +443,7 @@ export class ChatRunner extends EventEmitter {
         prompt: buildPrompt({ preamble, handoff, context: taskContext.text, references: references.text, text: command ? (command.native ? '' : command.text) : item.text, images }), cwd,
         ...(command?.native ? { slashCommand: command.text } : {}),
         ...(command?.standalone ? { standalone: true } : resumeId ? { resumeId } : {}),
+        ...(meta.fast?.[item.ai] === undefined ? {} : { fast: meta.fast[item.ai] }),
         model: pick.model, effort: pick.effort,
         fullAccess,
         accountId,
@@ -478,6 +480,25 @@ export class ChatRunner extends EventEmitter {
       }
       throw err;
     }
+  }
+
+  /** `/fast` changes how later sends start, not the conversation: no model turn, session, account or handoff position changes. */
+  private async applyFast(p: string, t: string, s: Slot, item: QueueItem, change: FastChange, fromQueue: string | undefined): Promise<SendResult> {
+    const meta = await this.deps.store.readMeta(p, t);
+    const current = meta.fast?.[item.ai];
+    const next = change === 'status' ? current : change === 'toggle' ? !current : change === 'on';
+    if (next !== undefined && next !== current) await this.deps.store.writeMeta(p, t, { ...meta, fast: { ...meta.fast, [item.ai]: next } });
+    if (fromQueue) this.publish(p, t, { event: 'queue', data: await this.deps.store.updateQueue(p, t, q => q.filter(x => x.id !== fromQueue)) });
+    const rows: ChatRow[] = [
+      { at: item.at, role: 'user', text: item.text, to: item.ai, request: item.id, ...(item.model === undefined ? {} : { model: item.model }), ...(item.effort === undefined ? {} : { effort: item.effort }) },
+      { at: new Date().toISOString(), role: 'event', ai: item.ai, request: item.id, fast: next ?? null, text: next === undefined ? `${item.ai} Fast 模式依 CLI 自身設定` : `${item.ai} Fast 模式${next ? '開啟' : '關閉'}，本作業之後的指示適用` },
+    ];
+    for (const row of rows) { await this.deps.store.append(p, t, row); this.publish(p, t, { event: 'row', data: row }); }
+    await this.deps.oplog.record({ action: 'chat', project: p, task: t });
+    this.deps.onChanged(p, t);
+    // A queued /fast ran in place of a turn; whatever was queued behind it still has to start.
+    if (fromQueue) this.trackQueuedRun(p, t, s);
+    return { request: item.id, queued: false };
   }
 
   private trackQueuedRun(p: string, t: string, s: Slot): void {

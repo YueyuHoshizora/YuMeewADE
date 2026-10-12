@@ -44,6 +44,7 @@ export const zhCN: Record<MessageKey, string> = {
 'chat.rollback': '还原到此之前', 'chat.rollbackConfirm': '工作副本会回到这条指示开始之前，这条指示及之后的文件变更都会丢弃（对话记录保留）。确定还原？', 'chat.rollbackDone': '已还原工作副本',
 'chat.fork': '从这里分支', 'chat.forked': '已创建分支任务', 'detail.fork_while_running': '任务运行中，请先停止再分支', 'log.task.fork': '从指示分支任务',
 'chat.timedOut': '超过运行时间上限，已停止',
+'chat.fastOn': '{ai} Fast 模式已开启，本作业之后的指示适用（较快、用量较高）', 'chat.fastOff': '{ai} Fast 模式已关闭，本作业之后的指示适用', 'chat.fastConfig': '{ai} Fast 模式按 CLI 自身设置',
 'snip.open': '常用指令', 'snip.builtin': '内置', 'snip.custom': '我的', 'snip.empty': '还没有自定义的常用指令。', 'snip.name': '名称', 'snip.save': '把当前输入存为常用指令', 'snip.needDraft': '先在输入框写下要保存的指令', 'snip.needName': '请给这条常用指令起个名称',
 'snip.plan.name': '先规划再动手', 'snip.plan.text': '先不要修改任何文件。请阅读相关代码，提出实现计划（步骤、会改动的文件、风险与取舍），等我确认后再动手。',
 'snip.debug.name': '找出根本原因', 'snip.debug.text': '请复现并找出这个问题的根本原因（不要只处理表面症状），说明你的证据，再做最小的修复并验证修复有效。',
