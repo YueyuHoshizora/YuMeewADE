@@ -12,6 +12,7 @@ import { providerCapabilities } from '../cli/capabilities.ts';
 import type { ProviderCapability } from '../shared/ai-capabilities.ts';
 import type { CredentialAccounts } from '../cli/accounts.ts';
 import { WorktreeService } from '../git/worktree.ts';
+import { WorkflowIntegrationService } from '../git/workflow-integration.ts';
 import { VerifyService } from '../git/verify.ts';
 import { RateLimiter } from '../http/ratelimit.ts';
 import { GLOBAL, SseHub, taskKey } from '../http/sse.ts';
@@ -24,7 +25,7 @@ import { TaskLedger } from '../ledger/tasks.ts';
 import { Workspace } from '../ledger/workspace.ts';
 import { LedgerWatcher } from '../ledger/watch.ts';
 import { loadRoles } from '../roles/roles.ts';
-import type { Config } from '../shared/config.ts';
+import { hostAuthority, type Config } from '../shared/config.ts';
 import { AppError } from '../shared/errors.ts';
 import { log } from '../shared/log.ts';
 import type { AppState, ChatEvent, Roles, UsageState, McpAi } from '../shared/types.ts';
@@ -37,6 +38,7 @@ import { EditorService } from '../system/editor.ts';
 import { EditorSettingsStore } from '../system/editor-settings.ts';
 import { ExecutionService } from '../system/commands.ts';
 import { IntegrationService } from '../system/integrations.ts';
+import { EmbeddedPreviewService } from '../system/embedded-preview.ts';
 import { GitWorkbench } from '../git/workbench.ts';
 import { ReviewService } from '../chat/review.ts';
 import { WorkflowService } from '../chat/workflows.ts';
@@ -93,6 +95,7 @@ export class App {
   readonly testExplorer: TestExplorerService;
   readonly execution: ExecutionService;
   readonly integrations: IntegrationService;
+  readonly embeddedPreview: EmbeddedPreviewService;
   readonly gitWorkbench: GitWorkbench;
   readonly review: ReviewService;
   readonly workflows: WorkflowService;
@@ -154,7 +157,7 @@ export class App {
     this.oplog = new OpLog(this.ws);
     this.worktree = new WorktreeService({ ws: this.ws, projects: this.projects, tasks: this.tasks, diffBytes: config.limits.diffBytes });
     this.verify = new VerifyService({ ws: this.ws, projects: this.projects, tasks: this.tasks, config,
-      isRunning: (project, task) => this.runner.isRunning(project, task) || this.execution.isRunning(project, task) || this.terminal.isRunning(project, task) || this.review.isBusy(project, task) || this.editorProposals.isBusy(project, task),
+      isRunning: (project, task) => this.runner.isRunning(project, task) || this.execution.isRunning(project, task) || this.terminal.isRunning(project, task) || this.debugger.isRunning(project, task) || this.embeddedPreview.isRunning(project, task) || this.review.isBusy(project, task) || this.editorProposals.isBusy(project, task),
       beforeRun: project => this.trust.assertExecutable(project) });
     this.archive = new ArchiveService(this.ws, this.projects, this.tasks, this.worktree, project => this.trust.assertExecutable(project));
     this.editor = new EditorService(this.worktree, this.tasks, undefined, config.limits.bodyBytes, {
@@ -163,15 +166,26 @@ export class App {
     this.execution = new ExecutionService({ ws: this.ws, projects: this.projects, tasks: this.tasks, concurrent: config.limits.concurrentRuns,
       envPassthrough: config.cli.envPassthrough,
       beforeStart: project => this.trust.assertExecutable(project),
-      isRunning: (project, task) => this.runner.isRunning(project, task) || this.terminal?.isRunning(project, task) || this.review.isBusy(project, task) || this.verify.isRunning(project, task) || this.workflows.isBusy(project, task) || this.testExplorer.isRunning(project, task) || this.editorProposals.isBusy(project, task) });
+      isRunning: (project, task) => this.runner.isRunning(project, task) || this.terminal?.isRunning(project, task) || this.debugger?.isRunning(project, task) || this.embeddedPreview?.isRunning(project, task) || this.review.isBusy(project, task) || this.verify.isRunning(project, task) || this.workflows.isBusy(project, task) || this.testExplorer.isRunning(project, task) || this.editorProposals.isBusy(project, task) });
     this.terminal = new TerminalService(this.execution, { concurrent: config.limits.concurrentRuns, envPassthrough: config.cli.envPassthrough,
       beforeStart: project => this.trust.assertExecutable(project),
-      isRunning: (project, task) => this.runner.isRunning(project, task) || this.review.isBusy(project, task) || this.verify.isRunning(project, task) || this.workflows.isBusy(project, task) || this.testExplorer.isRunning(project, task) || this.editorProposals.isBusy(project, task) });
+      isRunning: (project, task) => this.runner.isRunning(project, task) || this.debugger?.isRunning(project, task) || this.embeddedPreview?.isRunning(project, task) || this.review.isBusy(project, task) || this.verify.isRunning(project, task) || this.workflows.isBusy(project, task) || this.testExplorer.isRunning(project, task) || this.editorProposals.isBusy(project, task) });
     this.debugger = new DebuggerService(this.execution, {
       metadataFile: (p, t) => debuggerMetadataFile(this.ws, this.tasks, p, t),
       beforeMutate: p => this.trust.assertExecutable(p),
+      beforeLaunch: async (p, t) => { await this.trust.assertExecutable(p); if (this.taskBusy(p, t)) throw new AppError('conflict', 'workflow_busy'); },
     });
     this.integrations = new IntegrationService(this.execution, { ...config.execution, envPassthrough: config.cli.envPassthrough, beforeStart: project => this.trust.assertExecutable(project) });
+    this.embeddedPreview = new EmbeddedPreviewService({
+      cwd: (p, t) => this.execution.cwd(p, t),
+      assertTrusted: async p => {
+        const trust = await this.trust.view(p);
+        if (trust.state !== 'trusted' || trust.rootChanged) throw new AppError('forbidden', 'project_restricted');
+      },
+      beforeStart: async (p, t) => { if (this.taskBusy(p, t)) throw new AppError('conflict', 'workflow_busy'); },
+      ideOrigin: `http://${hostAuthority(config.server.host, config.server.port)}`,
+      concurrent: config.limits.concurrentRuns,
+    });
     this.gitWorkbench = new GitWorkbench({ ws: this.ws, projects: this.projects, tasks: this.tasks, isRunning: project => this.taskBusy(project) });
     this.ai = new AiCatalog({ config, ws: this.ws, settings: this.settings, ...(options.home ? { home: options.home } : {}), ...(options.accounts ? { accounts: options.accounts } : {}) });
     this.store = new ChatStore(this.ws);
@@ -190,20 +204,20 @@ export class App {
     this.editorProposals = new EditorProposalService({
       providers: this.providers, editor: this.editor, ws: this.ws, settings: this.settings,
       assertExecutable: p => this.trust.assertExecutable(p),
-      isBusy: (p, t) => this.runner.isBusy(p, t || undefined) || this.verify.isRunning(p, t || undefined) || this.execution.isRunning(p, t || undefined) || this.terminal.isRunning(p, t || undefined) || this.review.isBusy(p, t || undefined) || this.workflows.isBusy(p, t || undefined) || this.testExplorer.isRunning(p, t || undefined),
+      isBusy: (p, t) => this.runner.isBusy(p, t || undefined) || this.verify.isRunning(p, t || undefined) || this.execution.isRunning(p, t || undefined) || this.terminal.isRunning(p, t || undefined) || this.debugger.isRunning(p, t || undefined) || this.embeddedPreview.isRunning(p, t || undefined) || this.review.isBusy(p, t || undefined) || this.workflows.isBusy(p, t || undefined) || this.testExplorer.isRunning(p, t || undefined),
       concurrentRuns: config.limits.concurrentRuns, runSeconds: config.limits.runSeconds,
       beforeRun: (project, task, ai, account) => this.usageHistory.assertProceed({ project, task, ai, account }, this.usage.snapshot()),
       onCompleted: input => this.usageHistory.record({ ...input, ...(input.usage?.claudeUsd !== undefined ? { claudeUsd: input.usage.claudeUsd } : {}), ...(input.usage?.codexCredits !== undefined ? { codexCredits: input.usage.codexCredits } : {}) }),
     });
     this.testExplorer = new TestExplorerService({ ws: this.ws, projects: this.projects, tasks: this.tasks, verify: this.verify,
       beforeRun: project => this.trust.assertExecutable(project),
-      isRunning: (p, t) => this.runner.isRunning(p, t) || this.execution.isRunning(p, t) || this.terminal.isRunning(p, t) || this.review.isBusy(p, t) || this.workflows.isBusy(p, t) || this.editorProposals.isBusy(p, t),
+      isRunning: (p, t) => this.runner.isRunning(p, t) || this.execution.isRunning(p, t) || this.terminal.isRunning(p, t) || this.debugger.isRunning(p, t) || this.embeddedPreview.isRunning(p, t) || this.review.isBusy(p, t) || this.workflows.isBusy(p, t) || this.editorProposals.isBusy(p, t),
     });
     this.review = new ReviewService({ ws: this.ws, providers: this.providers, store: this.store, worktree: this.worktree, tasks: this.tasks,
       settings: this.settings, limits: config.limits, onChanged: (p, t) => this.changed(p, t),
       beforeRun: async (project, task, ai, account) => { await this.trust.assertExecutable(project); await this.usageHistory.assertProceed({ project, task, ai, account }, this.usage.snapshot()); },
       onCompleted: input => this.usageHistory.record({ ...input, ...(input.usage?.claudeUsd !== undefined ? { claudeUsd: input.usage.claudeUsd } : {}), ...(input.usage?.codexCredits !== undefined ? { codexCredits: input.usage.codexCredits } : {}) }),
-      isRunning: (p, t) => this.runner.isRunning(p, t) || this.execution.isRunning(p, t) || this.terminal.isRunning(p, t) || this.verify.isRunning(p, t) || this.testExplorer.isRunning(p, t) || this.editorProposals.isBusy(p, t),
+      isRunning: (p, t) => this.runner.isRunning(p, t) || this.execution.isRunning(p, t) || this.terminal.isRunning(p, t) || this.debugger.isRunning(p, t) || this.embeddedPreview.isRunning(p, t) || this.verify.isRunning(p, t) || this.testExplorer.isRunning(p, t) || this.editorProposals.isBusy(p, t),
       publish: (p, t, event) => this.sse.publish(taskKey(p, t), event) });
     this.runner = new ChatRunner({
       ws: this.ws,
@@ -217,7 +231,7 @@ export class App {
       verify: (project, task) => this.verify.run(project, task),
       beforeSend: async (p, t, workflow) => {
         await this.trust.assertExecutable(p);
-        if (this.mutations.busy || this.execution.isRunning(p, t) || this.terminal.isRunning(p, t) || this.review.isBusy(p, t) || this.verify.isRunning(p, t) || this.testExplorer.isRunning(p, t) || this.editorProposals.isBusy(p, t)) throw new AppError('conflict', 'workflow_busy');
+        if (this.mutations.busy || this.execution.isRunning(p, t) || this.terminal.isRunning(p, t) || this.debugger.isRunning(p, t) || this.embeddedPreview.isRunning(p, t) || this.review.isBusy(p, t) || this.verify.isRunning(p, t) || this.testExplorer.isRunning(p, t) || this.editorProposals.isBusy(p, t)) throw new AppError('conflict', 'workflow_busy');
         await this.workflows.assertCanSend(p, t, workflow);
       },
       beforeLaunch: (project, task, ai, account) => this.usageHistory.assertProceed({ project, task, ai, account }, this.usage.snapshot()),
@@ -238,8 +252,23 @@ export class App {
       review: (p, t, input) => this.review.run(p, t, input), stopReview: (p, t) => this.review.stop(p, t),
       changed: (p, t) => this.changed(p, t), promptChars: config.limits.promptChars,
       beforeStart: project => this.trust.assertExecutable(project),
-      isTaskBusy: (p, t) => this.runner.isRunning(p, t) || this.execution.isRunning(p, t) || this.terminal.isRunning(p, t) || this.verify.isRunning(p, t) || this.review.isBusy(p, t) || this.testExplorer.isRunning(p, t) || this.editorProposals.isBusy(p, t),
+      isTaskBusy: (p, t) => this.runner.isRunning(p, t) || this.execution.isRunning(p, t) || this.terminal.isRunning(p, t) || this.debugger.isRunning(p, t) || this.embeddedPreview.isRunning(p, t) || this.verify.isRunning(p, t) || this.review.isBusy(p, t) || this.testExplorer.isRunning(p, t) || this.editorProposals.isBusy(p, t),
       prepareBranch: async (p, t) => { await this.trust.assertExecutable(p); await this.worktree.prepare(p, t); },
+      integration: new WorkflowIntegrationService({ tasks: this.tasks, worktrees: this.worktree, busy: (p, t) => this.runner.isBusy(p, t) || this.execution.isRunning(p, t) || this.terminal.isRunning(p, t) || this.debugger.isRunning(p, t) || this.embeddedPreview.isRunning(p, t) || this.verify.isRunning(p, t) || this.review.isBusy(p, t) || this.testExplorer.isRunning(p, t) || this.editorProposals.isBusy(p, t) }),
+      prepareFrom: async (p, t, sha) => { await this.trust.assertExecutable(p); return this.worktree.prepareFrom(p, t, sha); },
+      verify: async (p, t) => {
+        const result = await this.verify.run(p, t);
+        const history = await this.verify.history(p, t);
+        const id = history.at(-1)?.id;
+        return { ok: result.ok, output: result.output, ...(id ? { id } : {}) };
+      },
+      stopVerify: (p, t) => { if (this.verify.isRunning(p, t)) this.verify.cancel(p, t); },
+      currentVerification: async (p, t) => (await this.verify.status(p, t))?.ok === true,
+      currentReview: async (p, t, snapshot) => {
+        const history = await this.review.history(p, t); const latest = history.snapshots.at(-1);
+        return !history.stale && latest?.id === snapshot && latest.ok && latest.approved && latest.structured
+          && !latest.findings.some(f => f.state === 'open' && (f.severity === 'major' || f.severity === 'critical'));
+      },
       maxParallel: config.limits.concurrentRuns });
     this.care = new CareService({ config, ws: this.ws, version: this.version, catalog: this.ai, settings: this.settings,
       ...(options.home ? { privateDirectory: path.join(options.home, '.yumeewade', 'care') } : {}),
@@ -276,10 +305,11 @@ export class App {
     finally { if (this.mcpOperations.get(key) === operation) this.mcpOperations.delete(key); }
   }
 
-  isBusy(): boolean { return this.runner.isBusy() || this.verify.isBusy() || this.execution.isBusy() || this.terminal.isBusy() || this.review.isBusy() || this.workflows.isBusy() || this.testExplorer.isBusy() || this.editorProposals.isBusy(); }
+  isBusy(): boolean { return this.runner.isBusy() || this.verify.isBusy() || this.execution.isBusy() || this.terminal.isBusy() || this.debugger.isBusy() || this.embeddedPreview.isBusy() || this.review.isBusy() || this.workflows.isBusy() || this.testExplorer.isBusy() || this.editorProposals.isBusy(); }
   taskBusy(project: string, task?: string): boolean {
     return this.runner.isBusy(project, task)
       || this.verify.isRunning(project, task) || this.execution.isRunning(project, task) || this.terminal.isRunning(project, task)
+      || this.debugger.isRunning(project, task) || this.embeddedPreview.isRunning(project, task)
       || this.review.isBusy(project, task) || this.workflows.isBusy(project, task) || this.testExplorer.isRunning(project, task) || this.editorProposals.isBusy(project, task);
   }
 
@@ -292,6 +322,7 @@ export class App {
 
   async init(): Promise<void> {
     await this.ws.init();
+    await this.embeddedPreview.init();
     if (this.accounts) {
       const settings = await this.settings.get();
       for (const ai of ['claude', 'codex', 'grok', 'gemini']) {
@@ -377,7 +408,7 @@ export class App {
 
   async shutdown(): Promise<void> {
     this.debugger.close();
-    try { await Promise.all([this.workflows.close(), this.review.close(), this.editorProposals.close(), this.runner.stopAll(), this.verify.stopAll(), this.execution.stopAll(), this.terminal.stopAll(), this.care.close(), this.updateDownloads.close()]); }
+    try { await Promise.all([this.workflows.close(), this.review.close(), this.editorProposals.close(), this.runner.stopAll(), this.verify.stopAll(), this.execution.stopAll(), this.terminal.stopAll(), this.debugger.stopAll(), this.embeddedPreview.dispose(), this.care.close(), this.updateDownloads.close()]); }
     finally { this.close(); }
   }
 
@@ -388,6 +419,7 @@ export class App {
     this.execution.close();
     this.terminal.close();
     this.debugger.close();
+    void this.embeddedPreview.dispose().catch(error => log.error('網頁預覽停止失敗', error));
     void this.updateDownloads.close().catch(error => log.error('更新下載清理失敗', error));
     void this.care.close().catch(error => log.error('備份排程停止失敗', error));
     void this.review.close().catch(error => log.error('審查停止失敗', error));

@@ -2,6 +2,7 @@
 // 流程對齊參考專案 project-hub：專案（含階段）→ 作業（含子作業／分支）→ 同一作業內的對話；狀態值寫入檔案。
 import type { ReviewSnapshot } from './review-types.ts';
 import type { BuiltTaskContext } from './context-budget.ts';
+import type { VerificationInputModel } from './verification.ts';
 export type * from './project-trust.ts';
 export type * from './editor-workbench.ts';
 export type * from './review-types.ts';
@@ -18,6 +19,10 @@ export type * from './ai-capabilities.ts';
 export type * from './editor-proposals.ts';
 export type * from './test-explorer.ts';
 export type * from './github.ts';
+export type { VerificationInputModel } from './verification.ts';
+export type * from './embedded-preview.ts';
+export type * from './dap.ts';
+export type * from './workflow-timeline.ts';
 
 // ---- 列舉值（寫進台帳檔案的原值；UI 依值翻譯顯示） ----
 
@@ -93,6 +98,7 @@ export interface Project {
   verify: string;
   checks: VerificationCheck[];
   requireVerification: boolean;
+  verificationInputs?: VerificationInputModel;
   /** 驗證失敗時最多自動請 AI 修正幾次（0＝關閉）；需要先設定驗證指令。 */
   autoFix: number;
 }
@@ -111,9 +117,10 @@ export interface NewProjectInput {
   verify?: string;
   checks?: VerificationCheck[];
   requireVerification?: boolean;
+  verificationInputs?: VerificationInputModel;
 }
 
-export type ProjectPatch = Partial<Pick<Project, 'name' | 'status' | 'description' | 'parent' | 'body' | 'related' | 'verify' | 'autoFix' | 'checks' | 'requireVerification'>> & { phases?: Phase[] };
+export type ProjectPatch = Partial<Pick<Project, 'name' | 'status' | 'description' | 'parent' | 'body' | 'related' | 'verify' | 'autoFix' | 'checks' | 'requireVerification' | 'verificationInputs'>> & { phases?: Phase[] };
 
 // ---- 作業 ----
 
@@ -695,7 +702,7 @@ export interface ApiError {
 export interface VerificationCheck { name: string; command: string }
 export interface VerificationStepResult extends Omit<VerifyResult, 'steps' | 'drifted'> { name: string; command: string }
 export interface GitDiffContents { before: string; after: string; truncated: boolean; binary: boolean }
-export interface EditorDocument extends FileView { revision: string; language: string; languageAvailable: boolean; readonly: boolean }
+export interface EditorDocument extends FileView { revision: string; language: string; languageAvailable: boolean; readonly: boolean; encoding?: 'UTF8' | 'UTF8-BOM' | 'UTF16LE' | 'UTF16BE' }
 export interface EditorLocation { path: string; line: number; character: number }
 export interface EditorDiagnostic { line: number; character: number; endLine?: number; endCharacter?: number; message: string; severity: number }
 export interface EditorLanguageResult { locations: EditorLocation[]; diagnostics: EditorDiagnostic[] }
