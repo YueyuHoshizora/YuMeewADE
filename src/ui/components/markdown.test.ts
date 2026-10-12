@@ -49,6 +49,8 @@ test('incremental blank-line blocks produce exactly the full markdown children',
     '| A | B |\n| --- | ---: |\n| one | two |\n\nnext',
     '```\nunclosed\n\nfence',
     'a\r\n\r\nb\n\n',
+    // A fence line right after table rows ends the table even when it contains `|`.
+    '| A |\n| --- |\n``` | row\n\n```js\none\n\ntwo\n```\n',
   ]) {
     for (const size of [1, 3, 11, source.length]) {
       const buffer = new MarkdownStream();

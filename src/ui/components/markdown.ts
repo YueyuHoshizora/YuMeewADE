@@ -76,7 +76,8 @@ export function markdown(value: string): HTMLElement {
       const table = el('table'); const head = el('thead'); const body = el('tbody'); const tr = el('tr');
       const align = separators.map(s => s.startsWith(':') && s.endsWith(':') ? 'center' : s.endsWith(':') ? 'right' : 'left');
       for (const [at, cell] of headers.entries()) { const th = el('th'); th.style.textAlign = align[at]!; inline(th, cell); tr.append(th); } head.append(tr); i += 2;
-      while (i < lines.length && lines[i]?.includes('|')) { const r = el('tr'); const values = cells(lines[i++]!); for (const [at] of headers.entries()) { const td = el('td'); td.style.textAlign = align[at]!; inline(td, values[at] ?? ''); r.append(td); } body.append(r); }
+      // A fence line starts a code block even when it contains `|` (as in GFM); the streaming splitter counts it as a fence too.
+      while (i < lines.length && lines[i]?.includes('|') && !lines[i]!.startsWith('```')) { const r = el('tr'); const values = cells(lines[i++]!); for (const [at] of headers.entries()) { const td = el('td'); td.style.textAlign = align[at]!; inline(td, values[at] ?? ''); r.append(td); } body.append(r); }
       table.append(head, body); const wrap = el('div', 'table-scroll'); wrap.append(table); node.append(wrap); continue;
     }
     if (/^\s*(?:[-*+] |\d+\. )/.test(line)) {
