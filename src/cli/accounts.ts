@@ -68,6 +68,17 @@ function validate(ai: Ai, text: string): Record<string, unknown> {
   return value;
 }
 
+/** Stored access tokens are short-lived (hours); a minute of margin avoids sending one that expires in flight. */
+function accessExpired(ai: Ai, text: string, now = Date.now() + 60_000): boolean {
+  const value = JSON.parse(text) as Record<string, unknown>;
+  if (ai === 'claude') {
+    const expires = (value['claudeAiOauth'] as Record<string, unknown>)['expiresAt'];
+    return typeof expires === 'number' && expires <= now;
+  }
+  if (ai !== 'grok') return false;
+  return Object.values(value).some(auth => object(auth) && typeof auth['expires_at'] === 'string' && Date.parse(auth['expires_at']) <= now);
+}
+
 /** Original directories identify/import accounts; only encrypted records authorize execution. */
 export class CredentialAccounts {
   private readonly vault: CredentialVault;
@@ -393,7 +404,15 @@ export class CredentialAccounts {
         const profile = this.profile(ai, configDir);
         return this.track((async () => {
           if (this.closed) throw new Error(FAILURE);
-          const text = await this.credential(profile);
+          let text = await this.credential(profile);
+          if (config.authRefreshArgs.length && accessExpired(ai, text)) {
+            // Only the CLI may refresh OAuth; running it under a lease flushes the refreshed record back into the vault.
+            await this.withEnv(ai, configDir, async env => {
+              const result = await captureCommand({ command: config.command, args: config.authRefreshArgs, env, timeoutMs: 60_000, maxOutputBytes: MAX_BYTES });
+              if (!result.ok) throw new Error(FAILURE);
+            });
+            text = await this.credential(profile);
+          }
           if (ai === 'claude') return fetchClaudeQuota({}, 15_000, undefined, async () => claudeCredentialToken(text), await claudeClientVersion(config.command, this.env));
           return fetchGrokQuota(undefined, this.env, { readCredentials: async () => parseGrokCredentials(JSON.parse(text), this.sourceEnv) });
         })());

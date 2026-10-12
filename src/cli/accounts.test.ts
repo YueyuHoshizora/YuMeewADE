@@ -219,6 +219,41 @@ test('quota consumes vault data directly after original changes and missing cred
   } finally { await f.cleanup(); }
 });
 
+for (const ai of ['claude', 'grok'] as const) test(`${ai} quota renews expired credentials, persists renewal and fails closed on refresh errors`, async t => {
+  const f = await fixture();
+  try {
+    const credential = (token: string, expires: string) => ai === 'claude'
+      ? JSON.stringify({ claudeAiOauth: { accessToken: `${token}-token`, refreshToken: 'fixture-refresh', expiresAt: Date.parse(expires) } })
+      : grokRecord(token).replace('2099-01-01T00:00:00Z', expires);
+    const expired = credential('stale', '2020-01-01T00:00:00Z');
+    const renewed = credential('renewed', '2099-01-01T00:00:00Z');
+    const source = await f.source(ai, path.join(f.root, `.${ai}`), expired);
+    await f.accounts.import(ai);
+    const cli = path.join(f.root, 'renew.ts');
+    const authPath = ai === 'claude' ? "path.join(process.env.CLAUDE_CONFIG_DIR!, '.credentials.json')" : 'process.env.GROK_AUTH_PATH!';
+    await fs.writeFile(cli, `import fs from 'node:fs'; import path from 'node:path'; fs.writeFileSync(${authPath}, ${JSON.stringify(renewed)});`);
+    const tokens: string[] = [];
+    t.mock.method(globalThis, 'fetch', async (_url: unknown, init: RequestInit) => {
+      tokens.push((init.headers as Record<string, string>)['Authorization']!);
+      return Response.json(ai === 'claude' ? { five_hour: { utilization: 30, resets_at: '2099-01-01T00:00:00Z' } } : { config: { creditUsagePercent: 30 } });
+    });
+    const provider = f.accounts.provider(ai, { ...DEFAULT_CONFIG.cli[ai], command: process.execPath, authRefreshArgs: [cli] });
+    assert.equal((await provider.quota!())?.windows[0]?.usedPercent, 30);
+    // A persisted renewal remains usable even when the refresh command later fails.
+    await fs.writeFile(cli, 'process.exit(3);');
+    assert.equal((await provider.quota!())?.windows[0]?.usedPercent, 30);
+    assert.deepEqual(tokens, ['Bearer renewed-token', 'Bearer renewed-token']);
+    assert.equal(await fs.readFile(source, 'utf8'), expired);
+    await f.accounts.import(ai, undefined, true);
+    await assert.rejects(provider.quota!(), { message: 'Account credentials unavailable.' });
+    assert.deepEqual(tokens, ['Bearer renewed-token', 'Bearer renewed-token']);
+    await f.accounts.withEnv(ai, undefined, async env => {
+      const file = ai === 'claude' ? path.join(env['CLAUDE_CONFIG_DIR']!, '.credentials.json') : env['GROK_AUTH_PATH']!;
+      assert.equal(await fs.readFile(file, 'utf8'), expired);
+    });
+  } finally { await f.cleanup(); }
+});
+
 test('stop before async preparation does not spawn; close drains running native processes and plaintext cleanup', async () => {
   const f = await fixture();
   try {

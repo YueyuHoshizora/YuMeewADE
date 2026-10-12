@@ -31,6 +31,7 @@ cli:
     # Review is independent of fullAccess. Verified restricted tool allowlist only; not an OS sandbox.
     # Empty/modified unverified profiles disable review rather than weaken it.
     readonlyArgs: [--restricted, --safe-mode, --tools, 'Read,Glob,Grep', --allowedTools, 'Read,Glob,Grep', --permission-mode, dontAsk, --permission-prompts, none, --strict-mcp-config, --disable-slash-commands, --no-session-persistence, -p, --output-format, stream-json, --verbose, --include-partial-messages]
+    authRefreshArgs: [-p, /usage, --output-format, json]  # 存取權杖過期時讓 CLI 換發（唯讀，不啟動模型回合）
     loginArgs: [auth, login]                          # 新增帳號時的 OAuth 登入子命令
     mcpListArgs: [mcp, list]
     mcpAddArgs: [mcp, add, --scope, user]
@@ -63,6 +64,7 @@ cli:
     safeArgs: [--permission-mode, dontAsk]  # 需核准的操作直接拒絕，不等待互動
     readonlyArgs: []                     # Review refused: protection not verified
     quotaArgs: []                         # 額度直接向 Grok API 查詢，不啟動子命令
+    authRefreshArgs: [models]             # 存取權杖過期時讓 CLI 換發
     loginArgs: [login, --oauth]
     mcpListArgs: [mcp, list, --json]
     mcpAddArgs: [mcp, add, --scope, user]

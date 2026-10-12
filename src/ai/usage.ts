@@ -139,9 +139,9 @@ export class UsageBoard {
         try {
           const quota = await provider.quota!(configDir);
           if (quota) { this.record(ai, quota, id); return; }
-        } catch (e) {
+        } catch {
           // 憑證錯誤與遠端回應可能含敏感資料，不記錄例外內容。
-          log.warn('查詢帳戶額度失敗', { ai, account: id, TEMPDIAG: e instanceof Error ? e.message.slice(0, 80) : 'x' });
+          log.warn('查詢帳戶額度失敗', { ai, account: id });
         }
         if (this.closed || !this.targets?.has(key)) return;
         const previous = this.items.get(key);

@@ -24,6 +24,8 @@ export interface CliCommandConfig {
   readonlyArgs?: string[];
   /** 查詢帳號額度的子命令（Codex：app-server）；直接使用 API 的 adapter 不需要子命令。 */
   quotaArgs: string[];
+  /** 已存憑證的存取權杖過期時，在帳號租用環境中執行、讓 CLI 自行換發權杖的唯讀子命令；空陣列表示不換發。 */
+  authRefreshArgs: string[];
   /** 新增帳號時在獨立設定資料夾內執行的 OAuth 登入子命令（由 CLI 自行開啟瀏覽器）。 */
   loginArgs: string[];
   /** 唯讀命令清單查詢（Gemini：print /help）。 */
@@ -84,6 +86,7 @@ export const DEFAULT_CONFIG: Config = {
       approvalArgs: ['--input-format', 'stream-json', '--permission-prompt-tool', 'stdio'],
       readonlyArgs: ['--restricted', '--safe-mode', '--tools', 'Read,Glob,Grep', '--allowedTools', 'Read,Glob,Grep', '--permission-mode', 'dontAsk', '--permission-prompts', 'none', '--strict-mcp-config', '--disable-slash-commands', '--no-session-persistence', '-p', '--output-format', 'stream-json', '--verbose', '--include-partial-messages'],
       quotaArgs: [],
+      authRefreshArgs: ['-p', '/usage', '--output-format', 'json'],
       loginArgs: ['auth', 'login'],
       commandsArgs: [],
       slashArgs: [],
@@ -102,6 +105,7 @@ export const DEFAULT_CONFIG: Config = {
       safeArgs: ['-s', 'workspace-write', '-c', 'approval_policy="never"'],
       readonlyArgs: ['exec', '--json', '--skip-git-repo-check', '--sandbox', 'read-only', '-c', 'approval_policy="never"', '--ignore-user-config', '--ignore-rules', '--ephemeral'],
       quotaArgs: ['app-server'],
+      authRefreshArgs: [],
       loginArgs: ['login', '-c', 'cli_auth_credentials_store="file"'],
       commandsArgs: [],
       slashArgs: [],
@@ -118,6 +122,7 @@ export const DEFAULT_CONFIG: Config = {
       safeArgs: ['--permission-mode', 'dontAsk'],
       readonlyArgs: [],
       quotaArgs: [],
+      authRefreshArgs: ['models'],
       loginArgs: ['login', '--oauth'],
       commandsArgs: [],
       slashArgs: [],
@@ -135,6 +140,7 @@ export const DEFAULT_CONFIG: Config = {
       safeArgs: ['--mode', 'accept-edits'],
       readonlyArgs: [],
       quotaArgs: ['-p', '/usage', '--output-format', 'json'],
+      authRefreshArgs: [],
       loginArgs: [],
       commandsArgs: ['-p', '/help', '--output-format', 'json'],
       slashArgs: ['--output-format', 'json', '--print'],
@@ -261,6 +267,7 @@ function cliSection(map: YamlMap, name: 'claude' | 'codex' | 'grok' | 'gemini'):
     approvalArgs: strList(s, 'approvalArgs', d.approvalArgs ?? [], where),
     readonlyArgs: strList(s, 'readonlyArgs', d.readonlyArgs ?? [], where),
     quotaArgs: strList(s, 'quotaArgs', d.quotaArgs, where),
+    authRefreshArgs: strList(s, 'authRefreshArgs', d.authRefreshArgs, where),
     loginArgs: strList(s, 'loginArgs', d.loginArgs, where),
     commandsArgs: strList(s, 'commandsArgs', d.commandsArgs, where),
     slashArgs: strList(s, 'slashArgs', d.slashArgs, where),
