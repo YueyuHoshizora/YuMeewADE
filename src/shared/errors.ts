@@ -118,6 +118,7 @@ export const DETAIL_MESSAGES = {
   editor_readonly: '二進位或截斷檔案不可編輯',
   editor_move_into_self: '不能把資料夾移到它自己裡面',
   editor_language_unavailable: '本機語言服務未設定、失敗或逾時',
+  editor_problems_too_many: '專案有超過 1,000 個可檢查的檔案，無法一次列出全部問題；請改用目前檔案的「診斷」',
   editor_running: '作業執行中，請先停止再儲存',
   git_workbench_running: '請先停止此專案所有執行中的作業',
   git_workbench_path: '此檔案不允許操作或不在目前變更清單',

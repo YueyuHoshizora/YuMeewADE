@@ -741,7 +741,7 @@ export class EditorService {
     const { root } = await this.root(project, task); const output: EditorProblem[] = [];
     const commands = (await this.configured(project)).commands;
     const paths = (await this.files(root)).filter(relative => !!commands[LANGUAGE[path.extname(relative).slice(1).toLowerCase()] ?? 'plaintext']);
-    if (paths.length > 1000) throw new AppError('too_large');
+    if (paths.length > 1000) throw new AppError('too_large', 'editor_problems_too_many');
     const checked = new Set<string>(); let bytes = 0; const lookup = await this.listedLookup(project, task);
     for (const relative of paths) {
       const document = await this.read(project, task, relative);
