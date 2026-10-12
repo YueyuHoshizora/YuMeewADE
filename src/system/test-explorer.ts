@@ -53,7 +53,8 @@ export function parseNodeTap(output: string, root: string): { tree: TestCaseNode
       if (parentEntry?.node === null || count >= TEST_CASE_LIMIT || stack.length > 50 || declaration[2]!.length > 2000) { truncated = true; stack.push({ indent, node: null }); last = undefined; continue; }
       count++;
       const parent = parentEntry?.node;
-      const name = declaration[2]!;
+      // Node's TAP reporter writes `\` as `\\` and `#` as `\#`; the case's real name (what a selector must match) is unescaped.
+      const name = declaration[2]!.replace(/\\([\\#])/gu, '$1');
       const node: TestCaseNode = { id: String(count), name, fullName: parent ? `${parent.fullName} ${name}` : name, status: 'unknown', children: [] };
       (parent?.children ?? roots).push(node); stack.push({ indent, node }); last = node;
       continue;

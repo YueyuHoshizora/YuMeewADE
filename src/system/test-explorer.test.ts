@@ -17,6 +17,12 @@ test('Node TAP retains nested cases, skips, todo and failure source diagnostics'
   assert.equal(fail.fullName, 'suite fails'); assert.equal(fail.file, 'sample.test.ts'); assert.equal(fail.line, 12); assert.match(fail.error!, /expected 1/u);
 });
 
+test('Node TAP names are unescaped, so a rerun selector matches the real case name', () => {
+  // The reporter writes `#` as `\#` and `\` as `\\`.
+  const { tree } = parseNodeTap('TAP version 13\n# Subtest: hash \\# name\nok 1 - hash \\# name\n# Subtest: back\\\\slash\nok 2 - back\\\\slash\n', '/project');
+  assert.deepEqual(tree.map(node => [node.name, node.fullName, node.status]), [['hash # name', 'hash # name', 'passed'], ['back\\slash', 'back\\slash', 'passed']]);
+});
+
 test('Node TAP keeps the first 2000 cases of a huge suite and leaves deeper or later subtests out cleanly', () => {
   const many = Array.from({ length: 2001 }, (_, i) => `# Subtest: case ${i}\nok ${i + 1} - case ${i}\n`).join('');
   const big = parseNodeTap(`TAP version 13\n${many}`, '/project');
