@@ -187,6 +187,23 @@ test('a rename does not overwrite a file created at the destination while histor
   } finally { editor.dispose(); }
 }));
 
+test('search reads a merge-conflicted file once, not once per index stage', () => withTmpWorkspace(async ws => {
+  const projects = new ProjectLedger(ws); const tasks = new TaskLedger(ws); await projects.create({ name: 'P' });
+  const editor = new EditorService(new WorktreeService({ ws, projects, tasks, diffBytes: 100000 }), tasks, {});
+  const root = ws.projectDir('P'); const file = path.join(root, 'conflict.txt');
+  const git = (...args: string[]) => gitOk(root, ['-c', 'user.name=t', '-c', 'user.email=t@example.com', ...args]);
+  try {
+    await fs.writeFile(file, 'base\n'); await git('add', 'conflict.txt'); await git('commit', '-qm', 'base');
+    await git('checkout', '-qb', 'side'); await fs.writeFile(file, 'side\n'); await git('commit', '-qam', 'side');
+    await git('checkout', '-q', '-'); await fs.writeFile(file, 'main\n'); await git('commit', '-qam', 'main');
+    await git('merge', 'side').catch(() => undefined);
+    assert.match(await fs.readFile(file, 'utf8'), /<<<<<<</u);
+    const occurrences = (await fs.readFile(file, 'utf8')).split('side').length - 1;
+    assert.equal((await editor.search('P', '', 'side')).hits.length, occurrences);
+    assert.deepEqual((await editor.search('P', '', 'conflict', { mode: 'files' })).hits.map(hit => hit.path), ['conflict.txt']);
+  } finally { editor.dispose(); }
+}));
+
 test('a file without write permission opens read-only and is never replaced by a save', { skip: process.getuid?.() === 0 && 'root bypasses file permissions' }, () => withTmpWorkspace(async ws => {
   const projects = new ProjectLedger(ws); const tasks = new TaskLedger(ws); await projects.create({ name: 'P' });
   const editor = new EditorService(new WorktreeService({ ws, projects, tasks, diffBytes: 100000 }), tasks, {});

@@ -191,7 +191,8 @@ export class EditorService {
     return { scope: createHash('sha256').update(JSON.stringify([await fs.realpath(workspace), body, root, project, task])).digest('hex') };
   }
   private async files(root: string): Promise<string[]> {
-    return (await gitOk(root, ['ls-files', '--cached', '--others', '--exclude-standard', '-z'])).split('\0').filter(file => !!file && !isLocalSecret(file));
+    // A merge conflict lists one path per index stage (1, 2, 3); the working tree has it once.
+    return [...new Set((await gitOk(root, ['ls-files', '--cached', '--others', '--exclude-standard', '-z'])).split('\0').filter(file => !!file && !isLocalSecret(file)))];
   }
   private async target(project: string, task: string, relative: string, listed = true): Promise<{ root: string; file: string; readonly: boolean }> {
     validRelative(relative);
