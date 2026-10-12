@@ -618,27 +618,31 @@ export function taskView(
     announcer.textContent = t('chat.question');
     panel.append(el('h3', '', t('chat.question')));
     const answerParts: string[][] = asks.map(() => []);
+    // One question: a single-choice option answers at once. Several questions: options are picked per question and
+    // sent together, each answer labelled with its question — a click must not answer only the first one.
+    const several = asks.length > 1;
+    const group = `ask-${Date.now()}`;
     if (asks.length) {
       for (const [i, ask] of asks.entries()) {
-        const group = el('div', 'question-group');
-        group.append(el('p', '', ask.question));
-        if (ask.multi) {
+        const block = el('div', 'question-group');
+        block.append(el('p', '', ask.question));
+        if (ask.multi || several) {
           for (const option of ask.options) {
-            const check = input();
-            check.type = 'checkbox';
-            check.onchange = () => {
-              answerParts[i] = Array.from(group.querySelectorAll<HTMLInputElement>('input:checked'))
-                .map(c => c.value);
+            const choice = input();
+            choice.type = ask.multi ? 'checkbox' : 'radio';
+            choice.name = `${group}-${i}`;
+            choice.value = option;
+            choice.onchange = () => {
+              answerParts[i] = Array.from(block.querySelectorAll<HTMLInputElement>('input:checked')).map(c => c.value);
             };
-            check.value = option;
-            group.append(field(option, check));
+            block.append(field(option, choice));
           }
         } else {
           for (const option of ask.options) {
-            group.append(button(option, () => send(busy ? 'queue' : undefined, option, true), 'option-button'));
+            block.append(button(option, () => send(busy ? 'queue' : undefined, option, true), 'option-button'));
           }
         }
-        panel.append(group);
+        panel.append(block);
       }
     } else {
       panel.append(el('p', '', task.question));
@@ -650,7 +654,9 @@ export function taskView(
         button(
           t('chat.send'),
           async () => {
-            const answers = answerParts.flat();
+            const answers = several
+              ? asks.flatMap((ask, i) => answerParts[i]!.length ? [`${ask.question} → ${answerParts[i]!.join(', ')}`] : [])
+              : answerParts.flat();
             if (free.value.trim()) answers.push(free.value.trim());
             await send(busy ? 'queue' : undefined, answers.join('\n'), true);
           }
