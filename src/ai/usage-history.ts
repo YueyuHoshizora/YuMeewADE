@@ -107,12 +107,14 @@ export class UsageHistory {
   }
   async check(raw: UsageScope, live: UsageState): Promise<BudgetCheck> {
     const scope = usageScope(raw); const settings = await this.settings(); const rules = settings.rules.filter(rule => matches(scope, rule)); const sums = rules.map(() => 0); let reported = false;
+    // Money is summed in millionths so reported amounts that add up to exactly the threshold (0.1 + 0.7 vs 0.8) are not lost to binary rounding.
+    const scale = (unit: string) => unit === 'tokens' ? 1 : 1e6;
     for await (const entry of this.records()) {
       if (matches(entry, scope) && entry.usage) reported = true;
-      rules.forEach((rule, index) => { if (entry.at < rule.since || !matches(entry, rule)) return; sums[index]! += rule.unit === 'tokens' ? entry.usage ? entry.usage.input + entry.usage.output : 0 : entry[rule.unit] ?? 0; });
+      rules.forEach((rule, index) => { if (entry.at < rule.since || !matches(entry, rule)) return; sums[index]! += rule.unit === 'tokens' ? entry.usage ? entry.usage.input + entry.usage.output : 0 : Math.round((entry[rule.unit] ?? 0) * 1e6); });
     }
     const warnings: BudgetWarning[] = [];
-    rules.forEach((rule, index) => { if (sums[index]! >= rule.threshold) warnings.push({ kind: 'threshold', ruleId: rule.id, unit: rule.unit, reported: sums[index]!, threshold: rule.threshold }); });
+    rules.forEach((rule, index) => { if (sums[index]! >= Math.round(rule.threshold * scale(rule.unit))) warnings.push({ kind: 'threshold', ruleId: rule.id, unit: rule.unit, reported: sums[index]! / scale(rule.unit), threshold: rule.threshold }); });
     const quota = live.ais.find(entry => entry.ai === scope.ai && entry.account === scope.account);
     if (quota?.status === 'ready') {
       const windows = quota.windows.filter(window => scope.ai !== 'grok' || window.label !== 'on-demand');

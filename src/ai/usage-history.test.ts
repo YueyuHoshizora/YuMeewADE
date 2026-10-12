@@ -48,6 +48,15 @@ test('configured warnings require current scoped one-use acknowledgment and neve
   await history.record({ ...scope, requestId: 'two', usage: { input: 1, output: 1 } });
   await assert.rejects(history.assertProceed(scope, empty));
 });
+test('reported money that adds up to exactly the threshold warns despite binary rounding', async t => {
+  const root = await fs.mkdtemp(path.join(os.tmpdir(), 'usage-money-')); t.after(() => fs.rm(root, { recursive: true, force: true }));
+  const history = new UsageHistory(root);
+  await history.saveSettings({ rules: [{ id: 'usd', unit: 'claudeUsd', threshold: 0.8, since: '2026-01-01T00:00:00Z' }], quotaRemainingPercent: null, cloudExpiryHours: null });
+  await history.record({ ...scope, requestId: 'one', usage: null, claudeUsd: 0.1 });
+  await history.record({ ...scope, requestId: 'two', usage: null, claudeUsd: 0.7 });
+  assert.deepEqual((await history.check(scope, empty)).warnings, [{ kind: 'threshold', ruleId: 'usd', unit: 'claudeUsd', reported: 0.8, threshold: 0.8 }]);
+  await assert.rejects(history.assertProceed(scope, empty), { detail: 'usage_ack_required' });
+});
 test('project-level work without a task is budget-checked and recorded under the project', async t => {
   const root = await fs.mkdtemp(path.join(os.tmpdir(), 'usage-project-')); t.after(() => fs.rm(root, { recursive: true, force: true }));
   const history = new UsageHistory(root);
