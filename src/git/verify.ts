@@ -22,6 +22,8 @@ interface VerifyOptions {
   beforeRun?: (project: string) => Promise<void>;
 }
 
+/** `stdout` (with `stdoutTruncated`) is present only when a framework run asked for it; it never enters history. */
+export type FrameworkRunResult = VerifyResult & { stdout?: string; stdoutTruncated?: boolean };
 export class VerifyService {
   private readonly opts: VerifyOptions;
   private readonly runs = new Map<string, { stop?: (() => void) | undefined; done?: Promise<VerifyResult>; cancelled?: boolean }>();
@@ -125,20 +127,25 @@ export class VerifyService {
   }
 
 
-  /** Internal argv-only runner; HTTP callers select validated framework configurations. */
-  runFrameworkTests(project: string, task: string, command: string, args: string[]): Promise<VerifyResult> {
+  /**
+   * Internal argv-only runner; HTTP callers select validated framework configurations. Besides the displayed output tail,
+   * stdout is kept from the start up to `stdoutBytes` so a machine-readable report there (TAP, `go test -json`) survives
+   * a long run; `stdoutTruncated` says it was cut.
+   */
+  runFrameworkTests(project: string, task: string, command: string, args: string[], stdoutBytes = 0): Promise<FrameworkRunResult> {
     const key = JSON.stringify([project, task]);
     if (this.closed || this.runs.has(key) || this.opts.isRunning(project, task) || this.runs.size >= this.opts.config.limits.concurrentRuns) throw new AppError('conflict');
     if (!command || /[\0\r\n]/u.test(command) || args.length > 150 || args.some(arg => typeof arg !== 'string' || arg.length > 16000 || /[\0\r\n]/u.test(arg))) throw new AppError('bad_request');
     const entry: { stop?: (() => void) | undefined; done?: Promise<VerifyResult>; cancelled?: boolean } = {};
     this.runs.set(key, entry);
-    entry.done = (async () => {
+    const done = (async () => {
       await this.opts.beforeRun?.(project);
       const { cwd } = await this.context(project, task, false);
       if (this.closed || this.opts.isRunning(project, task)) throw new AppError('conflict');
-      return this.executeCommand(cwd, command, entry, this.opts.config.limits.verifySeconds * 1000, args);
+      return this.executeCommand(cwd, command, entry, this.opts.config.limits.verifySeconds * 1000, args, stdoutBytes);
     })().finally(() => this.runs.delete(key));
-    return entry.done;
+    entry.done = done;
+    return done;
   }
 
   cancel(project: string, task: string): void {
@@ -204,7 +211,7 @@ export class VerifyService {
     } finally { entry.stop = undefined; }
   }
 
-  private async executeCommand(cwd: string, command: string, entry: { stop?: (() => void) | undefined; cancelled?: boolean }, timeoutMs: number, args?: string[]): Promise<VerifyResult> {
+  private async executeCommand(cwd: string, command: string, entry: { stop?: (() => void) | undefined; cancelled?: boolean }, timeoutMs: number, args?: string[], stdoutBytes = 0): Promise<FrameworkRunResult> {
     if (entry.cancelled) return { ok: false, exitCode: null, timedOut: false, ms: 0, output: '', truncated: false };
     const { config } = this.opts;
     const started = Date.now();
@@ -213,12 +220,13 @@ export class VerifyService {
     let position = 0;
     let size = 0;
     let truncated = false;
+    const stdout: Buffer[] = []; let stdoutSize = 0; let stdoutTruncated = false;
     let timedOut = false;
     let stopped = false;
     let settled = false;
     let timer: NodeJS.Timeout | undefined;
     let bound: NodeJS.Timeout | undefined;
-    const { promise, resolve, reject } = Promise.withResolvers<VerifyResult>();
+    const { promise, resolve, reject } = Promise.withResolvers<FrameworkRunResult>();
     const finish = (exitCode: number | null) => {
       if (settled) return;
       settled = true;
@@ -227,7 +235,7 @@ export class VerifyService {
       // A byte-tail may begin inside a UTF-8 character; omit those partial bytes.
       let start = 0;
       while (start < bytes.length && (bytes[start]! & 0xc0) === 0x80) start++;
-      resolve({ ok: exitCode === 0 && !timedOut && !stopped, exitCode, timedOut, ms: Date.now() - started, output: bytes.subarray(start).toString('utf8'), truncated });
+      resolve({ ok: exitCode === 0 && !timedOut && !stopped, exitCode, timedOut, ms: Date.now() - started, output: bytes.subarray(start).toString('utf8'), truncated, ...(stdoutBytes ? { stdout: Buffer.concat(stdout, stdoutSize).toString('utf8'), stdoutTruncated } : {}) });
     };
     // cmd /s removes the outer quotes; preserve quoted executable paths inside.
     const child = spawnCli(args ? command : process.platform === 'win32' ? env['ComSpec'] || 'cmd.exe' : 'sh', args ?? (process.platform === 'win32' ? ['/d', '/s', '/c', `"${command}"`] : ['-c', command]), {
@@ -257,7 +265,14 @@ export class VerifyService {
     };
     entry.stop = stop;
     timer = setTimeout(() => { timedOut = true; stop(); }, timeoutMs);
-    child.stdout!.on('data', capture);
+    child.stdout!.on('data', (chunk: Buffer) => {
+      if (!settled && stdoutBytes) {
+        const room = stdoutBytes - stdoutSize;
+        if (chunk.length > room) stdoutTruncated = true;
+        if (room > 0) { const kept = chunk.subarray(0, room); stdout.push(kept); stdoutSize += kept.length; }
+      }
+      capture(chunk);
+    });
     child.stderr!.on('data', capture);
     child.on('error', error => {
       if (args && (error as NodeJS.ErrnoException).code === 'ENOENT') {

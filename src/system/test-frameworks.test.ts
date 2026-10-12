@@ -13,14 +13,14 @@ test('Jest and Vitest JSON preserve statuses and failure locations', () => {
     { title: 'later', fullName: 'suite later', status: 'todo' },
   ] }] });
   for (const framework of ['jest', 'vitest']) {
-    const tree = parseFrameworkReport(framework, report, '/repo');
+    const { tree } = parseFrameworkReport(framework, report, '/repo');
     assert.deepEqual(tree.map(node => node.status), ['passed', 'failed', 'skipped', 'todo']);
     assert.equal(tree[1]!.file, 'spec.test.ts'); assert.equal(tree[1]!.line, 14);
   }
 });
 
 test('pytest legacy JUnit gives exact parametrized node ids without parsing source', async () => {
-  const tree = parseFrameworkReport('pytest', '<testsuites><testsuite><testcase classname="tests.test_api.TestAPI" name="test_case[a&amp;b]" file="tests/test_api.py" line="8"/><testcase classname="tests.test_api" name="test_bad" file="tests/test_api.py" line="20"><failure message="bad">assert 1 == 2</failure></testcase><testcase classname="tests.test_api" name="test_skip" file="tests/test_api.py"><skipped/></testcase></testsuite></testsuites>', '/repo');
+  const { tree } = parseFrameworkReport('pytest', '<testsuites><testsuite><testcase classname="tests.test_api.TestAPI" name="test_case[a&amp;b]" file="tests/test_api.py" line="8"/><testcase classname="tests.test_api" name="test_bad" file="tests/test_api.py" line="20"><failure message="bad">assert 1 == 2</failure></testcase><testcase classname="tests.test_api" name="test_skip" file="tests/test_api.py"><skipped/></testcase></testsuite></testsuites>', '/repo');
   assert.deepEqual(tree.map(node => node.status), ['passed', 'failed', 'skipped']);
   assert.equal(tree[0]!.selector, './tests/test_api.py::TestAPI::test_case[a&b]');
   const command = await frameworkCommand('/repo', { name: 'py', framework: 'pytest', files: ['tests/test_api.py'], config: 'pytest.ini' }, '/tmp/report', tree[0]);
@@ -38,10 +38,23 @@ test('Go JSON events retain package-qualified subtests and skips', () => {
     { Action: 'fail', Package: 'example.local/mod', Test: 'TestGroup' },
     { Action: 'skip', Package: 'example.local/mod', Test: 'TestSkipped' },
   ].map(event => JSON.stringify(event)).join('\n');
-  const tree = parseFrameworkReport('go', report, '/repo');
+  const { tree } = parseFrameworkReport('go', report, '/repo');
   assert.equal(tree[0]!.children[0]!.selector, 'example.local/mod::TestGroup/fails');
   assert.equal(tree[0]!.children[0]!.line, 12);
   assert.equal(tree[1]!.status, 'skipped');
+});
+
+test('framework reports beyond 2000 cases keep the first ones and say so', () => {
+  const vitest = JSON.stringify({ testResults: [{ name: '/repo/a.test.ts', assertionResults: Array.from({ length: 2001 }, (_, i) => ({ title: `t${i}`, fullName: `t${i}`, ancestorTitles: [], status: 'passed' })) }] });
+  const v = parseFrameworkReport('vitest', vitest, '/repo');
+  assert.equal(v.tree.length, 2000); assert.equal(v.truncated, true);
+  const pytest = `<testsuites><testsuite>${Array.from({ length: 2001 }, (_, i) => `<testcase classname="t" name="c${i}"/>`).join('')}</testsuite></testsuites>`;
+  const p = parseFrameworkReport('pytest', pytest, '/repo');
+  assert.equal(p.tree.length, 2000); assert.equal(p.truncated, true);
+  const go = Array.from({ length: 2001 }, (_, i) => [{ Action: 'run', Package: 'm', Test: `Test${i}` }, { Action: 'pass', Package: 'm', Test: `Test${i}` }]).flat().map(event => JSON.stringify(event)).join('\n');
+  const g = parseFrameworkReport('go', go, '/repo');
+  assert.equal(g.tree.length, 2000); assert.equal(g.truncated, true); assert.ok(g.tree.every(node => node.status === 'passed'));
+  assert.equal(parseFrameworkReport('go', go.split('\n').slice(0, 20).join('\n'), '/repo').truncated, false);
 });
 
 test('argv treats Node test names literally and unavailable JS tools fail clearly', async () => {
@@ -58,7 +71,7 @@ test('nested JS report cases have unique ids and retain runner-specific selector
     { title: 'third', fullName: 'outer third', ancestorTitles: ['outer'], status: 'pending' },
   ] }] });
   for (const framework of ['jest', 'vitest']) {
-    const tree = parseFrameworkReport(framework, report, '/repo');
+    const { tree } = parseFrameworkReport(framework, report, '/repo');
     const cases = [...tree[0]!.children[0]!.children, tree[0]!.children[1]!];
     assert.equal(new Set(cases.map(node => node.id)).size, 3);
     assert.equal(tree[0]!.fullName, 'outer');
@@ -77,7 +90,7 @@ test('Vitest 5 uses exact runner names while older versions retain JSON-name mat
   const report = JSON.stringify({ testResults: [{ name: path.join(root, 'spec.test.ts'), assertionResults: [
     { title: 'case.*', fullName: 'suite+ case.*', ancestorTitles: ['suite+'], status: 'passed' },
   ] }] });
-  const tree = parseFrameworkReport('vitest', report, root);
+  const { tree } = parseFrameworkReport('vitest', report, root);
   const config = { name: 'vitest', framework: 'vitest' as const, files: ['spec.test.ts'] };
   await fs.writeFile(path.join(installed, 'package.json'), '{"version":"5.0.1"}');
   let command = await frameworkCommand(root, config, '/tmp/report', tree[0]!.children[0]);

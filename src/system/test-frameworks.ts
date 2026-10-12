@@ -52,9 +52,11 @@ function xmlText(value: string): string {
   return value.replace(/&(#x[\da-f]+|#\d+|amp|lt|gt|quot|apos);/giu, (_match, entity: string) => entity.startsWith('#') ? String.fromCodePoint(Number.parseInt(entity.slice(entity.startsWith('#x') ? 2 : 1), entity.startsWith('#x') ? 16 : 10)) : entities[entity] ?? '');
 }
 
-export function parseFrameworkReport(framework: string, report: string, root: string, goModule?: string): TestCaseNode[] {
+/** At most TEST_CASE_LIMIT cases are kept; `truncated` says the report listed more (or nested deeper than 50 levels). */
+export const TEST_CASE_LIMIT = 2000;
+export function parseFrameworkReport(framework: string, report: string, root: string, goModule?: string): { tree: TestCaseNode[]; truncated: boolean } {
   const nodes: TestCaseNode[] = [];
-  let count = 0;
+  let count = 0; let truncated = false;
   const locate = (node: TestCaseNode, file: unknown, line?: unknown) => {
     if (typeof file !== 'string') return;
     const absolute = path.resolve(root, file);
@@ -63,9 +65,10 @@ export function parseFrameworkReport(framework: string, report: string, root: st
   if (framework === 'vitest' || framework === 'jest') {
     const data = JSON.parse(report) as { testResults?: { name?: string; assertionResults?: { title?: string; fullName?: string; ancestorTitles?: string[]; status?: string; failureMessages?: string[]; location?: { line?: number } }[] }[] };
     if (!Array.isArray(data.testResults)) throw new AppError('bad_request');
-    for (const suite of data.testResults) for (const result of suite.assertionResults ?? []) {
+    cases: for (const suite of data.testResults) for (const result of suite.assertionResults ?? []) {
       if (typeof result.title !== 'string' || typeof result.fullName !== 'string') throw new AppError('bad_request');
-      if (++count > 2000 || (result.ancestorTitles?.length ?? 0) > 50) throw new AppError('too_large');
+      if ((result.ancestorTitles?.length ?? 0) > 50) { truncated = true; continue; }
+      if (++count > TEST_CASE_LIMIT) { truncated = true; break cases; }
       const status = result.status === 'passed' ? 'passed' : result.status === 'failed' ? 'failed' : result.status === 'todo' ? 'todo' : result.status === 'pending' || result.status === 'skipped' || result.status === 'disabled' ? 'skipped' : 'unknown';
       const node: TestCaseNode = { id: String(count), name: result.title, fullName: result.fullName, status, children: [], ...(result.failureMessages ? { error: result.failureMessages.join('\n').slice(0, 16000) } : {}) };
       locate(node, suite.name, result.location?.line);
@@ -88,7 +91,7 @@ export function parseFrameworkReport(framework: string, report: string, root: st
   } else if (framework === 'pytest') {
     if (/<!DOCTYPE|<!ENTITY/iu.test(report) || !/<testsuites?\b/u.test(report)) throw new AppError('bad_request');
     for (const match of report.matchAll(/<testcase\b([^>]*?)(?:\/>|>([\s\S]*?)<\/testcase>)/gu)) {
-      if (++count > 2000) throw new AppError('too_large');
+      if (++count > TEST_CASE_LIMIT) { truncated = true; break; }
       const attributes: Record<string, string> = {};
       for (const attr of match[1]!.matchAll(/([\w-]+)="([^"]*)"/gu)) attributes[attr[1]!] = xmlText(attr[2]!);
       const body = match[2] ?? '';
@@ -114,7 +117,8 @@ export function parseFrameworkReport(framework: string, report: string, root: st
       const key = `${event.Package}::${event.Test}`;
       let node = tests.get(key);
       if (!node) {
-        if (++count > 2000) throw new AppError('too_large');
+        // Later events of an already listed test still update it; unlisted tests are dropped.
+        if (++count > TEST_CASE_LIMIT) { truncated = true; continue; }
         node = { id: String(tests.size + 1), name: event.Test.split('/').at(-1)!, fullName: key, selector: key, status: 'unknown', children: [] }; tests.set(key, node);
       }
       if (event.Action === 'pass') node.status = 'passed'; else if (event.Action === 'fail') node.status = 'failed'; else if (event.Action === 'skip') node.status = 'skipped';
@@ -132,6 +136,5 @@ export function parseFrameworkReport(framework: string, report: string, root: st
       (parent?.children ?? nodes).push(node); if (node.status !== 'failed') delete node.error;
     }
   } else throw new AppError('bad_request');
-  if (nodes.length > 2000) throw new AppError('too_large');
-  return nodes;
+  return { tree: nodes, truncated };
 }

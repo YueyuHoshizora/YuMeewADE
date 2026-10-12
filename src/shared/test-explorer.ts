@@ -14,5 +14,7 @@ export interface TestCaseNode {
 export interface TestExplorerRun {
   id: string; at: string; runner: string; selection?: string; before: string; after: string | null;
   result: VerifyResult; tree: TestCaseNode[];
+  /** The runner reported more cases than are listed (over 2,000, or nested deeper than 50 levels). */
+  treeTruncated?: boolean;
 }
 export interface TestExplorerState { revision: string; configurations: TestRunnerConfiguration[]; history: TestExplorerRun[]; }

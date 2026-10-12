@@ -52,7 +52,9 @@ export function testExplorerButton(project: string, task: string): HTMLElement {
           }
           return group;
         };
-        list.append(el('p', 'muted', latest.at), tree(latest.tree), el('pre', '', latest.result.output));
+        list.append(el('p', 'muted', latest.at), tree(latest.tree));
+        if (latest.treeTruncated) list.append(el('p', 'muted', t('tests.treeTruncated', { n: 2000 })));
+        list.append(el('pre', '', latest.result.output));
         if (latest.result.truncated) list.append(el('p', 'muted', t('tests.truncated')));
       }
       if (!state.history.length) return;

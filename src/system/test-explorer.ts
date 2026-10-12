@@ -11,24 +11,33 @@ import type { TaskLedger } from '../ledger/tasks.ts';
 import { AppError } from '../shared/errors.ts';
 import { atomicWrite, isInside, withFileLocks } from '../shared/fsx.ts';
 import type { TestCaseNode, TestExplorerRun, TestExplorerState, TestRunnerConfiguration } from '../shared/test-explorer.ts';
-import { frameworkCommand, parseFrameworkReport } from './test-frameworks.ts';
+import { frameworkCommand, parseFrameworkReport, TEST_CASE_LIMIT } from './test-frameworks.ts';
 import { parseVerificationInputModel } from '../shared/verification.ts';
 import type { VerifyResult } from '../shared/types.ts';
 
-/** Node's indented TAP: subtest declarations precede children and the parent result. */
-export function parseNodeTap(output: string, root: string): TestCaseNode[] {
+/** Upper bound for a runner report, read from stdout or a report file. */
+const REPORT_BYTES = 8 * 1024 * 1024;
+
+/**
+ * Node's indented TAP: subtest declarations precede children and the parent result. Beyond TEST_CASE_LIMIT cases, 50 levels
+ * or a 2,000-character name a subtest (and everything inside it) is left out and `truncated` is set.
+ */
+export function parseNodeTap(output: string, root: string): { tree: TestCaseNode[]; truncated: boolean } {
   const roots: TestCaseNode[] = [];
-  const stack: { indent: number; node: TestCaseNode }[] = [];
+  // A null node stands for a left-out subtest, so its children and result lines stay out too.
+  const stack: { indent: number; node: TestCaseNode | null }[] = [];
   let last: TestCaseNode | undefined;
-  let count = 0;
+  let count = 0; let truncated = false;
   for (const row of output.split(/\r?\n/u)) {
     const declaration = /^(\s*)# Subtest: (.*)$/u.exec(row);
     if (declaration) {
       const indent = declaration[1]!.length;
       while (stack.length && stack.at(-1)!.indent >= indent) stack.pop();
-      if (++count > 2000 || stack.length > 50 || declaration[2]!.length > 2000) return [];
-      const parent = stack.at(-1)?.node;
-      const name = declaration[2]!.slice(0, 2000);
+      const parentEntry = stack.at(-1);
+      if (parentEntry?.node === null || count >= TEST_CASE_LIMIT || stack.length > 50 || declaration[2]!.length > 2000) { truncated = true; stack.push({ indent, node: null }); last = undefined; continue; }
+      count++;
+      const parent = parentEntry?.node;
+      const name = declaration[2]!;
       const node: TestCaseNode = { id: String(count), name, fullName: parent ? `${parent.fullName} ${name}` : name, status: 'unknown', children: [] };
       (parent?.children ?? roots).push(node); stack.push({ indent, node }); last = node;
       continue;
@@ -39,8 +48,8 @@ export function parseNodeTap(output: string, root: string): TestCaseNode[] {
       while (stack.length && stack.at(-1)!.indent > indent) stack.pop();
       const candidate = stack.at(-1);
       if (candidate?.indent === indent) {
-        candidate.node.status = result[4]?.toUpperCase() === 'SKIP' ? 'skipped' : result[4]?.toUpperCase() === 'TODO' ? 'todo' : result[2] === 'ok' ? 'passed' : 'failed';
-        last = candidate.node; stack.pop();
+        if (candidate.node) candidate.node.status = result[4]?.toUpperCase() === 'SKIP' ? 'skipped' : result[4]?.toUpperCase() === 'TODO' ? 'todo' : result[2] === 'ok' ? 'passed' : 'failed';
+        last = candidate.node ?? undefined; stack.pop();
       }
       continue;
     }
@@ -54,7 +63,7 @@ export function parseNodeTap(output: string, root: string): TestCaseNode[] {
       if (isInside(root, absolute)) { last.file = path.relative(root, absolute).split(path.sep).join('/'); last.line = Number(location[2]); }
     }
   }
-  return roots;
+  return { tree: roots, truncated };
 }
 
 interface Options { ws: Workspace; projects: ProjectLedger; tasks: TaskLedger; verify: VerifyService; beforeRun: (project: string) => Promise<void>; isRunning: (project: string, task: string) => boolean; }
@@ -158,35 +167,46 @@ export class TestExplorerService {
       const before = await verificationFingerprint(root, configuration, projectModel, ledgerData);
       const temporary = await fs.mkdtemp(path.join(os.tmpdir(), 'yumeewade-tests-'));
       let result: VerifyResult;
-      let tree: TestCaseNode[] = [];
+      let parsed: { tree: TestCaseNode[]; truncated: boolean } = { tree: [], truncated: false };
+      let reportCut = false;
       try {
         const report = path.join(temporary, 'report');
         const argv = await frameworkCommand(root, config, report, selected);
-        result = await this.opts.verify.runFrameworkTests(project, task, argv.command, argv.args);
+        // Node TAP and `go test -json` are read from stdout; the displayed output keeps only its tail.
+        const streamed = !config.framework || config.framework === 'node' || config.framework === 'go';
+        const { stdout = '', stdoutTruncated = false, ...ran } = await this.opts.verify.runFrameworkTests(project, task, argv.command, argv.args, streamed ? REPORT_BYTES : 0);
+        result = ran; reportCut = stdoutTruncated;
         if (config.framework === 'pytest' && /No module named pytest/u.test(result.output)) throw new AppError('unavailable', 'cli_unavailable', { field: 'pytest' });
-        if (!result.truncated && !result.timedOut) {
-          if (!config.framework || config.framework === 'node') tree = parseNodeTap(result.output, root);
+        if (!result.timedOut) {
+          // A cut report ends mid-line; only whole lines are parsed.
+          const complete = stdoutTruncated ? stdout.slice(0, stdout.lastIndexOf('\n') + 1) : stdout;
+          if (!config.framework || config.framework === 'node') parsed = parseNodeTap(complete, root);
           else if (config.framework === 'go') {
             const module = /^\s*module\s+(\S+)/mu.exec(await fs.readFile(path.join(root, 'go.mod'), 'utf8'))?.[1];
-            tree = parseFrameworkReport('go', result.output, root, module);
+            parsed = parseFrameworkReport('go', complete, root, module);
           }
           else {
             const stat = await fs.lstat(report).catch(() => null);
-            if (stat?.isFile() && !stat.isSymbolicLink() && stat.size <= 4 * 1024 * 1024) tree = parseFrameworkReport(config.framework, await fs.readFile(report, 'utf8'), root);
+            if (stat?.isFile() && !stat.isSymbolicLink()) {
+              if (stat.size <= REPORT_BYTES) parsed = parseFrameworkReport(config.framework, await fs.readFile(report, 'utf8'), root);
+              else { parsed.truncated = true; reportCut = true; }
+            }
           }
+          if (stdoutTruncated) parsed.truncated = true;
         }
       } finally { await fs.rm(temporary, { recursive: true, force: true }); }
       const cases: TestCaseNode[] = [];
       const collectCases = (nodes: TestCaseNode[]): void => { for (const node of nodes) { cases.push(node); collectCases(node.children); } };
-      collectCases(tree);
-      if (!cases.length || cases.some(node => node.status === 'unknown') || (selection && !cases.some(node => node.fullName === selection && node.status !== 'skipped'))) result.ok = false;
+      const { tree } = parsed; collectCases(tree);
+      // A report cut at REPORT_BYTES is not a success, whatever the exit code (the listed cases are still shown).
+      if (!cases.length || reportCut || cases.some(node => node.status === 'unknown') || (selection && !cases.some(node => node.fullName === selection && node.status !== 'skipped'))) result.ok = false;
       const current = await this.state(project, task);
       const currentConfig = current.configurations.find(c => c.name === runner);
       const currentModel = parseVerificationInputModel((await this.opts.projects.get(project)).verificationInputs);
       const after = await verificationFingerprint(await this.cwd(project, task), JSON.stringify([currentConfig, currentModel]), currentModel, ledgerData).catch(() => null);
       if (result.output.length > 65536) { result.output = result.output.slice(-65536); result.truncated = true; }
       result.drifted = before !== after; if (result.drifted) result.ok = false;
-      const run: TestExplorerRun = { id: randomUUID(), at: new Date().toISOString(), runner, ...(selection ? { selection } : {}), before, after, result, tree };
+      const run: TestExplorerRun = { id: randomUUID(), at: new Date().toISOString(), runner, ...(selection ? { selection } : {}), before, after, result, tree, ...(parsed.truncated ? { treeTruncated: true } : {}) };
       const file = await this.file(project, task, true);
       await withFileLocks([this.opts.ws.projectFile(project), file], async () => {
         await this.opts.tasks.get(project, task);
