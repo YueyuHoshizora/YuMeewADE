@@ -4,7 +4,7 @@ import type {
   QueueItem, SendMode, SlashCommand, Task, TaskSections, TaskView, VerifyResult, VerifyStatus,
 } from '../../shared/types.ts';
 import { TASK_STATES } from '../../shared/types.ts';
-import { api, query, request } from '../api.ts';
+import { ApiFailure, api, query, request } from '../api.ts';
 import { getLocale, labelValue, t } from '../i18n/index.ts';
 import { attachments } from '../components/attachments.ts';
 import { aiPicker } from '../components/picker.ts';
@@ -775,7 +775,9 @@ export function taskView(
       const note = el('p', 'muted', t(task.workspace === 'direct' ? 'git.direct' : 'git.noCopy'));
       work.append(note);
       if (task.workspace !== 'direct' && task.state === '完成') {
-        const merged = await request<{ commit: string } | null>(query('/api/task/merged', { project: project.id, task: task.id }));
+        // A restricted project allows no Git reads; this lookup runs on its own, so it just shows no merge info there.
+        const merged = await request<{ commit: string } | null>(query('/api/task/merged', { project: project.id, task: task.id }))
+          .catch((error: unknown) => { if (error instanceof ApiFailure && error.body.detail === 'project_restricted') return null; throw error; });
         if (serial === previewSerial && merged) {
           note.remove();
           work.append(el('p', '', t('git.merged', { commit: merged.commit })), button(t('git.unmerge'), async () => {
