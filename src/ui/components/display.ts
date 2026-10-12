@@ -49,7 +49,10 @@ export function quotaLabel(label: string): string {
   }
 }
 /** 含年月日的本地時間（YYYY-MM-DD HH:mm）。 */
+// Ledger dates such as PROJECT.md `updated` carry no time; `new Date('YYYY-MM-DD')` would read them as UTC midnight.
+const DATE_ONLY = /^\d{4}-\d{2}-\d{2}$/;
 export function localDateTime(value: string): string {
+  if (DATE_ONLY.test(value)) return value;
   const date = new Date(value); if (Number.isNaN(date.getTime())) return value;
   const pad = (n: number) => String(n).padStart(2, '0');
   return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())} ${pad(date.getHours())}:${pad(date.getMinutes())}`;
@@ -64,6 +67,7 @@ export function formatBytes(bytes: number, locale = getLocale()): string {
 
 export function localTime(value: string): string {
   if (!value) return '—';
+  if (DATE_ONLY.test(value)) return value;
   const date = new Date(value); if (Number.isNaN(date.getTime())) return value;
   const now = new Date(); const pad = (n: number) => String(n).padStart(2, '0');
   const time = `${pad(date.getHours())}:${pad(date.getMinutes())}`;
