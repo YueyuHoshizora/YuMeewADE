@@ -201,7 +201,7 @@ HTTP JSON と SSE を使い、デスクトップ版と Web 版で完全に共通
 | `POST /api/project/phases` | フェーズ編集 `{project, previous: string[], phases: [{name, from?}]}`（最大 12、名前は重複不可）：`from` は引き継ぐ既存フェーズで、名前を変えるとそのタスクも一緒に変わる。`previous` が現在と違えば 409 `phase_changed`。フェーズはこのルートでのみ変更でき、`/api/project/update` に `phases` を含めると 400 |
 | `POST /api/order`、`/api/pin` | プロジェクトの順序とピン留め |
 | `POST /api/task/new`、`/api/task/update`、`/api/task/step`、`/api/task/memo`、`/api/task/completion`、`/api/task/archive`、`/api/task/read` | タスク |
-| `POST /api/task/step` | `{project, task}` に `add`（追加）、`index`＋`done`（チェック）、`remove`（インデックスで削除）のいずれか一つ。チェックと削除には画面上の手順 `text` も必要で、一覧が変わっていれば別の手順には触れず 409 `step_changed` |
+| `POST /api/task/step` | `{project, task}` に `add`（追加）、`index`、`remove`（インデックスで削除）のいずれか一つ。`index` の場合はさらに `done`（チェック）、`rename`（文言の変更）、`move`（`-1` で上へ／`1` で下へ。インデントされた子項目も一緒に移動）のいずれか一つ。追加以外は画面上の手順 `text` も必要で、一覧が変わっていれば別の手順には触れず 409 `step_changed` |
 | `GET /api/task/sections?project=&task=` | タスクファイルの自由記述セクション `{done, next, cautions, memo}`（やったこと／次にやること／注意点／メモ。生の markdown 行で、空行とコメントは除外。各セクション最大 500 行、1 行 2,000 文字まで） |
 | `POST /api/task/bulk` | `{project, tasks: string[] (1–200、重複不可), action: {kind: state/phase/due/addTag/removeTag, value} または {kind: archive, confirm: true}}`；`results: [{task, ok, error?, detail?}]` を返す。作業コピーの強制削除はしない |
 | `POST /api/start` | クイックスタート（タスク作成＋送信） |

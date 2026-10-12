@@ -243,9 +243,13 @@ export function registerLedgerRoutes(router: Router, app: App): void {
   router.post('/api/task/step', async ({ body }) => {
     const { project, task } = ids(body);
     const count = Number(body.add !== undefined) + Number(body.remove !== undefined) + Number(body.index !== undefined);
-    if (count !== 1) throw new AppError('bad_request');
+    // With `index`, exactly one change applies: check (`done`), rename, or move (-1/1).
+    const indexed = Number(body.done !== undefined) + Number(body.rename !== undefined) + Number(body.move !== undefined);
+    if (count !== 1 || indexed !== (body.index !== undefined ? 1 : 0)) throw new AppError('bad_request');
     const result = body.add !== undefined ? await app.tasks.addStep(project, task, reqString(body, 'add', 300))
       : body.remove !== undefined ? await app.tasks.removeStep(project, task, index(body.remove), reqString(body, 'text', STEP_TEXT_MAX))
+      : body.rename !== undefined ? await app.tasks.editStep(project, task, index(body.index), reqString(body, 'text', STEP_TEXT_MAX), reqString(body, 'rename', STEP_TEXT_MAX))
+      : body.move !== undefined ? await app.tasks.moveStep(project, task, index(body.index), reqString(body, 'text', STEP_TEXT_MAX), body.move as number)
       : await app.tasks.setStep(project, task, index(body.index), boolean(body.done), reqString(body, 'text', STEP_TEXT_MAX));
     await changed('task.step', project, task);
     return result;

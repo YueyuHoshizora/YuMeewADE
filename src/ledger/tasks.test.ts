@@ -85,3 +85,16 @@ test('沒指定階段的子作業沿用上層作業的階段，明確指定（�
   assert.equal((await ledger.create('P', { title: 'Explicit', parent: parent.id, phase: '' })).phase, '');
   assert.equal((await ledger.create('P', { title: 'Top' })).phase, '');
 }));
+
+test('步驟改名保留勾選，移動時連同縮排子項目一起搬且不帶走區段尾端空行', () => withTmpWorkspace(async ws => {
+  await new ProjectLedger(ws).create({ name: 'P' });
+  const ledger = new TaskLedger(ws); const task = await ledger.create('P', { title: 'T' });
+  await fs.writeFile(ws.taskFile('P', task.id), '---\ntitle: T\n---\n## 步驟\n- [x] A\n  - a detail\n- [ ] B\n\n## 下一步\n');
+  await ledger.editStep('P', task.id, 0, 'A', 'A2');
+  assert.deepEqual((await ledger.get('P', task.id)).steps, [{ text: 'A2', done: true }, { text: 'B', done: false }]);
+  await ledger.moveStep('P', task.id, 1, 'B', -1);
+  const body = (await fs.readFile(ws.taskFile('P', task.id), 'utf8')).split('---\n').at(-1);
+  assert.equal(body, '## 步驟\n- [ ] B\n- [x] A2\n  - a detail\n\n## 下一步\n');
+  await assert.rejects(ledger.moveStep('P', task.id, 0, 'B', -1));
+  await assert.rejects(ledger.moveStep('P', task.id, 0, 'A2', 1), /step_changed|conflict|步驟/);
+}));

@@ -14,7 +14,7 @@ import { HistoryWindow } from '../components/history.ts';
 import { TranscriptWindow, type WindowRow } from '../components/windowing.ts';
 import {
   area, button, confirmModal, disclosure, el, field, iconButton, input, link, modal,
-  projectHash, readLocal, row, run, select, statusRegion, storeLocal, taskHash, toast,
+  projectHash, readLocal, row, run, select, statusRegion, storeLocal, taskHash, textModal, toast,
   type View, type ViewContext,
 } from '../components/dom.ts';
 import { aiLabel, effortLabel, localTime, modelLabel } from '../components/display.ts';
@@ -921,12 +921,29 @@ export function taskView(
           finally { await context.refresh(); }
         });
       };
+      // Every step change names the text shown; a stale list gets a 409 and the refresh resyncs it.
+      const change = (body: Record<string, unknown>) => async () => {
+        try { await request('/api/task/step', { project: project.id, task: task.id, text: step.text, ...body }); }
+        finally { await context.refresh(); }
+      };
+      // A step moved to either end has that direction disabled; keep keyboard focus on the step via the other arrow.
+      const move = (offset: -1 | 1) => async () => {
+        await change({ index, move: offset })();
+        const [same, other] = [t(offset < 0 ? 'tasks.stepUp' : 'tasks.stepDown'), t(offset < 0 ? 'tasks.stepDown' : 'tasks.stepUp')].map(name => footer.querySelector<HTMLButtonElement>(`button[aria-label="${CSS.escape(labelValue(name, step.text))}"]`));
+        if (same?.disabled) other?.focus();
+      };
+      const up = iconButton('↑', labelValue(t('tasks.stepUp'), step.text), move(-1));
+      const down = iconButton('↓', labelValue(t('tasks.stepDown'), step.text), move(1));
+      up.disabled = index === 0; down.disabled = index === task.steps.length - 1;
       steps.append(row(
         field(step.text, check),
-        iconButton('×', labelValue(t('common.remove'), step.text), async () => {
-          try { await request('/api/task/step', { project: project.id, task: task.id, remove: index, text: step.text }); }
-          finally { await context.refresh(); }
+        iconButton('✎', labelValue(t('tasks.editStep'), step.text), async () => {
+          const text = await textModal(t('tasks.editStep'), step.text, 2000, 3);
+          if (text === null || !text.trim() || text.trim() === step.text) return;
+          await change({ index, rename: text })();
         }),
+        up, down,
+        iconButton('×', labelValue(t('common.remove'), step.text), change({ remove: index })),
       ));
     });
     steps.append(row(addStep, addStepButton));
@@ -961,7 +978,9 @@ export function taskView(
     const plain = (line: string) => line.replace(/^\s*[-*+]\s+/, '');
     const notes = [task.next && labelValue(t('tasks.next'), plain(task.next)), task.memo && labelValue(t('tasks.latestMemo'), plain(task.memo))].filter(Boolean) as string[];
     footer.replaceChildren(...notes.map(text => { const line = el('p', 'muted task-notes', text); line.title = text; return line; }), row(state, phase, detail, memo, leaveMemo), record, metadata.node);
-    if (focused?.isConnected) focused.focus();
+    // Rebuilt step buttons are found again by label, so ↑/↓ keeps keyboard focus on the moved step.
+    const label = focused?.getAttribute('aria-label');
+    (focused?.isConnected ? focused : label ? footer.querySelector<HTMLElement>(`[aria-label="${CSS.escape(label)}"]`) : null)?.focus();
   }
   const composerControls = row(pick.node, upload.node, snippetsButton(draft), contextButton(project.id, task.id, () => pick.value()));
   void run(async () => {

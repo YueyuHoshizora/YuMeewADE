@@ -185,6 +185,26 @@ export class TaskLedger {
     if (!Number.isInteger(index) || typeof expected !== 'string') throw new AppError('bad_request', 'field_type');
     return this.editSteps(project, id, (rows, indices) => { rows.splice(stepRow(rows, indices, index, expected), 1); });
   }
+  async editStep(project: string, id: string, index: number, expected: string, text: string): Promise<Task> {
+    if (!Number.isInteger(index) || typeof expected !== 'string') throw new AppError('bad_request', 'field_type');
+    if (typeof text !== 'string' || !text.trim() || text.length > STEP_TEXT_MAX) throw new AppError('bad_request', 'field_type', { field: 'rename' });
+    const clean = text.replace(/[\r\n]+/g, ' ').trim();
+    // A replacer function keeps `$` sequences in the new text literal.
+    return this.editSteps(project, id, (rows, indices) => { const row = stepRow(rows, indices, index, expected); rows[row] = rows[row]!.replace(/^(\s*[-*]\s*\[[ xX]\]\s*).+$/, (_, head: string) => head + clean); });
+  }
+  /** Swaps a step with its neighbour, carrying any indented lines under each step along with it. */
+  async moveStep(project: string, id: string, index: number, expected: string, offset: number): Promise<Task> {
+    if (!Number.isInteger(index) || typeof expected !== 'string' || (offset !== -1 && offset !== 1)) throw new AppError('bad_request', 'field_type', { field: 'move' });
+    return this.editSteps(project, id, (rows, indices, _start, end) => {
+      stepRow(rows, indices, index, expected);
+      const upper = offset < 0 ? index - 1 : index;
+      if (upper < 0 || upper + 1 >= indices.length) throw new AppError('bad_request', 'field_type', { field: 'move' });
+      const a = indices[upper]!, b = indices[upper + 1]!;
+      let c = indices[upper + 2] ?? end;
+      while (c > b + 1 && !rows[c - 1]!.trim()) c--;
+      rows.splice(a, c - a, ...rows.slice(b, c), ...rows.slice(a, b));
+    });
+  }
   async appendMemo(project: string, id: string, text: string): Promise<Task> {
     if (typeof text !== 'string' || !text.trim() || text.length > 300) throw new AppError('bad_request', 'field_type', { field: 'text' });
     return withFileLocks([this.ws.projectFile(project), this.ws.taskFile(project, id)], async () => {

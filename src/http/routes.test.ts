@@ -107,6 +107,26 @@ test('state, completion approval and step hash continuation', async () => {
   } finally { await s.close(); }
 });
 
+test('steps can be renamed and reordered only with the text shown and one change per request', async () => {
+  const { server: s, project: p, task: t } = await setup();
+  const ids = { project: p.id, task: t.id };
+  const step = (body: Record<string, unknown>) => s.api('POST', '/api/task/step', { ...ids, ...body });
+  const texts = async () => (await s.app.tasks.get(p.id, t.id)).steps.map(item => item.text);
+  try {
+    await step({ add: 'Review' });
+    assert.equal((await step({ index: 0, text: 'Implement', rename: 'Build', move: 1 })).status, 400);
+    assert.equal((await step({ index: 0, text: 'Implement', done: true, rename: 'Build' })).status, 400);
+    assert.equal((await step({ add: 'X', move: 1 })).status, 400);
+    assert.equal((await step({ index: 0, text: 'Implement', move: 2 })).status, 400);
+    assert.equal((await step({ index: 0, text: 'Implement', move: -1 })).status, 400);
+    assert.equal((await step({ index: 0, text: 'Stale', rename: 'Build' })).status, 409);
+    assert.equal((await step({ index: 0, text: 'Implement', rename: '  ' })).status, 400);
+    assert.equal((await step({ index: 0, text: 'Implement', rename: 'Build $& it' })).status, 200);
+    assert.equal((await step({ index: 1, text: 'Review', move: -1 })).status, 200);
+    assert.deepEqual(await texts(), ['Review', 'Build $& it']);
+  } finally { await s.close(); }
+});
+
 test('phase offer, continuation key, legacy fallback, order and pins', async () => {
   const { server: s, project: p, task: t } = await setup();
   const state = async () => (await s.api('GET', '/api/state')).json as AppState;
