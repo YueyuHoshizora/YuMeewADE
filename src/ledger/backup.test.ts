@@ -82,6 +82,22 @@ test('a link to an excluded credential file is left out, so the snapshot still r
   } finally { await fs.rm(temporary, { recursive: true, force: true }); }
 });
 
+test('snapshots still list and restore after the workspace they recover has disappeared', async () => {
+  const temporary = await fs.mkdtemp(path.join(os.tmpdir(), 'care-missing-source-'));
+  try {
+    const ws = new Workspace(path.join(temporary, 'source')); await ws.init();
+    await fs.writeFile(path.join(ws.root, 'important.txt'), 'recover me');
+    const backup = new BackupService(ws, path.join(temporary, 'private'));
+    const snapshot = await backup.create(true);
+    await fs.rm(ws.root, { recursive: true });
+    assert.deepEqual((await backup.list()).map(entry => entry.id), [snapshot.id]);
+    const { root } = await backup.restore(snapshot.id, path.join(temporary, 'restored'));
+    assert.equal(await fs.readFile(path.join(root, 'important.txt'), 'utf8'), 'recover me');
+    // The vanished workspace's own place is still not a destination.
+    await assert.rejects(backup.restore(snapshot.id, ws.root), { detail: 'care_backup_invalid' });
+  } finally { await fs.rm(temporary, { recursive: true, force: true }); }
+});
+
 test('a complete backup refuses an external folder that contains the backup storage', async () => {
   const temporary = await fs.mkdtemp(path.join(os.tmpdir(), 'care-overlap-'));
   try {

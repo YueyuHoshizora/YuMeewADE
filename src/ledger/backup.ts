@@ -4,7 +4,7 @@ import { createHash, randomUUID } from 'node:crypto';
 import { Workspace } from './workspace.ts';
 import { ProjectLedger } from './projects.ts';
 import { TaskLedger } from './tasks.ts';
-import { atomicWrite, isInside, missingAs, withFileLocks, writeJson } from '../shared/fsx.ts';
+import { atomicWrite, isInside, isMissing, missingAs, withFileLocks, writeJson } from '../shared/fsx.ts';
 import { parseFrontmatter, patchHeaderLines, serializeFrontmatter, type Frontmatter } from '../shared/frontmatter.ts';
 import { AppError } from '../shared/errors.ts';
 import { git } from '../git/git.ts';
@@ -26,10 +26,19 @@ export class BackupService {
   private readonly directory: string;
   private readonly active = new Set<string>();
   constructor(ws: Workspace, directory: string) { this.ws = ws; this.directory = directory; }
+  /** The workspace's real path for overlap checks. A workspace that has disappeared is compared by where it was (its real
+   * parent), so the snapshots meant to recover it can still be listed and restored elsewhere, though not over its place. */
+  private async workspaceRoot(): Promise<string> {
+    const real = (file: string): Promise<string> => fs.realpath(file).catch((error: unknown) => {
+      if (!isMissing(error) || path.dirname(file) === file) throw error;
+      return real(path.dirname(file)).then(parent => path.join(parent, path.basename(file)));
+    });
+    return real(path.resolve(this.ws.root));
+  }
   private async privateRoot(): Promise<string> {
     await fs.mkdir(this.directory, { recursive: true, mode: 0o700 });
     const root = await fs.realpath(this.directory);
-    if ((await fs.lstat(this.directory)).isSymbolicLink() || inside(await fs.realpath(this.ws.root), root)) throw fail('care_backup_invalid');
+    if ((await fs.lstat(this.directory)).isSymbolicLink() || inside(await this.workspaceRoot(), root)) throw fail('care_backup_invalid');
     await fs.chmod(root, 0o700);
     return root;
   }
@@ -181,7 +190,7 @@ export class BackupService {
     if (!path.isAbsolute(destination) || /[\0\r\n]/.test(destination)) throw fail('care_backup_invalid');
     const parent = await fs.realpath(path.dirname(destination)).catch(invalidIfMissing);
     const root = path.join(parent, path.basename(destination));
-    if (inside(await fs.realpath(this.ws.root), root) || inside(await this.privateRoot(), root)) throw fail('care_backup_invalid');
+    if (inside(await this.workspaceRoot(), root) || inside(await this.privateRoot(), root)) throw fail('care_backup_invalid');
     try { await fs.mkdir(root, { mode: 0o700 }); } catch (error) { if ((error as NodeJS.ErrnoException).code === 'EEXIST') throw fail('care_destination_exists'); throw error; }
     const folder = path.join(await this.privateRoot(), id);
     const unique = manifest.external.filter((e, i, all) => all.findIndex(x => x.source === e.source) === i);
