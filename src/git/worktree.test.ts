@@ -426,6 +426,28 @@ test('revertFile treats a file name with glob characters literally', () => withT
   assert.equal(await fs.readFile(path.join(dir, 'file-other.txt'), 'utf8'), 'important edit\n', 'an unrelated edit survives');
 }));
 
+test('merge preview reports conflicts from uncommitted edits on either side without touching either index', () => withTmpWorkspace(async ws => {
+  const projects = new ProjectLedger(ws); const tasks = new TaskLedger(ws);
+  await projects.create({ name: 'P' });
+  const repo = ws.projectDir('P');
+  await fs.writeFile(path.join(repo, 'content.txt'), 'base\n'); await commitAll(repo, 'base');
+  const task = await tasks.create('P', { title: 'pending' });
+  const wt = new WorktreeService({ ws, projects, tasks, diffBytes: 100_000 });
+  const dir = await wt.prepare('P', task.id);
+  await fs.writeFile(path.join(dir, 'content.txt'), 'copy\n');
+  // Main side committed; copy side still pending.
+  await fs.writeFile(path.join(repo, 'content.txt'), 'main\n'); await commitAll(repo, 'main');
+  const statuses = async () => [await gitOk(repo, ['status', '--porcelain']), await gitOk(dir, ['status', '--porcelain'])];
+  const before = await statuses();
+  const preview = await wt.preview('P', task.id);
+  assert.equal(preview?.conflict, true); assert.deepEqual(preview?.conflictPaths, ['content.txt']);
+  assert.deepEqual(await statuses(), before, 'preview leaves both indexes and working trees as they were');
+  // Both sides pending: still the same conflict the merge would hit.
+  await gitOk(repo, ['reset', '-q', '--hard', 'HEAD~1']); await fs.writeFile(path.join(repo, 'content.txt'), 'main pending\n');
+  assert.equal((await wt.preview('P', task.id))?.conflict, true);
+  await assert.rejects(wt.merge('P', task.id), (error: unknown) => error instanceof MergeConflictError);
+}));
+
 test('checkpoint secret copying refuses destination directory and file symlinks', () => withTmpWorkspace(async (ws, tmp) => {
   const projects = new ProjectLedger(ws);
   const tasks = new TaskLedger(ws);

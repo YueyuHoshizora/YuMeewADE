@@ -2,6 +2,8 @@
 
 import { spawn } from 'node:child_process';
 import { promises as fs } from 'node:fs';
+import os from 'node:os';
+import path from 'node:path';
 import { StringDecoder } from 'node:string_decoder';
 import { minimalEnv, terminateTree } from '../cli/process.ts';
 import { AppError } from '../shared/errors.ts';
@@ -22,11 +24,11 @@ const READ_POLICY = ['-c', 'core.fsmonitor=false'];
 
 /** Normal local operations must finish within two minutes; tests may use a shorter deadline. */
 export const GIT_TIMEOUT_MS = 120_000;
-export function git(cwd: string, args: string[], opts: { maxBytes?: number; timeoutMs?: number } = {}): Promise<GitResult> {
+export function git(cwd: string, args: string[], opts: { maxBytes?: number; timeoutMs?: number; indexFile?: string } = {}): Promise<GitResult> {
   const { promise, resolve, reject } = Promise.withResolvers<GitResult>();
   const commandIndex = args.findIndex((arg, index) => !arg.startsWith('-') && !['-c', '-C', '--git-dir', '--work-tree', '--namespace', '--config-env'].includes(args[index - 1] ?? ''));
   const safeArgs = ['diff', 'show', 'log'].includes(args[commandIndex] ?? '') ? [...args.slice(0, commandIndex + 1), '--no-ext-diff', '--no-textconv', ...args.slice(commandIndex + 1)] : args;
-  const child = spawn('git', [...IDENTITY, ...READ_POLICY, ...safeArgs], { cwd, env: ENV, stdio: ['ignore', 'pipe', 'pipe'], windowsHide: true, detached: process.platform !== 'win32' });
+  const child = spawn('git', [...IDENTITY, ...READ_POLICY, ...safeArgs], { cwd, env: opts.indexFile ? { ...ENV, GIT_INDEX_FILE: opts.indexFile } : ENV, stdio: ['ignore', 'pipe', 'pipe'], windowsHide: true, detached: process.platform !== 'win32' });
   const max = opts.maxBytes ?? 10_000_000;
   const decoder = new StringDecoder('utf8');
   let stdout = '';
@@ -64,13 +66,37 @@ export function git(cwd: string, args: string[], opts: { maxBytes?: number; time
 }
 
 /** 失敗就丟 500（原因進日誌）；成功回 stdout。 */
-export async function gitOk(cwd: string, args: string[], opts: { maxBytes?: number; timeoutMs?: number } = {}): Promise<string> {
+export async function gitOk(cwd: string, args: string[], opts: { maxBytes?: number; timeoutMs?: number; indexFile?: string } = {}): Promise<string> {
   const r = await git(cwd, args, opts);
   if (r.code !== 0 || r.truncated) {
     log.error('git 失敗', undefined, { cwd, args, code: r.code, stderr: r.stderr.slice(0, 500) });
     throw new AppError('internal', 'git_failed', { cause: new Error(r.stderr.slice(0, 500)) });
   }
   return r.stdout;
+}
+
+/**
+ * The commit `commitAll` would make now, without touching the real index, working tree or branch: a merge preview
+ * must judge conflicts on the same content the merge will commit first. Pending changes go through a private copy of
+ * the index (new local secrets excluded, as in commitAll); a clean tree is just HEAD. The snapshot commit is
+ * unreferenced and left to Git's garbage collection.
+ */
+export async function snapshotCommit(dir: string): Promise<string> {
+  const head = (await gitOk(dir, ['rev-parse', 'HEAD'])).trim();
+  const folder = await fs.mkdtemp(path.join(os.tmpdir(), 'yumeewade-snapshot-'));
+  const indexFile = path.join(folder, 'index');
+  try {
+    // Starting from the real index keeps its stat cache, so unchanged files are not rehashed.
+    const real = (await gitOk(dir, ['rev-parse', '--path-format=absolute', '--git-path', 'index'])).trim();
+    await fs.copyFile(real, indexFile).catch(async (error: NodeJS.ErrnoException) => { if (error.code !== 'ENOENT') throw error; await gitOk(dir, ['read-tree', 'HEAD'], { indexFile }); });
+    await gitOk(dir, ['add', '-A'], { indexFile });
+    const added = (await gitOk(dir, ['diff', '--cached', '--no-renames', '--name-only', '--diff-filter=A', '-z', 'HEAD'], { indexFile })).split('\0').filter(Boolean);
+    const secrets = added.filter(isLocalSecret);
+    if (secrets.length) await gitOk(dir, ['--literal-pathspecs', 'reset', '-q', 'HEAD', '--', ...secrets], { indexFile });
+    const tree = (await gitOk(dir, ['write-tree'], { indexFile })).trim();
+    if (tree === (await gitOk(dir, ['rev-parse', 'HEAD^{tree}'])).trim()) return head;
+    return (await gitOk(dir, ['commit-tree', tree, '-p', head, '-m', 'YuMeewADE preview snapshot'])).trim();
+  } finally { await fs.rm(folder, { recursive: true, force: true }); }
 }
 
 export async function isRepo(dir: string): Promise<boolean> {

@@ -12,7 +12,7 @@ import { AppError } from '../shared/errors.ts';
 import { isInside, pathExists, withFileLocks } from '../shared/fsx.ts';
 import { log } from '../shared/log.ts';
 import type { FileView, MergePreview, MergeResult, Task, TaskOverlap, TurnChanges, WorktreeMaintenanceEntry } from '../shared/types.ts';
-import { branchExists, commitAll, ensureRepo, git, gitOk, isLocalSecret, isRepo, operationInProgress } from './git.ts';
+import { branchExists, commitAll, ensureRepo, git, gitOk, isLocalSecret, isRepo, operationInProgress, snapshotCommit } from './git.ts';
 import { RecoveryStore } from './recovery.ts';
 
 const SHA = /^[0-9a-f]{40}$/;
@@ -198,7 +198,9 @@ export class WorktreeService {
     const stat = await gitOk(dir, ['diff', '--shortstat', base]);
     const untracked = splitNull(await gitOk(dir, ['ls-files', '--others', '--exclude-standard', '-z'])).filter(f => !isLocalSecret(f));
     const paths = splitNull(await gitOk(dir, ['diff', '--name-only', '-z', base]));
-    const tree = await git(repo, ['merge-tree', '--write-tree', '--name-only', '--no-messages', '-z', mainHead, workHead]);
+    // The merge first commits pending edits on both sides (commitAll), so conflicts are judged on those snapshots.
+    const [mainSnapshot, workSnapshot] = await Promise.all([snapshotCommit(repo), snapshotCommit(dir)]);
+    const tree = await git(repo, ['merge-tree', '--write-tree', '--name-only', '--no-messages', '-z', mainSnapshot, workSnapshot]);
     if ((tree.code !== 0 && tree.code !== 1) || tree.truncated) throw new AppError('internal', 'git_failed');
     const branch = (await gitOk(dir, ['rev-parse', '--abbrev-ref', 'HEAD'])).trim();
     const target = (await gitOk(repo, ['rev-parse', '--abbrev-ref', 'HEAD'])).trim();
