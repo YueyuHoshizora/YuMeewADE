@@ -268,3 +268,21 @@ test('removing an account while switching to it leaves the slot and the selectio
   assert.equal(settings.activeAccounts.codex, settings.accounts.codex![0]!.id);
   assert.equal(slot.codex, b, 'the slot holds the selected account, never the removed one');
 }));
+
+test('a switch rejected for one service puts back the slot it already switched for another', () => withTmpWorkspace(async (ws, dir) => {
+  const slot: Record<string, string | undefined> = {}; let busy = '';
+  const store = new SettingsStore(ws, DEFAULT_CONFIG, undefined, undefined, undefined, async (ai, directory) => {
+    if (ai === busy) throw new AppError('unavailable', 'credentials_unavailable');
+    const previous = slot[ai]; slot[ai] = directory;
+    return async () => { slot[ai] = previous; };
+  });
+  const [a, c, g] = [path.join(dir, 'a'), path.join(dir, 'c'), path.join(dir, 'g')];
+  for (const folder of [a, c, g]) await fs.mkdir(folder);
+  await store.addAccount('codex', 'A', a); await store.addAccount('codex', 'C', c); await store.addAccount('gemini', 'G', g);
+  const before = await store.get();
+  const other = before.accounts.codex!.find(account => account.name === 'C')!;
+  busy = 'gemini';
+  await assert.rejects(store.update({ activeAccounts: { codex: other.id, gemini: before.accounts.gemini![0]!.id } }), { detail: 'credentials_unavailable' });
+  assert.equal(slot.codex, a, 'Codex runs keep the still-selected account');
+  assert.deepEqual((await store.get()).activeAccounts, before.activeAccounts);
+}));

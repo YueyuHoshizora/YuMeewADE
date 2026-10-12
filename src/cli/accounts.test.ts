@@ -88,6 +88,21 @@ test('activate overwrites only the default slot from an added account and reject
   } finally { await f.cleanup(); }
 });
 
+test('undoing an activation puts the slot back to what it held before, or empties it', async () => {
+  const f = await fixture();
+  try {
+    const [first, second] = [path.join(f.root, 'first'), path.join(f.root, 'second')];
+    await f.source('codex', first, codexRecord('first')); await f.source('codex', second, codexRecord('second'));
+    await f.accounts.import('codex', first); await f.accounts.import('codex', second);
+    const slot = () => f.accounts.withEnv('codex', undefined, async env => fs.readFile(path.join(env['CODEX_HOME']!, 'auth.json'), 'utf8'));
+    const undoFirst = await f.accounts.activate('codex', first);
+    await (await f.accounts.activate('codex', second))();
+    assert.equal(await slot(), codexRecord('first'));
+    await undoFirst();
+    assert.equal(f.accounts.hasStored('codex'), false);
+  } finally { await f.cleanup(); }
+});
+
 test('credentials left behind by a crashed run never override an explicit activate, import or remove', async () => {
   const f = await fixture();
   try {

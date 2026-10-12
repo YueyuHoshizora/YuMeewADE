@@ -191,18 +191,31 @@ export class CredentialAccounts {
     });
   }
 
-  /** Switching accounts: overwrite the App's default slot with an added account's stored credentials. The CLI's own login is never touched. */
-  async activate(ai: string, configDir: string): Promise<void> {
+  /**
+   * Switching accounts: overwrite the App's default slot with an added account's stored credentials. The CLI's own login is never touched.
+   * Returns an undo that puts the slot's previous record back, for a switch rejected after this step (another service failing).
+   */
+  async activate(ai: string, configDir: string): Promise<() => Promise<void>> {
     const source = this.profile(ai, configDir);
     const slot = this.profile(ai);
+    let previous: string | null = null;
     await this.serial(slot, async () => {
       try {
         if (this.runtimes.has(slot.runtime)) throw new Error(FAILURE);
         const text = await this.vault.read(source.ai, source.key);
         if (text === null) throw new Error(FAILURE);
         validate(source.ai, text);
+        previous = await this.vault.read(slot.ai, slot.key);
         await this.discardRuntimeAuth(slot);
         await this.vault.write(slot.ai, slot.key, text);
+      } catch { throw new Error(FAILURE); }
+    });
+    return () => this.serial(slot, async () => {
+      try {
+        if (this.runtimes.has(slot.runtime)) throw new Error(FAILURE);
+        await this.discardRuntimeAuth(slot);
+        if (previous === null) await this.vault.remove(slot.ai, slot.key);
+        else await this.vault.write(slot.ai, slot.key, previous);
       } catch { throw new Error(FAILURE); }
     });
   }

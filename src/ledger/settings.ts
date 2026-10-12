@@ -6,6 +6,7 @@ import type { Config } from '../shared/config.ts';
 import { AppError } from '../shared/errors.ts';
 import { readJson, withFileLocks, writeJson } from '../shared/fsx.ts';
 import { validEffort, validModelName } from '../shared/ai-pick.ts';
+import { log } from '../shared/log.ts';
 import type { Settings, SettingsPatch } from '../shared/types.ts';
 import type { Workspace } from './workspace.ts';
 
@@ -13,16 +14,20 @@ import type { Workspace } from './workspace.ts';
 const SETTINGS_KEYS = new Set(['initial', 'hiddenModels', 'modelOrder', 'fullAccess', 'activeAccounts']);
 const MODEL_LIST_MAX = 500;
 
+type ActivateCredentials = (ai: string, directory: string | undefined) => Promise<(() => Promise<void>) | void>;
 export class SettingsStore {
   private readonly file: string;
   private readonly defaults: Settings;
   private readonly importCredentials: ((ai: string, directory: string) => Promise<void>) | undefined;
   private readonly loginCredentials: ((ai: string, directory: string) => Promise<void>) | undefined;
   private readonly profileDirectory: ((ai: string) => string) | undefined;
-  private readonly activateCredentials: ((ai: string, directory: string | undefined) => Promise<void>) | undefined;
+  private readonly activateCredentials: ActivateCredentials | undefined;
   private readonly forgetCredentials: ((ai: string, directory: string) => Promise<void>) | undefined;
-  /** `activateCredentials` copies an account into the App's default slot, or empties the slot when `directory` is undefined. */
-  constructor(ws: Workspace, config: Config, importCredentials?: (ai: string, directory: string) => Promise<void>, loginCredentials?: (ai: string, directory: string) => Promise<void>, profileDirectory?: (ai: string) => string, activateCredentials?: (ai: string, directory: string | undefined) => Promise<void>, forgetCredentials?: (ai: string, directory: string) => Promise<void>) {
+  /**
+   * `activateCredentials` copies an account into the App's default slot, or empties the slot when `directory` is undefined;
+   * a copy may return an undo restoring the slot's previous contents.
+   */
+  constructor(ws: Workspace, config: Config, importCredentials?: (ai: string, directory: string) => Promise<void>, loginCredentials?: (ai: string, directory: string) => Promise<void>, profileDirectory?: (ai: string) => string, activateCredentials?: ActivateCredentials, forgetCredentials?: (ai: string, directory: string) => Promise<void>) {
     this.importCredentials = importCredentials;
     this.loginCredentials = loginCredentials;
     this.profileDirectory = profileDirectory;
@@ -68,15 +73,24 @@ export class SettingsStore {
         if (id !== 'default' && !account) throw new AppError('not_found');
         return [ai, account] as const;
       });
-      for (const [ai, account] of selected) {
-        if (account && this.activateCredentials) await this.activateCredentials(ai, account.configDir);
+      // One service failing (its slot in use), or the save failing, puts back the slots already switched, so they keep
+      // matching the saved selection.
+      const undo: (() => Promise<void>)[] = [];
+      try {
+        for (const [ai, account] of selected) {
+          const restore = account && this.activateCredentials ? await this.activateCredentials(ai, account.configDir) : undefined;
+          if (restore) undo.unshift(restore);
+        }
+        if (patch.initial !== undefined) saved.initial = { ...patch.initial };
+        if (patch.hiddenModels !== undefined) saved.hiddenModels = { ...saved.hiddenModels, ...patch.hiddenModels };
+        if (patch.modelOrder !== undefined) saved.modelOrder = { ...saved.modelOrder, ...patch.modelOrder };
+        if (patch.fullAccess !== undefined) saved.fullAccess = { ...saved.fullAccess, ...patch.fullAccess };
+        if (patch.activeAccounts !== undefined) saved.activeAccounts = { ...saved.activeAccounts, ...patch.activeAccounts };
+        await writeJson(this.file, saved);
+      } catch (error) {
+        for (const restore of undo) await restore().catch(() => log.warn('帳號切換失敗後無法還原預設憑證槽'));
+        throw error;
       }
-      if (patch.initial !== undefined) saved.initial = { ...patch.initial };
-      if (patch.hiddenModels !== undefined) saved.hiddenModels = { ...saved.hiddenModels, ...patch.hiddenModels };
-      if (patch.modelOrder !== undefined) saved.modelOrder = { ...saved.modelOrder, ...patch.modelOrder };
-      if (patch.fullAccess !== undefined) saved.fullAccess = { ...saved.fullAccess, ...patch.fullAccess };
-      if (patch.activeAccounts !== undefined) saved.activeAccounts = { ...saved.activeAccounts, ...patch.activeAccounts };
-      await writeJson(this.file, saved);
       return saved;
     });
     return this.merge(saved);

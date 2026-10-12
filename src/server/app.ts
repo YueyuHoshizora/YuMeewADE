@@ -147,10 +147,12 @@ export class App {
       if (!this.accounts) throw new AppError('unavailable', 'credentials_unavailable');
       return this.accounts.newProfileDirectory(ai);
     }, async (ai, directory) => {
-      if (this.accounts) {
-        try { await (directory === undefined ? this.accounts.remove(ai) : this.accounts.activate(ai, directory)); }
-        catch { throw new AppError('unavailable', 'credentials_unavailable'); }
-      }
+      if (!this.accounts) return undefined;
+      try {
+        if (directory === undefined) { await this.accounts.remove(ai); return undefined; }
+        const undo = await this.accounts.activate(ai, directory);
+        return async () => { try { await undo(); } catch { throw new AppError('unavailable', 'credentials_unavailable'); } };
+      } catch { throw new AppError('unavailable', 'credentials_unavailable'); }
     }, async (ai, directory) => {
       // Best effort: the account is already gone from settings; a copy still held by a running CLI stays encrypted in the vault.
       try { await this.accounts?.remove(ai, directory); }
