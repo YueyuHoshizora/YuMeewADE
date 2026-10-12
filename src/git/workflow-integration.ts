@@ -11,12 +11,29 @@ export interface IntegrationCandidate { task: string; base: string; head: string
 /** Candidates are ordinary isolated task worktrees; main and upstream indexes never change. */
 export class WorkflowIntegrationService {
   constructor(private readonly deps: { tasks: TaskLedger; worktrees: WorktreeService; busy: (project: string, task: string) => boolean }) {}
+  async assertReady(project: string, candidate: IntegrationCandidate): Promise<void> {
+    const task = await this.deps.tasks.get(project, candidate.task);
+    if (candidate.state !== 'ready' || !task.workdir || task.workspace !== 'isolated' || this.deps.busy(project, task.id)) throw new AppError('conflict', 'workflow_busy');
+    if ((await gitOk(task.workdir, ['rev-parse', 'HEAD'])).trim() !== candidate.head || (await gitOk(task.workdir, ['status', '--porcelain', '--untracked-files=all'])).trim()) throw new AppError('conflict');
+  }
+  private async readSource(dir: string, name: string): Promise<{ bytes: Buffer; mode: number }> {
+    const root = await fs.realpath(dir); const file = path.join(dir, name);
+    if (!isInside(root, await fs.realpath(file))) throw new AppError('conflict', 'workflow_invalid');
+    const handle = await fs.open(file, fs.constants.O_RDONLY | fs.constants.O_NOFOLLOW);
+    try {
+      const stat = await handle.stat();
+      if (!stat.isFile() || stat.size > 10_000_000) throw new AppError('conflict', 'workflow_invalid');
+      const bytes = await handle.readFile();
+      const after = await fs.lstat(file);
+      if (after.isSymbolicLink() || after.ino !== stat.ino || after.dev !== stat.dev || !isInside(root, await fs.realpath(file))) throw new AppError('conflict', 'workflow_invalid');
+      return { bytes, mode: stat.mode & 0o777 };
+    } finally { await handle.close(); }
+  }
   private async fingerprint(dir: string): Promise<string> {
     const hash = createHash('sha256').update(await gitOk(dir, ['rev-parse', 'HEAD'])).update(await gitOk(dir, ['diff', '--binary', 'HEAD']));
     for (const name of (await gitOk(dir, ['ls-files', '--others', '--exclude-standard', '-z'])).split('\0').filter(Boolean).filter(name => !isLocalSecret(name)).sort()) {
-      const file = path.join(dir, name); const stat = await fs.lstat(file);
-      if (!stat.isFile() || stat.isSymbolicLink() || !isInside(await fs.realpath(dir), await fs.realpath(file))) throw new AppError('conflict', 'workflow_invalid');
-      hash.update(name).update('\0').update(await fs.readFile(file));
+      const source = await this.readSource(dir, name);
+      hash.update(name).update('\0').update(String(source.mode)).update(source.bytes);
     }
     return hash.digest('hex');
   }
@@ -25,6 +42,7 @@ export class WorkflowIntegrationService {
     const repo = await this.deps.worktrees.bodyPath(project);
     return withFileLocks([path.join(repo, '.ai', 'workflow-integration')], async () => {
       const base = (await gitOk(repo, ['rev-parse', 'HEAD'])).trim();
+      if ((await gitOk(repo, ['status', '--porcelain', '--untracked-files=all'])).trim()) throw new AppError('conflict');
       const candidateTask = await this.deps.tasks.create(project, { title: `${parent} · integration`, role, parent, kind: 'derived', derivedFrom: parent, workspace: 'isolated' });
       const dir = await this.deps.worktrees.prepareFrom(project, candidateTask.id, base);
       const records: IntegrationCandidate['sources'] = [];
@@ -32,7 +50,8 @@ export class WorkflowIntegrationService {
         if (this.deps.busy(project, source)) throw new AppError('conflict', 'workflow_busy');
         const task = await this.deps.tasks.get(project, source);
         if (task.workspace !== 'isolated' || !task.workdir) throw new AppError('conflict', 'workflow_invalid');
-        if ((await gitOk(task.workdir, ['rev-parse', '--git-common-dir'])).trim() !== (await gitOk(dir, ['rev-parse', '--git-common-dir'])).trim()) throw new AppError('conflict', 'workflow_invalid');
+        const common = async (root: string): Promise<string> => fs.realpath(path.resolve(root, (await gitOk(root, ['rev-parse', '--git-common-dir'])).trim()));
+        if (await common(task.workdir) !== await common(dir)) throw new AppError('conflict', 'workflow_invalid');
         if ((await gitOk(task.workdir, ['ls-files', '-u'])).trim()) throw new AppError('conflict', 'merge_conflict');
         const fingerprint = await this.fingerprint(task.workdir); const head = (await gitOk(task.workdir, ['rev-parse', 'HEAD'])).trim();
         // stash create writes objects only, without modifying the source index or checkout.
@@ -44,7 +63,8 @@ export class WorkflowIntegrationService {
         for (const name of (await gitOk(task.workdir, ['ls-files', '--others', '--exclude-standard', '-z'])).split('\0').filter(Boolean).filter(name => !isLocalSecret(name))) {
           const target = path.join(scratchDir, name); await fs.mkdir(path.dirname(target), { recursive: true });
           if (!isInside(await fs.realpath(scratchDir), await fs.realpath(path.dirname(target)))) throw new AppError('conflict', 'workflow_invalid');
-          await fs.copyFile(path.join(task.workdir, name), target, fs.constants.COPYFILE_EXCL);
+          const source = await this.readSource(task.workdir, name);
+          await fs.writeFile(target, source.bytes, { flag: 'wx', mode: source.mode });
         }
         await commitAll(scratchDir, 'Workflow immutable untracked snapshot');
         const finalSnapshot = (await gitOk(scratchDir, ['rev-parse', 'HEAD'])).trim();

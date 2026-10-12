@@ -13,6 +13,7 @@ import { readJson, writeJson, withFileLocks } from '../shared/fsx.ts';
 import { log } from '../shared/log.ts';
 import { HANDOFF_NOTICE } from './prompt.ts';
 import type { WorkflowIntegrationService } from '../git/workflow-integration.ts';
+import { workflowDelivery } from '../shared/workflow-delivery.ts';
 
 interface WorkflowDeps {
   ws: Workspace; tasks: TaskLedger; completion: CompletionStore; runner: ChatRunner;
@@ -27,6 +28,10 @@ interface WorkflowDeps {
   maxParallel: number;
   integration?: WorkflowIntegrationService;
   prepareFrom?: (project: string, task: string, sha: string) => Promise<unknown>;
+  verify?: (project: string, task: string) => Promise<{ ok: boolean; id?: string; output?: string }>;
+  currentVerification?: (project: string, task: string) => Promise<boolean>;
+  currentReview?: (project: string, task: string, snapshot: string) => Promise<boolean>;
+  stopVerify?: (project: string, task: string) => void;
 }
 interface Job { stopped: boolean; done: Promise<void>; branches: Set<string> }
 const empty = (): WorkflowPlan => ({ dependencies: [], steps: [], cursor: 0, state: 'ready', results: [], revision: 0, nodeStates: {}, branchTasks: {} });
@@ -60,6 +65,12 @@ export class WorkflowService {
       for (const [id, state] of Object.entries(plan.nodeStates)) if (state === 'running') plan.nodeStates[id] = 'pending';
       await writeJson(this.file(p, t), plan);
     }
+    plan.delivery = workflowDelivery(plan);
+    for (const gate of plan.delivery.gates) {
+      const result = this.latest(plan, gate.node);
+      if (gate.ok && gate.task) gate.ok = gate.kind === 'verify' ? await this.deps.currentVerification?.(p, gate.task) === true : !!result?.reviewSnapshot && await this.deps.currentReview?.(p, gate.task, result.reviewSnapshot) === true;
+    }
+    if (plan.delivery.gates.some(gate => !gate.ok)) plan.delivery.state = 'blocked';
     return plan;
   }
   async configure(p: string, t: string, dependencies: string[], raw: WorkflowStep[], revision?: number): Promise<WorkflowPlan> {
@@ -122,6 +133,7 @@ export class WorkflowService {
   }
   async nextSelection(p: string, t: string): Promise<AiPick | null> {
     const plan = await this.get(p, t); const step = this.ready(plan)[0]; if (!step) return null;
+    if (step.kind === 'verify' || step.kind === 'integration') return null;
     const slot = await this.resolveStep(step); return slot ? { ai: slot.cli, model: slot.model, effort: slot.effort } : null;
   }
   async start(p: string, t: string): Promise<WorkflowPlan> {
@@ -154,6 +166,34 @@ export class WorkflowService {
   }
   private async executeNode(p: string, t: string, plan: WorkflowPlan, step: WorkflowStep, job: Job): Promise<void> {
     const id = step.id!; const index = plan.steps.indexOf(step);
+    if (step.kind === 'verify' || step.kind === 'review') {
+      const branch = this.latest(plan, step.dependsOn![0]!)?.task;
+      if (!branch || this.deps.isTaskBusy(p, branch)) throw new AppError('conflict', 'workflow_busy');
+      job.branches.add(branch); plan.nodeStates![id] = 'running';
+      await writeJson(this.file(p, t), structuredClone(plan));
+      try {
+        await this.deps.beforeStart(p, branch);
+        if (step.kind === 'verify') {
+          if (!this.deps.verify) throw new AppError('unavailable', 'workflow_invalid');
+          const result = await this.deps.verify(p, branch);
+          const ok = result.ok && await this.deps.currentVerification?.(p, branch) === true;
+          plan.results.push({ step: index, node: id, task: branch, role: step.role, ai: 'verify', request: result.id ?? '', at: new Date().toISOString(), ok, output: result.output });
+          plan.nodeStates![id] = ok ? 'succeeded' : 'failed';
+        } else {
+          const slot = await this.resolveStep(step);
+          if (!slot) throw new AppError('unavailable', 'workflow_invalid');
+          const result = await this.deps.review(p, branch, { ai: slot.cli, model: slot.model, effort: slot.effort, text: step.text });
+          const ok = result.ok && result.structured === true && result.approved === true && !!result.snapshot && await this.deps.currentReview?.(p, branch, result.snapshot.id) === true;
+          plan.results.push({ step: index, node: id, task: branch, role: step.role, ai: slot.cli, request: result.request, at: new Date().toISOString(), ok, approved: ok, output: result.text, reviewSnapshot: result.snapshot?.id });
+          plan.nodeStates![id] = ok ? 'succeeded' : 'failed';
+        }
+      } catch (error) {
+        plan.nodeStates![id] = 'failed';
+        plan.results.push({ step: index, node: id, task: branch, role: step.role, ai: step.kind, request: '', at: new Date().toISOString(), ok: false });
+        if (!(error instanceof AppError)) log.error('Workflow gate failed', error, { project: p, task: t });
+      } finally { if (job.stopped) plan.nodeStates![id] = 'pending'; await writeJson(this.file(p, t), structuredClone(plan)); }
+      return;
+    }
     if (step.kind === 'integration') {
       if (!this.deps.integration) throw new AppError('unavailable', 'workflow_invalid');
       const sources = step.upstream!.map(node => this.latest(plan, node)?.task);
@@ -181,6 +221,7 @@ export class WorkflowService {
     if (upstream.length > 1) throw new AppError('conflict', 'workflow_invalid');
     if (upstream.length) {
       if (!this.deps.prepareFrom) throw new AppError('unavailable', 'workflow_invalid');
+      await this.deps.integration?.assertReady(p, upstream[0]!);
       await this.deps.prepareFrom(p, branch, upstream[0]!.head);
     } else await this.deps.prepareBranch(p, branch);
     const task = await this.deps.tasks.get(p, branch);
@@ -257,7 +298,7 @@ export class WorkflowService {
     if (this.isBusy(p, t) || this.deps.isTaskBusy(p, t)) throw new AppError('conflict', 'workflow_busy');
     if (typeof evidence !== 'string' || !evidence.trim() || evidence.length > 10000) throw new AppError('bad_request', 'workflow_invalid');
     const plan = await this.get(p, t); const step = plan.steps.find(s => (!node || s.id === node) && plan.nodeStates![s.id!] === 'human');
-    if (!step || plan.state !== 'paused' || (await this.deps.roles()).roles[step.role]?.main.cli !== HUMAN) throw new AppError('conflict', 'workflow_invalid');
+    if (!step || step.kind === 'integration' || step.kind === 'verify' || step.kind === 'review' || plan.state !== 'paused' || (await this.deps.roles()).roles[step.role]?.main.cli !== HUMAN) throw new AppError('conflict', 'workflow_invalid');
     if (this.isBusy(p, t) || this.deps.isTaskBusy(p, t) || revision !== undefined && revision !== plan.revision) throw new AppError('conflict');
     plan.results.push({ step: plan.steps.indexOf(step), node: step.id!, role: step.role, ai: HUMAN, request: '', ok: true, approved: true, evidence, output: evidence, at: new Date().toISOString() });
     plan.nodeStates![step.id!] = 'succeeded'; this.updateCursor(plan); plan.revision!++; plan.state = plan.cursor === plan.steps.length ? 'completed' : 'ready'; delete plan.reason;
@@ -295,7 +336,7 @@ export class WorkflowService {
   async stop(p: string, t: string): Promise<void> {
     const job = this.jobs.get(this.key(p, t)); if (!job) return;
     job.stopped = true;
-    await Promise.all([...job.branches].map(async branch => { this.deps.stopReview(p, branch); await this.deps.runner.stop(p, branch); }));
+    await Promise.all([...job.branches].map(async branch => { this.deps.stopVerify?.(p, branch); this.deps.stopReview(p, branch); await this.deps.runner.stop(p, branch); }));
     await job.done;
   }
   async close(): Promise<void> { await Promise.all([...this.jobs.keys()].map(key => { const [p, t] = key.split('\0'); return this.stop(p!, t!); })); }

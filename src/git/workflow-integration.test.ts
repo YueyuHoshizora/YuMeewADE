@@ -20,6 +20,7 @@ for (const conflicting of [false, true]) test(`candidate snapshots working chang
   for (const name of ['a', 'b']) {
     const task = await tasks.create('P', { title: name, workspace: 'isolated' }); const dir = await worktrees.prepare('P', task.id);
     await fs.writeFile(path.join(dir, conflicting ? 'shared.txt' : `${name}.txt`), `${name}\n`);
+    await fs.writeFile(path.join(dir, '.env.workflow-secret'), 'must-not-snapshot');
     sources.push(task.id); indexes.push(await gitOk(dir, ['diff', '--cached']));
   }
   const service = new WorkflowIntegrationService({ tasks, worktrees, busy: () => false });
@@ -33,6 +34,12 @@ for (const conflicting of [false, true]) test(`candidate snapshots working chang
     assert.equal((await service.resolve('P', candidate)).state, 'conflict');
   } else {
     for (const name of ['a', 'b']) assert.equal(await fs.readFile(path.join(target.workdir, `${name}.txt`), 'utf8'), `${name}\n`);
+    await service.assertReady('P', candidate);
+    await assert.rejects(fs.access(path.join(target.workdir, '.env.workflow-secret')));
+    await fs.writeFile(path.join(target.workdir, 'a.txt'), 'changed after preview');
+    await assert.rejects(service.assertReady('P', candidate), { code: 'conflict' });
   }
   for (const [index, source] of sources.entries()) assert.equal(await gitOk((await tasks.get('P', source)).workdir, ['diff', '--cached']), indexes[index]);
+  await fs.writeFile(path.join(repo, 'dirty.txt'), 'not selected');
+  await assert.rejects(service.create('P', parent.id, parent.role, sources), { code: 'conflict' });
 }));

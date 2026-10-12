@@ -47,6 +47,7 @@ export function workflowButton(context: ViewContext, project: string, task: stri
     plan.steps.forEach(addStep);
     function renderStatus(): void {
       status.textContent = `${t(`workflow.state.${plan.state}`)} · ${plan.cursor}/${plan.steps.length}${plan.reason ? ` · ${t(`detail.${plan.reason}` as Parameters<typeof t>[0])}` : ''}`;
+      if (plan.delivery) status.textContent += ` · ${t('workflow.native.delivery')}: ${t(plan.delivery.state === 'ready' ? 'verify.pass' : 'verify.fail')} · ${plan.delivery.gates.map(gate => `${gate.node}: ${t(gate.ok ? 'verify.pass' : 'verify.fail')}`).join(' · ')}`;
       void run(renderRisk);
       save.disabled = plan.state === 'running';
       start.disabled = plan.state === 'running' || !plan.steps.some(s => plan.nodeStates?.[s.id!] === 'pending' || plan.nodeStates?.[s.id!] === 'human' && !s.review && context.state.roles.roles[s.role]?.main.cli !== '人');

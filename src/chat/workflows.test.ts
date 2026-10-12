@@ -14,7 +14,7 @@ import { ChatStore } from './store.ts';
 import { normalizeGraph, validateGraph, downstreamNodes } from '../shared/workflow-graph.ts';
 import type { WorkflowStep, ReviewResult } from '../shared/types.ts';
 
-async function fixture(ws: Workspace, review: (p: string, t: string, input: { text: string }) => Promise<ReviewResult>) {
+async function fixture(ws: Workspace, review: (p: string, t: string, input: { text: string }) => Promise<ReviewResult>, extra: Partial<ConstructorParameters<typeof WorkflowService>[0]> = {}) {
   const projects = new ProjectLedger(ws); await projects.create({ name: 'P' });
   const tasks = new TaskLedger(ws); const task = await tasks.create('P', { title: 'DAG' });
   const worktree = new WorktreeService({ ws, projects, tasks, diffBytes: 100000 });
@@ -26,6 +26,7 @@ async function fixture(ws: Workspace, review: (p: string, t: string, input: { te
     prepareBranch: async (p, t) => { await worktree.prepare(p, t); }, isTaskBusy: () => false, maxParallel: 2, promptChars: 10000,
     changed: () => { if (!workflow.isBusy('P', task.id)) finished.resolve(); },
     roles: async () => ({ roles: { expert: { main: { cli: 'mock', model: '', effort: '' }, job: '' }, human: { main: { cli: '人', model: '', effort: '' }, job: '' } } }),
+    ...extra,
   });
   return { workflow, task, tasks, idle: () => finished.promise, reset: () => { finished = Promise.withResolvers<void>(); } };
 }
@@ -101,4 +102,19 @@ test('stop drains concurrent nodes and never starts a dependent without a new ex
   assert.equal(paused.state, 'paused'); assert.equal(paused.reason, 'workflow_stopped'); assert.equal(calls, 1);
   assert.equal(paused.nodeStates?.join, 'pending');
   await s.workflow.get('P', s.task.id); assert.equal(calls, 1);
+}));
+
+test('native failed verification blocks review and delivery; rerun invalidates downstream evidence', () => withTmpWorkspace(async ws => {
+  let checks = 0; let reviews = 0;
+  const s = await fixture(ws, async (_p, task) => {
+    reviews++; return { request: task, ai: 'mock', text: 'reviewed', ok: true, approved: true, structured: true };
+  }, { verify: async () => { checks++; return { ok: false, id: 'failed-build', output: 'build failed' }; }, currentVerification: async () => false });
+  await s.workflow.configure('P', s.task.id, [], [node('edit'), node('build', ['edit'], { kind: 'verify', review: false }), node('review', ['build'], { kind: 'review', review: false })]);
+  s.reset(); await s.workflow.start('P', s.task.id); await s.idle();
+  const plan = await s.workflow.get('P', s.task.id);
+  assert.equal(checks, 1); assert.equal(reviews, 1);
+  assert.equal(plan.nodeStates?.build, 'failed'); assert.equal(plan.nodeStates?.review, 'skipped');
+  assert.equal(plan.delivery?.state, 'blocked');
+  const rerun = await s.workflow.rerun('P', s.task.id, 0, plan.revision);
+  assert.ok(rerun.results.every(result => result.invalidatedAt)); assert.equal(rerun.nodeStates?.review, 'pending');
 }));
