@@ -1,13 +1,20 @@
 import type { BudgetCheck, BudgetRule, BudgetSettings, BudgetWarning, UsageHistoryView, UsageScope } from '../../shared/types.ts';
 import { request } from '../api.ts';
-import { labelValue, t } from '../i18n/index.ts';
+import { getLocale, labelValue, t } from '../i18n/index.ts';
 import { button, card, confirmModal, el, field, input, row, run, select, toast, UserError } from './dom.ts';
 import { localDateTime } from './display.ts';
 
+/**
+ * Reported amounts grouped in the interface language; the unit label already names tokens, credits or USD. Claude costs
+ * are summed floats, so unformatted totals also showed binary noise such as `0.30000000000000004`.
+ */
+function usageAmount(unit: BudgetRule['unit'], value: number): string {
+  return new Intl.NumberFormat(getLocale(), { maximumFractionDigits: unit === 'tokens' ? 0 : unit === 'codexCredits' ? 2 : 4 }).format(value);
+}
 export function budgetWarningText(warning: BudgetWarning): string {
   if (warning.kind === 'quota') return t('budget.quotaWarning', { percent: warning.reported ?? 0 });
   if (warning.kind === 'cloudExpiry') return t('budget.expiryWarning', { at: localDateTime(warning.at!) });
-  return t('budget.thresholdWarning', { unit: t(`budget.unit.${warning.unit!}`), reported: warning.reported ?? 0, threshold: warning.threshold ?? 0 });
+  return t('budget.thresholdWarning', { unit: t(`budget.unit.${warning.unit!}`), reported: usageAmount(warning.unit!, warning.reported ?? 0), threshold: usageAmount(warning.unit!, warning.threshold ?? 0) });
 }
 /** Explicit acknowledgment is single-use and cannot silently restart a failed send. */
 export async function confirmUsageRound(scope: UsageScope): Promise<boolean> {
@@ -43,13 +50,13 @@ export function usageHistoryPanel(): HTMLElement {
     if (!view.totals.length) result.append(el('p', 'muted', t('budget.unknown')));
     for (const total of view.totals) {
       const line = el('section', 'account-card'); line.append(el('h4', '', `${total.project} / ${total.task} · ${total.ai} / ${total.account}`));
-      line.append(el('p', '', `${labelValue(t('budget.unit.tokens'), total.tokenReports ? total.input + total.output : t('budget.unknown'))} (${labelValue(t('budget.cached'), total.cachedReports ? total.cached : t('budget.unknown'))})`));
-      if (total.ai === 'codex') line.append(el('p', '', labelValue(t('budget.unit.codexCredits'), total.codexCreditReports ? total.codexCredits : t('budget.unknown'))));
-      if (total.ai === 'claude') line.append(el('p', '', labelValue(t('budget.unit.claudeUsd'), total.claudeUsdReports ? total.claudeUsd : t('budget.unknown'))));
+      line.append(el('p', '', `${labelValue(t('budget.unit.tokens'), total.tokenReports ? usageAmount('tokens', total.input + total.output) : t('budget.unknown'))} (${labelValue(t('budget.cached'), total.cachedReports ? usageAmount('tokens', total.cached) : t('budget.unknown'))})`));
+      if (total.ai === 'codex') line.append(el('p', '', labelValue(t('budget.unit.codexCredits'), total.codexCreditReports ? usageAmount('codexCredits', total.codexCredits) : t('budget.unknown'))));
+      if (total.ai === 'claude') line.append(el('p', '', labelValue(t('budget.unit.claudeUsd'), total.claudeUsdReports ? usageAmount('claudeUsd', total.claudeUsd) : t('budget.unknown'))));
       line.append(el('p', 'muted', t('budget.unknownCount', { count: total.unknownReports }))); result.append(line);
     }
     const entries = el('details', 'disclosure'); entries.append(el('summary', '', t('budget.reports')));
-    for (const record of view.records) entries.append(el('p', '', `${localDateTime(record.at)} · ${record.project}/${record.task} · ${record.ai}/${record.account} · ${record.requestId} · ${record.sessionId ?? '—'} · ${labelValue(t('budget.unit.tokens'), record.usage ? record.usage.input + record.usage.output : t('budget.unknown'))}${record.codexCredits !== undefined ? ` · ${labelValue(t('budget.unit.codexCredits'), record.codexCredits)}` : ''}${record.claudeUsd !== undefined ? ` · ${labelValue(t('budget.unit.claudeUsd'), record.claudeUsd)}` : ''}`));
+    for (const record of view.records) entries.append(el('p', '', `${localDateTime(record.at)} · ${record.project}/${record.task} · ${record.ai}/${record.account} · ${record.requestId} · ${record.sessionId ?? '—'} · ${labelValue(t('budget.unit.tokens'), record.usage ? usageAmount('tokens', record.usage.input + record.usage.output) : t('budget.unknown'))}${record.codexCredits !== undefined ? ` · ${labelValue(t('budget.unit.codexCredits'), usageAmount('codexCredits', record.codexCredits))}` : ''}${record.claudeUsd !== undefined ? ` · ${labelValue(t('budget.unit.claudeUsd'), usageAmount('claudeUsd', record.claudeUsd))}` : ''}`));
     result.append(entries); const last = view.records.at(-1); before = last ? `${last.at}|${last.requestId}` : undefined;
     if (view.hasMore) result.append(button(t('budget.older'), async () => load(true)));
   }
