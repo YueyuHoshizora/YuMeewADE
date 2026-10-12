@@ -63,6 +63,20 @@ test('backup rejects escaping symlinks and restore rejects altered snapshots', a
   } finally { await fs.rm(temporary, { recursive: true, force: true }); }
 });
 
+test('a complete backup refuses an external folder that contains the backup storage', async () => {
+  const temporary = await fs.mkdtemp(path.join(os.tmpdir(), 'care-overlap-'));
+  try {
+    const body = path.join(temporary, 'home'); await fs.mkdir(body);
+    const ws = new Workspace(path.join(temporary, 'workspace')); await ws.init();
+    await new ProjectLedger(ws).create({ name: 'P', body });
+    const backup = new BackupService(ws, path.join(body, '.yumeewade', 'care', 'backups'));
+    await assert.rejects(backup.create(true), { detail: 'care_backup_overlap' });
+    assert.deepEqual(await fs.readdir(path.join(body, '.yumeewade', 'care', 'backups')), []);
+    // Without external code the storage is outside what is copied.
+    assert.equal((await backup.create(false)).complete, false);
+  } finally { await fs.rm(temporary, { recursive: true, force: true }); }
+});
+
 test('unknown backup ids and destinations under a missing folder are refused as invalid, not internal errors', async () => {
   const temporary = await fs.mkdtemp(path.join(os.tmpdir(), 'care-missing-'));
   try {

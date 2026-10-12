@@ -13,7 +13,7 @@ import { encryptSnapshot, receiveEncrypted, decryptSnapshot } from './portable-b
 
 interface Manifest { format: 1; id: string; createdAt: string; root: string; originalRoot: string; external: { project: string; source: string; originalSource: string; folder: string }[]; complete: boolean; fingerprint: string }
 const excluded = (name: string) => /^(credentials\.sqlite(?:[-.].*)?|credentials\.key|master\.key|core\.lock|cli-accounts|auth\.json|\.credentials\.json|\.device-keys\.json|antigravity-oauth-token)$/i.test(name);
-const fail = (detail: 'care_changed' | 'care_backup_invalid' | 'care_destination_exists' | 'care_external_required' | 'care_repository_unsupported') => new AppError('conflict', detail);
+const fail = (detail: 'care_changed' | 'care_backup_invalid' | 'care_destination_exists' | 'care_external_required' | 'care_repository_unsupported' | 'care_backup_overlap') => new AppError('conflict', detail);
 /** A backup id or destination parent that does not exist is invalid input, not an internal error. */
 const invalidIfMissing = missingAs(() => fail('care_backup_invalid'));
 const inside = (root: string, file: string) => root === file || isInside(root, file);
@@ -134,6 +134,8 @@ export class BackupService {
         external.push({ project: project.id, source: body, originalSource: path.resolve(ledger.bodyPath(project)), folder: existing?.folder ?? String(external.length) });
       }
     }
+    // A complete backup copying an external folder that holds the backup storage would copy its own output forever.
+    if (includeExternal && external.some(e => inside(e.source, directory))) throw fail('care_backup_overlap');
     return withFileLocks([...repositories], async () => {
       const id = randomUUID(); const pending = path.join(directory, `.${id}`); const folder = path.join(directory, id);
       await fs.mkdir(pending, { mode: 0o700 });

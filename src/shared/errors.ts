@@ -152,6 +152,7 @@ export const DETAIL_MESSAGES = {
   care_destination_exists: '目的地已存在，不會覆寫',
   care_external_required: '備份缺少外部程式碼，無法完整還原',
   care_repository_unsupported: '此儲存庫結構不支援安全完整備份',
+  care_backup_overlap: '外部程式碼資料夾包含備份存放位置，無法完整備份',
   care_closed: '工作區維護服務已關閉',
   project_trust_invalid: '專案信任設定不合法，請重新檢查',
   project_trust_changed: '專案路徑或信任設定已改變，請重新確認',
