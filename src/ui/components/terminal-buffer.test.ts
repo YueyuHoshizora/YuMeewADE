@@ -76,6 +76,19 @@ test('AltGr characters reach the shell as text; a real Ctrl+Alt chord still send
   assert.equal(terminalKey({ ...chord, getModifierState: () => false }, false), '\x1b\0');
   assert.equal(terminalKey({ ...chord, key: 'ArrowLeft', getModifierState: key => key === 'AltGraph' }, false), '\x1b[1;7D');
 });
+test('CNL and CPL stop at the scrolling margins like CUD and CUU', () => {
+  const down = new TerminalBuffer(4, 4); down.write('\x1b[2;3r\x1b[3;1H\x1b[E!');
+  assert.deepEqual(text(down), ['    ', '    ', '!   ', '    ']);
+  const up = new TerminalBuffer(4, 4); up.write('\x1b[2;3r\x1b[2;1H\x1b[F!');
+  assert.deepEqual(text(up), ['    ', '!   ', '    ', '    ']);
+});
+test('DECRC restores autowrap and the saved character set designation', () => {
+  const wrap = new TerminalBuffer(4, 2); wrap.write('\x1b7\x1b[?7l\x1b8ABCDE');
+  assert.deepEqual(text(wrap), ['ABCD', 'E   ']);
+  // ESC(0 selects DEC line drawing for G0; ESC(B after the save must be undone by the restore.
+  const charset = new TerminalBuffer(4, 2); charset.write('\x1b(0\x1b7\x1b(B\x1b8q');
+  assert.equal(text(charset)[0], '─   ');
+});
 test('late emoji presentation wraps a complete grapheme at the right edge', () => {
   const screen = new TerminalBuffer(4, 2); screen.write('abc❤'); screen.write('\uFE0F');
   assert.equal(text(screen)[0], 'abc '); assert.equal(screen.grid[1]![0]!.char, '❤️');

@@ -1,5 +1,6 @@
 export interface TerminalCell { char: string; width: number; fg: string; bg: string; bold: boolean; inverse: boolean; underline: boolean }
-interface Position { x: number; y: number; fg: string; bg: string; bold: boolean; inverse: boolean; underline: boolean; origin: boolean; wrap: boolean; charset: boolean }
+/** DECSC state: cursor, rendition, origin mode, pending wrap, autowrap and the G0/G1 designations with the shift state. */
+interface Position { x: number; y: number; fg: string; bg: string; bold: boolean; inverse: boolean; underline: boolean; origin: boolean; wrap: boolean; autowrap: boolean; charset: boolean; g0: boolean; g1: boolean }
 const COLORS = ['#1d1f21', '#cc6666', '#b5bd68', '#f0c674', '#81a2be', '#b294bb', '#8abeb7', '#c5c8c6', '#666666', '#d54e53', '#b9ca4a', '#e7c547', '#7aa6da', '#c397d8', '#70c0b1', '#ffffff'];
 const DEC = '◆▒␉␌␍␊°±␤␋┘┐┌└┼⎺⎻─⎼⎽├┤┴┬│≤≥π≠£·';
 const segmenter = new Intl.Segmenter(undefined, { granularity: 'grapheme' });
@@ -37,7 +38,7 @@ export class TerminalBuffer {
   private line(): TerminalCell[] { return Array.from({ length: this.cols }, () => this.blank()); }
   private emptyGrid(): TerminalCell[][] { return Array.from({ length: this.rows }, () => this.line()); }
   private resetTabs(): void { this.tabs.clear(); for (let x = 8; x < this.cols; x += 8) this.tabs.add(x); }
-  private position(): Position { return { x: this.x, y: this.y, fg: this.fg, bg: this.bg, bold: this.bold, inverse: this.inverse, underline: this.underline, origin: this.origin, wrap: this.wrap, charset: this.charset }; }
+  private position(): Position { return { x: this.x, y: this.y, fg: this.fg, bg: this.bg, bold: this.bold, inverse: this.inverse, underline: this.underline, origin: this.origin, wrap: this.wrap, autowrap: this.autowrap, charset: this.charset, g0: this.g0, g1: this.g1 }; }
   private restore(p: Position | undefined): void { if (p) { Object.assign(this, p); this.x = Math.min(this.cols - 1, this.x); this.y = Math.min(this.rows - 1, this.y); } }
   reset(): void {
     this.primary = undefined; this.saved = undefined; this.fg = ''; this.bg = ''; this.bold = false; this.inverse = false; this.underline = false;
@@ -172,8 +173,9 @@ export class TerminalBuffer {
     else if (command === 'B' || command === 'e') this.y = Math.min(this.y <= this.bottom ? this.bottom : this.rows - 1, this.y + n);
     else if (command === 'C' || command === 'a') this.x = Math.min(this.cols - 1, this.x + n);
     else if (command === 'D') this.x = Math.max(0, this.x - n);
-    else if (command === 'E') { this.y = Math.min(high, this.y + n); this.x = 0; }
-    else if (command === 'F') { this.y = Math.max(low, this.y - n); this.x = 0; }
+    // CNL/CPL are CUD/CUU plus carriage return, so they stop at the scrolling margins the same way.
+    else if (command === 'E') { this.y = Math.min(this.y <= this.bottom ? this.bottom : this.rows - 1, this.y + n); this.x = 0; }
+    else if (command === 'F') { this.y = Math.max(this.y >= this.top ? this.top : 0, this.y - n); this.x = 0; }
     else if (command === 'G' || command === '`') this.x = Math.min(this.cols - 1, n - 1);
     else if (command === 'd') this.y = Math.min(high, low + n - 1);
     else if (command === 'H' || command === 'f') { this.y = Math.min(high, low + n - 1); this.x = Math.min(this.cols - 1, Math.max(1, args[1] ?? 1) - 1); }
