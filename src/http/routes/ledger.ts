@@ -76,6 +76,8 @@ export function registerLedgerRoutes(router: Router, app: App): void {
   router.post('/api/project/update', async ({ body }) => {
     const project = reqString(body, 'project', 120);
     const patch = object(body.patch);
+    // Phases change only through /api/project/phases, which checks names, keeps states and moves tasks along on rename.
+    if (patch.phases !== undefined) throw new AppError('bad_request', 'field_type', { field: 'phases' });
     if (patch.verify !== undefined) {
       if (typeof patch.verify !== 'string' || /[\r\n\0]/u.test(patch.verify)) throw new AppError('bad_request', 'field_type', { field: 'verify' });
       if (patch.verify.trim().length > 500) throw new AppError('bad_request', 'field_too_long', { field: 'verify' });

@@ -198,7 +198,7 @@ HTTP JSON と SSE を使い、デスクトップ版と Web 版で完全に共通
 | `GET /api/search?q=&project=&task=` | タスク名と会話内容を検索（最大 50 件）。`project`（と `task`）を指定するとそのプロジェクト／タスクのみ。不正な名前は 400、存在しない場合は 404、`task` には `project` が必要 |
 | `POST /api/project/new`、`/api/project/update`、`/api/project/archive` | プロジェクト |
 | `POST /api/phase/next`、`/api/phase/continue` | フェーズ：`{project, phase}`、`phase` は画面上の現在のフェーズ。すでに進んでいれば 409 `phase_changed` |
-| `POST /api/project/phases` | フェーズ編集 `{project, previous: string[], phases: [{name, from?}]}`（最大 12、名前は重複不可）：`from` は引き継ぐ既存フェーズで、名前を変えるとそのタスクも一緒に変わる。`previous` が現在と違えば 409 `phase_changed` |
+| `POST /api/project/phases` | フェーズ編集 `{project, previous: string[], phases: [{name, from?}]}`（最大 12、名前は重複不可）：`from` は引き継ぐ既存フェーズで、名前を変えるとそのタスクも一緒に変わる。`previous` が現在と違えば 409 `phase_changed`。フェーズはこのルートでのみ変更でき、`/api/project/update` に `phases` を含めると 400 |
 | `POST /api/order`、`/api/pin` | プロジェクトの順序とピン留め |
 | `POST /api/task/new`、`/api/task/update`、`/api/task/step`、`/api/task/memo`、`/api/task/completion`、`/api/task/archive`、`/api/task/read` | タスク |
 | `POST /api/task/bulk` | `{project, tasks: string[] (1–200、重複不可), action: {kind: state/phase/due/addTag/removeTag, value} または {kind: archive, confirm: true}}`；`results: [{task, ok, error?, detail?}]` を返す。作業コピーの強制削除はしない |

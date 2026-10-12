@@ -161,6 +161,8 @@ test('editing phases renames tasks along, keeps states, normalizes the current p
     const duplicate = await s.api('POST', '/api/project/phases', { project: p.id, previous: current, phases: [{ name: '計畫', from: '計畫' }, { name: ' 計畫 ' }] });
     assert.equal(duplicate.status, 400); assert.equal((duplicate.json as { detail: string }).detail, 'phase_duplicate');
     assert.equal((await s.api('POST', '/api/project/phases', { project: p.id, previous: current, phases: [{ name: 'A', from: '不存在' }] })).status, 400);
+    // The generic update must not bypass these checks.
+    assert.equal((await s.api('POST', '/api/project/update', { project: p.id, patch: { phases: [{ name: '計畫', state: '完成' }, { name: '計畫', state: '進行中' }] } })).status, 400);
     assert.deepEqual((await state()).phases.map(phase => phase.name), current);
   } finally { await s.close(); }
 });
