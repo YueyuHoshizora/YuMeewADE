@@ -50,3 +50,10 @@ test('a reply cut off inside a code block does not turn the rest of the export i
   assert.match(text, /```inner\n```\n````\n\n## AI/u, 'a shorter fence inside a longer one does not close it');
   assert.match(text, /and inline ``` ticks\n\n## 你/u, 'balanced fences are left untouched');
 });
+
+test('Markdown export masks the home folder after the workspace, only as a whole path segment', () => {
+  const rows: ChatRow[] = [{ role: 'user', at: 'now', text: 'See /Users/al/work/Projects/P/a.ts, /Users/al/Code/x.ts and (/Users/al). Not /Users/alice/y.ts', to: 'codex', request: 'r' }];
+  const text = formatTranscript('Task in /Users/al/Code', rows, '/Users/al/work', false, undefined, '/Users/al');
+  assert.match(text, /^# Task in ~\/Code\n/u);
+  assert.match(text, /See \[工作區\]\/Projects\/P\/a\.ts, ~\/Code\/x\.ts and \(~\)\. Not \/Users\/alice\/y\.ts/u);
+});

@@ -3,9 +3,17 @@ import type { ChatRow, Step, TaskSections } from '../shared/types.ts';
 
 const RECORD_HEADINGS: [keyof TaskSections, string][] = [['done', '做了什麼'], ['next', '下一步'], ['cautions', '注意'], ['memo', '備註']];
 
-/** `ledger` is the task file's steps and free-text sections; whatever has content precedes the conversation. */
-export function formatTranscript(title: string, rows: ChatRow[], workspaceRoot: string, tools = false, ledger?: { steps: Step[]; sections: TaskSections }): string {
-  const safe = (text: string) => text.replaceAll(workspaceRoot, '[工作區]');
+/**
+ * `ledger` is the task file's steps and free-text sections; whatever has content precedes the conversation.
+ * The export is meant to be handed to someone else: the workspace root and then the home folder (account name) are masked.
+ */
+export function formatTranscript(title: string, rows: ChatRow[], workspaceRoot: string, tools = false, ledger?: { steps: Step[]; sections: TaskSections }, home = ''): string {
+  // Only a whole path segment counts: `/Users/al` must not eat the start of `/Users/alice`.
+  const homePattern = home.length > 1 ? new RegExp(`${home.replace(/[\\^$.*+?()[\]{}|]/gu, '\\$&')}(?![\\p{L}\\p{N}_-])`, 'gu') : undefined;
+  const safe = (text: string) => {
+    const masked = text.replaceAll(workspaceRoot, '[工作區]');
+    return homePattern ? masked.replace(homePattern, '~') : masked;
+  };
   const block = (text: string) => closeFence(safe(text));
   const sections = [`# ${safe(title).replace(/[\r\n]/gu, ' ')}`];
   const record = [

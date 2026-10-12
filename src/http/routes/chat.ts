@@ -1,4 +1,5 @@
 import { promises as fs } from 'node:fs';
+import os from 'node:os';
 import path from 'node:path';
 import type { App } from '../../server/app.ts';
 import { AppError } from '../../shared/errors.ts';
@@ -24,7 +25,7 @@ export function registerChatRoutes(router: Router, app: App): void {
     const t = reqString(query, 'task', 100);
     const task = await app.tasks.get(p, t);
     const [rows, sections] = await Promise.all([app.store.readLog(p, t), app.tasks.sections(p, t)]);
-    const text = formatTranscript(task.title, rows, app.ws.root, query.get('tools') === '1', { steps: task.steps, sections });
+    const text = formatTranscript(task.title, rows, app.ws.root, query.get('tools') === '1', { steps: task.steps, sections }, os.homedir());
     const filename = encodeURIComponent(`${task.title}.md`).replace(/['()*]/gu, c => `%${c.charCodeAt(0).toString(16).toUpperCase()}`);
     res.writeHead(200, {
       'Content-Type': 'text/markdown; charset=utf-8',
