@@ -27,12 +27,23 @@ export function parseReviewOutput(text: string): { structured: boolean; approved
   return { structured: true, approved: record.approved && !findings.some(f => f.severity === 'major' || f.severity === 'critical'), findings };
 }
 
-/** Hash the complete tracked/nonignored content, not timestamps or a truncated diff. */
+/**
+ * Hash the complete tracked/nonignored content, not timestamps or a truncated diff. Every entry is one JSON record with
+ * its own content digest, so bytes in one file can never pass for another file's name or metadata. A submodule counts by
+ * the commit staged for it and, recursively, by its own content.
+ */
 export async function reviewFingerprint(cwd: string): Promise<{ revision: string; content: string }> {
   const head = await git(cwd, ['rev-parse', '--verify', 'HEAD']);
   const revision = head.code === 0 ? head.stdout.trim() : 'unborn';
   const files: string[] = [];
-  if (await isRepo(cwd)) files.push(...(await gitOk(cwd, ['ls-files', '-z', '--cached', '--others', '--exclude-standard'], { maxBytes: 2_000_000 })).split('\0').filter(Boolean));
+  const gitlinks = new Map<string, string>();
+  if (await isRepo(cwd)) {
+    files.push(...(await gitOk(cwd, ['ls-files', '-z', '--cached', '--others', '--exclude-standard'], { maxBytes: 2_000_000 })).split('\0').filter(Boolean));
+    for (const entry of (await gitOk(cwd, ['ls-files', '-z', '--stage'], { maxBytes: 4_000_000 })).split('\0')) {
+      const staged = /^160000 ([0-9a-f]+) \d\t(.+)$/su.exec(entry);
+      if (staged) gitlinks.set(staged[2]!, staged[1]!);
+    }
+  }
   else {
     const pending = [''];
     while (pending.length) {
@@ -46,7 +57,7 @@ export async function reviewFingerprint(cwd: string): Promise<{ revision: string
     }
   }
   if (files.length > 50000) throw new AppError('conflict');
-  const hash = createHash('sha256'); let bytes = 0;
+  const outer = createHash('sha256'); let bytes = 0;
   const root = await fs.realpath(cwd); const absoluteRoot = path.resolve(cwd);
   for (const name of [...new Set(files)].sort()) {
     if (name.split('/').includes('.ai')) continue;
@@ -54,12 +65,13 @@ export async function reviewFingerprint(cwd: string): Promise<{ revision: string
     if (!isInside(absoluteRoot, file)) throw new AppError('conflict');
     const parent = await fs.realpath(path.dirname(file)).catch((error: NodeJS.ErrnoException) => { if (error.code === 'ENOENT') return null; throw error; });
     if (parent && parent !== root && !isInside(root, parent)) throw new AppError('conflict');
-    hash.update(name + '\0');
+    let record: unknown[];
     try {
       const stat = await fs.lstat(file);
-      if (stat.isSymbolicLink()) hash.update('link:' + await fs.readlink(file));
+      if (stat.isSymbolicLink()) record = ['link', await fs.readlink(file)];
       else if (stat.isFile()) {
         if (bytes + stat.size > 100_000_000) throw new AppError('conflict');
+        const hash = createHash('sha256');
         const handle = await fs.open(file, 'r');
         try {
           for await (const chunk of handle.createReadStream({ autoClose: false })) {
@@ -67,10 +79,13 @@ export async function reviewFingerprint(cwd: string): Promise<{ revision: string
             hash.update(chunk);
           }
         } finally { await handle.close(); }
-        hash.update(String(stat.mode));
-      } else hash.update('nonfile');
-    } catch (error) { if ((error as NodeJS.ErrnoException).code === 'ENOENT') hash.update('deleted'); else throw error; }
-    hash.update('\0');
+        record = ['file', hash.digest('hex'), stat.mode];
+      } else if (stat.isDirectory() && gitlinks.has(name)) {
+        const nested = await isRepo(file) ? await reviewFingerprint(file) : null;
+        record = ['gitlink', gitlinks.get(name), nested?.revision ?? null, nested?.content ?? null];
+      } else record = ['nonfile'];
+    } catch (error) { if ((error as NodeJS.ErrnoException).code === 'ENOENT') record = ['deleted']; else throw error; }
+    outer.update(`${JSON.stringify([name, ...record])}\n`);
   }
-  return { revision, content: hash.digest('hex') };
+  return { revision, content: outer.digest('hex') };
 }
