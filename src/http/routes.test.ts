@@ -489,6 +489,22 @@ test('neither the app page nor the API can be framed by another site', async () 
   } finally { await s.close(); }
 });
 
+test('static UI files never follow a link to a file outside the UI folder', async () => {
+  const dir = await fs.mkdtemp(path.join(os.tmpdir(), 'static-link-'));
+  const ui = path.join(dir, 'ui'); await fs.mkdir(ui);
+  await fs.writeFile(path.join(dir, 'secret.txt'), 'outside'); await fs.writeFile(path.join(ui, 'app.js'), 'inside');
+  await fs.symlink('../secret.txt', path.join(ui, 'link.txt')); await fs.symlink('app.js', path.join(ui, 'alias.js'));
+  const { serveStatic } = await import('./static.ts');
+  const server = http.createServer((req, res) => void serveStatic(ui, req, res));
+  await new Promise<void>(resolve => server.listen(0, '127.0.0.1', resolve));
+  try {
+    const base = `http://127.0.0.1:${(server.address() as { port: number }).port}`;
+    const outside = await fetch(`${base}/link.txt`);
+    assert.equal(outside.status, 404); assert.doesNotMatch(await outside.text(), /outside/);
+    assert.equal(await (await fetch(`${base}/alias.js`)).text(), 'inside', 'a link that stays inside still serves');
+  } finally { await new Promise(resolve => server.close(resolve)); await fs.rm(dir, { recursive: true, force: true }); }
+});
+
 test('project order only stores existing projects under an existing parent', async () => {
   const s = await startTestServer();
   try {

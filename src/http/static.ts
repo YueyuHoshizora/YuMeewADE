@@ -32,7 +32,10 @@ export async function serveStatic(dir: string, req: IncomingMessage, res: Server
   }
   let data: Buffer;
   try {
-    data = await fs.readFile(file);
+    // The lexical check above does not follow links: a symlink inside the UI folder must not serve a file outside it.
+    const [root, real] = await Promise.all([fs.realpath(dir), fs.realpath(file)]);
+    if (!isInside(root, real)) throw new Error('outside the UI folder');
+    data = await fs.readFile(real);
   } catch {
     res.writeHead(404, { 'Content-Type': 'text/plain; charset=utf-8' }).end('404');
     return;
