@@ -83,6 +83,7 @@ export const fr: Record<MessageKey, string> = {
 'common.add': 'Ajouter',
 'common.remove': 'Retirer',
 'common.close': 'Fermer',
+'common.refresh': 'Actualiser',
 'common.cancel': 'Annuler',
 'common.none': 'Aucun',
 'common.rename': 'Renommer',

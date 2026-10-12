@@ -75,6 +75,7 @@ export const zhTW = {
 'app.title': 'YuMeewADE',
 'nav.projects': '專案', 'nav.new': '＋ 新專案', 'nav.turn': '交給你嚕', 'nav.settings': '設定', 'nav.menu': '展開／收起專案',
 'common.forceArchive': '強制封存',
+'common.refresh': '重新整理',
 'common.save': '儲存', 'common.add': '新增', 'common.remove': '移除', 'common.close': '關閉', 'common.cancel': '取消', 'common.none': '無', 'common.rename': '重新命名', 'common.archive': '封存', 'common.open': '開啟資料夾', 'common.updated': '更新 {at}', 'common.loading': '載入中…', 'common.empty': '目前沒有項目', 'common.saved': '已儲存', 'common.confirmArchive': '確定封存「{name}」？資料會移至封存區，不會刪除。', 'common.title': '標題', 'common.name': '名稱', 'common.details': '詳細設定（選填）', 'common.actions': '更多操作', 'common.back': '← 返回 {name}', 'common.error': '操作失敗',
 'tree.unread': '未讀', 'tree.reply': '等待回覆', 'tree.confirm': '確認完成', 'tree.branch': '⑂ 分支：{source}', 'tree.subtask': '新增子作業', 'tree.newBranch': '新增分支', 'tree.subproject': '新增子專案', 'tree.pin': '釘選', 'tree.unpin': '取消釘選', 'tree.up': '向上移動', 'tree.down': '向下移動', 'tree.expand': '展開', 'tree.collapse': '收起',
 'turn.reply': '等待回覆（{n}）', 'turn.confirm': '確認完成（{n}）', 'turn.replyHint': 'AI 正在等你的回答。開啟作業以回覆或清除問題。', 'turn.confirmHint': '檢查成果後，選擇標為完成或繼續進行。', 'turn.approve': '標為完成', 'turn.continue': '繼續進行',

@@ -1,7 +1,8 @@
 import type { LogTail } from '../../shared/types.ts';
 import { request } from '../api.ts';
 import { t } from '../i18n/index.ts';
-import { area, button, card, el, field, input, row, run, select } from './dom.ts';
+import { area, button, card, el, field, input, row, run, select, toast } from './dom.ts';
+import { copyText } from './markdown.ts';
 
 export function logViewer(): HTMLElement {
   const level = select((['all', 'info', 'warn', 'error'] as const).map(value => ({ value, label: t(`coreLog.${value}`) })), 'all');
@@ -24,6 +25,6 @@ export function logViewer(): HTMLElement {
   const refresh = async () => { tail = await request<LogTail>('/api/care/log'); render(); };
   level.onchange = render; filter.oninput = render;
   const node = card(t('coreLog.title'), el('p', 'warning', t('coreLog.warning')), field(t('coreLog.level'), level), field(t('coreLog.filter'), filter),
-    row(button(t('ai.refresh'), refresh), button(t('onboarding.copy'), () => navigator.clipboard.writeText(output.value))), status, output);
+    row(button(t('common.refresh'), refresh), button(t('coreLog.copy'), async () => { await copyText(output.value); toast(t('coreLog.copied')); })), status, output);
   void run(refresh); return node;
 }

@@ -83,6 +83,7 @@ export const ja: Record<MessageKey, string> = {
 'common.add': '追加',
 'common.remove': '削除',
 'common.close': '閉じる',
+'common.refresh': '再読み込み',
 'common.cancel': 'キャンセル',
 'common.none': 'なし',
 'common.rename': '名前を変更',

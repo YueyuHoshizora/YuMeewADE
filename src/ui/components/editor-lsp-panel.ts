@@ -23,6 +23,6 @@ export function editorLspPanel(context: ViewContext): HTMLElement {
     try { parsed = JSON.parse(commands.value); } catch { throw new UserError(t('editorUI.invalid')); }
     if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed) || Object.values(parsed).some(v => !Array.isArray(v) || !v.every(arg => typeof arg === 'string'))) throw new UserError(t('editorUI.invalid'));
     await request('/api/editor/settings',{project:project.value,revision:settings.revision,commands:parsed,format:{tabSize:Number(tabSize.value),insertSpaces:spaces.checked,eol:eol.value}}); await load();
-  }),button(t('ai.refresh'),load),status);
+  }),button(t('common.refresh'),load),status);
   void run(load); return panel;
 }

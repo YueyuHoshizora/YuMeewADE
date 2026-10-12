@@ -8,6 +8,8 @@ export const featureZhTW = {
   "coreLog.warn": "警告",
   "coreLog.error": "錯誤",
   "coreLog.truncated": "僅顯示最後 256 KiB／1000 行（已截斷）",
+  "coreLog.copy": "複製日誌",
+  "coreLog.copied": "已複製日誌",
   "coreLog.complete": "最後 256 KiB／1000 行範圍內的日誌"
 };
 export const featureZhCN = {
@@ -20,6 +22,8 @@ export const featureZhCN = {
   "coreLog.warn": "警告",
   "coreLog.error": "错误",
   "coreLog.truncated": "仅显示最后 256 KiB／1000 行（已截断）",
+  "coreLog.copy": "复制日志",
+  "coreLog.copied": "已复制日志",
   "coreLog.complete": "最后 256 KiB／1000 行范围内的日志"
 };
 export const featureEn = {
@@ -32,6 +36,8 @@ export const featureEn = {
   "coreLog.warn": "Warning",
   "coreLog.error": "Error",
   "coreLog.truncated": "Only the last 256 KiB / 1000 lines (truncated)",
+  "coreLog.copy": "Copy log",
+  "coreLog.copied": "Log copied",
   "coreLog.complete": "Log within the last 256 KiB / 1000 lines"
 };
 export const featureJa = {
@@ -44,6 +50,8 @@ export const featureJa = {
   "coreLog.warn": "警告",
   "coreLog.error": "エラー",
   "coreLog.truncated": "末尾 256 KiB／1000 行のみ（切り詰め済み）",
+  "coreLog.copy": "ログをコピー",
+  "coreLog.copied": "ログをコピーしました",
   "coreLog.complete": "末尾 256 KiB／1000 行以内のログ"
 };
 export const featureDe = {
@@ -56,6 +64,8 @@ export const featureDe = {
   "coreLog.warn": "Warnung",
   "coreLog.error": "Fehler",
   "coreLog.truncated": "Nur letzte 256 KiB / 1000 Zeilen (gekürzt)",
+  "coreLog.copy": "Protokoll kopieren",
+  "coreLog.copied": "Protokoll kopiert",
   "coreLog.complete": "Log innerhalb der letzten 256 KiB / 1000 Zeilen"
 };
 export const featureFr = {
@@ -68,6 +78,8 @@ export const featureFr = {
   "coreLog.warn": "Avertissement",
   "coreLog.error": "Erreur",
   "coreLog.truncated": "Derniers 256 KiB / 1000 lignes uniquement (tronqué)",
+  "coreLog.copy": "Copier le journal",
+  "coreLog.copied": "Journal copié",
   "coreLog.complete": "Journal dans les derniers 256 KiB / 1000 lignes"
 };
 export const featureIt = {
@@ -80,5 +92,7 @@ export const featureIt = {
   "coreLog.warn": "Avviso",
   "coreLog.error": "Errore",
   "coreLog.truncated": "Solo gli ultimi 256 KiB / 1000 righe (troncato)",
+  "coreLog.copy": "Copia registro",
+  "coreLog.copied": "Registro copiato",
   "coreLog.complete": "Log entro gli ultimi 256 KiB / 1000 righe"
 };

@@ -83,6 +83,7 @@ export const zhCN: Record<MessageKey, string> = {
 'common.add': '添加',
 'common.remove': '移除',
 'common.close': '关闭',
+'common.refresh': '刷新',
 'common.cancel': '取消',
 'common.none': '无',
 'common.rename': '重命名',

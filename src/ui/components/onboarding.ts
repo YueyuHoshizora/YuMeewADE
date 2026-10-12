@@ -29,7 +29,7 @@ export function cliGuidance(context: ViewContext): HTMLElement {
       return item;
     }));
   };
-  const panel = card(t('onboarding.title'), el('p', 'muted', t('onboarding.manual')), button(t('ai.refresh'), refresh), entries);
+  const panel = card(t('onboarding.title'), el('p', 'muted', t('onboarding.manual')), button(t('common.refresh'), refresh), entries);
   void run(refresh); return panel;
 }
 export function onboardingBanner(context: ViewContext): HTMLElement {
