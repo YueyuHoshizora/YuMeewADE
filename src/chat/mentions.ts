@@ -3,6 +3,7 @@ import path from 'node:path';
 import { isLocalSecret } from '../git/git.ts';
 import { isInside } from '../shared/fsx.ts';
 import type { FileMention } from '../shared/types.ts';
+import { quoteBoundaries } from './prompt.ts';
 
 export const MENTION_FILE_BYTES = 65_536;
 export const MENTION_TOTAL_BYTES = 262_144;
@@ -61,7 +62,7 @@ export async function resolveMentions(text: string, cwd: string, limits: { menti
       if (start > lines.length && !truncated) continue;
       mention.status = truncated ? 'truncated' : 'resolved';
       const selected = lines.slice(start - 1, end).map((line, index) => `${start + index}: ${line}`).join('\n');
-      sections.push(JSON.stringify(mention.token) + '\n' + selected + (truncated ? '\n（引用已截斷：位元組上限；未顯示的行未讀取）' : ''));
+      sections.push(JSON.stringify(mention.token) + '\n' + quoteBoundaries(selected) + (truncated ? '\n（引用已截斷：位元組上限；未顯示的行未讀取）' : ''));
     } catch { /* An unreadable or disappearing file remains an unresolved reference. */ }
     finally { await handle?.close().catch(() => undefined); }
   }

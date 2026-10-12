@@ -3,7 +3,7 @@ import path from 'node:path';
 import type { Workspace } from '../ledger/workspace.ts';
 import { AppError } from '../shared/errors.ts';
 import { isInside, readJson, writeJson, withFileLocks } from '../shared/fsx.ts';
-import { HANDOFF_NOTICE } from './prompt.ts';
+import { HANDOFF_NOTICE, quoteBoundaries } from './prompt.ts';
 import type { PinnedSource, TaskContext, BuiltTaskContext, ContextManifest } from '../shared/context-budget.ts';
 import { fitContextSection } from '../shared/context-budget.ts';
 export type { PinnedSource, TaskContext } from '../shared/context-budget.ts';
@@ -61,7 +61,8 @@ export async function buildTaskContext(ws: Workspace, project: string, task: str
   const header = `<task_context>\n${HANDOFF_NOTICE}\n`; const footer = '\n</task_context>';
   let remaining = Math.max(0, limit - header.length - footer.length);
   const parts: string[] = []; const allocations: BuiltTaskContext['allocations'] = [];
-  const add = (id: string, label: string, body: string, allocated: number): void => {
+  const add = (id: string, label: string, raw: string, allocated: number): void => {
+    const body = quoteBoundaries(raw);
     const separator = parts.length ? 2 : 0;
     const cap = Math.min(allocated, Math.max(0, remaining - separator));
     const content = fitContextSection(`${label}\n${body}`, cap);
