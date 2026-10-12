@@ -740,12 +740,15 @@ export class EditorService {
       if (mutation.confirmation !== mutation.path) throw new AppError('bad_request');
       const target = await this.existing(project, task, mutation.path);
       const stat = await fs.lstat(target.file);
-      if (stat.isDirectory()) {
-        if ((await this.folderRevision(project, task, mutation.path)).revision !== mutation.revision) throw new AppError('conflict', 'editor_conflict');
-      } else {
-        await this.target(project, task, mutation.path);
-        if ((await this.document(target.file, mutation.path)).revision !== mutation.revision) throw new AppError('conflict', 'editor_conflict');
-      }
+      const unchanged = async () => {
+        if (stat.isDirectory()) {
+          if ((await this.folderRevision(project, task, mutation.path)).revision !== mutation.revision) throw new AppError('conflict', 'editor_conflict');
+        } else {
+          await this.target(project, task, mutation.path);
+          if ((await this.document(target.file, mutation.path)).revision !== mutation.revision) throw new AppError('conflict', 'editor_conflict');
+        }
+      };
+      await unchanged();
       const destination = mutation.action === 'rename' ? await validateNew(mutation.destination ?? '', { relative: mutation.path, file: target.file }) : undefined;
       // The OS refuses to move a folder under itself (EINVAL), which would surface as an internal error. Compare
       // inodes so a case-variant destination on a case-insensitive file system is caught too.
@@ -762,6 +765,8 @@ export class EditorService {
         const current = await this.read(project, task, relative).catch((error: unknown) => { if (error instanceof AppError && error.status === 404) return undefined; throw error; });
         if (current && !current.binary && !current.truncated) await preserveHistory(root, { path: relative, revision: current.revision, text: current.text, encoding: current.encoding ?? 'UTF8', mode: (await fs.lstat(path.join(root, relative))).mode & 0o777, reason: 'mutate' });
       }
+      // Saving history took a while: an edit made meanwhile must not be renamed away or deleted on the old approval.
+      await unchanged();
       if (destination) await fs.rename(target.file, destination);
       else if (mutation.action === 'delete') {
         if (stat.isDirectory()) {

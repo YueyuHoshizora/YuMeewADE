@@ -153,6 +153,24 @@ test('renaming only the letter case works on case-insensitive file systems and s
   } finally { editor.dispose(); }
 }));
 
+test('delete and rename recheck the revision after saving history, so an edit made meanwhile is not lost', () => withTmpWorkspace(async ws => {
+  const projects = new ProjectLedger(ws); const tasks = new TaskLedger(ws); await projects.create({ name: 'P' });
+  const editor = new EditorService(new WorktreeService({ ws, projects, tasks, diffBytes: 100000 }), tasks, {});
+  const file = path.join(ws.projectDir('P'), 'a.txt');
+  try {
+    for (const action of ['delete', 'rename'] as const) {
+      await fs.writeFile(file, 'original');
+      const revision = (await editor.read('P', '', 'a.txt')).revision;
+      // The history snapshot is the last read before the file is removed; another program writes right after it.
+      const read = editor.read.bind(editor);
+      editor.read = async (...args: Parameters<EditorService['read']>) => { const document = await read(...args); await fs.writeFile(file, 'written meanwhile'); return document; };
+      await assert.rejects(editor.mutate('P', '', { action, path: 'a.txt', confirmation: 'a.txt', revision, ...(action === 'rename' ? { destination: 'b.txt' } : {}) }), (error: unknown) => error instanceof AppError && error.detail === 'editor_conflict');
+      editor.read = read;
+      assert.equal(await fs.readFile(file, 'utf8'), 'written meanwhile');
+    }
+  } finally { editor.dispose(); }
+}));
+
 test('a file without write permission opens read-only and is never replaced by a save', { skip: process.getuid?.() === 0 && 'root bypasses file permissions' }, () => withTmpWorkspace(async ws => {
   const projects = new ProjectLedger(ws); const tasks = new TaskLedger(ws); await projects.create({ name: 'P' });
   const editor = new EditorService(new WorktreeService({ ws, projects, tasks, diffBytes: 100000 }), tasks, {});
