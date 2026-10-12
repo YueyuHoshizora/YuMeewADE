@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';
 import { promises as fs } from 'node:fs';
 import { test } from 'node:test';
 import { withTmpWorkspace } from '../testing/tmp.ts';
-import { parseRoles, resolveAvailableLaunch, resolveLaunch, writeRoles } from './roles.ts';
+import { loadRoles, parseRoles, resolveAvailableLaunch, resolveLaunch, writeRoles } from './roles.ts';
 const initial = { ai: 'codex', model: 'gpt-6.1-sol', effort: 'high' };
 test('real defaults and roleless fallback', () => withTmpWorkspace(async ws => {
   const roles = parseRoles(await fs.readFile(ws.rolesFile, 'utf8'));
@@ -58,4 +58,15 @@ test('saving roles into a file that starts with a byte order mark replaces its r
   const saved = await writeRoles(ws.rolesFile, [{ name: '新', main: { cli: 'claude', model: '', effort: '' }, job: 'new' }]);
   assert.deepEqual(Object.keys(saved.roles), ['新']);
   assert.deepEqual(Object.keys(parseRoles(await fs.readFile(ws.rolesFile, 'utf8')).roles), ['新']);
+}));
+
+test('a hand-broken roles.yaml names the file to repair, a deleted one means no roles, and saving recreates it', () => withTmpWorkspace(async ws => {
+  for (const broken of ['roles:\n  - name: [unclosed\n', 'roles:\n  "x":\n    main: [nosuchcli, "m", high]\n']) {
+    await fs.writeFile(ws.rolesFile, broken);
+    await assert.rejects(loadRoles(ws.rolesFile), { detail: 'file_corrupt', field: 'roles.yaml' });
+  }
+  await fs.rm(ws.rolesFile);
+  assert.deepEqual(Object.keys((await loadRoles(ws.rolesFile)).roles), []);
+  await writeRoles(ws.rolesFile, [{ name: 'dev', main: { cli: 'codex', model: '', effort: '' }, job: '' }]);
+  assert.deepEqual(Object.keys((await loadRoles(ws.rolesFile)).roles), ['dev']);
 }));

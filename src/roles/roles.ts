@@ -1,5 +1,6 @@
 // 角色只決定工作分工與模型；CLI 權限由每輪設定決定。
 import { promises as fs } from 'node:fs';
+import path from 'node:path';
 import { AppError } from '../shared/errors.ts';
 import { atomicWrite } from '../shared/fsx.ts';
 import { EFFORTS, HUMAN, type AiPick, type RoleInput, type RoleSlot, type Roles, type Task } from '../shared/types.ts';
@@ -31,7 +32,16 @@ export function parseRoles(text: string): Roles {
   }
   return { roles };
 }
-export async function loadRoles(file: string): Promise<Roles> { return parseRoles(await fs.readFile(file, 'utf8')); }
+/**
+ * roles.yaml is hand-editable: a deleted file means no roles; a broken one names the file to repair (like JSON ledgers)
+ * instead of an anonymous internal error that blanks every page.
+ */
+export async function loadRoles(file: string): Promise<Roles> {
+  const text = await fs.readFile(file, 'utf8').catch((error: NodeJS.ErrnoException) => { if (error.code === 'ENOENT') return ''; throw error; });
+  // Every parse failure (YAML syntax, an unknown CLI or effort in a slot) means the file content is invalid.
+  try { return parseRoles(text); }
+  catch (cause) { throw new AppError('internal', 'file_corrupt', { field: path.basename(file), cause }); }
+}
 export async function writeRoles(file: string, inputs: RoleInput[]): Promise<Roles> {
   if (!Array.isArray(inputs) || inputs.length > ROLES_MAX) throw new AppError('bad_request');
   const names = new Set<string>();
@@ -43,7 +53,7 @@ export async function writeRoles(file: string, inputs: RoleInput[]): Promise<Rol
     lines.push(`  ${JSON.stringify(r.name)}:`, `    main: ${encode(r.main)}`, ...(r.backup ? [`    backup: ${encode(r.backup)}`] : []), `    job: ${JSON.stringify(r.job)}`);
   }
   // A byte order mark would keep the existing `roles:` line from matching and a second block would be appended.
-  const text = (await fs.readFile(file, 'utf8')).replace(/^\uFEFF/, '');
+  const text = (await fs.readFile(file, 'utf8').catch((error: NodeJS.ErrnoException) => { if (error.code === 'ENOENT') return ''; throw error; })).replace(/^\uFEFF/, '');
   const old = text.split('\n'); const start = old.findIndex(x => /^roles\s*:/u.test(x));
   let end = start + 1; while (end < old.length && !/^[^\s#][^:]*:/u.test(old[end] ?? '')) end++;
   const next = start < 0 ? `${text.trimEnd()}\n\n${lines.join('\n')}\n` : [...old.slice(0, start), ...lines, '', ...old.slice(end)].join('\n');
