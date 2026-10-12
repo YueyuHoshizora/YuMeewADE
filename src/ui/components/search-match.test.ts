@@ -12,3 +12,9 @@ test('highlighting preserves untrusted text and matches literal punctuation', ()
 test('case insensitive Unicode matching preserves original offsets', () => {
   assert.deepEqual(searchParts('İ ß ABC abc', 'abc').filter(part => part.match).map(part => part.text), ['ABC', 'abc']);
 });
+test('a character whose lowercase form is longer highlights whole, as the conversation search matched it', () => {
+  const parts = searchParts('İstanbul ist', 'i');
+  assert.equal(parts.map(part => part.text).join(''), 'İstanbul ist');
+  assert.deepEqual(parts.filter(part => part.match).map(part => part.text), ['İ', 'i']);
+  assert.deepEqual(searchParts('İSTANBUL', 'i̇s').filter(part => part.match).map(part => part.text), ['İS']);
+});
