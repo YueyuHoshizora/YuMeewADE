@@ -1,14 +1,17 @@
 import path from 'node:path';
-import type { ChatRow, TaskSections } from '../shared/types.ts';
+import type { ChatRow, Step, TaskSections } from '../shared/types.ts';
 
 const RECORD_HEADINGS: [keyof TaskSections, string][] = [['done', '做了什麼'], ['next', '下一步'], ['cautions', '注意'], ['memo', '備註']];
 
-/** `record` is the task file's free-text sections; when any has content it precedes the conversation. */
-export function formatTranscript(title: string, rows: ChatRow[], workspaceRoot: string, tools = false, record?: TaskSections): string {
+/** `ledger` is the task file's steps and free-text sections; whatever has content precedes the conversation. */
+export function formatTranscript(title: string, rows: ChatRow[], workspaceRoot: string, tools = false, ledger?: { steps: Step[]; sections: TaskSections }): string {
   const safe = (text: string) => text.replaceAll(workspaceRoot, '[工作區]');
   const sections = [`# ${safe(title).replace(/[\r\n]/gu, ' ')}`];
-  const filled = record ? RECORD_HEADINGS.filter(([key]) => record[key].length) : [];
-  if (filled.length) sections.push(['## 作業紀錄', ...filled.map(([key, heading]) => `### ${heading}\n\n${safe(record![key].join('\n'))}`)].join('\n\n'));
+  const record = [
+    ...(ledger?.steps.length ? [`### 步驟\n\n${safe(ledger.steps.map(step => `- [${step.done ? 'x' : ' '}] ${step.text}`).join('\n'))}`] : []),
+    ...RECORD_HEADINGS.filter(([key]) => ledger?.sections[key].length).map(([key, heading]) => `### ${heading}\n\n${safe(ledger!.sections[key].join('\n'))}`),
+  ];
+  if (record.length) sections.push(['## 作業紀錄', ...record].join('\n\n'));
   for (const row of rows) {
     if (row.role === 'event' && !tools) continue;
     const date = new Date(row.at);

@@ -194,7 +194,7 @@ HTTP JSON と SSE を使い、デスクトップ版と Web 版で完全に共通
 | `GET /api/events` | SSE（全体）：`changed` 時に `/api/state` を再取得、`usage` は最新の利用枠と出力速度 |
 | `GET /api/chat/stream?project=&task=` | SSE（単一タスク）：`snapshot`（最後の 200 行と `start`）／`busy`／`delta`／`row`／`queue`／`idle` |
 | `GET /api/chat/history?project=&task=&before=` | `before` より前の 200 行を読み込む |
-| `GET /api/chat/export?project=&task=&tools=` | 会話を Markdown としてダウンロード（先頭に作業記録のうち内容のあるセクション：やったこと／次にやること／注意点／メモ。`tools=1` でツール呼び出しを含む。ワークスペースの絶対パスは含まない） |
+| `GET /api/chat/export?project=&task=&tools=` | 会話を Markdown としてダウンロード（先頭に作業記録：手順のチェックリストと、やったこと／次にやること／注意点／メモのうち内容のあるセクション。`tools=1` でツール呼び出しを含む。ワークスペースの絶対パスは含まない） |
 | `GET /api/search?q=&project=&task=` | タスク名、作業記録（やったこと／次にやること／注意点／メモ。タスクごとに最大 1 件の `kind: record`）と会話内容を検索（最大 50 件）。`project`（と `task`）を指定するとそのプロジェクト／タスクのみ。不正な名前は 400、存在しない場合は 404、`task` には `project` が必要 |
 | `POST /api/project/new`、`/api/project/update`、`/api/project/archive` | プロジェクト |
 | `POST /api/phase/next`、`/api/phase/continue` | フェーズ：`{project, phase}`、`phase` は画面上の現在のフェーズ。すでに進んでいれば 409 `phase_changed` |

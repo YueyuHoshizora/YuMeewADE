@@ -25,11 +25,12 @@ test('Markdown export includes turn metadata, usage and only image basenames', (
   assert.match(tools, /Read \[工作區\]\/file.ts/u);
 });
 
-test('Markdown export puts the non-empty task record sections before the conversation, masking the workspace path', () => {
+test('Markdown export puts the steps and non-empty task record sections before the conversation, masking the workspace path', () => {
   const rows: ChatRow[] = [{ role: 'user', at: 'now', text: 'Go', to: 'codex', request: 'r' }];
-  const text = formatTranscript('Task', rows, '/private/work', false, { done: ['- edited /private/work/a.ts'], next: [], cautions: ['- keep API'], memo: [] });
-  assert.ok(text.startsWith('# Task\n\n## 作業紀錄\n\n### 做了什麼\n\n- edited [工作區]/a.ts\n\n### 注意\n\n- keep API\n\n## 你'));
+  const sections = { done: ['- edited /private/work/a.ts'], next: [], cautions: ['- keep API'], memo: [] };
+  const text = formatTranscript('Task', rows, '/private/work', false, { steps: [{ text: 'Plan', done: true }, { text: 'Ship', done: false }], sections });
+  assert.ok(text.startsWith('# Task\n\n## 作業紀錄\n\n### 步驟\n\n- [x] Plan\n- [ ] Ship\n\n### 做了什麼\n\n- edited [工作區]/a.ts\n\n### 注意\n\n- keep API\n\n## 你'));
   assert.ok(!text.includes('### 下一步'));
-  const empty = formatTranscript('Task', rows, '/private/work', false, { done: [], next: [], cautions: [], memo: [] });
+  const empty = formatTranscript('Task', rows, '/private/work', false, { steps: [], sections: { done: [], next: [], cautions: [], memo: [] } });
   assert.ok(empty.startsWith('# Task\n\n## 你'));
 });
