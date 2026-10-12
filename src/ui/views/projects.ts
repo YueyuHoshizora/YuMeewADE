@@ -314,9 +314,20 @@ export function projectView(context: ViewContext, project: ProjectView, params: 
       projectTrustButton(project.id),
     );
     const editDescription = button(t('project.editDescription'), async () => {
-      const description = await textModal(t('project.editDescription'), project.description, 400);
-      if (description === null || description === project.description) return;
-      await request('/api/project/update', { project: project.id, patch: { description }, expected: { description: project.description } }); await context.refresh();
+      let original = project.description; let draft = original; let reference: { label: string; text: string } | undefined;
+      for (;;) {
+        const description = await textModal(t('project.editDescription'), draft, 400, 6, reference);
+        if (description === null || description === original) return;
+        try { await request('/api/project/update', { project: project.id, patch: { description }, expected: { description: original } }); break; }
+        catch (error) {
+          // Saved elsewhere meanwhile: keep the user's text and show the newer description beside it.
+          if (!(error instanceof ApiFailure && error.body.detail === 'project_changed')) throw error;
+          toast(errorMessage(error));
+          original = (await api.state()).projects.find(item => item.id === project.id)?.description ?? '';
+          draft = description; reference = { label: t('common.latestElsewhere'), text: original };
+        }
+      }
+      await context.refresh();
     });
     const editRelated = button(t('project.editRelated'), async () => {
       const options = context.state.projects.filter(other => other.id !== project.id).map(other => ({ value: other.id, label: other.name }));
@@ -342,7 +353,7 @@ export function projectView(context: ViewContext, project: ProjectView, params: 
           // Saved elsewhere meanwhile: keep the user's text and show the newer notes beside it instead of discarding the edit.
           if (!(error instanceof ApiFailure && error.body.detail === 'notes_changed')) throw error;
           toast(errorMessage(error));
-          original = await latest(); draft = text; reference = { label: t('project.notesLatest'), text: original };
+          original = await latest(); draft = text; reference = { label: t('common.latestElsewhere'), text: original };
         }
       }
       await context.refresh();
