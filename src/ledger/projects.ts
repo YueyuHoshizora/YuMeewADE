@@ -241,7 +241,7 @@ export class ProjectLedger {
       await atomicWrite(this.ws.rulesFile(id), text);
     });
   }
-  /** The PROJECT.md body below the frontmatter (the notes shown on the project page), verbatim. */
+  /** The PROJECT.md body below the frontmatter (the notes shown on the project page), with LF line endings like all ledger text. */
   async readNotes(id: string): Promise<string> {
     await this.get(id);
     return parseFrontmatter(await fs.readFile(this.ws.projectFile(id), 'utf8')).body;
@@ -250,10 +250,14 @@ export class ProjectLedger {
   /** Replaces the body the caller read (`previous`); a body changed meanwhile (hand edit, merge) is a conflict, not overwritten. */
   async writeNotes(id: string, text: string, previous: string): Promise<Project> {
     if (text.length > NOTES_MAX) throw new AppError('bad_request', 'field_too_long', { field: 'text' });
+    // The ledger reads every line ending as LF; storing the text that way keeps a read-back equal to what was saved, and
+    // a CRLF `previous` from the same save is not mistaken for someone else's edit.
+    const lf = (value: string): string => value.replace(/\r\n/gu, '\n');
+    text = lf(text);
     return withFileLocks([this.ws.projectFile(id)], async () => {
       await this.get(id);
       const fm = parseFrontmatter(await fs.readFile(this.ws.projectFile(id), 'utf8'));
-      if (fm.body !== previous) throw new AppError('conflict', 'notes_changed');
+      if (fm.body !== lf(previous)) throw new AppError('conflict', 'notes_changed');
       await atomicWrite(this.ws.projectFile(id), serializeFrontmatter(patchHeaderLines(fm.headerLines, { updated: todayDate() }), text.endsWith('\n') || !text ? text : `${text}\n`));
       return this.get(id);
     });

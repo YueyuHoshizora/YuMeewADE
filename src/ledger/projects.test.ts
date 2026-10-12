@@ -89,6 +89,12 @@ test('project notes replace only the body, keep the frontmatter and refuse a bod
   await assert.rejects(projects.writeNotes('P', 'stale', original), /備註已在別處修改/);
   await assert.rejects(projects.writeNotes('P', 'x'.repeat(NOTES_MAX + 1), await projects.readNotes('P')), /過長/);
   assert.equal((await projects.get('P')).notes, '第一行\n- 第二行');
+  // Windows line endings are stored as the LF text read back, and the same CRLF text is still the caller's own version.
+  const crlf = 'first\r\nsecond\r\n';
+  await projects.writeNotes('P', crlf, await projects.readNotes('P'));
+  assert.equal(await projects.readNotes('P'), 'first\nsecond\n');
+  await projects.writeNotes('P', 'next\n', crlf);
+  assert.equal(await projects.readNotes('P'), 'next\n');
 }));
 
 test('project update with expected fields refuses a value changed since the editor read it', () => withTmpWorkspace(async ws => {
