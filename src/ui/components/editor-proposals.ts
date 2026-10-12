@@ -1,9 +1,10 @@
 import type { EditorProposal, ProposalDecision, ProposalFile } from '../../shared/editor-proposals.ts';
 import type { ProviderCapability } from '../../shared/types.ts';
 import type { WorkbenchPanelContext } from './files.ts';
-import { request, query } from '../api.ts';
+import { api, request, query } from '../api.ts';
 import { t } from '../i18n/index.ts';
 import { el, button, area, confirmModal, errorMessage, input, setLocked, UserError } from './dom.ts';
+import { confirmUsageRound } from './usage-history.ts';
 export function mountEditorProposals(context: WorkbenchPanelContext): HTMLElement {
   const { project, task, editor } = context;
   const node = el('section'); const instruction = area('', t('proposal.instruction'));
@@ -93,6 +94,9 @@ export function mountEditorProposals(context: WorkbenchPanelContext): HTMLElemen
     if (!snapshots.length) { status.textContent = t('proposal.noFiles'); return; }
     busy = true; setLocked(generate, true);
     try {
+      // Budget warnings need the same one-use acknowledgment as chat; without it the core refuses the run.
+      const accounts = (await api.state()).settings.activeAccounts;
+      if (!await confirmUsageRound({ project, task, ai: provider.value, account: accounts[provider.value] ?? 'default' })) return;
       const files = snapshots.map(snapshot => ({ path: snapshot.path, revision: snapshot.revision, text: snapshot.text, selection: snapshot.selection.from === snapshot.selection.to ? { from: 0, to: snapshot.text.length } : snapshot.selection }));
       const proposal = await request<EditorProposal>('/api/editor/proposals/generate', { project, task, files, instruction: instruction.value, ai: provider.value, ...(model.value.trim() ? { model: model.value.trim() } : {}), ...(effort.value.trim() ? { effort: effort.value.trim() } : {}) });
       results.prepend(render(proposal)); announce(proposal); status.textContent = t('proposal.note');
