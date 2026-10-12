@@ -204,18 +204,20 @@ test('recovery ignores incomplete staging names and refuses path escape', () => 
   await assert.rejects(store.snapshots('../outside', '20260101-001'));
 }));
 
-test('recovery restores an internal relative symlink even when the temp folder path is an alias', () => withTmpWorkspace(async ws => {
+test('recovery restores internal relative and absolute symlinks even when the temp folder path is an alias', () => withTmpWorkspace(async ws => {
   // On macOS the temp folder `/var/…` is really `/private/var/…`: links must be checked against the same spelling.
   const destination = ws.worktreeDir('P', '20260101-001');
   await fs.mkdir(destination, { recursive: true });
   await fs.writeFile(path.join(destination, 'target.txt'), 'kept\n');
   await fs.symlink('target.txt', path.join(destination, 'link'));
+  await fs.symlink(path.join(destination, 'target.txt'), path.join(destination, 'absolute'));
   const store = new RecoveryStore(ws);
   await store.preserve('P', '20260101-001', destination);
   await fs.mkdir(destination);
   await store.restoreFreshCheckout('P', '20260101-001', destination);
   assert.equal(await fs.readlink(path.join(destination, 'link')), 'target.txt');
   assert.equal(await fs.readFile(path.join(destination, 'link'), 'utf8'), 'kept\n');
+  assert.equal(await fs.readFile(path.join(destination, 'absolute'), 'utf8'), 'kept\n');
 }));
 
 test('restored recovery bytes never overlay a later archive after a successful merge', () => withTmpWorkspace(async ws => {

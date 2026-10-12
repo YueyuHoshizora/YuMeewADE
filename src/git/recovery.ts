@@ -76,8 +76,9 @@ export class RecoveryStore {
           await fs.copyFile(from, to, constants.COPYFILE_EXCL);
           await fs.chmod(to, (await fs.stat(from)).mode & 0o777);
         } else if (entry.isSymbolicLink()) {
-          const link = await fs.readlink(from);
-          if (!isInside(root, path.resolve(path.dirname(to), link))) throw new AppError('conflict', 'archive_unsafe_path');
+          const link = await fs.readlink(from), target = path.resolve(path.dirname(to), link);
+          // An absolute link written through the checkout's own path (`/var/…`, the same place as canonical `/private/var/…`) stays inside too.
+          if (!isInside(root, target) && !isInside(path.resolve(destination), target)) throw new AppError('conflict', 'archive_unsafe_path');
           if (await fs.lstat(to).catch((error: NodeJS.ErrnoException) => { if (error.code === 'ENOENT') return null; throw error; })) throw new AppError('conflict', 'archive_restore_conflict');
           await fs.symlink(link, to);
         } else throw new AppError('conflict', 'archive_cannot_preserve');
