@@ -80,7 +80,7 @@ export function openFileBrowser(project: string, task: string, workspace = activ
   const wholeWord = input(); wholeWord.type = 'checkbox';
   const regex = input(); regex.type = 'checkbox';
   const include = input('', t('editorFront.include')); const exclude = input('', t('editorFront.exclude'));
-  const mode = el('select'); for (const value of ['content', 'files']) { const option = el('option', '', t(value === 'content' ? 'editor.content' : 'files.title')); option.value = value; mode.append(option); }
+  const mode = el('select'); mode.setAttribute('aria-label', t('editorFront.searchMode')); for (const value of ['content', 'files'] as const) { const option = el('option', '', t(value === 'content' ? 'editorFront.searchContent' : 'editorFront.searchFiles')); option.value = value; mode.append(option); }
   for (const [control, key] of [[caseSensitive, 'editorFront.case'], [wholeWord, 'editorFront.word'], [regex, 'editorFront.regex']] as const) { const label = el('label', '', t(key)); label.prepend(control); searchOptions.append(label); }
   searchOptions.append(include, exclude, mode);
   let searchPage = 1; let searchSerial = 0;
@@ -401,7 +401,7 @@ export function openFileBrowser(project: string, task: string, workspace = activ
   }
   async function apply(changes: EditorChange[]): Promise<void> {
     views.forEach((_, index) => capture(index));
-    const expected = [];
+    const expected: { path: string; revision: string; text: string }[] = [];
     for (const change of changes) {
       if (!buffers.has(change.path)) {
         const document = await request<EditorDocument>(query('/api/editor/file', { ...ids, path: change.path }));
@@ -477,7 +477,8 @@ export function openFileBrowser(project: string, task: string, workspace = activ
   }
   async function search(replace: boolean): Promise<void> {
     const needle = sourceSearch.value; const serial = ++searchSerial;
-    const options = { caseSensitive: String(caseSensitive.checked), wholeWord: String(wholeWord.checked), regex: String(regex.checked), include: include.value, exclude: exclude.value, mode: mode.value, page: String(searchPage), pageSize: '100' };
+    // Empty scope fields mean "no filter"; the API rejects empty strings rather than treating them as a wildcard.
+    const options = { caseSensitive: String(caseSensitive.checked), wholeWord: String(wholeWord.checked), regex: String(regex.checked), ...(include.value.trim() ? { include: include.value } : {}), ...(exclude.value.trim() ? { exclude: exclude.value } : {}), mode: mode.value, page: String(searchPage), pageSize: '100' };
     const found = await request<EditorSearchResult & { total: number; page: number; pageSize: number; truncated: boolean }>(query('/api/editor/search', { ...ids, q: needle, ...options }));
     if (serial !== searchSerial) return;
     output.replaceChildren(...found.hits.map(hit => row(button(`${hit.path}:${hit.line + 1} ${hit.preview}`, () => show(hit.path, hit.line, hit.character)), ...(task ? [button(t('ew.pin'), () => pin(hit.path, hit.line + 1, hit.line + Math.max(1, needle.split('\n').length), hit.revision))] : []))));
@@ -541,7 +542,7 @@ export function openFileBrowser(project: string, task: string, workspace = activ
       try {
         const document = await request<EditorDocument>(query('/api/editor/file', { ...ids, path: original.path }));
         const conflict = !candidate.clean && document.revision !== original.revision;
-        recovered.document = conflict ? { ...document, text: original.text, revision: original.revision, encoding: original.encoding } : document;
+        recovered.document = conflict ? { ...document, text: original.text, revision: original.revision, encoding: original.encoding ?? 'UTF8' } : document;
         if (candidate.clean) recovered.text = document.text;
         if (conflict) { conflicts.set(document.path, document); refreshConflict(document.path); }
         formats.set(document.path, await request<EditorResolvedFormatPreferences>(query('/api/editor/preferences', { ...ids, path: document.path })));

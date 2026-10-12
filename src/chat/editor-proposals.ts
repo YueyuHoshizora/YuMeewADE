@@ -8,7 +8,7 @@ import type { EditorService } from '../system/editor.ts';
 import type { Workspace } from '../ledger/workspace.ts';
 import type { SettingsStore } from '../ledger/settings.ts';
 import type { EditorProposal, EditorProposalInput, ProposalDecision, ProposalDecisionInput, ProposalEdit, ProposalFile, ProposalFileInput, ProposalSnapshot } from '../shared/editor-proposals.ts';
-import type { TurnUsage } from '../shared/types.ts';
+import type { EditorDocument, TurnUsage } from '../shared/types.ts';
 import { AppError } from '../shared/errors.ts';
 import { writeJson, withFileLocks } from '../shared/fsx.ts';
 
@@ -163,7 +163,7 @@ export class EditorProposalService {
     const entry: { run?: CliRun; stopped: boolean; done: Promise<void> } = { stopped: false, done: settled.promise }; this.runs.set(key, entry);
     let directory: string | undefined; let timer: ReturnType<typeof setTimeout> | undefined;
     try {
-      const documents = [];
+      const documents: EditorDocument[] = [];
       for (const file of input.files) {
         const document = await this.deps.editor.read(project, task, file.path);
         if (document.path !== file.path || document.revision !== file.revision) throw new AppError('conflict', 'editor_conflict');

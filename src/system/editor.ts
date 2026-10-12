@@ -4,6 +4,7 @@ import os from 'node:os';
 import { createHash, randomUUID } from 'node:crypto';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import { createRequire } from 'node:module';
+import { TextDecoder } from 'node:util';
 import type { WorktreeService } from '../git/worktree.ts';
 import { git, gitOk, isLocalSecret } from '../git/git.ts';
 import type { TaskLedger } from '../ledger/tasks.ts';
@@ -297,7 +298,7 @@ export class EditorService {
       const encoded = encodeText(text, encoding); if (encoded.length > this.MAX) throw new AppError('too_large');
       if (current.binary || current.truncated) throw new AppError('bad_request', 'editor_readonly');
       if (current.revision !== revision) throw new AppError('conflict', 'editor_conflict');
-      await preserveHistory(target.root, { path: relative, revision: current.revision, text: current.text, encoding: current.encoding, reason: 'save' });
+      await preserveHistory(target.root, { path: relative, revision: current.revision, text: current.text, encoding: current.encoding ?? 'UTF8', reason: 'save' });
       const stat = await fs.stat(target.file);
       const tmp = path.join(path.dirname(target.file), `.editor-${randomUUID()}.tmp`);
       const handle = await fs.open(tmp, 'wx', stat.mode & 0o777);
@@ -530,7 +531,7 @@ export class EditorService {
             if (target.readonly || current.binary || current.truncated) throw new AppError('bad_request', 'editor_readonly');
             if (current.revision !== change.revision) throw new AppError('conflict', 'editor_conflict');
             if (Buffer.byteLength(change.text) > this.MAX || change.text.includes('\0')) throw new AppError('too_large');
-            await preserveHistory(target.root, { path: change.path, revision: current.revision, text: current.text, encoding: current.encoding, reason: 'apply' });
+            await preserveHistory(target.root, { path: change.path, revision: current.revision, text: current.text, encoding: current.encoding ?? 'UTF8', reason: 'apply' });
             const tmp = path.join(path.dirname(target.file), `.editor-${randomUUID()}.tmp`);
             const backup = `${tmp}.backup`;
             staged.push({ tmp, file: target.file, backup });
@@ -629,7 +630,7 @@ export class EditorService {
       const affected = stat.isDirectory() ? (await this.files(root)).filter(relative => relative.startsWith(`${mutation.path}/`)) : [mutation.path];
       for (const relative of affected) {
         const current = await this.read(project, task, relative);
-        if (!current.binary && !current.truncated) await preserveHistory(root, { path: relative, revision: current.revision, text: current.text, encoding: current.encoding, reason: 'mutate' });
+        if (!current.binary && !current.truncated) await preserveHistory(root, { path: relative, revision: current.revision, text: current.text, encoding: current.encoding ?? 'UTF8', reason: 'mutate' });
       }
       if (mutation.action === 'rename') await fs.rename(target.file, await validateNew(mutation.destination ?? ''));
       else if (mutation.action === 'delete') {
