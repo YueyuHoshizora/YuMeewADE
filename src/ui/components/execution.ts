@@ -24,22 +24,41 @@ export function executionButton(_context: ViewContext, project: string, task: st
     let alive = true;
     let timer: number | undefined;
     const ids = { project, task };
+    // Runs are polled every 500 ms; each keeps its section so output scroll, selection and focused buttons survive polls.
+    const views = new Map<string, { section: HTMLElement; controls: HTMLElement; notes: HTMLElement; pre: HTMLElement; signature: string; text: string }>();
     async function poll(): Promise<void> {
       if (!alive) return;
       try {
         const runs = await request<ExecutionRun[]>(query('/api/execution/list', ids));
         if (!alive) return;
-        output.replaceChildren(...runs.map(entry => {
-          const section = el('section', 'card');
-          const controls = row(el('strong', '', `${entry.kind} · ${entry.command} · ${entry.status} · ${entry.exitCode ?? ''}`));
-          if (entry.status === 'running') controls.append(button(t('execution.stop'), async () => { await request('/api/execution/stop', { ...ids, id: entry.id }); }));
-          if (entry.inspectorUrl) controls.append(button(t('execution.attach'), () => request('/api/execution/debug', { ...ids, url: entry.inspectorUrl })));
-          if (entry.kind === 'debug' && entry.status === 'running') controls.append(button(t('tools.debugger'), () => debuggerPanel.attach(entry.id)));
-          section.append(controls, el('pre', 'verify-output', entry.output.map(event => `[${event.stream}] ${event.text}`).join('')));
-          if (entry.truncated) section.append(el('p', 'warning', t('execution.truncated')));
-          if (entry.timedOut) section.append(el('p', 'warning', t('execution.timedOut')));
-          return section;
-        }));
+        const sections = runs.map(entry => {
+          let view = views.get(entry.id);
+          if (!view) {
+            view = { section: el('section', 'card'), controls: el('div'), notes: el('div'), pre: el('pre', 'verify-output'), signature: '', text: '' };
+            view.section.append(view.controls, view.pre, view.notes); views.set(entry.id, view);
+          }
+          const signature = JSON.stringify([entry.kind, entry.command, entry.status, entry.exitCode, entry.inspectorUrl, entry.truncated, entry.timedOut]);
+          if (signature !== view.signature) {
+            view.signature = signature;
+            const controls = row(el('strong', '', `${entry.kind} · ${entry.command} · ${entry.status} · ${entry.exitCode ?? ''}`));
+            if (entry.status === 'running') controls.append(button(t('execution.stop'), async () => { await request('/api/execution/stop', { ...ids, id: entry.id }); }));
+            if (entry.inspectorUrl) controls.append(button(t('execution.attach'), () => request('/api/execution/debug', { ...ids, url: entry.inspectorUrl })));
+            if (entry.kind === 'debug' && entry.status === 'running') controls.append(button(t('tools.debugger'), () => debuggerPanel.attach(entry.id)));
+            view.controls.replaceChildren(controls);
+            view.notes.replaceChildren(...entry.truncated ? [el('p', 'warning', t('execution.truncated'))] : [], ...entry.timedOut ? [el('p', 'warning', t('execution.timedOut'))] : []);
+          }
+          const text = entry.output.map(event => `[${event.stream}] ${event.text}`).join('');
+          if (text !== view.text) {
+            const top = view.pre.scrollTop;
+            if (view.pre.firstChild instanceof Text && text.startsWith(view.text)) view.pre.firstChild.appendData(text.slice(view.text.length));
+            else view.pre.textContent = text;
+            view.pre.scrollTop = top; view.text = text;
+          }
+          return view.section;
+        });
+        const activeIds = new Set(runs.map(entry => entry.id));
+        for (const id of views.keys()) if (!activeIds.has(id)) views.delete(id);
+        if (sections.length !== output.children.length || sections.some((section, index) => output.children[index] !== section)) output.replaceChildren(...sections);
       } finally { if (alive) timer = window.setTimeout(() => { void run(poll); }, 500); }
     }
     function executionRequest(kind: ExecutionRequest['kind']): ExecutionRequest | undefined {
