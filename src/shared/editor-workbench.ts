@@ -6,7 +6,7 @@ export interface EditorSuggestion { label: string; detail?: string; insertText: 
 export interface EditorSymbol extends EditorLocation { name: string; kind: number; container?: string }
 export interface EditorActionResult { locations: EditorLocation[]; diagnostics: EditorDiagnostic[]; hover?: string; suggestions?: EditorSuggestion[]; changes?: EditorChange[]; actions?: { title: string; changes: EditorChange[] }[]; symbols?: EditorSymbol[] }
 export interface EditorSearchHit { path: string; revision: string; line: number; character: number; end: number; preview: string }
-export interface EditorSearchResult { hits: EditorSearchHit[]; scanned: number }
+export interface EditorSearchResult { hits: EditorSearchHit[]; scanned: number; total: number; page: number; pageSize: number; truncated: boolean }
 export interface EditorMutation { action: 'createFile' | 'createFolder' | 'rename' | 'delete'; path: string; destination?: string; revision?: string; confirmation?: string }
 export interface EditorProblem extends EditorDiagnostic { path: string }
 export interface EditorRecovery { document: EditorDocument; text: string; start: number; end: number; top: number; left: number }

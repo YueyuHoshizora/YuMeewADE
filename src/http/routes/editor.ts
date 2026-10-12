@@ -53,7 +53,11 @@ export function registerEditorRoutes(router: Router, app: App): void {
     if (body.buffers !== undefined && (!Array.isArray(body.buffers) || body.buffers.length > 50 || !body.buffers.every(item => item && typeof item === 'object' && typeof item.path === 'string' && typeof item.revision === 'string' && typeof item.text === 'string'))) throw new AppError('bad_request');
     return app.editor.language(reqString(body, 'project', 120), body.task === undefined ? '' : reqString(body, 'task', 120), reqString(body, 'path', 1000), body.text, body.line as number, body.character as number, action as EditorAction, typeof body.newName === 'string' ? body.newName : undefined, body.buffers as EditorBufferSnapshot[] | undefined, body.revision === undefined ? undefined : reqString(body, 'revision', 100));
   });
-  router.get('/api/editor/search', async ({ query }) => app.editor.search(reqString(query, 'project', 120), query.has('task') ? reqString(query, 'task', 120) : '', reqString(query, 'q', 1000)));
+  router.get('/api/editor/search', async ({ query }) => {
+    for (const key of ['caseSensitive', 'wholeWord', 'regex']) if (query.has(key) && !['true', 'false'].includes(query.get(key)!)) throw new AppError('bad_request');
+    const mode = query.get('mode') ?? 'content'; if (mode !== 'content' && mode !== 'files') throw new AppError('bad_request');
+    return app.editor.search(reqString(query, 'project', 120), query.has('task') ? reqString(query, 'task', 120) : '', reqString(query, 'q', 1000), { page: query.has('page') ? Number(query.get('page')) : 1, pageSize: query.has('pageSize') ? Number(query.get('pageSize')) : 50, caseSensitive: query.get('caseSensitive') === 'true', wholeWord: query.get('wholeWord') === 'true', regex: query.get('regex') === 'true', mode, ...(query.has('include') ? { include: reqString(query, 'include', 20000).split(',') } : {}), ...(query.has('exclude') ? { exclude: reqString(query, 'exclude', 20000).split(',') } : {}) });
+  });
   router.get('/api/editor/problems', async ({ query }) => {
     const project = reqString(query, 'project', 120); await app.trust.assertExecutable(project);
     return app.editor.problems(project, query.has('task') ? reqString(query, 'task', 120) : '');

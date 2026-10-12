@@ -14,6 +14,7 @@ import { LanguageClient } from './editor-lsp.ts';
 import type { EditorBufferSnapshot, EditorAction, EditorActionResult, EditorChange, EditorMutation, EditorSearchResult, EditorProblem, EditorRevisionResult, EditorMergeResult } from '../shared/editor-workbench.ts';
 import type { EditorSettings, EditorSettingsPatch, EditorResolvedFormatPreferences } from '../shared/editor-preferences.ts';
 import { EditorSettingsStore, validateEditorCommands, DEFAULT_EDITOR_FORMAT, applyEditorConfig } from './editor-settings.ts';
+import { boundedMatches, type SearchOptions } from './editor-search.ts';
 
 const LANGUAGE: Record<string, string> = { ts: 'typescript', tsx: 'typescriptreact', js: 'javascript', jsx: 'javascriptreact', mjs: 'javascript', cjs: 'javascript', json: 'json', py: 'python', rs: 'rust', go: 'go', css: 'css', scss: 'scss', html: 'html', vue: 'html', md: 'markdown', c: 'c', h: 'c', cpp: 'cpp', hpp: 'cpp', java: 'java', kt: 'kotlin', php: 'php', sql: 'sql', xml: 'xml', svg: 'xml', yaml: 'yaml', yml: 'yaml', toml: 'toml', sh: 'shellscript', bash: 'shellscript', zsh: 'shellscript', rb: 'ruby', swift: 'swift', lua: 'lua', ini: 'ini' };
 export class EditorService {
@@ -460,27 +461,36 @@ export class EditorService {
       });
     });
   }
-  async search(project: string, task: string, needle: string): Promise<EditorSearchResult> {
-    if (!needle || needle.length > 1000) throw new AppError('bad_request');
+  async search(project: string, task: string, needle: string, options: SearchOptions = {}): Promise<EditorSearchResult> {
+    const page = options.page ?? 1; const pageSize = options.pageSize ?? 50;
+    if (!needle || needle.length > 1000 || !Number.isSafeInteger(page) || page < 1 || page > 10000 || !Number.isSafeInteger(pageSize) || pageSize < 1 || pageSize > 200) throw new AppError('bad_request');
+    for (const scopes of [options.include, options.exclude]) if (scopes && (scopes.length > 20 || scopes.some(scope => !scope || scope.length > 1000 || scope.includes('\\') || path.isAbsolute(scope) || scope.split('/').some(part => part === '..' || part === '.' || part === '.git' || part === '.ai' || isLocalSecret(part))))) throw new AppError('bad_request');
     const { root } = await this.root(project, task);
-    const files = await this.files(root);
-    if (files.length > 10000) throw new AppError('too_large');
-    const hits: EditorSearchResult['hits'] = []; let scanned = 0; let bytes = 0;
-    for (const relative of files) {
+    const files = (await this.files(root)).sort();
+    const hits: EditorSearchResult['hits'] = []; let scanned = 0; let bytes = 0; let total = 0; let truncated = files.length > 10000;
+    const deadline = Date.now() + 10000;
+    for (const relative of files.slice(0, 10000)) {
+      if (Date.now() >= deadline) { truncated = true; break; }
+      if (options.include?.length && !options.include.some(scope => relative === scope || relative.startsWith(`${scope}/`))) continue;
+      if (options.exclude?.some(scope => relative === scope || relative.startsWith(`${scope}/`))) continue;
       let document: EditorDocument;
-      try { document = await this.read(project, task, relative); } catch { continue; }
+      try { const target = await this.target(project, task, relative); document = await this.document(target.file, relative, target.readonly); } catch { continue; }
       if (document.binary || document.truncated) continue;
-      bytes += document.size; if (bytes > 32 * 1024 * 1024) throw new AppError('too_large');
+      bytes += document.size; if (bytes > 32 * 1024 * 1024) { truncated = true; break; }
       scanned++;
-      let offset = 0;
-      while ((offset = document.text.indexOf(needle, offset)) >= 0) {
-        const before = document.text.slice(0, offset).split('\n'); const line = before.length - 1; const character = before.at(-1)!.length;
-        hits.push({ path: relative, revision: document.revision, line, character, end: offset + needle.length, preview: document.text.split('\n')[line]!.slice(0, 500) });
-        if (hits.length > 1000) throw new AppError('too_large');
-        offset += needle.length;
+      const value = options.mode === 'files' ? relative : document.text;
+      const matches = await boundedMatches(value, needle, options);
+      truncated ||= matches.truncated;
+      const lineStarts = [0]; if (options.mode !== 'files') for (let index = 0; index < value.length; index++) if (value[index] === '\n') lineStarts.push(index + 1);
+      let line = 0;
+      for (const [offset, end] of matches.offsets) {
+        if (options.mode === 'files' && total >= 0 && offset !== matches.offsets[0]?.[0]) break;
+        while (line + 1 < lineStarts.length && lineStarts[line + 1]! <= offset) line++;
+        if (total >= (page - 1) * pageSize && hits.length < pageSize) hits.push({ path: relative, revision: document.revision, line, character: offset - lineStarts[line]!, end, preview: value.slice(lineStarts[line], value.indexOf('\n', offset) < 0 ? undefined : value.indexOf('\n', offset)).slice(0, 500) });
+        total++;
       }
     }
-    return { hits, scanned };
+    return { hits, scanned, total, page, pageSize, truncated };
   }
   async folderRevision(project: string, task: string, relative: string): Promise<{ revision: string }> {
     const target = await this.target(project, task, relative, false); const hash = createHash('sha256'); const allowed = new Set(await this.files(target.root)); let count = 0;
