@@ -68,6 +68,15 @@ export function openFileBrowser(project: string, task: string, workspace = activ
   const formats = new Map<string, EditorResolvedFormatPreferences>();
   const dialog = el('section', 'editor-workbench'); const results = el('div', 'editor-file-tree'); const output = el('div', 'editor-problems'); const panes = el('div', 'editor-panes'); let focused = 0;
   const filter = input('', t('files.search')); const sourceSearch = input('', t('ew.search')); const replacement = input('', t('ew.replacement'));
+  const searchOptions = el('div');
+  const caseSensitive = input(); caseSensitive.type = 'checkbox';
+  const wholeWord = input(); wholeWord.type = 'checkbox';
+  const regex = input(); regex.type = 'checkbox';
+  const include = input('', t('editorFront.include')); const exclude = input('', t('editorFront.exclude'));
+  const mode = el('select'); for (const value of ['content', 'files']) { const option = el('option', '', t(value === 'content' ? 'editor.content' : 'files.title')); option.value = value; mode.append(option); }
+  for (const [control, key] of [[caseSensitive, 'editorFront.case'], [wholeWord, 'editorFront.word'], [regex, 'editorFront.regex']] as const) { const label = el('label', '', t(key)); label.prepend(control); searchOptions.append(label); }
+  searchOptions.append(include, exclude, mode);
+  let searchPage = 1; let searchSerial = 0;
   const conflicts = new Map<string, EditorDocument>();
   const unresolved = new Set<string>();
   let editReserved = false;
@@ -386,9 +395,28 @@ export function openFileBrowser(project: string, task: string, workspace = activ
     if (found.total > found.files.length) results.append(el('p', 'muted', t('files.more', { total: found.total, n: found.files.length })));
   }
   async function search(replace: boolean): Promise<void> {
-    const needle = sourceSearch.value; const found = await request<EditorSearchResult>(query('/api/editor/search', { ...ids, q: needle }));
+    const needle = sourceSearch.value; const serial = ++searchSerial;
+    const options = { caseSensitive: String(caseSensitive.checked), wholeWord: String(wholeWord.checked), regex: String(regex.checked), include: include.value, exclude: exclude.value, mode: mode.value, page: String(searchPage), pageSize: '100' };
+    const found = await request<EditorSearchResult & { total: number; page: number; pageSize: number; truncated: boolean }>(query('/api/editor/search', { ...ids, q: needle, ...options }));
+    if (serial !== searchSerial) return;
     output.replaceChildren(...found.hits.map(hit => row(button(`${hit.path}:${hit.line + 1} ${hit.preview}`, () => show(hit.path, hit.line, hit.character)), ...(task ? [button(t('ew.pin'), () => pin(hit.path, hit.line + 1, hit.line + Math.max(1, needle.split('\n').length), hit.revision))] : []))));
-    if (replace) { const changes: EditorChange[] = []; for (const path of new Set(found.hits.map(hit => hit.path))) { const document = await request<EditorDocument>(query('/api/editor/file', { ...ids, path })); if (found.hits.some(hit => hit.path === path && hit.revision !== document.revision)) throw new Error(t('detail.editor_conflict')); changes.push({ path, revision: document.revision, text: document.text.split(needle).join(replacement.value) }); } if (changes.length) await apply(changes); }
+    const previous = button(t('editorFront.previous'), () => { searchPage--; return search(false); }); previous.disabled = found.page <= 1;
+    const next = button(t('editorFront.next'), () => { searchPage++; return search(false); }); next.disabled = found.page * found.pageSize >= found.total;
+    output.append(row(previous, el('span', '', `${found.page} · ${found.total}`), next));
+    if (found.truncated) output.append(el('p', 'warning', t('files.more', { total: found.total, n: found.hits.length })));
+    if (replace) {
+      if (mode.value !== 'content') return;
+      const pattern = regex.checked ? needle : needle.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+      const expression = new RegExp(wholeWord.checked ? `\\b(?:${pattern})\\b` : pattern, caseSensitive.checked ? 'g' : 'gi');
+      const changes: EditorChange[] = [];
+      for (const path of new Set(found.hits.map(hit => hit.path))) {
+        const document = await request<EditorDocument>(query('/api/editor/file', { ...ids, path }));
+        if (found.hits.some(hit => hit.path === path && hit.revision !== document.revision)) throw new Error(t('detail.editor_conflict'));
+        const text = buffers.get(path)?.text ?? document.text;
+        changes.push({ path, revision: document.revision, baseText: text, text: text.replace(expression, replacement.value) });
+      }
+      if (changes.length) await apply(changes);
+    }
   }
   const pathInput = input('', t('ew.path')); const destination = input('', t('ew.destination'));
   async function mutate(action: EditorMutation['action']): Promise<void> {
@@ -541,7 +569,7 @@ export function openFileBrowser(project: string, task: string, workspace = activ
     if (views.length === 2) splitResize.value = views[0]!.node.style.flex || '50';
     try { if (storageKey) localStorage.setItem(`${storageKey}:layout`, JSON.stringify(layout)); } catch { output.append(el('p', 'warning', t('ew.recoveryLimit'))); }
   }
-  dialog.append(row(el('h2', '', t('files.title')), dock, resize), actions, row(pathInput, destination, ...(['createFile', 'createFolder', 'rename', 'delete'] as const).map(action => button(t(`ew.${action}`), () => mutate(action)))), row(sourceSearch, replacement, button(t('ew.search'), () => search(false)), button(t('ew.replacePreview'), () => search(true))), filter);
+  dialog.append(row(el('h2', '', t('files.title')), dock, resize), actions, row(pathInput, destination, ...(['createFile', 'createFolder', 'rename', 'delete'] as const).map(action => button(t(`ew.${action}`), () => mutate(action)))), searchOptions, row(sourceSearch, replacement, button(t('ew.search'), () => { searchPage = 1; return search(false); }), button(t('ew.replacePreview'), () => { searchPage = 1; return search(true); })), filter);
   dialog.prepend(row(treeResize, splitResize));
   dialog.append(conflictHost);
   const body = el('div', 'editor-workbench-body'); body.append(results, panes); dialog.append(body, output, panelHost);
