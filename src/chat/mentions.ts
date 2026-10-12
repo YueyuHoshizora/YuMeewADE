@@ -9,8 +9,9 @@ export const MENTION_TOTAL_BYTES = 262_144;
 export function parseMentions(text: string): FileMention[] {
   const found: FileMention[] = [];
   const seen = new Set<string>();
-  for (const match of text.matchAll(/(?:^|\s)@([^\s@]+)(?=\s|$)/gu)) {
-    const token = match[1]!;
+  // `@"my notes.txt#L3"`: a quoted reference keeps a path with spaces whole (the composer quotes such paths itself).
+  for (const match of text.matchAll(/(?:^|\s)@(?:"([^"\n]+)"|([^\s@"][^\s@]*))(?=\s|$)/gu)) {
+    const token = match[1] ?? match[2]!;
     if (seen.has(token)) continue;
     seen.add(token);
     const range = /^(.*)#L(\d+)(?:-(\d+))?$/u.exec(token);

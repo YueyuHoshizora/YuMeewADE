@@ -42,3 +42,10 @@ test('UTF-8 byte boundaries never turn truncated text into binary or replacement
   assert.equal(result.mentions[0]?.status, 'truncated');
   assert.match(result.text, /1: 你/u); assert.doesNotMatch(result.text, /�/u);
 }));
+test('a quoted reference keeps a path with spaces whole, including its line range', () => withTmpWorkspace(async ws => {
+  await fs.writeFile(path.join(ws.root, 'my notes.txt'), 'first\nsecond\nthird');
+  assert.deepEqual(parseMentions('see @"my notes.txt#L2-3" and @"unterminated').map(m => [m.token, m.path, m.start, m.end]), [['my notes.txt#L2-3', 'my notes.txt', 2, 3]]);
+  const result = await resolveMentions('see @"my notes.txt#L2"', ws.root);
+  assert.deepEqual(result.mentions.map(m => m.status), ['resolved']);
+  assert.match(result.text, /2: second/u);
+}));

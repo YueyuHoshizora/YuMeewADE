@@ -11,8 +11,13 @@ export function mentionAt(text: string, caret: number): Mention | null {
   return found ? { start: caret - found[1]!.length - 1, query: found[1]! } : null;
 }
 
+/** `@path` reference text; a path with whitespace is quoted so the core reads it as one reference, not its first word. */
+export function mentionText(target: string): string {
+  return /\s/u.test(target) ? `@"${target}"` : `@${target}`;
+}
+
 export function applyMention(text: string, mention: Mention, caret: number, file: string): { text: string; caret: number } {
-  const insert = `@${file} `;
+  const insert = `${mentionText(file)} `;
   return { text: text.slice(0, mention.start) + insert + text.slice(caret), caret: mention.start + insert.length };
 }
 
