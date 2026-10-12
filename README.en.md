@@ -169,7 +169,7 @@ npm run desktop      # 桌面版（開發機）
 
 ## `config.yaml`
 
-Configuration lookup order: the `YUMEEWADE_CONFIG` environment variable → `config.yaml` in the current directory → `~/.yumeewade/config.yaml` → built-in defaults. The desktop app places a template in the user's configuration directory. Old templates automatically copied by version 0.1 (with permission flags in `baseArgs`) are automatically replaced with the new defaults.
+Configuration lookup order: the `YUMEEWADE_CONFIG` environment variable → `config.yaml` in the current directory → `~/.yumeewade/config.yaml` → built-in defaults. The desktop app places a template in the user's configuration directory. Old templates automatically copied by version 0.1 (with permission flags in `baseArgs`) are automatically replaced with the new defaults. Unknown keys (for example a misspelled `fullAcess`) stop startup with the offending key named, instead of silently falling back to defaults.
 
 | Section | Fields | Description |
 |---|---|---|

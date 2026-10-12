@@ -202,6 +202,13 @@ function section(map: YamlMap, key: string): YamlMap {
   return v;
 }
 
+/** A misspelled key would otherwise be ignored without a word, e.g. `fullAcess: false` silently keeping full access on. */
+function known(map: YamlMap, keys: readonly string[], where: string): void {
+  for (const key of Object.keys(map)) if (!keys.includes(key)) throw new ConfigError(`${where ? `${where}.` : ''}${key} 不是可用的設定欄位`);
+}
+// 0.1 templates wrote dangerous／dangerousArgs; they are still accepted and ignored (see cliSection).
+const CLI_KEYS = ['command', 'mode', 'appServerArgs', 'baseArgs', 'fullAccess', 'fullAccessArgs', 'safeArgs', 'approvalArgs', 'readonlyArgs', 'quotaArgs', 'authRefreshArgs', 'loginArgs', 'commandsArgs', 'slashArgs', 'mcpListArgs', 'mcpAddArgs', 'mcpRemoveArgs', 'dangerous', 'dangerousArgs'] as const;
+
 function str(map: YamlMap, key: string, fallback: string, where: string): string {
   const v = map[key];
   if (v === undefined || v === null) return fallback;
@@ -248,6 +255,7 @@ const LEGACY_BASE_ARGS: Record<'claude' | 'codex', string> = {
 
 function cliSection(map: YamlMap, name: 'claude' | 'codex' | 'grok' | 'gemini'): CliCommandConfig {
   const s = section(map, name);
+  known(s, CLI_KEYS, `cli.${name}`);
   const d = DEFAULT_CONFIG.cli[name];
   const where = `cli.${name}`;
   let baseArgs = strList(s, 'baseArgs', d.baseArgs, where);
@@ -300,12 +308,18 @@ function executionSection(map: YamlMap): Config['execution'] {
 /** 把 YAML 內容套在預設值上並驗證。 */
 export function parseConfig(text: string, source: string | null): Config {
   const map = parseYamlMap(text);
+  known(map, ['server', 'workspace', 'update', 'execution', 'cli', 'limits'], '');
   const server = section(map, 'server');
   const workspace = section(map, 'workspace');
   const update = section(map, 'update');
   const cli = section(map, 'cli');
   const limits = section(map, 'limits');
   const d = DEFAULT_CONFIG;
+  known(server, Object.keys(d.server), 'server');
+  known(workspace, Object.keys(d.workspace), 'workspace');
+  known(update, Object.keys(d.update), 'update');
+  known(cli, ['claude', 'codex', 'grok', 'gemini', 'envPassthrough'], 'cli');
+  known(limits, Object.keys(d.limits), 'limits');
   const host = str(server, 'host', d.server.host, 'server');
   if (!isLoopbackHost(host)) throw new ConfigError(`server.host 只允許 127.0.0.1／localhost／::1，拒絕 ${host}`);
   const port = int(server, 'port', d.server.port, 'server');

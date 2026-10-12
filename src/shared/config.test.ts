@@ -117,3 +117,17 @@ test('switching the workspace root in a config saved with a byte order mark keep
   assert.equal(config.workspace.root, '/new');
   assert.equal(config.server.port, 4561);
 });
+
+test('misspelled keys are rejected instead of silently falling back to defaults', () => {
+  for (const [text, key] of [
+    ['cli:\n  codex:\n    fullAcess: false\n', 'cli.codex.fullAcess'],
+    ['cli:\n  cluade:\n    fullAccess: false\n', 'cli.cluade'],
+    ['limits:\n  sendPerMinut: 1\n', 'limits.sendPerMinut'],
+    ['server:\n  hots: 127.0.0.1\n', 'server.hots'],
+    ['servers:\n  port: 1\n', 'servers'],
+  ] as const) {
+    assert.throws(() => parseConfig(text, null), (error: unknown) => error instanceof ConfigError && error.message.startsWith(`${key} `), key);
+  }
+  // Keys written by the 0.1 template stay accepted and ignored.
+  assert.equal(parseConfig('cli:\n  codex:\n    dangerous: true\n    dangerousArgs: [--yolo]\n', null).cli.codex.fullAccess, DEFAULT_CONFIG.cli.codex.fullAccess);
+});

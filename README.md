@@ -175,7 +175,7 @@ npm run desktop      # 桌面版（開發機）
 
 ## `config.yaml`
 
-讀取順序：`YUMEEWADE_CONFIG` 環境變數 → 目前目錄的 `config.yaml` → `~/.yumeewade/config.yaml` → 內建預設值。桌面 App 會在使用者設定目錄放一份範本。0.1 版自動複製的舊範本（權限旗標寫在 `baseArgs`）會自動換成新預設。
+讀取順序：`YUMEEWADE_CONFIG` 環境變數 → 目前目錄的 `config.yaml` → `~/.yumeewade/config.yaml` → 內建預設值。桌面 App 會在使用者設定目錄放一份範本。0.1 版自動複製的舊範本（權限旗標寫在 `baseArgs`）會自動換成新預設。不認得的欄位（例如拼錯成 `fullAcess`）會拒絕啟動並指出是哪個欄位，不會默默改用預設值。
 
 | 區塊 | 欄位 | 說明 |
 |---|---|---|
