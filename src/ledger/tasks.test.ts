@@ -3,7 +3,7 @@ import { promises as fs } from 'node:fs';
 import { test } from 'node:test';
 import { withTmpWorkspace } from '../testing/tmp.ts';
 import { ProjectLedger } from './projects.ts';
-import { TaskLedger } from './tasks.ts';
+import { STEP_TEXT_MAX, STEPS_MAX, TaskLedger } from './tasks.ts';
 
 test('期限與標籤往返、更新保留正文、清除與驗證', () => withTmpWorkspace(async ws => {
   await new ProjectLedger(ws).create({ name: 'P' });
@@ -42,4 +42,15 @@ test('標籤原子增刪、冪等與上限', () => withTmpWorkspace(async ws => 
   await ledger.update('P', task.id, {}, { tag: 'tag0', add: true });
   await assert.rejects(ledger.update('P', task.id, {}, { tag: 'overflow', add: true }));
   assert.deepEqual((await ledger.get('P', task.id)).tags, full);
+}));
+
+test('建立作業時步驟數與每步長度有上限，邊界值可建立', () => withTmpWorkspace(async ws => {
+  await new ProjectLedger(ws).create({ name: 'P' });
+  const ledger = new TaskLedger(ws);
+  const atLimit = await ledger.create('P', { title: 'T', steps: [...Array.from({ length: STEPS_MAX - 1 }, (_, i) => `s${i}`), 'x'.repeat(STEP_TEXT_MAX)] });
+  assert.equal(atLimit.steps.length, STEPS_MAX); assert.equal(atLimit.steps.at(-1)!.text.length, STEP_TEXT_MAX);
+  await assert.rejects(ledger.create('P', { title: 'T', steps: Array.from({ length: STEPS_MAX + 1 }, (_, i) => `s${i}`) }));
+  await assert.rejects(ledger.create('P', { title: 'T', steps: ['x'.repeat(STEP_TEXT_MAX + 1)] }));
+  await assert.rejects(ledger.addStep('P', atLimit.id, 'one more'));
+  assert.equal((await ledger.get('P', atLimit.id)).steps.length, STEPS_MAX);
 }));

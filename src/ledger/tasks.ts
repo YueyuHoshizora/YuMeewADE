@@ -16,6 +16,9 @@ export function nowMinute(now = new Date()): string {
   return `${now.getFullYear()}-${p(now.getMonth() + 1)}-${p(now.getDate())} ${p(now.getHours())}:${p(now.getMinutes())}`;
 }
 const STR_FIELDS = ['title', 'phase', 'role', 'parent', 'cli', 'model', 'effort', 'question', 'workdir'] as const;
+// Same per-step bound as task templates, which create tasks through here; the count keeps one request from writing a huge ledger file.
+export const STEP_TEXT_MAX = 2000;
+export const STEPS_MAX = 500;
 const HEADINGS = { steps: /^(步驟|手順|Steps)$/i, memo: /^(備註|メモ|Memo)$/i, next: /^(下一步|次にやること|Next)$/i };
 
 interface BodySection { rows: string[]; start: number; end: number }
@@ -70,7 +73,7 @@ export class TaskLedger {
   async create(project: string, input: NewTaskInput): Promise<Task> {
     if (typeof input.title !== 'string' || !input.title.trim()) throw new AppError('bad_request', 'title_required');
     if (input.kind !== undefined && !TASK_KINDS.includes(input.kind) || input.workspace !== undefined && !WORKSPACE_MODES.includes(input.workspace)) throw new AppError('bad_request', 'field_type');
-    if (input.steps !== undefined && (!Array.isArray(input.steps) || input.steps.some(s => typeof s !== 'string'))) throw new AppError('bad_request', 'field_type', { field: 'steps' });
+    if (input.steps !== undefined && (!Array.isArray(input.steps) || input.steps.length > STEPS_MAX || input.steps.some(s => typeof s !== 'string' || s.length > STEP_TEXT_MAX))) throw new AppError('bad_request', 'field_type', { field: 'steps' });
     const metadata = taskMetadata(input);
     for (const key of ['role','phase','parent','derivedFrom','cli','model','effort'] as const) if (input[key] !== undefined && (typeof input[key] !== 'string' || input[key]!.length > 2000)) throw new AppError('bad_request', 'field_type', { field: key });
     if (input.issue !== undefined && (!Number.isSafeInteger(input.issue) || input.issue <= 0) || input.issueUrl !== undefined && (typeof input.issueUrl !== 'string' || input.issueUrl.length > 2000 || !/^https:\/\/[^\s]+$/.test(input.issueUrl))) throw new AppError('bad_request', 'field_type', { field: 'issue' });
@@ -141,8 +144,11 @@ export class TaskLedger {
     return this.editSteps(project, id, (rows, indices) => { const row = indices[index]; if (row === undefined) throw new AppError('bad_request', 'field_type', { field: 'index' }); rows[row] = rows[row]!.replace(/\[[ xX]\]/, done ? '[x]' : '[ ]'); });
   }
   async addStep(project: string, id: string, text: string): Promise<Task> {
-    if (typeof text !== 'string' || !text.trim() || text.length > 2000) throw new AppError('bad_request', 'field_type', { field: 'add' });
-    return this.editSteps(project, id, (rows, _indices, _start, end) => { rows.splice(end, 0, `- [ ] ${text.replace(/[\r\n]+/g, ' ').trim()}`); });
+    if (typeof text !== 'string' || !text.trim() || text.length > STEP_TEXT_MAX) throw new AppError('bad_request', 'field_type', { field: 'add' });
+    return this.editSteps(project, id, (rows, indices, _start, end) => {
+      if (indices.length >= STEPS_MAX) throw new AppError('bad_request', 'field_type', { field: 'add' });
+      rows.splice(end, 0, `- [ ] ${text.replace(/[\r\n]+/g, ' ').trim()}`);
+    });
   }
   async removeStep(project: string, id: string, index: number): Promise<Task> {
     if (!Number.isInteger(index)) throw new AppError('bad_request', 'field_type');
