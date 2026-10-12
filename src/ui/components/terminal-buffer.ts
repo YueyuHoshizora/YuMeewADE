@@ -80,20 +80,26 @@ export class TerminalBuffer {
         continue;
       }
       if (this.state === 'csi' || this.state === 'discardCsi') {
+        // C0 controls inside a control sequence still act (VT parsers execute them) without ending the sequence.
+        if (char < ' ') { this.control0(char); continue; }
         if (/[@-~]/u.test(char)) { if (this.state === 'csi') this.control(char, this.sequence); this.state = 'text'; }
-        else if (char >= ' ' && this.state === 'csi') { if (this.sequence.length < 128) this.sequence += char; else this.state = 'discardCsi'; }
+        else if (this.state === 'csi' && char !== '\x7f') { if (this.sequence.length < 128) this.sequence += char; else this.state = 'discardCsi'; }
         continue;
       }
       if (char === '\u009b') { this.state = 'csi'; this.sequence = ''; this.last = undefined; continue; }
       if (char === '\u009d' || char === '\u0090' || char === '\u009e' || char === '\u009f') { this.state = 'string'; this.osc = char === '\u009d'; this.last = undefined; continue; }
-      if (char === '\r') { this.x = 0; this.wrap = false; this.last = undefined; continue; }
-      if (char === '\n' || char === '\v' || char === '\f') { this.linefeed(); this.last = undefined; continue; }
-      if (char === '\b') { this.x = Math.max(0, this.x - 1); this.wrap = false; this.last = undefined; continue; }
-      if (char === '\t') { this.tab(1); this.last = undefined; continue; }
-      if (char === '\x0e' || char === '\x0f') { this.charset = char === '\x0e'; continue; }
-      if (char < ' ' || char >= '\x7f' && char <= '\x9f') continue;
+      if (char < ' ') { this.control0(char); continue; }
+      if (char >= '\x7f' && char <= '\x9f') continue;
       this.put((this.charset ? this.g1 : this.g0) && char >= '`' && char <= '~' ? DEC[char.charCodeAt(0) - 96]! : char);
     }
+  }
+  /** CR, LF/VT/FF, BS, TAB and SO/SI; other C0 controls are ignored. */
+  private control0(char: string): void {
+    if (char === '\r') { this.x = 0; this.wrap = false; this.last = undefined; }
+    else if (char === '\n' || char === '\v' || char === '\f') { this.linefeed(); this.last = undefined; }
+    else if (char === '\b') { this.x = Math.max(0, this.x - 1); this.wrap = false; this.last = undefined; }
+    else if (char === '\t') { this.tab(1); this.last = undefined; }
+    else if (char === '\x0e' || char === '\x0f') this.charset = char === '\x0e';
   }
   private put(char: string): void {
     if (this.last) {

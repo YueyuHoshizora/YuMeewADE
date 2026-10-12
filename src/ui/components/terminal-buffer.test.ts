@@ -97,6 +97,14 @@ test('designating G0 or G1 does not change which register SO/SI selected', () =>
   const change = new TerminalBuffer(8, 2); change.write('\x1b)B\x0eq\x1b)0q\x0fq');
   assert.equal(text(change)[0], 'q─q     ');
 });
+test('a C0 control inside a control sequence acts and the sequence still completes', () => {
+  const screen = new TerminalBuffer(8, 2); screen.write('abc\x1b[31\rmX');
+  assert.equal(text(screen)[0], 'Xbc     ');
+  const plain = new TerminalBuffer(8, 2); plain.write('\x1b[31mX');
+  assert.equal(screen.grid[0]![0]!.fg, plain.grid[0]![0]!.fg, 'SGR 31 still applies after the embedded CR');
+  const feed = new TerminalBuffer(8, 3); feed.write('ab\x1b[\n2Cc');
+  assert.deepEqual(text(feed).slice(0, 2), ['ab      ', '    c   ']);
+});
 test('late emoji presentation wraps a complete grapheme at the right edge', () => {
   const screen = new TerminalBuffer(4, 2); screen.write('abc❤'); screen.write('\uFE0F');
   assert.equal(text(screen)[0], 'abc '); assert.equal(screen.grid[1]![0]!.char, '❤️');
