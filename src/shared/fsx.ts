@@ -10,6 +10,10 @@ export async function atomicWrite(file: string, content: string | Uint8Array): P
   const tmp = `${file}.${process.pid}.${randomUUID()}.tmp`;
   try {
     await fs.writeFile(tmp, content, 'utf8');
+    // Flush the content before the rename makes it the file: otherwise a crash or power loss right after can leave the
+    // ledger file renamed into place but empty or truncated.
+    const handle = await fs.open(tmp, 'r+');
+    try { await handle.sync(); } finally { await handle.close(); }
     await fs.rename(tmp, file);
   } catch (err) {
     // A write cut short (disk full, I/O error) leaves a partial temp file that would otherwise pile up beside the ledger.
