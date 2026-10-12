@@ -101,7 +101,7 @@ export function openUsageDetails(getState: () => AppState, getUsage: () => Usage
         const card = el('section', 'account-card'); const active = (state.settings.activeAccounts[ai] ?? 'default') === profile.id;
         const heading = row(el('h4', '', profile.name));
         if (active) heading.append(el('span', 'account-active', t('usage.active')));
-        else if (manageAccounts) { const activate = button(t('usage.activate'), async () => { await api.settings({ activeAccounts: { [ai]: profile.id } }); await refresh(); render(); }); activate.dataset['accountAction'] = `${ai}:${profile.id}:activate`; heading.append(activate); }
+        else { const activate = button(t('usage.activate'), async () => { await api.settings({ activeAccounts: { [ai]: profile.id } }); await refresh(); render(); }); activate.dataset['accountAction'] = `${ai}:${profile.id}:activate`; heading.append(activate); }
         if (manageAccounts && profile.id !== 'default') { const remove = button(t('usage.remove'), async () => {
           if (!await confirmModal(t('usage.remove'), t('usage.removeConfirm', { name: profile.name }), t('usage.remove'))) return;
           await request<Settings>('/api/accounts/remove', { ai, id: profile.id }); await refresh(); render();
