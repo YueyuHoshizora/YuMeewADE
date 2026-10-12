@@ -167,11 +167,10 @@ export class SettingsStore {
   async removeAccount(ai: string, id: string): Promise<Settings> {
     this.validateAi(ai);
     if (typeof id !== 'string' || !id) throw new AppError('bad_request', 'field_required', { field: 'id' });
-    let removed: { configDir: string } | undefined;
     const saved = await withFileLocks([this.file], async () => {
       const saved = await readJson<SettingsPatch>(this.file, {});
       const accounts = saved.accounts?.[ai] ?? [];
-      removed = accounts.find(account => account.id === id);
+      const removed = accounts.find(account => account.id === id);
       if (!removed) throw new AppError('not_found');
       const remaining = accounts.filter(account => account.id !== id);
       const active = saved.activeAccounts?.[ai];
@@ -192,10 +191,11 @@ export class SettingsStore {
       }
       saved.accounts = { ...saved.accounts, [ai]: remaining };
       await writeJson(this.file, saved);
+      // Its stored copy would otherwise be reused, unread, if the same folder is added again after a new login there; done
+      // under the settings lock so such an addition (which imports under it) cannot run before the old copy is gone.
+      await this.forgetCredentials?.(ai, removed.configDir);
       return saved;
     });
-    // Its stored copy would otherwise be reused, unread, if the same folder is added again after a new login there.
-    await this.forgetCredentials?.(ai, removed!.configDir);
     return this.merge(saved);
   }
 }

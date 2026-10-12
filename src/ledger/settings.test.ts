@@ -65,6 +65,24 @@ test('concurrent removal and activation never leave a removed account active', (
   assert.notEqual(settings.activeAccounts.codex, account.id);
 }));
 
+test('re-adding a folder while its removal is still forgetting the old copy imports the new login', () => withTmpWorkspace(async (ws, dir) => {
+  // A stand-in vault keyed by folder: import keeps an existing copy, as the real one does; forget deletes it.
+  const vault = new Map<string, string>(); let login = 'old';
+  const forgetting = Promise.withResolvers<void>(); const release = Promise.withResolvers<void>(); const imported = Promise.withResolvers<void>();
+  const store = new SettingsStore(ws, DEFAULT_CONFIG, async (_ai, folder) => { if (!vault.has(folder)) vault.set(folder, login); if (login === 'new') imported.resolve(); }, undefined, undefined, undefined,
+    async (_ai, folder) => { forgetting.resolve(); await release.promise; vault.delete(folder); });
+  const account = (await store.addAccount('codex', 'Account', dir)).accounts.codex![0]!;
+  const removal = store.removeAccount('codex', account.id);
+  await forgetting.promise;
+  login = 'new';
+  const readd = store.addAccount('codex', 'Account', dir);
+  // The addition must wait for the removal; give it the chance to (wrongly) import first.
+  await Promise.race([imported.promise, new Promise(resolve => setTimeout(resolve, 200))]);
+  release.resolve();
+  await removal; await readd;
+  assert.equal(vault.get(dir), 'new');
+}));
+
 test('a missing registered directory does not prevent adding another profile', () => withTmpWorkspace(async (ws, dir) => {
   const store = new SettingsStore(ws, DEFAULT_CONFIG);
   const original = path.join(dir, 'original');
