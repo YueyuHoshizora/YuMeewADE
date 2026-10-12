@@ -21,8 +21,8 @@ test('one regex matcher serves many texts and still stops a catastrophic pattern
   } finally { matcher.close(); }
   const slow = createMatcher('^(a+)+$', { regex: true, caseSensitive: true });
   try {
-    await assert.rejects(slow.match('a'.repeat(40) + 'b'), { code: 'too_large' });
+    await assert.rejects(slow.match('a'.repeat(40) + 'b'), { code: 'too_large', detail: 'search_regex_slow' });
     await assert.rejects(slow.match('aaa'), { code: 'too_large' }, 'a stopped matcher stays stopped');
   } finally { slow.close(); }
-  assert.throws(() => createMatcher('(', { regex: true }), { code: 'bad_request' });
+  assert.throws(() => createMatcher('(', { regex: true }), { code: 'bad_request', detail: 'search_regex_invalid' });
 });

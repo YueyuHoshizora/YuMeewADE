@@ -16,7 +16,7 @@ export function createMatcher(query: string, options: SearchOptions): Matcher {
   const source = options.regex ? query : query.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
   // Editor regex search is line-oriented: ^ and $ anchor each line, as in other IDE search panels.
   const flags = options.caseSensitive ? 'gmu' : 'gimu';
-  try { new RegExp(source, flags); } catch { throw new AppError('bad_request'); }
+  try { new RegExp(source, flags); } catch { throw new AppError('bad_request', 'search_regex_invalid'); }
   if (!options.regex) return { match: async text => literal(text, source, options), close() {} };
   const worker = new Worker(`const {parentPort,workerData:d}=require('node:worker_threads');const r=new RegExp(d.source,d.flags);const word=c=>c!==undefined&&/[\\p{L}\\p{N}_]/u.test(c);parentPort.on('message',text=>{r.lastIndex=0;const offsets=[];let m;let truncated=false;while((m=r.exec(text))){const start=m.index,end=start+m[0].length;if(!d.wholeWord||(!word(text[start-1])&&!word(text[end]))){if(offsets.length===${MAX_MATCHES}){truncated=true;break;}offsets.push([start,end]);}if(!m[0].length)r.lastIndex++;}parentPort.postMessage({offsets,truncated});});`, { eval: true, workerData: { source, flags, wholeWord: options.wholeWord }, resourceLimits: { maxOldGenerationSizeMb: 64 } });
   worker.unref();
@@ -33,7 +33,7 @@ export function createMatcher(query: string, options: SearchOptions): Matcher {
       if (failure) return Promise.reject(failure);
       if (pending) return Promise.reject(new AppError('conflict'));
       const { promise, resolve, reject } = Promise.withResolvers<SearchMatches>();
-      pending = { resolve, reject, timer: setTimeout(() => fail(new AppError('too_large')), REGEX_MS) };
+      pending = { resolve, reject, timer: setTimeout(() => fail(new AppError('too_large', 'search_regex_slow')), REGEX_MS) };
       worker.postMessage(text);
       return promise;
     },
