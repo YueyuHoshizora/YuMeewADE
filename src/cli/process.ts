@@ -81,6 +81,12 @@ export function signalTree(child: ChildProcess, signal: NodeJS.Signals): void {
   }
 }
 
+/**
+ * SIGTERM the process group, SIGKILL it after 3 s, and call `finish` after 3.5 s unless cancelled. Cancelling (the leader
+ * exited) only drops `finish`: group members that ignore SIGTERM outlive the leader, so on POSIX the SIGKILL still goes to
+ * the group (its id cannot be reused while any member lives; ESRCH once all are gone). On Windows a dead leader's PID can
+ * be reused at once, so taskkill is not repeated there.
+ */
 export function terminateTree(child: ChildProcess, finish: () => void): () => void {
   signalTree(child, 'SIGTERM');
   const kill = setTimeout(() => signalTree(child, 'SIGKILL'), 3000);
@@ -90,7 +96,7 @@ export function terminateTree(child: ChildProcess, finish: () => void): () => vo
     finish();
   }, 3500);
   kill.unref(); bound.unref();
-  return () => { clearTimeout(kill); clearTimeout(bound); };
+  return () => { if (process.platform === 'win32') clearTimeout(kill); clearTimeout(bound); };
 }
 
 /** 對齊 cross-spawn：cmd 引號與反斜線規則，npm shim 需要再次跳脫。 */

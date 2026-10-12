@@ -1,6 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { runLineProcess, captureCommand, windowsCommandLine, findExecutable, minimalEnv } from './process.ts';
+import { spawn } from 'node:child_process';
+import { runLineProcess, captureCommand, windowsCommandLine, findExecutable, minimalEnv, terminateTree } from './process.ts';
 import { setTimeout as delay } from 'node:timers/promises';
 
 test('Windows 的環境變數名稱不分大小寫：Path／SystemRoot 依白名單寫法放行，其他平台仍逐字比對', () => {
@@ -30,6 +31,21 @@ test('非推論指令逾時也會停止整個行程樹', { skip: process.platfor
   const result = await captureCommand({ command: '/bin/sh', args: ['-c', 'sleep 300 & wait'], timeoutMs: 50 });
   assert.equal(result.ok, false);
   assert.equal(result.reason, 'command timeout');
+});
+
+test('a group member ignoring SIGTERM is still killed after the leader exits and the stop is cancelled', { skip: process.platform === 'win32', timeout: 10000 }, async () => {
+  // Ignored signals stay ignored across exec, so this sleep survives SIGTERM; the shell itself dies on it.
+  const child = spawn('/bin/sh', ['-c', '(trap "" TERM; exec sleep 300) & echo $!; wait'], { detached: true, stdio: ['ignore', 'pipe', 'ignore'] });
+  const pid = Number(await new Promise<string>(resolve => child.stdout!.once('data', data => resolve(String(data)))));
+  assert.ok(pid > 0);
+  const cancel = terminateTree(child, () => undefined);
+  child.once('exit', () => cancel());
+  for (let i = 0; i < 90; i++) {
+    try { process.kill(pid, 0); } catch (err) { assert.equal((err as NodeJS.ErrnoException).code, 'ESRCH'); return; }
+    await delay(50);
+  }
+  try { process.kill(pid, 'SIGKILL'); } catch { /* already gone */ }
+  assert.fail('the member that ignored SIGTERM is still alive');
 });
 
 test('沒有換行的超大輸出會失敗而不是無限制累積', { timeout: 8000 }, async () => {
