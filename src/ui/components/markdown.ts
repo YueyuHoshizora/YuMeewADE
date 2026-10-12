@@ -36,7 +36,12 @@ function inline(parent: HTMLElement, value: string): void {
     else if (token.startsWith('/') || /^[A-Za-z]:[\\/]/.test(token)) parent.append(button(token, () => request('/api/open', { path: token }), 'path'));
     else {
       const match = /^\[([^\]]+)\]\(([^)]+)\)$/.exec(token); const url = match?.[2] ?? token; const label = match?.[1] ?? token;
-      if (/^https?:\/\//i.test(url)) { const a = el('a', '', label); a.href = url; a.target = '_blank'; a.rel = 'noopener noreferrer'; parent.append(a); }
+      if (/^https?:\/\//i.test(url)) {
+        const a = el('a', '', label); a.href = url; a.title = url; a.target = '_blank'; a.rel = 'noopener noreferrer'; parent.append(a);
+        // The AI chooses the link text; when it is not the URL itself, show where the link really goes (the desktop app has no status bar).
+        const host = URL.canParse(url) ? new URL(url).host : '';
+        if (label !== url && label !== host && host) parent.append(el('span', 'link-host', ` (${host})`));
+      }
       else if (url.startsWith('/') || /^[A-Za-z]:[\\/]/.test(url)) parent.append(button(label, () => request('/api/open', { path: url }), 'path'));
       else parent.append(document.createTextNode(token));
     }

@@ -119,3 +119,14 @@ test('clipboard rejection falls back to selected text and restores focus', async
     Object.defineProperty(globalThis, 'document', { value: originalDocument, configurable: true });
   }
 });
+
+test('a link whose text differs from its target also shows the real host, so a label cannot disguise the destination', () => {
+  const root = markdown('[https://github.com/me/repo/pull/12](https://attacker.example/?d=1) and https://example.org/plain') as unknown as Element;
+  const nodes = elements(root);
+  const disguised = nodes.find(node => node.tag === 'a' && node.href === 'https://attacker.example/?d=1')!;
+  const shown = root.children.flatMap(elements).map(node => node.textContent).join('');
+  assert.match(shown, /pull\/12 \(attacker\.example\)/);
+  assert.equal((disguised as unknown as { title: string }).title, 'https://attacker.example/?d=1');
+  // A bare URL already shows where it goes.
+  assert.doesNotMatch(shown, /\(example\.org\)/);
+});
