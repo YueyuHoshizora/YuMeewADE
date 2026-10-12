@@ -84,15 +84,17 @@ test('Node debugger launches actual inspector bound to loopback', () => withTmpW
   } finally { await execution.stopAll(); }
 }));
 
-test('stop kills descendant process group', { skip: process.platform === 'win32' }, () => withTmpWorkspace(async ws => {
+test('stop kills descendants, including one started in its own process group', { skip: process.platform === 'win32' }, () => withTmpWorkspace(async ws => {
   const { execution, task } = await setup(ws);
   try {
-    const run = await execution.start('P', task.id, { command: process.execPath, args: ['-e', 'const c=require("node:child_process").spawn(process.execPath,["-e","setInterval(()=>{},1000)"],{stdio:"ignore"});console.log(c.pid);setInterval(()=>{},1000)'] });
+    const spawnChild = (detached: boolean) => `require("node:child_process").spawn(process.execPath,["-e","setInterval(()=>{},1000)"],{stdio:"ignore",detached:${detached}}).pid`;
+    const run = await execution.start('P', task.id, { command: process.execPath, args: ['-e', `console.log(${spawnChild(false)}+" "+${spawnChild(true)});setInterval(()=>{},1000)`] });
     await until(() => execution.output('P', task.id, run.id).sequence > 0);
-    const pid = Number(execution.output('P', task.id, run.id).output[0]!.text.trim());
-    assert.ok(Number.isSafeInteger(pid) && pid > 0);
+    const pids = execution.output('P', task.id, run.id).output[0]!.text.trim().split(' ').map(Number);
+    assert.ok(pids.length === 2 && pids.every(pid => Number.isSafeInteger(pid) && pid > 0));
     await execution.stop('P', task.id, run.id);
-    await until(() => { try { process.kill(pid, 0); return false; } catch { return true; } });
+    const gone = (pid: number) => { try { process.kill(pid, 0); return false; } catch { return true; } };
+    try { await until(() => pids.every(gone)); } finally { for (const pid of pids) try { process.kill(pid, 'SIGKILL'); } catch { /* gone */ } }
   } finally { await execution.stopAll(); }
 }));
 

@@ -4,7 +4,7 @@ import { promises as fs } from 'node:fs';
 import type { FileHandle } from 'node:fs/promises';
 import path from 'node:path';
 import { StringDecoder } from 'node:string_decoder';
-import { findExecutable, minimalEnv, signalTree, spawnCli } from '../cli/process.ts';
+import { findExecutable, killDescendants, minimalEnv, signalTree, spawnCli } from '../cli/process.ts';
 import type { Workspace } from '../ledger/workspace.ts';
 import type { ProjectLedger } from '../ledger/projects.ts';
 import type { TaskLedger } from '../ledger/tasks.ts';
@@ -195,6 +195,8 @@ export class ExecutionService {
     const entry = this.get(project, task, id);
     if (entry.view.status !== 'running') return;
     entry.stopping = true;
+    // A descendant started in its own group or session (`detached`) escapes the group signal; find it while it is still linked to this run.
+    if (entry.child?.pid) await killDescendants(entry.child.pid);
     if (entry.child) signalTree(entry.child, 'SIGKILL');
     const bound = setTimeout(() => { entry.child?.stdout?.destroy(); entry.child?.stderr?.destroy(); entry.child?.unref(); entry.view.status = 'stopped'; entry.view.finishedAt = new Date().toISOString(); entry.finish(); }, 1500);
     try { await entry.done; } finally { clearTimeout(bound); clearTimeout(entry.timer); }

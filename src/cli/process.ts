@@ -298,3 +298,17 @@ export async function captureCommand(opts: { command: string; args: string[]; cw
   });
   return promise;
 }
+
+/**
+ * SIGKILL `pid` and every descendant, including ones in their own process group or session (a shell's foreground job, a
+ * worker spawned `detached`) that a group signal misses. The tree is snapshotted first, while the parent links still exist.
+ */
+export async function killDescendants(pid: number): Promise<void> {
+  if (process.platform === 'win32') { await captureCommand({ command: 'taskkill', args: ['/pid', String(pid), '/T', '/F'], env: minimalEnv([]), timeoutMs: 3000, maxOutputBytes: 4096 }); return; }
+  const result = await captureCommand({ command: 'ps', args: ['-axo', 'pid=,ppid='], env: minimalEnv([]), timeoutMs: 2000, maxOutputBytes: 1_048_576 });
+  if (!result.ok) return;
+  const processes = result.stdout.split('\n').map(line => line.trim().split(/\s+/u).map(Number)).filter(parts => parts.length === 2 && parts.every(n => Number.isSafeInteger(n) && n > 0));
+  const descendants = new Set<number>([pid]);
+  for (let changed = true; changed;) { changed = false; for (const [child, parent] of processes) if (descendants.has(parent!) && !descendants.has(child!)) { descendants.add(child!); changed = true; } }
+  for (const id of [...descendants].reverse()) { try { process.kill(-id, 'SIGKILL'); } catch { /* Not every descendant leads a group. */ } try { process.kill(id, 'SIGKILL'); } catch { /* Already exited. */ } }
+}

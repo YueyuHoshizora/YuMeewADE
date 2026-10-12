@@ -1,7 +1,7 @@
 import { randomBytes, randomUUID, timingSafeEqual } from 'node:crypto';
 import path from 'node:path';
 import * as pty from 'node-pty';
-import { captureCommand, findExecutable, minimalEnv } from '../cli/process.ts';
+import { findExecutable, killDescendants, minimalEnv } from '../cli/process.ts';
 import { AppError } from '../shared/errors.ts';
 import type { TerminalLease, TerminalRequest, TerminalSession } from '../shared/execution-tools.ts';
 import type { TerminalRecoveryLease, TerminalRecoveryTab } from '../shared/terminal-recovery.ts';
@@ -133,16 +133,8 @@ export class TerminalService {
     if (e.stopping) return e.stopping;
     if (e.view.status !== 'running') return;
     e.stopping = (async () => {
-      // Interactive shells create separate foreground job groups. Snapshot descendants before killing the shell.
-      if (process.platform !== 'win32') {
-        const result = await captureCommand({ command: 'ps', args: ['-axo', 'pid=,ppid='], env: minimalEnv([]), timeoutMs: 2000, maxOutputBytes: 1_048_576 });
-        if (result.ok) {
-          const processes = result.stdout.split('\n').map(line => line.trim().split(/\s+/u).map(Number)).filter(parts => parts.length === 2 && parts.every(n => Number.isSafeInteger(n) && n > 0));
-          const descendants = new Set<number>([e.process.pid]);
-          for (let changed = true; changed;) { changed = false; for (const [pid, parent] of processes) if (descendants.has(parent!) && !descendants.has(pid!)) { descendants.add(pid!); changed = true; } }
-          for (const pid of [...descendants].reverse()) { try { process.kill(-pid, 'SIGKILL'); } catch { /* Not every descendant leads a group. */ } try { process.kill(pid, 'SIGKILL'); } catch { /* Already exited. */ } }
-        }
-      } else { await captureCommand({ command: 'taskkill', args: ['/pid', String(e.process.pid), '/T', '/F'], env: minimalEnv([]), timeoutMs: 3000, maxOutputBytes: 4096 }); }
+      // Interactive shells create separate foreground job groups, so the whole descendant tree is killed, not just the shell's group.
+      await killDescendants(e.process.pid);
       try { e.process.kill(process.platform === 'win32' ? undefined : 'SIGKILL'); } catch { /* Exit raced stop. */ }
       const timer = setTimeout(e.finish, 1500);
       try { await e.done; } finally { clearTimeout(timer); e.view.status = 'stopped'; }
