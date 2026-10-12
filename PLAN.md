@@ -433,7 +433,7 @@ electron 44.7.0、vite 8.3.4、electron-builder 26.15.3、typescript 7.0.2、@ty
 
 ### B.2 工作區與檔案
 - `{root}/Projects/{id}/PROJECT.md` 新增 `description`、`parent`（上層專案 id）、`body`（主資料夾絕對路徑；空＝台帳資料夾本身）、`phases: [{name, state}]`（預設 計畫／實作／檢查／收尾）。舊檔缺欄位照樣可讀。
-- `.ai/tasks/{id}.md` 欄位：`id title state phase role parent kind(main|derived) derivedFrom workspace(isolated|direct) cli model effort question workdir mergeExcluded updated`；正文 `## 步驟`（勾選清單）、`## 做了什麼`、`## 下一步`、`## 注意`、`## 備註`。作業 ID 不重用（掃描 tasks／chat／Work）。
+- `.ai/tasks/{id}.md` 欄位：`id title state phase role parent kind(main|derived) derivedFrom workspace(isolated|direct) cli model effort question workdir mergeExcluded updated`；正文 `## 步驟`（勾選清單）、`## 做了什麼`、`## 下一步`、`## 注意`、`## 備註`。讀取時 `## 已完成的工作`（舊規則用語）視同 `## 做了什麼`，同類標題出現多次時合併。作業 ID 不重用（掃描 tasks／chat／Work）。
 - `.ai/chat/{id}.jsonl` 列型別：`user`（`to model effort request mode images`）、`assistant`（`ai model effort text error stopped ms request asks`）、`event`（`tool` 工具摘要）。`.json` 存各 AI 的 session 與模型；`.queue.json` 存排隊指示。`.ai/attachments/{id}/` 存圖片。
 - `{root}/.yumeewade/`：`log.jsonl`（操作紀錄）、`settings.json`（預設 AI、隱藏／排序模型、完整權限）、`models.json`（模型清單快取）、`completion.json`（完成核可、繼續標記、階段繼續標記）、`order.json`（專案排序與釘選）。
 - `Work/{專案}/{作業}/`、分支 `ym/{作業}`。主資料夾不是 git 時先 `git init`＋初始提交。
