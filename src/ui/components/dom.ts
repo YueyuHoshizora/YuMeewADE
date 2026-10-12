@@ -186,14 +186,16 @@ export function readLocal<T>(key: string, fallback: T): T { try { const value = 
 export function storeLocal(key: string, value: unknown): void { try { localStorage.setItem(key, JSON.stringify(value)); } catch { /* 儲存空間不足不阻止送出。 */ } }
 /**
  * Key for browser-kept state of one project or task (drafts, AI picks). Task IDs are dates and project names repeat
- * across workspaces, so the key carries the workspace root; a key from before that scoping is adopted once, then dropped.
+ * across workspaces, so the key carries the workspace root; root and scope are JSON-encoded together because both may
+ * contain dots (`/ws` + `foo.bar` vs `/ws.foo` + `bar`). Keys from before (unscoped, then dot-joined) are adopted once, then dropped.
  */
 export function workspaceLocalKey(state: AppState, kind: 'draft' | 'pick' | 'quick', scope: string): string {
-  const key = `yumeewade.${kind}@${state.root}.${scope}`;
-  const legacy = `yumeewade.${kind}.${scope}`;
+  const key = `yumeewade.${kind}:${JSON.stringify([state.root, scope])}`;
   try {
-    const old = localStorage.getItem(legacy);
-    if (old !== null) { if (localStorage.getItem(key) === null) localStorage.setItem(key, old); localStorage.removeItem(legacy); }
+    for (const legacy of [`yumeewade.${kind}@${state.root}.${scope}`, `yumeewade.${kind}.${scope}`]) {
+      const old = localStorage.getItem(legacy);
+      if (old !== null) { if (localStorage.getItem(key) === null) localStorage.setItem(key, old); localStorage.removeItem(legacy); }
+    }
   } catch { /* storage unavailable */ }
   return key;
 }
