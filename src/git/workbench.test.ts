@@ -177,6 +177,19 @@ test('task comparison scales with the difference, uses staged content and marks 
   assert.equal(cut.files.length, 100); assert.equal(cut.truncated, true);
 }));
 
+test('the diff of a file too large for line staging says when it is cut', () => withTmpWorkspace(async ws => {
+  const projects = new ProjectLedger(ws); const tasks = new TaskLedger(ws); await projects.create({ name: 'P' });
+  const root = ws.projectDir('P'); const workbench = new GitWorkbench({ ws, projects, tasks, isRunning: () => false });
+  await fs.writeFile(path.join(root, 'big.txt'), 'old\n'); await commitAll(root, 'big');
+  await fs.writeFile(path.join(root, 'big.txt'), 'line of generated output\n'.repeat(60_000));
+  const big = await workbench.diff('P', undefined, 'big.txt', false);
+  assert.equal(big.selectable, false); assert.equal(big.truncated, true); assert.ok(big.patch.length <= 1024 * 1024);
+  // A large binary file yields a one-line patch: complete, so not flagged.
+  await fs.writeFile(path.join(root, 'big.txt'), Buffer.alloc(1024 * 1024 + 1));
+  const binary = await workbench.diff('P', undefined, 'big.txt', false);
+  assert.match(binary.patch, /Binary files/); assert.equal(binary.truncated, undefined);
+}));
+
 test('歷史、提交詳情與blame限制輸入並保護機密路徑', () => withTmpWorkspace(async ws => {
   const projects = new ProjectLedger(ws); const tasks = new TaskLedger(ws); await projects.create({ name: 'P' });
   const root = ws.projectDir('P'); const workbench = new GitWorkbench({ ws, projects, tasks, isRunning: () => false });

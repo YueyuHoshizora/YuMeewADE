@@ -255,7 +255,7 @@ export class GitWorkbench {
         ? ['diff', '--no-index', '--no-ext-diff', '--no-textconv', '--', '/dev/null', relative]
         : ['--literal-pathspecs', 'diff', '--no-ext-diff', '--no-textconv', '--no-renames', ...(staged ? ['--cached', '-R'] : []), '--', relative], { maxBytes: 1024 * 1024 });
       if (result.code !== 0 && !(untracked && result.code === 1)) throw new AppError('conflict', 'git_failed');
-      return { path: relative, staged, fingerprint: '', patch: result.stdout, hunks: [], selectable: false };
+      return { path: relative, staged, fingerprint: '', patch: result.stdout, hunks: [], selectable: false, ...(result.truncated ? { truncated: true } : {}) };
     }
     let patch = await this.command(root, ['diff', '--no-ext-diff', '--no-textconv', '--no-renames', '--unified=3', ...(staged ? ['--cached', '-R'] : []), '--', relative]);
     if (!staged && !patch && (await this.files(root)).some(file => file.path === relative && file.untracked)) {

@@ -1,35 +1,42 @@
 export const featureZhTW = {
+  'gitPrecision.patchTruncated': "差異內容太長，只顯示前 1 MiB",
   'gitPrecision.truncated': "差異太多，只列出前 {n} 個檔案",
   'gitPrecision.resolveCurrent': '標記目前檔案／刪除已解決',
   'gitPrecision.diff': '查看差異／選取變更', 'gitPrecision.reverseDiff': '已暫存差異（反向顯示以取消暫存）', 'gitPrecision.line': '選取變更行', 'gitPrecision.hunk': '選取整個區塊', 'gitPrecision.noDiff': '沒有差異', 'gitPrecision.wholeFile': '非文字變更請使用整檔暫存／取消暫存。', 'gitPrecision.base': '共同基底（index stage 1）', 'gitPrecision.ours': '目前版本（index stage 2）', 'gitPrecision.theirs': '合入版本（index stage 3）', 'gitPrecision.absent': '此版本不存在', 'gitPrecision.bypass': '提交並略過 hooks…', 'gitPrecision.confirmBypass': '略過 Git hooks 會跳過專案驗證與政策。確定只對這次提交略過？', 'gitPrecision.compare': '比較兩個作業方案', 'gitPrecision.left': '左側作業', 'gitPrecision.right': '右側作業', 'gitPrecision.compareHint': '比較實際副本檔案，包含未提交變更；略過機密與 ignored 檔，不修改或合併。',
 } as const;
 type Messages = Record<keyof typeof featureZhTW, string>;
 export const featureZhCN: Messages = {
+  'gitPrecision.patchTruncated': "差异内容太长，只显示前 1 MiB",
   'gitPrecision.truncated': "差异太多，只列出前 {n} 个文件",
   'gitPrecision.diff': '查看差异／选择变更', 'gitPrecision.reverseDiff': '已暂存差异（反向显示以取消暂存）', 'gitPrecision.line': '选择变更行', 'gitPrecision.hunk': '选择整个区块', 'gitPrecision.noDiff': '没有差异', 'gitPrecision.wholeFile': '非文本变更请使用整文件暂存／取消暂存。', 'gitPrecision.base': '共同基底（index stage 1）', 'gitPrecision.ours': '当前版本（index stage 2）', 'gitPrecision.theirs': '合入版本（index stage 3）', 'gitPrecision.absent': '此版本不存在', 'gitPrecision.bypass': '提交并跳过 hooks…', 'gitPrecision.confirmBypass': '跳过 Git hooks 会绕过项目验证与政策。确定仅对这次提交跳过？', 'gitPrecision.compare': '比较两个任务方案', 'gitPrecision.left': '左侧任务', 'gitPrecision.right': '右侧任务', 'gitPrecision.compareHint': '比较实际副本文件，包含未提交变更；跳过机密与 ignored 文件，不修改或合并。',
   'gitPrecision.resolveCurrent': '标记当前文件／删除已解决',
 };
 export const featureEn: Messages = {
+  'gitPrecision.patchTruncated': "The diff is too long; only the first 1 MiB is shown",
   'gitPrecision.truncated': "Too many differences; only the first {n} files are listed",
   'gitPrecision.diff': 'View diff / select changes', 'gitPrecision.reverseDiff': 'Staged diff (reversed for unstaging)', 'gitPrecision.line': 'Select changed line', 'gitPrecision.hunk': 'Select entire hunk', 'gitPrecision.noDiff': 'No differences', 'gitPrecision.wholeFile': 'Use whole-file stage / unstage for non-text changes.', 'gitPrecision.base': 'Base (index stage 1)', 'gitPrecision.ours': 'Ours (index stage 2)', 'gitPrecision.theirs': 'Theirs (index stage 3)', 'gitPrecision.absent': 'Absent in this version', 'gitPrecision.bypass': 'Commit bypassing hooks…', 'gitPrecision.confirmBypass': 'Bypassing Git hooks skips project checks and policies. Bypass for this commit only?', 'gitPrecision.compare': 'Compare two task solutions', 'gitPrecision.left': 'Left task', 'gitPrecision.right': 'Right task', 'gitPrecision.compareHint': 'Compare actual worktree files, including uncommitted changes. Secrets and ignored files are excluded. Nothing is modified or merged.',
   'gitPrecision.resolveCurrent': 'Mark current file / deletion resolved',
 };
 export const featureJa: Messages = {
+  'gitPrecision.patchTruncated': "差分が長すぎるため、最初の 1 MiB のみ表示しています",
   'gitPrecision.truncated': "差分が多すぎるため、最初の {n} ファイルのみ表示しています",
   'gitPrecision.diff': '差分表示／変更を選択', 'gitPrecision.reverseDiff': 'ステージ済み差分（解除用の逆方向表示）', 'gitPrecision.line': '変更行を選択', 'gitPrecision.hunk': 'ハンク全体を選択', 'gitPrecision.noDiff': '差分なし', 'gitPrecision.wholeFile': '非テキスト変更はファイル全体をステージ／解除してください。', 'gitPrecision.base': '共通基底（index stage 1）', 'gitPrecision.ours': '現在の版（index stage 2）', 'gitPrecision.theirs': '取り込む版（index stage 3）', 'gitPrecision.absent': 'この版には存在しません', 'gitPrecision.bypass': 'hooks を省略してコミット…', 'gitPrecision.confirmBypass': 'Git hooks の省略はプロジェクトの検証とポリシーを回避します。今回だけ省略しますか？', 'gitPrecision.compare': '2つの作業案を比較', 'gitPrecision.left': '左の作業', 'gitPrecision.right': '右の作業', 'gitPrecision.compareHint': '未コミット変更を含む実際の作業ツリーを比較。秘密情報と ignored ファイルは除外し、変更もマージもしません。',
   'gitPrecision.resolveCurrent': '現在のファイル／削除を解決済みにする',
 };
 export const featureDe: Messages = {
+  'gitPrecision.patchTruncated': "Der Diff ist zu lang; nur das erste 1 MiB wird angezeigt",
   'gitPrecision.truncated': "Zu viele Unterschiede; nur die ersten {n} Dateien werden angezeigt",
   'gitPrecision.diff': 'Diff ansehen / Änderungen wählen', 'gitPrecision.reverseDiff': 'Vorgemerkter Diff (umgekehrt zum Entfernen)', 'gitPrecision.line': 'Geänderte Zeile wählen', 'gitPrecision.hunk': 'Gesamten Block wählen', 'gitPrecision.noDiff': 'Keine Unterschiede', 'gitPrecision.wholeFile': 'Nicht-Textänderungen als ganze Datei vormerken / entfernen.', 'gitPrecision.base': 'Basis (Indexstufe 1)', 'gitPrecision.ours': 'Unsere Version (Indexstufe 2)', 'gitPrecision.theirs': 'Andere Version (Indexstufe 3)', 'gitPrecision.absent': 'In dieser Version nicht vorhanden', 'gitPrecision.bypass': 'Commit ohne Hooks…', 'gitPrecision.confirmBypass': 'Git-Hooks zu umgehen überspringt Projektprüfungen und Richtlinien. Nur für diesen Commit umgehen?', 'gitPrecision.compare': 'Zwei Aufgabenlösungen vergleichen', 'gitPrecision.left': 'Linke Aufgabe', 'gitPrecision.right': 'Rechte Aufgabe', 'gitPrecision.compareHint': 'Tatsächliche Worktree-Dateien einschließlich nicht committeter Änderungen vergleichen. Geheimnisse und ignorierte Dateien werden ausgeschlossen. Keine Änderungen oder Zusammenführung.',
   'gitPrecision.resolveCurrent': 'Aktuelle Datei / Löschung als gelöst markieren',
 };
 export const featureFr: Messages = {
+  'gitPrecision.patchTruncated': "Le diff est trop long ; seul le premier Mio est affiché",
   'gitPrecision.truncated': "Trop de différences ; seuls les {n} premiers fichiers sont affichés",
   'gitPrecision.diff': 'Voir le diff / sélectionner', 'gitPrecision.reverseDiff': 'Diff indexé (inversé pour désindexer)', 'gitPrecision.line': 'Sélectionner la ligne modifiée', 'gitPrecision.hunk': 'Sélectionner le bloc entier', 'gitPrecision.noDiff': 'Aucune différence', 'gitPrecision.wholeFile': 'Indexer / désindexer le fichier entier pour les changements non textuels.', 'gitPrecision.base': 'Base (étape index 1)', 'gitPrecision.ours': 'Notre version (étape index 2)', 'gitPrecision.theirs': 'Leur version (étape index 3)', 'gitPrecision.absent': 'Absent dans cette version', 'gitPrecision.bypass': 'Commit sans hooks…', 'gitPrecision.confirmBypass': 'Ignorer les hooks Git contourne les vérifications et politiques du projet. Uniquement pour ce commit ?', 'gitPrecision.compare': 'Comparer deux solutions de tâches', 'gitPrecision.left': 'Tâche de gauche', 'gitPrecision.right': 'Tâche de droite', 'gitPrecision.compareHint': 'Comparer les fichiers réels des copies, y compris les changements non committés. Secrets et fichiers ignorés exclus. Aucune modification ni fusion.',
   'gitPrecision.resolveCurrent': 'Marquer le fichier actuel / la suppression comme résolu',
 };
 export const featureIt: Messages = {
+  'gitPrecision.patchTruncated': "Il diff è troppo lungo; viene mostrato solo il primo MiB",
   'gitPrecision.truncated': "Troppe differenze; sono elencati solo i primi {n} file",
   'gitPrecision.diff': 'Mostra diff / seleziona modifiche', 'gitPrecision.reverseDiff': 'Diff in stage (invertito per rimuovere)', 'gitPrecision.line': 'Seleziona riga modificata', 'gitPrecision.hunk': 'Seleziona intero blocco', 'gitPrecision.noDiff': 'Nessuna differenza', 'gitPrecision.wholeFile': 'Per modifiche non testuali usa stage / rimozione del file intero.', 'gitPrecision.base': 'Base (stadio indice 1)', 'gitPrecision.ours': 'Nostra versione (stadio indice 2)', 'gitPrecision.theirs': 'Altra versione (stadio indice 3)', 'gitPrecision.absent': 'Assente in questa versione', 'gitPrecision.bypass': 'Commit senza hooks…', 'gitPrecision.confirmBypass': 'Ignorare gli hook Git salta controlli e politiche del progetto. Solo per questo commit?', 'gitPrecision.compare': 'Confronta due soluzioni di attività', 'gitPrecision.left': 'Attività sinistra', 'gitPrecision.right': 'Attività destra', 'gitPrecision.compareHint': 'Confronta i file reali delle copie, incluse modifiche non committate. Segreti e file ignorati esclusi. Nessuna modifica o unione.',
   'gitPrecision.resolveCurrent': 'Segna file attuale / eliminazione come risolto',

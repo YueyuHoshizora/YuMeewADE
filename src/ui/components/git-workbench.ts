@@ -33,6 +33,7 @@ export function gitWorkbenchButton(context: ViewContext, project: string, task?:
         content.append(block);
       }
       if (!diff.hunks.length) content.append(el('pre', '', diff.patch || t('gitPrecision.noDiff')));
+      if (diff.truncated) content.append(el('p', 'muted', t('gitPrecision.patchTruncated')));
       if (!diff.selectable) content.append(el('p', '', t('gitPrecision.wholeFile')));
       const apply = button(t(staged ? 'workbench.unstage' : 'workbench.stage'), async () => {
         await mutate('stage-lines', { path, staged, fingerprint: diff.fingerprint, lines: [...selected] });
