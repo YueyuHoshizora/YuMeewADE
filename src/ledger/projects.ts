@@ -6,7 +6,7 @@ import { parseFrontmatter, patchHeaderLines, serializeFrontmatter } from '../sha
 import { atomicWrite, isInside, pathExists, withFileLocks } from '../shared/fsx.ts';
 import { log } from '../shared/log.ts';
 import { isValidProjectName } from '../shared/names.ts';
-import { AUTO_FIX_MAX, PHASE_STATES, PROJECT_STATUSES, type NewProjectInput, type Phase, type PhaseState, type Project, type ProjectPatch, type ProjectStatus } from '../shared/types.ts';
+import { AUTO_FIX_MAX, PHASE_STATES, PHASES_MAX, PROJECT_STATUSES, type NewProjectInput, type Phase, type PhaseState, type Project, type ProjectPatch, type ProjectStatus } from '../shared/types.ts';
 import { type YamlValue } from '../shared/yaml.ts';
 import { ensureRepo } from '../git/git.ts';
 import { parseVerificationChecks, parseVerificationInputModel } from '../shared/verification.ts';
@@ -116,7 +116,7 @@ export class ProjectLedger {
       }
     }
     if (patch.related !== undefined && (!Array.isArray(patch.related) || patch.related.length > RELATED_MAX || patch.related.some(v => typeof v !== 'string' || !isValidProjectName(v) || v === id) || new Set(patch.related).size !== patch.related.length)) throw new AppError('bad_request', 'field_type', { field: 'related' });
-    if (patch.phases !== undefined && (!Array.isArray(patch.phases) || patch.phases.length > 12 || patch.phases.some(p => !p || typeof p.name !== 'string' || !p.name.trim() || !PHASE_STATES.includes(p.state)))) throw new AppError('bad_request', 'field_type', { field: 'phases' });
+    if (patch.phases !== undefined && (!Array.isArray(patch.phases) || patch.phases.length > PHASES_MAX || patch.phases.some(p => !p || typeof p.name !== 'string' || !p.name.trim() || !PHASE_STATES.includes(p.state)))) throw new AppError('bad_request', 'field_type', { field: 'phases' });
   }
 
   async create(input: NewProjectInput): Promise<Project> {

@@ -1,7 +1,7 @@
-import type { ProjectView } from '../../shared/types.ts';
+import { PHASES_MAX, type ProjectView } from '../../shared/types.ts';
 import { request } from '../api.ts';
 import { t } from '../i18n/index.ts';
-import { button, disclosure, el, input, toast } from './dom.ts';
+import { button, disclosure, el, input, setLocked, toast } from './dom.ts';
 
 /** `from` is the existing phase a row continues (its state and tasks follow a rename); new rows have none. */
 interface PhaseRow { name: string; from?: string }
@@ -20,6 +20,7 @@ export function phaseEditor(project: ProjectView, refresh: () => Promise<void>):
   const stale = el('p', 'warning', t('phases.stale'));
   function render(): void {
     stale.hidden = JSON.stringify(draft.base) === JSON.stringify(names);
+    setLocked(add, draft.rows.length >= PHASES_MAX);
     list.replaceChildren(...draft.rows.map((entry, index) => {
       const item = el('li');
       const name = input(entry.name, t('phases.name')); name.setAttribute('aria-label', t('phases.name')); name.maxLength = 200;

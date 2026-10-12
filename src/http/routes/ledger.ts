@@ -8,7 +8,7 @@ import { phaseTasks } from '../../state/state.ts';
 import { Router, reqString } from '../router.ts';
 import { TaskTemplates } from '../../ledger/task-templates.ts';
 import { STEP_TEXT_MAX } from '../../ledger/tasks.ts';
-import { TASK_STATES, type BulkTaskAction, type BulkTaskResult } from '../../shared/types.ts';
+import { PHASES_MAX, TASK_STATES, type BulkTaskAction, type BulkTaskResult } from '../../shared/types.ts';
 import { validDue, validTag } from '../../shared/task-metadata.ts';
 import { isValidTaskId } from '../../shared/names.ts';
 import { log } from '../../shared/log.ts';
@@ -138,7 +138,7 @@ export function registerLedgerRoutes(router: Router, app: App): void {
     const project = reqString(body, 'project', 120);
     if (!Array.isArray(body.previous) || body.previous.some(name => typeof name !== 'string')) throw new AppError('bad_request', 'field_type', { field: 'previous' });
     const phases = body.phases;
-    if (!Array.isArray(phases) || phases.length > 12 || phases.some(entry => !entry || typeof entry !== 'object' || typeof entry.name !== 'string' || (entry.from !== undefined && typeof entry.from !== 'string'))) {
+    if (!Array.isArray(phases) || phases.length > PHASES_MAX || phases.some(entry => !entry || typeof entry !== 'object' || typeof entry.name !== 'string' || (entry.from !== undefined && typeof entry.from !== 'string'))) {
       throw new AppError('bad_request', 'field_type', { field: 'phases' });
     }
     const { project: result, renamed } = await app.projects.setPhases(project, body.previous as string[], (phases as { name: string; from?: string }[]).map(entry => ({ name: entry.name, ...(entry.from === undefined ? {} : { from: entry.from }) })));
