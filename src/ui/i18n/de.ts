@@ -257,7 +257,7 @@ export const de: Record<MessageKey, string> = {
 'err.unavailable': 'Ressourcenlimit erreicht',
 'err.internal': 'Interner Fehler',
 'err.network': 'Verbindung fehlgeschlagen',
-'ai.human': 'Mensch',
+'ai.human': 'Mensch', 'ai.noneAvailable': 'Keine KI verfügbar',
 'detail.invalid_project_name': 'Ungültiger Projektname',
 'detail.invalid_task_id': 'Ungültige Aufgaben-ID',
 'detail.project_exists': 'Ein Projekt mit diesem Namen existiert bereits',

@@ -6,7 +6,10 @@ import { aiLabel, effortLabel } from './display.ts';
 export function aiPicker(state: AppState, initial: AiPick, onChange?: (pick: AiPick) => void, human = false, compact = false): { node: HTMLElement; value: () => AiPick } {
   const node = el('div', 'picker row');
   const ai = select([...state.ais.filter(a => a.name !== 'mock' && (human || a.available)).map(a => ({ value: a.name, label: aiLabel(a.name) })), ...(human ? [{ value: '人', label: t('ai.human') }] : [])], initial.ai);
-  if (!ai.value) ai.selectedIndex = 0;
+  if (!ai.options.length) {
+    // Without any usable AI an empty select looks broken; say why instead (sending reports how to fix it).
+    const option = el('option', '', t('ai.noneAvailable')); option.value = ''; ai.append(option); ai.disabled = true;
+  } else if (!ai.value) ai.selectedIndex = 0;
   const model = select([]); const effort = select([]);
   const value = (): AiPick => ({ ai: ai.value, model: model.value, effort: effort.value });
   function fillModels(keep = ''): void {

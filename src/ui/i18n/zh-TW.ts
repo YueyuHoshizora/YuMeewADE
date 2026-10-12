@@ -100,7 +100,7 @@ export const zhTW = {
 'settings.general': '一般', 'settings.language': '語言', 'settings.root': '工作區根目錄', 'settings.initial': '新作業的預設 AI', 'settings.ais': 'AI 工具', 'settings.models': '選單顯示的模型', 'settings.roles': '角色分工', 'settings.main': '主要 AI', 'settings.backup': '備用 AI', 'settings.job': '職責', 'settings.addRole': '新增角色', 'settings.log': '最近操作',
 'state.未開始': '未開始', 'state.進行中': '進行中', 'state.等待回覆': '等待回覆', 'state.暫停': '暫停', 'state.完成': '完成',
 'err.bad_request': '輸入不合法', 'err.forbidden': '來源不符', 'err.not_found': '目標不存在', 'err.conflict': '狀態衝突', 'err.too_large': '內容過大', 'err.too_many_requests': '請求太頻繁', 'err.unavailable': '資源已達上限', 'err.internal': '內部錯誤', 'err.network': '連線失敗',
-'ai.human': '人',
+'ai.human': '人', 'ai.noneAvailable': '沒有可用的 AI',
 'detail.invalid_project_name': '專案名稱不合法',
 'detail.invalid_task_id': '作業 ID 不合法',
 'detail.project_exists': '同名專案已存在',

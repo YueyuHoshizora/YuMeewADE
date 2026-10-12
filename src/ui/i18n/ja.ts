@@ -257,7 +257,7 @@ export const ja: Record<MessageKey, string> = {
 'err.unavailable': 'リソースの上限に達しました',
 'err.internal': '内部エラー',
 'err.network': '接続に失敗しました',
-'ai.human': '人間',
+'ai.human': '人間', 'ai.noneAvailable': '利用できる AI がありません',
 'detail.invalid_project_name': '無効なプロジェクト名',
 'detail.invalid_task_id': '無効なタスク ID',
 'detail.project_exists': '同名のプロジェクトが存在します',

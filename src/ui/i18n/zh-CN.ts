@@ -257,7 +257,7 @@ export const zhCN: Record<MessageKey, string> = {
 'err.unavailable': '资源已达上限',
 'err.internal': '内部错误',
 'err.network': '连接失败',
-'ai.human': '人',
+'ai.human': '人', 'ai.noneAvailable': '没有可用的 AI',
 'detail.invalid_project_name': '项目名称不合法',
 'detail.invalid_task_id': '任务 ID 不合法',
 'detail.project_exists': '同名项目已存在',
