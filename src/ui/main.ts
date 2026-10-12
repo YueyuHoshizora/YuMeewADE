@@ -201,6 +201,8 @@ window.addEventListener('keydown', event => {
     return;
   }
   if (event.isComposing || event.keyCode === 229 || (event.target instanceof Element && event.target.closest('input,textarea,select,[contenteditable]'))) return;
+  // Behind an open dialog the sidebar is inert: the key would only be swallowed and the drawer open under the dialog.
+  if (document.querySelector('dialog:modal')) return;
   if (event.key === '/' || ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === 'k')) { event.preventDefault(); document.body.classList.add('sidebar-open'); sidebar.querySelector<HTMLInputElement>('.tree-search')?.focus(); }
 });
 window.addEventListener('focus', () => { void load(true); });
