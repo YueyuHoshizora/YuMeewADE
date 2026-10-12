@@ -269,3 +269,34 @@ test('a task copy deleted outside the app is reported as missing, not as an inte
   await fs.rm(workdir, { recursive: true, force: true });
   await assert.rejects(workbench.status('P', task.id), (error: unknown) => error instanceof AppError && error.status === 404 && error.detail === 'worktree_missing');
 }));
+
+test('discarding a file drops only its unstaged changes and refuses stale, secret or conflicted targets', () => withTmpWorkspace(async ws => {
+  const projects = new ProjectLedger(ws); const tasks = new TaskLedger(ws); await projects.create({ name: 'P' });
+  const root = ws.projectDir('P'); const file = path.join(root, 'file.txt'); const gone = path.join(root, 'gone.txt');
+  await fs.writeFile(file, 'base\n'); await fs.writeFile(gone, 'keep me\n'); await commitAll(root, 'base');
+  const workbench = new GitWorkbench({ ws, projects, tasks, isRunning: () => false });
+  const fingerprint = async (name: string) => (await workbench.diff('P', undefined, name, false)).fingerprint;
+  const refused = (error: unknown) => error instanceof AppError && error.detail === 'git_workbench_path';
+  // Staged work survives; only what is not yet staged goes back to the index version.
+  await fs.writeFile(file, 'staged\n'); await workbench.stage('P', undefined, 'file.txt');
+  await fs.writeFile(file, 'staged\nscratch\n');
+  const seen = await fingerprint('file.txt');
+  await fs.appendFile(file, 'typed after the confirmation\n');
+  await assert.rejects(workbench.discard('P', undefined, 'file.txt', seen), refused);
+  assert.equal(await fs.readFile(file, 'utf8'), 'staged\nscratch\ntyped after the confirmation\n');
+  await workbench.discard('P', undefined, 'file.txt', await fingerprint('file.txt'));
+  assert.equal(await fs.readFile(file, 'utf8'), 'staged\n');
+  assert.equal(await gitOk(root, ['show', ':file.txt']), 'staged\n');
+  // A tracked file deleted in the working tree comes back; an untracked file is removed.
+  await fs.rm(gone);
+  await workbench.discard('P', undefined, 'gone.txt', await fingerprint('gone.txt'));
+  assert.equal(await fs.readFile(gone, 'utf8'), 'keep me\n');
+  await fs.writeFile(path.join(root, 'scratch.txt'), 'temp\n');
+  await workbench.discard('P', undefined, 'scratch.txt', await fingerprint('scratch.txt'));
+  await assert.rejects(fs.access(path.join(root, 'scratch.txt')));
+  // Local secrets are never deleted through the workbench, and nothing happens to a file without unstaged changes.
+  await fs.writeFile(path.join(root, '.env'), 'TOKEN=1\n');
+  await assert.rejects(workbench.discard('P', undefined, '.env', 'x'.repeat(64)), refused);
+  assert.equal(await fs.readFile(path.join(root, '.env'), 'utf8'), 'TOKEN=1\n');
+  await assert.rejects(workbench.discard('P', undefined, 'file.txt', 'x'.repeat(64)), refused);
+}));

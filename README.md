@@ -105,7 +105,7 @@ Claude／Codex 模型清單直接讀 CLI 自己的快取（`~/.codex/models_cach
   - 重新載入可接回同一 renderer 的存活 PTY，透過 HttpOnly／SameSite cookie、sessionStorage renderer ID 與一次性 ticket 驗證及輪替 owner。owner／ticket 不存 localStorage，不允許其他視窗接管；核心重啟不恢復 shell。
   - Node 除錯支援工作根內的平面本機 Source Map v3、持久化 revision 綁定的條件斷點、編輯器 gutter 與 source stack 定位。條件僅支援變數／屬性／literal 比較，在目標行程中執行，getter 可能有副作用；Watch 僅讀變數／屬性路徑，不呼叫 getter 或任意 evaluate。遠端／indexed map、機密與越界來源皆拒絕。
 - **整合設定**：`config.yaml` 的 `execution.ide`／`terminal`／`browser` 各為 `{command, args}`；argv 支援 `{cwd}`、`{url}`、`{command}` 替換。IDE 開資料夾需要 `{cwd}`，IDE debug 需要 `{url}`；自訂 terminal 需要 `{cwd}`，帶指令時也需 `{command}`。外部工具需自行安裝，指令以你的權限執行。
-- **Git**：status／PR、staged diff、綁定實際版本的逐檔／hunk／選取行 stage／unstage、base／ours／theirs 三方衝突與人工合併文字、commit、fetch 及 branch 操作。手動 commit 預設執行 hooks，bypass 必須明確確認。Push 須確認且禁止 force；PR 須確認及已登入 `gh`。不自動 push／發 PR，fetch／push／PR 是網路操作。
+- **Git**：status／PR、staged diff、綁定實際版本的逐檔／hunk／選取行 stage／unstage、base／ours／theirs 三方衝突與人工合併文字、commit、fetch 及 branch 操作。單檔「放棄變更」須確認，只丟棄尚未暫存的部分（已暫存的保留；未追蹤檔則刪除），並綁定確認時看到的內容，之後再改過就拒絕；機密檔、衝突中與改名中的檔案不提供，超過 1 MiB 的檔案會提示改用終端機。手動 commit 預設執行 hooks，bypass 必須明確確認。Push 須確認且禁止 force；PR 須確認及已登入 `gh`。不自動 push／發 PR，fetch／push／PR 是網路操作。
 - **GitHub 回饋作業**：PR 討論／issue 可轉為連結來源的本機作業與可編輯草稿，不自動送 AI。人工確認後才透過 `gh` 回覆、解決／重開 thread 或回寫 issue 狀態；PR 綁定 repository、穩定 comment／thread ID 與 head OID，過期 revision 或新 HEAD 拒絕寫回。
 - **提供者能力**：設定頁揭示各 provider 的實際核准、唯讀隔離、續聊、斜線指令與用量支援。Codex 一般對話預設使用獨立 stdio JSON-RPC app-server（thread／turn／resume／interrupt／工具核准）；設定 `cli.codex.mode: exec` 可明確使用原 exec adapter。唯讀審查與局部提案使用獨立受限 exec，不借用一般寫作 session。
 - **AI 局部修改提案**：編輯器以目前選取（無選取則整個文件）的 revision／buffer 快照產生唯讀提案，逐 hunk 預覽／接受／拒絕，待接受範圍在 gutter 標示；每次接受可獨立 undo。UTF-16 邊界、LF 替換文字、相鄰編輯位移及過期快照均驗證。決定期間保留並鎖定工作台快照；傳輸中斷後可明確確認恢復已接受的草稿。只修改編輯草稿，必須另按儲存才寫檔。
@@ -253,7 +253,7 @@ HTTP JSON 加 SSE，桌面版與網頁版完全相同。型別定義在 [`src/sh
 | GitHub 回饋作業 | `POST /api/git/feedback-task`；`GET /api/git/linked-feedback`；`POST /api/git/feedback-{draft,refresh,reply,resolve,unresolve,update,close}` |
 | 真正送出背景 | `GET /api/task/context/manifest?project=&task=&request=` |
 | 執行／整合 | `POST /api/execution/start`、`/stop`、`/preview`、`/ide`、`/terminal`、`/debug`；`GET /api/execution/list`、`/output`（上述短路徑均接 `/api/execution`） |
-| Git | `GET /api/git/status`、`/api/git/pr-status`；`POST /api/git/{stage,unstage,resolve,commit,fetch,branch,push,pr}` |
+| Git | `GET /api/git/status`、`/api/git/pr-status`；`POST /api/git/{stage,unstage,discard,resolve,commit,fetch,branch,push,pr}` |
 | Git 歷史 | `GET /api/git/{history,commit-detail,blame}` |
 | Git 並排內容 | `GET /api/git/diff-contents`（project、task?、path、mode：copy／working／staged；staged 為取消暫存方向） |
 | Git Stash／變基 | `GET /api/git/stashes`；`POST /api/git/{stash,rewrite}` |

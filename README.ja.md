@@ -99,7 +99,7 @@ Claude／Codex のモデル一覧・推論強度は CLI キャッシュから取
   - renderer 再読み込み後は HttpOnly／SameSite cookie、sessionStorage の renderer ID、一度限りの ticket で同じ生存 PTY に再接続し owner を更新します。owner／ticket は localStorage に保存せず、別ウィンドウの接管も拒否します。コア再起動で shell を復活させません。
   - Node デバッグは作業 root 内の平面ローカル Source Map v3、revision付き永続条件 breakpoint、エディター gutter、source stack 移動に対応します。変数／属性／literal 比較条件は対象プロセスで実行され、getter に副作用があり得ます。Watch は getter や任意 evaluate を呼びません。remote／indexed map、機密・範囲外ソースは拒否します。
 - **統合設定**：`config.yaml` の `execution.ide`／`terminal`／`browser` は `{command, args}`、argv 内で `{cwd}`／`{url}`／`{command}` を置換します。IDE フォルダーには `{cwd}`、IDE debug には `{url}` が必要。カスタム端末には `{cwd}`、コマンド指定時には `{command}` も必要です。外部ツールは自分でインストールし、指示は自分の権限で実行します。
-- **Git**：status／PR 状態、staged diff、実際の revision に結び付いたファイル／hunk／選択行 stage／unstage、base／ours／theirs 3方向競合表示と手動マージ文、commit、fetch、branch 操作。手動 commit は既定で hooks を実行し、bypass は明示確認が必要です。Push は確認必須・force 禁止、PR は確認とログイン済み `gh` が必要です。自動 push／PR は行わず、fetch／push／PR は外部通信です。
+- **Git**：status／PR 状態、staged diff、実際の revision に結び付いたファイル／hunk／選択行 stage／unstage、base／ours／theirs 3方向競合表示と手動マージ文、commit、fetch、branch 操作。ファイル単位の「変更を破棄」は確認が必要で、未ステージの変更だけを捨てます（ステージ済みは保持、未追跡ファイルは削除）。確認時に見た内容に結び付き、その後に編集されていれば拒否します。秘密ファイル、競合中、名前変更中のファイルには表示せず、1 MiB 超のファイルは端末での操作を案内します。手動 commit は既定で hooks を実行し、bypass は明示確認が必要です。Push は確認必須・force 禁止、PR は確認とログイン済み `gh` が必要です。自動 push／PR は行わず、fetch／push／PR は外部通信です。
 - **GitHub フィードバックタスク**：PR 討論／issue を出典付きローカルタスクと編集可能な草稿へ変換し、AIへ自動送信しません。`gh` の返信、thread 解決／再開、issue状態更新は明示確認が必須です。repository、安定 comment／thread ID、head OID を検証し、古い revision／新 HEAD には書き戻しません。
 - **provider 能力**：実際の承認、読み取り専用隔離、resume、slash command、用量対応を設定画面に表示します。Codex 通常対話は専用 stdio JSON-RPC app-server（thread／turn／resume／interrupt／ツール承認）が既定で、`cli.codex.mode: exec` は従来 exec を明示選択します。審査・局部提案は独立制限 exec を使い、執筆 session は流用しません。
 - **AI 局部編集提案**：選択範囲（未選択は全文）、文書 revision、buffer snapshot に結び付く読み取り専用提案を生成します。hunk別にプレビュー／採用／拒否し、未採用範囲を gutter 表示、採用ごとに個別 undo できます。UTF-16境界、LFの置換文字、隣接編集のoffset、古いsnapshotを検証します。決定中はワークベンチのsnapshotを予約・ロックし、通信中断後は明示確認で承認済み下書きを復元できます。草稿のみ変更し、ファイルには別途保存が必要です。
@@ -246,7 +246,7 @@ HTTP JSON と SSE を使い、デスクトップ版と Web 版で完全に共通
 | GitHub フィードバック | `POST /api/git/feedback-task`；`GET /api/git/linked-feedback`；`POST /api/git/feedback-{draft,refresh,reply,resolve,unresolve,update,close}` |
 | 送信背景manifest | `GET /api/task/context/manifest?project=&task=&request=` |
 | 実行／統合 | `POST /api/execution/{start,stop,preview,ide,terminal,debug}`；`GET /api/execution/{list,output}` |
-| Git | `GET /api/git/{status,pr-status}`；`POST /api/git/{stage,unstage,resolve,commit,fetch,branch,push,pr}` |
+| Git | `GET /api/git/{status,pr-status}`；`POST /api/git/{stage,unstage,discard,resolve,commit,fetch,branch,push,pr}` |
 | Git 履歴 | `GET /api/git/{history,commit-detail,blame}` |
 | Git 比較内容 | `GET /api/git/diff-contents`（project、task?、path、mode：copy／working／staged；staged はステージ解除方向） |
 | Git stash／リベース | `GET /api/git/stashes`；`POST /api/git/{stash,rewrite}` |

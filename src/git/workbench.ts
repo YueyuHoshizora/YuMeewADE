@@ -205,6 +205,17 @@ export class GitWorkbench {
       await this.command(root, unstage ? await hasCommits(root) ? ['reset', '-q', 'HEAD', '--', ...paths] : ['rm', '--cached', '-q', '--', ...paths] : ['add', '--', ...paths]);
     });
   }
+  /** Throws away unstaged changes of one file: a tracked file returns to its index version (staged changes stay), an untracked file is deleted. */
+  async discard(project: string, task: string | undefined, relative: string, fingerprint: string): Promise<void> {
+    return this.locked(project, task, true, async root => {
+      const file = (await this.files(root)).find(file => file.path === relative);
+      if (!file || file.secret || file.conflict || file.originalPath || !file.unstaged && !file.untracked) throw new AppError('conflict', 'git_workbench_path');
+      // Bound to the diff the user confirmed: the index, the file bytes and HEAD must not have moved since.
+      if (!fingerprint || await this.fingerprint(root, relative) !== fingerprint) throw new AppError('conflict', 'git_workbench_path');
+      if (file.untracked) await fs.rm(path.join(root, relative));
+      else await this.command(root, ['restore', '--worktree', '--', relative]);
+    });
+  }
   private async fingerprint(root: string, relative: string): Promise<string> {
     await this.safePath(root, relative);
     const index = (await this.command(root, ['rev-parse', '--path-format=absolute', '--git-path', 'index'])).trim();
