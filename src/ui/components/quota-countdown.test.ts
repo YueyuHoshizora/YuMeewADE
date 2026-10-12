@@ -12,14 +12,13 @@ Object.defineProperty(globalThis, 'navigator', { value: { language: 'en' }, conf
 const { formatQuotaDuration, resetCountdownText, quotaCountdown, updateQuotaCountdowns } = await import('./quota-countdown.ts');
 const { t } = await import('../i18n/index.ts');
 
-const unit = (value: number, name: string, locale = 'en'): string => new Intl.NumberFormat(locale, { style: 'unit', unit: name, unitDisplay: 'short' }).format(value);
-
-test('quota duration rounds up seconds and includes localized days, hours, minutes and seconds', () => {
-  assert.equal(formatQuotaDuration(1, 'en'), unit(1, 'second'));
-  assert.equal(formatQuotaDuration(60_001, 'en'), `${unit(1, 'minute')} ${unit(1, 'second')}`);
-  assert.equal(formatQuotaDuration(90_061_000, 'en'), ['day', 'hour', 'minute', 'second'].map(name => unit(1, name)).join(' '));
-  assert.equal(formatQuotaDuration(3_600_000, 'de'), unit(1, 'hour', 'de'));
-  assert.equal(formatQuotaDuration(1_000, 'en'), unit(1, 'second'));
+test('quota duration rounds up to minutes using fixed English d h m units', () => {
+  assert.equal(formatQuotaDuration(0), '0d 0h 0m');
+  assert.equal(formatQuotaDuration(1), '0d 0h 1m');
+  assert.equal(formatQuotaDuration(60_001), '0d 0h 2m');
+  assert.equal(formatQuotaDuration(90_060_000), '1d 1h 1m');
+  assert.equal(formatQuotaDuration(3_600_000), '0d 1h 0m');
+  assert.equal(formatQuotaDuration(86_400_000), '1d 0h 0m');
 });
 
 test('missing or invalid resets have no countdown and elapsed resets await quota refresh', () => {
@@ -35,15 +34,15 @@ test('missing or invalid resets have no countdown and elapsed resets await quota
 test('owner ticks update the same countdown node and notify stale rendering at expiry', () => {
   const now = Date.parse('2026-10-12T00:00:00Z');
   const updates: { text: string; expired: boolean }[] = [];
-  const node = quotaCountdown('2026-10-12T00:00:02Z', now, (text, expired) => updates.push({ text, expired }))!;
+  const node = quotaCountdown('2026-10-12T00:02:00Z', now, (text, expired) => updates.push({ text, expired }))!;
   const root = { querySelectorAll: () => [node] } as unknown as ParentNode;
   const initial = node.textContent;
-  updateQuotaCountdowns(root, now + 1_000);
+  updateQuotaCountdowns(root, now + 60_000);
   assert.notEqual(node.textContent, initial);
   assert.equal(updates.at(-1)?.expired, false);
-  updateQuotaCountdowns(root, now + 2_000);
+  updateQuotaCountdowns(root, now + 120_000);
   assert.equal(node.textContent, t('usage.resetPending'));
   assert.deepEqual(updates.at(-1), { text: t('usage.resetPending'), expired: true });
-  updateQuotaCountdowns(root, now + 20_000);
+  updateQuotaCountdowns(root, now + 140_000);
   assert.equal(node.textContent, t('usage.resetPending'));
 });

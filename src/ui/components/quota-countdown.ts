@@ -1,24 +1,9 @@
-import { getLocale, t } from '../i18n/index.ts';
+import { t } from '../i18n/index.ts';
 import { el } from './dom.ts';
 
-const units = [['day', 86_400], ['hour', 3_600], ['minute', 60], ['second', 1]] as const;
-let formatLocale = '';
-let formats: Intl.NumberFormat[] = [];
-
-export function formatQuotaDuration(milliseconds: number, locale = getLocale()): string {
-  if (locale !== formatLocale) {
-    formatLocale = locale;
-    formats = units.map(([unit]) => new Intl.NumberFormat(locale, { style: 'unit', unit, unitDisplay: 'short' }));
-  }
-  let remaining = Math.max(0, Math.ceil(milliseconds / 1_000));
-  const parts: string[] = [];
-  for (let index = 0; index < units.length; index++) {
-    const seconds = units[index]![1];
-    const value = Math.floor(remaining / seconds);
-    remaining %= seconds;
-    if (value || (!parts.length && seconds === 1)) parts.push(formats[index]!.format(value));
-  }
-  return parts.join(' ');
+export function formatQuotaDuration(milliseconds: number): string {
+  const minutes = Math.max(0, Math.ceil(milliseconds / 60_000));
+  return `${Math.floor(minutes / 1_440)}d ${Math.floor(minutes % 1_440 / 60)}h ${minutes % 60}m`;
 }
 
 export function resetCountdownText(resetsAt: string, now = Date.now()): string | null {

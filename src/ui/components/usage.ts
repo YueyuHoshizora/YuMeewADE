@@ -2,7 +2,6 @@ import type { AiUsage, AppState, QuotaWindow, UsageState } from '../../shared/ty
 import { t } from '../i18n/index.ts';
 import { aiLabel, localDateTime, localTime, prepaidLabel, quotaLabel } from './display.ts';
 import { button, el } from './dom.ts';
-import { quotaCountdown } from './quota-countdown.ts';
 
 /** 已用比例到這裡開始提醒／警告。 */
 const WARN_PERCENT = 70;
@@ -24,28 +23,11 @@ function quotaWindow(window: QuotaWindow, now: number): HTMLElement {
     fill.style.width = `${Math.min(100, window.usedPercent)}%`; meter.append(fill);
     node.append(el('span', 'usage-window-label', label), meter, el('span', 'usage-percent', percent));
   }
-  const activeTitle = window.resetsAt
-    ? t('usage.window', { label, percent, reset: localTime(window.resetsAt) })
-    : t('usage.windowNoReset', { label, percent });
-  node.title = activeTitle;
-  if (window.resetsAt) {
-    const resetTime = localTime(window.resetsAt);
-    const expiredTitle = t('usage.windowReset', { label, reset: resetTime });
-    if (expired) node.title = expiredTitle;
-    const countdown = quotaCountdown(window.resetsAt, now, (text, stale) => {
-      node.title = `${stale ? expiredTitle : activeTitle} · ${text}`;
-      if (stale && !node.classList.contains('stale')) {
-        node.classList.remove('warn', 'danger'); node.classList.add('stale');
-        node.querySelector('.usage-meter')?.remove();
-        const percentage = node.querySelector('.usage-percent');
-        if (percentage) percentage.textContent = '—';
-      }
-    });
-    if (countdown) {
-      const reset = el('span', 'usage-window-reset', `${resetTime} · `);
-      reset.append(countdown); node.append(reset);
-    }
-  }
+  node.title = expired
+    ? t('usage.windowReset', { label, reset: localTime(window.resetsAt!) })
+    : window.resetsAt
+      ? t('usage.window', { label, percent, reset: localTime(window.resetsAt) })
+      : t('usage.windowNoReset', { label, percent });
   return node;
 }
 
