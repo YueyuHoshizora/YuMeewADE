@@ -100,7 +100,10 @@ function drawShell(): void {
   header.replaceChildren(menu, link(t('app.title'), '#/turn', 'brand'), el('span', 'version', `v${state.version}`), ...(visibleUpdate(state.update) ? [updateChip(state.update!, state.version, drawShell)] : []), el('span', 'spacer'), link(`${t('nav.turn')} · ${t('tree.reply')} ${replies} · ${t('tree.confirm')} ${confirmations}`, '#/turn', 'turn-button'), link(t('nav.settings'), '#/settings', 'settings-button'));
   header.append(button(t('terminalDock.toggle'), toggleTerminalDock, 'terminal-toggle'));
   const searching = document.activeElement instanceof HTMLInputElement && document.activeElement.classList.contains('tree-search'); const top = sidebar.scrollTop;
-  const shell = { state, refresh }; sidebar.replaceChildren(link(t('overview.title'), '#/overview', 'new-project'), el('div', 'sidebar-heading', t('nav.projects')), tree(shell), button(t('project.openExisting'), () => openProjectFromFolder(shell), 'new-project'), link(t('nav.new'), '#/new', 'new-project'));
+  const shell = { state, refresh };
+  // The two bottom actions share one sticky footer: as separate sticky siblings they stacked on top of each other once the tree scrolled.
+  const actions = el('div', 'sidebar-actions'); actions.append(button(t('project.openExisting'), () => openProjectFromFolder(shell), 'new-project'), link(t('nav.new'), '#/new', 'new-project'));
+  sidebar.replaceChildren(link(t('overview.title'), '#/overview', 'new-project'), el('div', 'sidebar-heading', t('nav.projects')), tree(shell), actions);
   sidebar.scrollTop = top; if (searching) sidebar.querySelector<HTMLInputElement>('.tree-search')?.focus({ preventScroll: true });
   document.documentElement.lang = getLocale(); drawFooter();
 }
