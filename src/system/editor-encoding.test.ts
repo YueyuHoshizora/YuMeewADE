@@ -47,7 +47,9 @@ for (const encoding of ['UTF16LE', 'UTF16BE'] as EditorEncoding[]) {
       await editor.save('P', '', 'plain.txt', document.text, document.revision, encoding);
       assert.deepEqual(await fs.readFile(file), encodeText('hello\r\n', encoding, false), 'an unchanged save keeps the bytes');
       const next = await editor.read('P', '', 'plain.txt', encoding);
-      await editor.save('P', '', 'plain.txt', 'changed', next.revision, encoding);
+      const written = await editor.save('P', '', 'plain.txt', 'changed', next.revision, encoding);
+      // The returned document stays editable text in that encoding, not a binary blob the editor can no longer save.
+      assert.deepEqual([written.binary, written.text, written.encoding], [false, 'changed', encoding]);
       assert.deepEqual(await fs.readFile(file), encodeText('changed', encoding, false));
       // A segment edit at offset 0 and recreating the deleted file from history keep it unmarked too.
       const segment = await editor.segment('P', '', 'plain.txt', 0, 64, encoding);
@@ -61,6 +63,18 @@ for (const encoding of ['UTF16LE', 'UTF16BE'] as EditorEncoding[]) {
     } finally { editor.dispose(); }
   }));
 }
+
+test('an unmarked UTF-16 file opened by naming its encoding converts to UTF-8, with history keeping the readable original', () => withTmpWorkspace(async ws => {
+  const { editor, root } = await fixture(ws); const file = path.join(root, 'plain.txt');
+  try {
+    await fs.writeFile(file, encodeText('hello', 'UTF16LE', false));
+    const opened = await editor.read('P', '', 'plain.txt', 'UTF16LE');
+    const converted = await editor.save('P', '', 'plain.txt', opened.text, opened.revision, 'UTF8', 'UTF16LE');
+    assert.deepEqual([converted.binary, converted.text, converted.encoding, (await fs.readFile(file)).toString('utf8')], [false, 'hello', 'UTF8', 'hello']);
+    const entry = (await editor.history('P', '', 'plain.txt')).entries.find(item => item.reason === 'save')!;
+    assert.deepEqual([entry.text, entry.encoding], ['hello', 'UTF16LE']);
+  } finally { editor.dispose(); }
+}));
 
 test('encoding-only save converts bytes and aggregate apply budget rejects atomically', () => withTmpWorkspace(async ws => {
   const { editor, root } = await fixture(ws, 16384);

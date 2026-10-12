@@ -366,8 +366,10 @@ export class EditorService {
       return this.document(file, relative);
     });
   }
-  async save(project: string, task: string, relative: string, text: string, revision: string, selected?: EditorEncoding): Promise<EditorDocument> {
+  /** `selected`: the encoding to write; `source`: the one the file was opened with, needed to read an unmarked UTF-16 file while converting it. */
+  async save(project: string, task: string, relative: string, text: string, revision: string, selected?: EditorEncoding, source?: EditorEncoding): Promise<EditorDocument> {
     if (selected !== undefined) validateEncoding(selected);
+    if (source !== undefined) validateEncoding(source);
     if (Buffer.byteLength(text) > this.MAX || Buffer.byteLength(JSON.stringify(text)) > this.bodyBytes - 8192 || text.includes('\0')) throw new AppError('too_large');
     // Worktree mutations lock the canonical main repository, including task copies.
     const repo = await fs.realpath(await this.worktree.bodyPath(project));
@@ -377,15 +379,16 @@ export class EditorService {
     return withFileLocks([target.file], async () => {
       let current = await this.document(target.file, relative);
       // Without a BOM a UTF-16 file reads as binary until its encoding is named; saving it that way keeps it unmarked.
-      const unmarked = current.binary && selected !== undefined;
-      if (unmarked) current = await this.document(target.file, relative, false, selected);
+      const opened = source ?? selected;
+      const unmarked = current.binary && opened !== undefined;
+      if (unmarked) current = await this.document(target.file, relative, false, opened);
       const encoding = selected ?? current.encoding ?? 'UTF8';
       const encoded = encodeText(text, encoding, !(unmarked && encoding.startsWith('UTF16'))); if (encoded.length > this.MAX) throw new AppError('too_large');
       if (current.binary || current.truncated) throw new AppError('bad_request', 'editor_readonly');
       await assertWritable(target.file);
       if (current.revision !== revision) throw new AppError('conflict', 'editor_conflict');
       const stat = await fs.stat(target.file);
-      await preserveHistory(target.root, { path: relative, revision: current.revision, text: current.text, encoding: current.encoding ?? 'UTF8', ...(unmarked && encoding.startsWith('UTF16') ? { bom: false } : {}), mode: stat.mode & 0o777, reason: 'save' });
+      await preserveHistory(target.root, { path: relative, revision: current.revision, text: current.text, encoding: current.encoding ?? 'UTF8', ...(unmarked && current.encoding?.startsWith('UTF16') ? { bom: false } : {}), mode: stat.mode & 0o777, reason: 'save' });
       const tmp = path.join(path.dirname(target.file), `.editor-${randomUUID()}.tmp`);
       const handle = await fs.open(tmp, 'wx', stat.mode & 0o777);
       try {
@@ -394,7 +397,8 @@ export class EditorService {
         if (checked.file !== target.file || checked.root !== target.root || checked.readonly || (await this.document(target.file, relative)).revision !== revision) throw new AppError('conflict', 'editor_conflict');
         await fs.rename(tmp, target.file);
       } finally { await handle.close().catch(() => undefined); await fs.rm(tmp, { force: true }); }
-      return this.document(target.file, relative);
+      // A file just written as unmarked UTF-16 would read back as binary unless decoded the way it was written.
+      return this.document(target.file, relative, false, unmarked && encoding.startsWith('UTF16') ? encoding : undefined);
     });
     });
   }

@@ -51,7 +51,7 @@ export function registerEditorRoutes(router: Router, app: App): void {
     const project = reqString(body, 'project', 120); const task = body.task === undefined ? '' : reqString(body, 'task', 120);
     if (app.editorWriteBusy(project, task || undefined)) throw new AppError('conflict', 'editor_running');
     if (typeof body.text !== 'string') throw new AppError('bad_request');
-    const result = await app.editor.save(project, task, reqString(body, 'path', 1000), body.text, reqString(body, 'revision', 100), body.encoding === undefined ? undefined : validateEncoding(body.encoding));
+    const result = await app.editor.save(project, task, reqString(body, 'path', 1000), body.text, reqString(body, 'revision', 100), body.encoding === undefined ? undefined : validateEncoding(body.encoding), body.sourceEncoding === undefined ? undefined : validateEncoding(body.sourceEncoding));
     if (task) app.verify.invalidate(project, task); app.changed(project, task || undefined);
     return result;
   });

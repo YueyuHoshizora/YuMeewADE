@@ -395,7 +395,8 @@ export function openFileBrowser(project: string, task: string, workspace = activ
       const local = buffer.text; const base = buffer.document;
       const format = await request<EditorResolvedFormatPreferences>(query('/api/editor/preferences', { ...ids, path: base.path }));
       const text = serializeEol(local, format.source === 'default' ? readPreferences().eol : format.eol, base.text);
-      buffer.document = await request<EditorDocument>('/api/editor/save', { ...ids, path: base.path, text, revision: base.revision, encoding: selectedEncoding });
+      // The encoding it was opened with lets the core read an unmarked UTF-16 file it is converting to another encoding.
+      buffer.document = await request<EditorDocument>('/api/editor/save', { ...ids, path: base.path, text, revision: base.revision, encoding: selectedEncoding, ...(base.encoding ? { sourceEncoding: base.encoding } : {}) });
       if (buffer.encoding === selectedEncoding) delete buffer.encoding;
       views.forEach((_, index) => capture(index));
       if (buffer.text === local) { buffer.text = text; for (const view of views) if (view.path === buffer.document.path) view.content.value = text; }
