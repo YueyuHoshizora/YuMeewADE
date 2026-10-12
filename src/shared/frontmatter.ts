@@ -1,7 +1,7 @@
 // Markdown frontmatter：`---` 包起來的 YAML 子集＋正文。
 // 更新時只重寫被改動的頂層鍵那幾行，保留其他行與註解（台帳可手改、可留註解）。
 
-import { parseYamlMap, stringifyYaml, YamlError, type YamlMap, type YamlValue } from './yaml.ts';
+import { parseYamlMap, splitKey, stringifyYaml, YamlError, type YamlMap, type YamlValue } from './yaml.ts';
 
 export interface Frontmatter {
   data: YamlMap;
@@ -29,7 +29,8 @@ export function serializeFrontmatter(headerLines: string[], body: string): strin
 
 /**
  * 找出每個頂層鍵在 headerLines 中佔的行範圍 [start, end)。
- * 頂層鍵＝縮排 0 且含 `key:` 的行；其後縮排 >0 或 `- ` 開頭的行屬於同一鍵。
+ * 頂層鍵＝縮排 0、不是清單項目或註解，且 YAML 解析器能切出 `key:` 的行（引號鍵、含 `:` 的引號鍵、`-custom` 都算，
+ * 鍵名依解析器解碼）；其後縮排 >0 或 `- ` 開頭的行屬於同一鍵。
  * 範圍尾端的空行與頂格 `#` 註解是獨立的（多半在說明下一個鍵），不算進前一個鍵，改寫時才不會被刪掉。
  */
 function topLevelRanges(headerLines: string[]): Map<string, [number, number]> {
@@ -42,11 +43,11 @@ function topLevelRanges(headerLines: string[]): Map<string, [number, number]> {
   };
   for (let i = 0; i < headerLines.length; i++) {
     const line = headerLines[i] ?? '';
-    const m = /^([^\s#\-][^:]*?):(\s|$)/.exec(line);
-    if (m && m[1] !== undefined) {
+    if (!line || /^[\s#]/.test(line) || line === '-' || line.startsWith('- ')) continue;
+    let key: string | undefined;
+    try { key = splitKey(line, i + 2)?.key; } catch { key = undefined; }
+    if (key !== undefined) {
       close(i);
-      let key = m[1].trim();
-      if ((key.startsWith('"') && key.endsWith('"')) || (key.startsWith("'") && key.endsWith("'"))) key = key.slice(1, -1);
       current = { key, start: i };
     }
   }

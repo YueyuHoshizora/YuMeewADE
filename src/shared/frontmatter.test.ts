@@ -45,6 +45,16 @@ test('patching a key keeps standalone comments and blank lines after it, includi
   assert.deepEqual(patchHeaderLines(['list:', '  - a', '  - b', '# after'], { list: ['c'] }), ['list: [c]', '# after']);
 });
 
+test('patching keeps keys the YAML parser reads: quoted keys with colons, keys starting with -, escaped key names', () => {
+  for (const custom of ['"custom:key": important', '-custom: important']) {
+    const lines = patchHeaderLines(['title: old', custom, 'state: open'], { title: 'new' });
+    assert.deepEqual(lines, ['title: new', custom, 'state: open']);
+  }
+  // `"\u0074itle"` is the key title: patching replaces that line instead of adding a duplicate.
+  const escaped = patchHeaderLines(['"\\u0074itle": old', 'state: open'], { title: 'new' });
+  assert.deepEqual(parseFrontmatter(serializeFrontmatter(escaped, '')).data, { title: 'new', state: 'open' });
+});
+
 test('缺少 --- 時丟錯', () => {
   assert.throws(() => parseFrontmatter('no frontmatter'), YamlError);
   assert.throws(() => parseFrontmatter('---\na: 1\n'), YamlError);
