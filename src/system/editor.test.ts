@@ -280,6 +280,33 @@ test('editor LSP exposes completion hover formatting rename actions and project 
   } finally { editor.dispose(); }
 }));
 
+test('LSP edits inserted at the same position are applied in the order the server lists them', () => withTmpWorkspace(async ws => {
+  const projects = new ProjectLedger(ws); const tasks = new TaskLedger(ws); await projects.create({ name: 'P' });
+  await fs.writeFile(path.join(ws.projectDir('P'), 'a.ts'), 'abc');
+  const script = String.raw`
+    let buffer = Buffer.alloc(0);
+    const send = message => { const body = JSON.stringify({jsonrpc:'2.0', ...message}); process.stdout.write('Content-Length: '+Buffer.byteLength(body)+'\r\n\r\n'+body); };
+    const at = (line, character) => ({line, character});
+    process.stdin.on('data', chunk => { buffer = Buffer.concat([buffer,chunk]); for (;;) {
+      const end = buffer.indexOf('\r\n\r\n'); if (end < 0) return;
+      const size = Number(/Content-Length:\s*(\d+)/i.exec(buffer.subarray(0,end).toString())[1]);
+      if (buffer.length < end+4+size) return;
+      const message = JSON.parse(buffer.subarray(end+4,end+4+size).toString()); buffer=buffer.subarray(end+4+size);
+      if (!message.id) continue;
+      let result = null;
+      if (message.method==='initialize') result={capabilities:{}};
+      else if (message.method==='textDocument/codeAction') result=[{title:'Fix',edit:{changes:{[message.params.textDocument.uri]:[
+        {range:{start:at(0,0),end:at(0,0)},newText:'FIRST'},{range:{start:at(0,0),end:at(0,0)},newText:'SECOND'},
+        {range:{start:at(0,1),end:at(0,2)},newText:'B'},{range:{start:at(0,1),end:at(0,1)},newText:'+'}]}}}];
+      send({id:message.id,result});
+    }});
+  `;
+  const editor = new EditorService(new WorktreeService({ ws, projects, tasks, diffBytes: 100000 }), tasks, { typescript: [process.execPath, '-e', script] });
+  try {
+    assert.equal((await editor.language('P', '', 'a.ts', 'abc', 0, 0, 'codeActions')).actions?.[0]?.changes[0]?.text, 'FIRSTSECONDa+Bc');
+  } finally { editor.dispose(); }
+}));
+
 test('editor save waits for the main repository mutation lock before resolving a task target', t => withTmpWorkspace(async ws => {
   const projects = new ProjectLedger(ws); const tasks = new TaskLedger(ws);
   await projects.create({ name: 'P' });

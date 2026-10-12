@@ -596,7 +596,10 @@ export class EditorService {
         if (!Number.isSafeInteger(position.line) || !Number.isSafeInteger(position.character) || position.line < 0 || position.line >= lines.length || position.character < 0 || position.character > lines[position.line]!.length) throw new AppError('bad_request');
         return lines.slice(0, position.line).reduce((n, line) => n + line.length + 1, 0) + position.character;
       };
-      const ranges = edits.map(item => { const edit = item as { range: { start: { line: number; character: number }; end: { line: number; character: number } }; newText: string }; if (typeof edit.newText !== 'string') throw new AppError('bad_request'); return { start: offset(edit.range.start), end: offset(edit.range.end), text: edit.newText }; }).sort((a, b) => b.start - a.start);
+      // Applied back to front. Edits starting at the same offset keep the server's order (LSP: inserts at one position
+      // apply in array order), so the later one is applied first; a replacement goes before an insert at its start.
+      const ranges = edits.map((item, index) => { const edit = item as { range: { start: { line: number; character: number }; end: { line: number; character: number } }; newText: string }; if (typeof edit.newText !== 'string') throw new AppError('bad_request'); return { start: offset(edit.range.start), end: offset(edit.range.end), text: edit.newText, index }; })
+        .sort((a, b) => b.start - a.start || b.end - a.end || b.index - a.index);
       let text = baseText; let boundary = text.length;
       for (const range of ranges) { if (range.end < range.start || range.end > boundary) throw new AppError('bad_request'); text = text.slice(0, range.start) + range.text + text.slice(range.end); boundary = range.start; }
       if (Buffer.byteLength(text) > this.MAX || text.includes('\0')) throw new AppError('too_large');
