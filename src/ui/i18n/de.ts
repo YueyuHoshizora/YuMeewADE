@@ -288,7 +288,7 @@ export const de: Record<MessageKey, string> = {
 'usage.terminalCommand': 'Im Terminal ausführen', 'usage.prepareLogin': 'Anmeldung vorbereiten', 'usage.importLogin': 'Angemeldetes Konto importieren',
 'detail.field_required': '{field} ist erforderlich',
 'detail.field_too_long': '{field} ist zu lang',
-'detail.field_type': '{field} muss eine Zeichenfolge sein',
+'detail.field_type': '{field} hat ein ungültiges Format',
 'detail.queue_full': 'Anweisungswarteschlange ist voll',
 'detail.runs_limit': 'Limit gleichzeitiger Chats erreicht',
 'detail.sse_limit': 'Limit für Echtzeitverbindungen erreicht',

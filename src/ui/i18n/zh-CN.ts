@@ -288,7 +288,7 @@ export const zhCN: Record<MessageKey, string> = {
 'usage.terminalCommand': '在终端执行', 'usage.prepareLogin': '准备登录', 'usage.importLogin': '导入已登录账号',
 'detail.field_required': '{field} 必填',
 'detail.field_too_long': '{field} 过长',
-'detail.field_type': '{field} 必须是字符串',
+'detail.field_type': '{field} 的格式或类型不正确',
 'detail.queue_full': '排队指令已达上限',
 'detail.runs_limit': '同时运行的对话已达上限',
 'detail.sse_limit': '实时连接数已达上限',

@@ -288,7 +288,7 @@ export const en: Record<MessageKey, string> = {
 'usage.terminalCommand': 'Run in a terminal', 'usage.prepareLogin': 'Prepare sign-in', 'usage.importLogin': 'Import signed-in account',
 'detail.field_required': '{field} is required',
 'detail.field_too_long': '{field} is too long',
-'detail.field_type': '{field} must be a string',
+'detail.field_type': '{field} has an invalid format or type',
 'detail.queue_full': 'Instruction queue is full',
 'detail.runs_limit': 'Concurrent chat limit reached',
 'detail.sse_limit': 'Live connection limit reached',

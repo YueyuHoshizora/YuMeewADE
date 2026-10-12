@@ -63,7 +63,7 @@ export const DETAIL_MESSAGES = {
   login_failed: 'OAuth 登入未完成或逾時；請在瀏覽器完成授權後重試',
   field_required: '{field} 必填',
   field_too_long: '{field} 過長',
-  field_type: '{field} 必須是字串',
+  field_type: '{field} 的格式或型別不正確',
   queue_full: '排隊指示已達上限',
   runs_limit: '同時執行中的對話已達上限',
   sse_limit: 'SSE 連線數已達上限',

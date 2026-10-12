@@ -288,7 +288,7 @@ export const ja: Record<MessageKey, string> = {
 'usage.terminalCommand': 'ターミナルで実行', 'usage.prepareLogin': 'ログインを準備', 'usage.importLogin': 'ログイン済みアカウントを取り込む',
 'detail.field_required': '{field} は必須です',
 'detail.field_too_long': '{field} が長すぎます',
-'detail.field_type': '{field} は文字列である必要があります',
+'detail.field_type': '{field} の形式または型が正しくありません',
 'detail.queue_full': '指示キューが上限に達しました',
 'detail.runs_limit': '同時実行中のチャットが上限に達しました',
 'detail.sse_limit': 'リアルタイム接続数が上限に達しました',

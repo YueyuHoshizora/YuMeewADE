@@ -288,7 +288,7 @@ export const it: Record<MessageKey, string> = {
 'usage.terminalCommand': 'Da eseguire in un terminale', 'usage.prepareLogin': 'Prepara accesso', 'usage.importLogin': 'Importa account connesso',
 'detail.field_required': '{field} è obbligatorio',
 'detail.field_too_long': '{field} è troppo lungo',
-'detail.field_type': '{field} deve essere una stringa',
+'detail.field_type': '{field} ha un formato o un tipo non valido',
 'detail.queue_full': 'La coda delle istruzioni è piena',
 'detail.runs_limit': 'Limite di conversazioni simultanee raggiunto',
 'detail.sse_limit': 'Limite di connessioni in tempo reale raggiunto',

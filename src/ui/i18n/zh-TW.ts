@@ -131,7 +131,7 @@ export const zhTW = {
 'usage.terminalCommand': '在終端機執行', 'usage.prepareLogin': '準備登入', 'usage.importLogin': '匯入已登入帳號',
 'detail.field_required': '{field} 必填',
 'detail.field_too_long': '{field} 過長',
-'detail.field_type': '{field} 必須是字串',
+'detail.field_type': '{field} 的格式或型別不正確',
 'detail.queue_full': '排隊指示已達上限',
 'detail.runs_limit': '同時執行中的對話已達上限',
 'detail.sse_limit': '即時連線數已達上限',
