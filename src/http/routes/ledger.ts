@@ -163,7 +163,10 @@ export function registerLedgerRoutes(router: Router, app: App): void {
   });
   router.post('/api/order', async ({ body }) => {
     if (typeof body.parent !== 'string') throw new AppError('bad_request');
-    const order = await app.order.setOrder(body.parent, strings(body.order));
+    // Only real projects are stored, so the order file stays bounded by the project count; an id archived meanwhile is dropped.
+    const existing = new Set((await app.projects.list()).map(project => project.id));
+    if (body.parent && !existing.has(body.parent)) throw new AppError('not_found', 'project_missing');
+    const order = await app.order.setOrder(body.parent, strings(body.order).filter(id => existing.has(id)));
     await changed('order.update');
     return { order };
   });

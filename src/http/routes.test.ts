@@ -484,3 +484,16 @@ test('neither the app page nor the API can be framed by another site', async () 
     assert.match(String(headers['Content-Security-Policy']), /frame-ancestors 'none'/);
   } finally { await s.close(); }
 });
+
+test('project order only stores existing projects under an existing parent', async () => {
+  const s = await startTestServer();
+  try {
+    const a = (await s.api('POST', '/api/project/new', { name: 'A' })).json as Project;
+    const b = (await s.api('POST', '/api/project/new', { name: 'B' })).json as Project;
+    const saved = await s.api('POST', '/api/order', { parent: '', order: [b.id, 'Ghost', a.id, ...Array.from({ length: 2000 }, (_, i) => `x${i}`)] });
+    assert.deepEqual((saved.json as { order: string[] }).order, [b.id, a.id]);
+    assert.equal((await s.api('POST', '/api/order', { parent: 'Ghost', order: [a.id] })).status, 404);
+    const stored = JSON.parse(await fs.readFile(path.join(s.app.ws.internalDir, 'order.json'), 'utf8')) as { order: Record<string, string[]> };
+    assert.deepEqual(stored.order, { '': [b.id, a.id] });
+  } finally { await s.close(); }
+});
