@@ -73,7 +73,12 @@ export function workflowButton(context: ViewContext, project: string, task: stri
         }
         if (result.invalidatedAt) block.append(el('p', 'muted', t('workflow.invalidated')));
         if (result.evidence) block.append(el('p', '', result.evidence));
-        if (result.output) { const details = el('details'); details.append(el('summary', '', t('workflow.output')), el('pre', '', result.output)); block.append(details); }
+        if (result.output) {
+          const key = `${result.node ?? result.step ?? index}|${result.at}`;
+          const details = el('details'); details.append(el('summary', '', t('workflow.output')), el('pre', '', result.output)); block.append(details);
+          details.open = openedOutputs.has(key);
+          details.ontoggle = () => { if (details.open) openedOutputs.add(key); else openedOutputs.delete(key); };
+        }
         if (result.request && !result.reviewSnapshot) block.append(button(t('copy.diff'), async () => {
           const diff = await request<{ diff: string; truncated: boolean }>(query('/api/chat/turn-diff', { project, task: result.task ?? task, request: result.request }));
           modal(t('copy.diff'), readonlyDiffView(diff));
@@ -116,6 +121,8 @@ export function workflowButton(context: ViewContext, project: string, task: stri
       plan = await request<WorkflowPlan>('/api/task/workflow/rerun', { project, task, revision: plan.revision, from }); renderStatus();
     });
     const history = el('div', 'workflow-results');
+    // The plan is polled; results are rebuilt only when it changes, and expanded outputs stay open across rebuilds.
+    const openedOutputs = new Set<string>();
     const timeline = el('div');
     const evidence = area('', t('review.evidence')); evidence.maxLength = 10000;
     root.append(el('p', 'muted', t('workflow.help')), status, risk, field(t('workflow.dependencies'), dependencies), steps,
@@ -124,8 +131,9 @@ export function workflowButton(context: ViewContext, project: string, task: stri
     const graphStatus = el('pre'); graphStatus.hidden = true; root.append(graphStatus);
     modal(t('workflow.title'), root); renderStatus();
     async function refresh(): Promise<void> {
+      const previous = JSON.stringify(plan);
       plan = await request<WorkflowPlan>(query('/api/task/workflow', { project, task }));
-      if (root.isConnected) renderStatus();
+      if (root.isConnected && JSON.stringify(plan) !== previous) renderStatus();
       graphStatus.textContent = plan.steps.map(step => `${step.id} [${plan.nodeStates?.[step.id!] ?? 'pending'}] ← ${step.dependsOn?.join(', ') ?? ''}${step.condition ? ` (${step.condition.node}:${step.condition.outcome})` : ''}${plan.branchTasks?.[step.id!] ? ` · ${plan.branchTasks[step.id!]}` : ''}`).join('\n');
       graphStatus.hidden = !plan.steps.length;
     }
