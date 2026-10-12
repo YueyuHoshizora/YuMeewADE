@@ -108,3 +108,9 @@ test('yamlScalar 對特殊字串加引號', () => {
 test('a UTF-8 byte order mark from a Windows editor does not hide the first key', () => {
   assert.deepEqual(parseYamlMap('\uFEFFserver:\n  port: 4561\nroles:\n  - a'), { server: { port: 4561 }, roles: ['a'] });
 });
+
+test('an apostrophe inside a plain scalar does not swallow the comment after it', () => {
+  assert.deepEqual(parseYamlMap("title: Bob's task # maintainer note\nnote: don't"), { title: "Bob's task", note: "don't" });
+  // Quoted scalars still keep `#` and the `''` escape; a comment after them is still a comment.
+  assert.deepEqual(parseYamlMap("a: 'it''s # x' # y\nb: \"c # d\" # e\nc: [x, 'y # z'] # w"), { a: "it's # x", b: 'c # d', c: ['x', 'y # z'] });
+});

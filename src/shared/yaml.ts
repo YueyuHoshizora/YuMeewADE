@@ -23,16 +23,20 @@ interface Line {
 
 function stripComment(raw: string): string {
   let quote: '"' | "'" | null = null;
+  // A quote opens a quoted scalar only where a scalar can start; the apostrophe in `Bob's task` is plain text.
+  let previous = '';
   for (let i = 0; i < raw.length; i++) {
-    const ch = raw[i];
+    const ch = raw[i]!;
     if (quote) {
       if (ch === '\\' && quote === '"') i++;
+      else if (ch === "'" && quote === "'" && raw[i + 1] === "'") i++;
       else if (ch === quote) quote = null;
-    } else if (ch === '"' || ch === "'") {
+    } else if ((ch === '"' || ch === "'") && ['', ':', '-', '?', '[', '{', ','].includes(previous)) {
       quote = ch;
     } else if (ch === '#' && (i === 0 || raw[i - 1] === ' ' || raw[i - 1] === '\t')) {
       return raw.slice(0, i);
     }
+    if (ch !== ' ' && ch !== '\t') previous = ch;
   }
   return raw;
 }
