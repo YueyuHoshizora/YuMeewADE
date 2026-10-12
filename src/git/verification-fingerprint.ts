@@ -63,8 +63,6 @@ export async function verificationFingerprint(root: string, configuration: strin
     entries.sort((a, b) => a.name.localeCompare(b.name));
     for (const entry of entries) {
       if (entry.name === '.git') continue;
-      const managed = path.relative(root, path.join(dir, entry.name)).split(path.sep);
-      if (entry.isFile() && managed.length === 3 && managed[0] === '.ai' && managed[1] === 'verification' && /^[A-Za-z0-9_-]+(?:\.tests)?\.json(?:\.\d+\.[a-f0-9-]+\.tmp)?$/.test(entry.name)) continue;
       const file = path.join(dir, entry.name);
       if (ledgerData && file === ledgerData) continue;
       const relative = path.relative(root, file);

@@ -49,3 +49,22 @@ test('symlink input content cannot be hidden by declared outputs', async () => {
     await assert.rejects(verificationFingerprint(root, '', { inputs: ['outside.txt'] }));
   } finally { await fs.rm(root, { recursive: true, force: true }); }
 });
+
+test("a main folder's own .ai/verification files are content; only the ledger's .ai is skipped", async () => {
+  const root = await fs.realpath(await fs.mkdtemp(path.join(os.tmpdir(), 'verify-ai-')));
+  try {
+    await fs.mkdir(path.join(root, '.ai', 'verification'), { recursive: true });
+    const file = path.join(root, '.ai', 'verification', 'source.json');
+    await fs.writeFile(file, '{"a":1}');
+    for (const model of [undefined, { inputs: ['.ai/**'] }]) {
+      const before = await verificationFingerprint(root, '', model);
+      await fs.writeFile(file, `{"a":${Math.random()}}`);
+      assert.notEqual(await verificationFingerprint(root, '', model), before, JSON.stringify(model));
+    }
+    // When the root is the ledger folder itself, its .ai bookkeeping is passed as ledgerData and ignored.
+    const ledger = path.join(root, '.ai');
+    const before = await verificationFingerprint(root, '', undefined, ledger);
+    await fs.writeFile(file, '{"b":2}');
+    assert.equal(await verificationFingerprint(root, '', undefined, ledger), before);
+  } finally { await fs.rm(root, { recursive: true, force: true }); }
+});
