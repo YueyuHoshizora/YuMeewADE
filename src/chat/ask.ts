@@ -44,3 +44,8 @@ export function parseAsk(text: string): { text: string; asks: Ask[] } {
   );
   return { text: visible.trim(), asks };
 }
+
+/** Plain-text form of a parsed question for exports and handoffs; `multi` is already spelled out in the question itself. */
+export function formatAsk(ask: Ask): string {
+  return [`提問：${ask.question}`, ...ask.options.map((option, index) => `${index + 1}. ${option}`)].join('\n');
+}

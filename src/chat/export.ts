@@ -1,5 +1,6 @@
 import path from 'node:path';
 import type { ChatRow, Step, TaskSections } from '../shared/types.ts';
+import { formatAsk } from './ask.ts';
 
 const RECORD_HEADINGS: [keyof TaskSections, string][] = [['done', '做了什麼'], ['next', '下一步'], ['cautions', '注意'], ['memo', '備註']];
 
@@ -43,7 +44,7 @@ export function formatTranscript(title: string, rows: ChatRow[], workspaceRoot: 
     }
     if (row.role === 'assistant') {
       // The question markup is parsed out of the reply text into `asks`; without this the export loses the choice the AI asked for.
-      for (const ask of row.asks ?? []) parts.push(safe([`提問${ask.multi ? '（可複選）' : ''}：${ask.question}`, ...ask.options.map(option => `- ${option}`)].join('\n')));
+      for (const ask of row.asks ?? []) parts.push(safe(formatAsk(ask)));
       if (row.stopped) parts.push('（已停止）');
       if (row.error) parts.push('（回覆失敗）');
       if (row.usage) parts.push(`Token：輸入 ${row.usage.input}／輸出 ${row.usage.output}${row.usage.cached === undefined ? '' : `／快取 ${row.usage.cached}`}`);

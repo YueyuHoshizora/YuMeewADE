@@ -27,10 +27,10 @@ test('Markdown export includes turn metadata, usage and only image basenames', (
 
 test('Markdown export keeps the questions the AI asked, with their options, after the reply text', () => {
   const rows: ChatRow[] = [
-    { role: 'assistant', at: 'now', text: 'Two ways to go.', ai: 'codex', request: 'r', ms: 1, asks: [{ question: 'Which store under /private/work?', options: ['SQLite', 'Files'], multi: false }, { question: 'Also add?', options: ['Tests', 'Docs'], multi: true }] },
+    { role: 'assistant', at: 'now', text: 'Two ways to go.', ai: 'codex', request: 'r', ms: 1, asks: [{ question: 'Which store under /private/work?', options: ['SQLite', 'Files'], multi: false }, { question: 'Also add?（可複選）', options: ['Tests', 'Docs'], multi: true }] },
   ];
   const text = formatTranscript('Task', rows, '/private/work');
-  assert.ok(text.includes('Two ways to go.\n\n提問：Which store under [工作區]?\n- SQLite\n- Files\n\n提問（可複選）：Also add?\n- Tests\n- Docs'));
+  assert.ok(text.includes('Two ways to go.\n\n提問：Which store under [工作區]?\n1. SQLite\n2. Files\n\n提問：Also add?（可複選）\n1. Tests\n2. Docs'));
 });
 
 test('Markdown export puts the steps and non-empty task record sections before the conversation, masking the workspace path', () => {
