@@ -130,9 +130,12 @@ export class EditorService {
     if (!relative || relative.length > 1000 || relative.includes('\\') || relative.split('/').some(part => !part || part === '..' || part === '.' || part === '.git' || part === '.ai' || isLocalSecret(part)) || path.isAbsolute(relative)) throw new AppError('not_found', 'file_missing');
     const { root, readonly } = await this.root(project, task);
     if (listed && !(await this.files(root)).includes(relative)) throw new AppError('not_found', 'file_missing');
+    // A tracked file deleted in the working tree is still listed by `git ls-files --cached`; it is missing, not an error.
+    // Unlisted lookups (history and restoring deleted files) keep the raw ENOENT their callers expect.
+    const missing = (error: unknown): never => { if (listed && ['ENOENT', 'ENOTDIR'].includes((error as NodeJS.ErrnoException).code ?? '')) throw new AppError('not_found', 'file_missing'); throw error; };
     let file = root;
-    for (const part of relative.split('/')) { file = path.join(file, part); if ((await fs.lstat(file)).isSymbolicLink()) throw new AppError('not_found', 'file_missing'); }
-    if (!isInside(root, await fs.realpath(file))) throw new AppError('not_found', 'file_missing');
+    for (const part of relative.split('/')) { file = path.join(file, part); if ((await fs.lstat(file).catch(missing)).isSymbolicLink()) throw new AppError('not_found', 'file_missing'); }
+    if (!isInside(root, await fs.realpath(file).catch(missing))) throw new AppError('not_found', 'file_missing');
     return { root, file, readonly };
   }
   private async document(file: string, relative: string, readonly = false, selected?: EditorEncoding): Promise<EditorDocument> {
@@ -629,8 +632,9 @@ export class EditorService {
       }
       const affected = stat.isDirectory() ? (await this.files(root)).filter(relative => relative.startsWith(`${mutation.path}/`)) : [mutation.path];
       for (const relative of affected) {
-        const current = await this.read(project, task, relative);
-        if (!current.binary && !current.truncated) await preserveHistory(root, { path: relative, revision: current.revision, text: current.text, encoding: current.encoding ?? 'UTF8', reason: 'mutate' });
+        // Tracked files already deleted from the folder have nothing to preserve.
+        const current = await this.read(project, task, relative).catch((error: unknown) => { if (error instanceof AppError && error.status === 404) return undefined; throw error; });
+        if (current && !current.binary && !current.truncated) await preserveHistory(root, { path: relative, revision: current.revision, text: current.text, encoding: current.encoding ?? 'UTF8', reason: 'mutate' });
       }
       if (mutation.action === 'rename') await fs.rename(target.file, await validateNew(mutation.destination ?? ''));
       else if (mutation.action === 'delete') {

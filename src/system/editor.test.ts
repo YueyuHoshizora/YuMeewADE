@@ -9,6 +9,7 @@ import { AppError } from '../shared/errors.ts';
 import { withTmpWorkspace } from '../testing/tmp.ts';
 import { EditorService } from './editor.ts';
 import { withFileLocks } from '../shared/fsx.ts';
+import { gitOk } from '../git/git.ts';
 
 test('editor atomic save, stale revisions, readonly and symlink boundaries', () => withTmpWorkspace(async ws => {
   const projects = new ProjectLedger(ws); const tasks = new TaskLedger(ws);
@@ -343,4 +344,20 @@ test('format preferences resolve nested EditorConfig within scope and reject sym
     await fs.symlink(outside, path.join(root, 'src/.editorconfig'));
     await assert.rejects(editor.preferences('P', '', 'src/a.ts'));
   } finally { editor.dispose(); }
+}));
+
+test('a tracked file deleted from the working tree reads as missing, not as an internal error', () => withTmpWorkspace(async ws => {
+  const projects = new ProjectLedger(ws); const tasks = new TaskLedger(ws);
+  await projects.create({ name: 'P' });
+  const editor = new EditorService(new WorktreeService({ ws, projects, tasks, diffBytes: 100000 }), tasks, {});
+  const root = ws.projectDir('P');
+  await fs.mkdir(path.join(root, 'src')); await fs.writeFile(path.join(root, 'src', 'gone.ts'), 'x'); await fs.writeFile(path.join(root, 'src', 'kept.ts'), 'y');
+  await gitOk(root, ['add', 'src/gone.ts', 'src/kept.ts']);
+  await fs.rm(path.join(root, 'src', 'gone.ts'));
+  await assert.rejects(editor.read('P', '', 'src/gone.ts'), (error: unknown) => error instanceof AppError && error.status === 404 && error.detail === 'file_missing');
+  assert.equal((await editor.read('P', '', 'src/kept.ts')).text, 'y');
+  // Deleting the folder still works although one of its tracked files is already gone.
+  await editor.mutate('P', '', { action: 'delete', path: 'src', confirmation: 'src', revision: (await editor.folderRevision('P', '', 'src')).revision });
+  assert.equal(await fs.stat(path.join(root, 'src')).catch(() => null), null);
+  editor.dispose();
 }));
