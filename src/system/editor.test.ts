@@ -103,6 +103,24 @@ test('editor CRUD, folder revisions and preview-bound multidocument replacement'
   } finally { editor.dispose(); }
 }));
 
+test('file-name search finds binary and large files without spending the content-search budget', () => withTmpWorkspace(async ws => {
+  const projects = new ProjectLedger(ws); const tasks = new TaskLedger(ws); await projects.create({ name: 'P' });
+  const editor = new EditorService(new WorktreeService({ ws, projects, tasks, diffBytes: 100000 }), tasks, {}, 9 * 1024 * 1024);
+  const root = ws.projectDir('P');
+  try {
+    // Five 7 MiB texts sort first and exhaust the 32 MiB content budget; a name search must still reach the later files.
+    for (let index = 0; index < 5; index++) await fs.writeFile(path.join(root, `a${index}.txt`), 'x'.repeat(7 * 1024 * 1024));
+    await fs.writeFile(path.join(root, 'b-oversized.txt'), 'x'.repeat(9 * 1024 * 1024));
+    await fs.writeFile(path.join(root, 'logo.png'), Buffer.from([0x89, 0x50, 0x4e, 0x47, 0, 0, 0, 0]));
+    await fs.writeFile(path.join(root, 'logo.txt'), 'no name inside');
+    const named = await editor.search('P', '', 'logo', { mode: 'files' });
+    assert.deepEqual(named.hits.map(hit => hit.path), ['logo.png', 'logo.txt']); assert.equal(named.truncated, false);
+    assert.equal(named.hits[0]!.revision, (await editor.read('P', '', 'logo.png')).revision);
+    assert.deepEqual((await editor.search('P', '', 'oversized', { mode: 'files' })).hits.map(hit => hit.path), ['b-oversized.txt']);
+    assert.equal((await editor.search('P', '', 'inside')).truncated, true, 'content search keeps its byte budget');
+  } finally { editor.dispose(); }
+}));
+
 test('renaming only the letter case works on case-insensitive file systems and still refuses other existing files', () => withTmpWorkspace(async ws => {
   const projects = new ProjectLedger(ws); const tasks = new TaskLedger(ws); await projects.create({ name: 'P' });
   const editor = new EditorService(new WorktreeService({ ws, projects, tasks, diffBytes: 100000 }), tasks, {});

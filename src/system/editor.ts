@@ -649,14 +649,20 @@ export class EditorService {
         if (Date.now() >= deadline) { truncated = true; break; }
         if (options.include?.length && !options.include.some(scope => relative === scope || relative.startsWith(`${scope}/`))) continue;
         if (options.exclude?.some(scope => relative === scope || relative.startsWith(`${scope}/`))) continue;
+        // File-name search matches the path first: content is not scanned, so binary/large files are found and do not use
+        // the 32 MiB content budget. Only a matching file is read, for the revision its hit carries.
+        const named = options.mode === 'files' ? await matcher.match(relative) : undefined;
+        if (named) { scanned++; if (!named.offsets.length) continue; }
         let document: EditorDocument;
         // The root and the listing are resolved once per search; per-file lookups only re-check the path itself.
         try { validRelative(relative); document = await this.document(await resolveIn(root, relative, true), relative, readonly); } catch { continue; }
-        if (document.binary || document.truncated) continue;
-        bytes += document.size; if (bytes > 32 * 1024 * 1024) { truncated = true; break; }
-        scanned++;
-        const value = options.mode === 'files' ? relative : document.text;
-        const matches = await matcher.match(value);
+        if (!named) {
+          if (document.binary || document.truncated) continue;
+          bytes += document.size; if (bytes > 32 * 1024 * 1024) { truncated = true; break; }
+          scanned++;
+        }
+        const value = named ? relative : document.text;
+        const matches = named ?? await matcher.match(value);
         truncated ||= matches.truncated;
         const lineStarts = [0]; if (options.mode !== 'files') for (let index = 0; index < value.length; index++) if (value[index] === '\n') lineStarts.push(index + 1);
         let line = 0;
