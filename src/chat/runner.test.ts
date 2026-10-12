@@ -313,6 +313,23 @@ test('啟動前追加失敗不留下 running marker 或中斷回覆', () => with
   assert.equal((await s.store.readLog('P', s.task.id)).at(-1)?.text, 'ok');
 }));
 
+test('queued instruction that fails before its turn starts stays queued with the error', () => withTmpWorkspace(async ws => {
+  const s = await setup(ws, { chunkMs: 5 });
+  const append = s.store.append.bind(s.store);
+  s.store.append = async (p, t, row) => { if (row.role === 'user' && row.text === 'queued') throw new Error('disk failure'); await append(p, t, row); };
+  await s.send('slow [slow]'); const queued = await s.send('queued', { mode: 'queue' });
+  await s.runner.whenIdle();
+  assert.deepEqual((await s.store.readQueue('P', s.task.id)).map(item => [item.id, item.error]), [[queued.request, 'internal']]);
+  assert.equal((await s.store.readLog('P', s.task.id)).some(row => row.role === 'user' && row.text === 'queued'), false);
+  // An explicit retry that fails again keeps the item; once storage recovers it runs exactly once.
+  await assert.rejects(s.send('', { fromQueue: queued.request }), /disk failure/u);
+  assert.equal((await s.store.readQueue('P', s.task.id)).length, 1);
+  s.store.append = append;
+  await s.send('', { fromQueue: queued.request }); await s.runner.whenIdle();
+  assert.deepEqual(await s.store.readQueue('P', s.task.id), []);
+  assert.equal((await s.store.readLog('P', s.task.id)).filter(row => row.role === 'user' && row.text === 'queued').length, 1);
+}));
+
 test('歷史分頁與 snapshot 邊界依解析後行索引計算', () => withTmpWorkspace(async ws => {
   const s = await setup(ws);
   const rows = Array.from({ length: HISTORY_PAGE * 2 + 1 }, (_, index) => ({

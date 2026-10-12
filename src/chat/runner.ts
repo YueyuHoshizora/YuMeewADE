@@ -364,6 +364,8 @@ export class ChatRunner extends EventEmitter {
       startedAt: new Date().toISOString(),
       ...(chosen.answer ? { mode: 'answer' } : chosen.mode ? { mode: chosen.mode } : {}),
     };
+    // Dequeue only once the user row is about to be written; a failure before that point must not lose the instruction.
+    let dequeued: QueueItem | undefined; let appended = false;
     try {
       const cwd = await this.deps.worktree.prepare(p, t);
       assertActive();
@@ -376,10 +378,6 @@ export class ChatRunner extends EventEmitter {
         state: '進行中', cli: pick.cli, model: pick.model, effort: pick.effort,
         ...(chosen.answer ? { question: '' } : {}),
       });
-      if (input.fromQueue) {
-        const q = await this.deps.store.updateQueue(p, t, q => q.filter(x => x.id !== input.fromQueue));
-        this.publish(p, t, { event: 'queue', data: q });
-      }
       const prior = await this.deps.store.readLog(p, t);
       const meta = await this.deps.store.readMeta(p, t);
       const sameAccount = (meta.accounts?.[item.ai] ?? 'default') === accountId;
@@ -414,7 +412,12 @@ export class ChatRunner extends EventEmitter {
         request: item.id, ai: item.ai, model: pick.model,
         effort: pick.effort, startedAt: s.busy.startedAt,
       };
+      if (input.fromQueue) {
+        const q = await this.deps.store.updateQueue(p, t, q => { dequeued = q.find(x => x.id === input.fromQueue); return q.filter(x => x.id !== input.fromQueue); });
+        this.publish(p, t, { event: 'queue', data: q });
+      }
       await this.deps.store.append(p, t, user);
+      appended = true;
       this.publish(p, t, { event: 'row', data: user });
       this.publish(p, t, { event: 'busy', data: s.busy });
       s.text = item.text;
@@ -444,6 +447,14 @@ export class ChatRunner extends EventEmitter {
       s.run = null;
       s.partial = '';
       this.deps.onChanged(p, t);
+      const restore = !appended ? dequeued : undefined;
+      if (restore) {
+        // stop() clears the queue under the same lock afterwards, so a restored item never outlives a stop.
+        try {
+          const q = await this.deps.store.updateQueue(p, t, q => q.some(x => x.id === restore.id) ? q : [restore, ...q]);
+          this.publish(p, t, { event: 'queue', data: q });
+        } catch (restoreError) { log.error('隊列還原失敗', restoreError, { project: p, task: t }); }
+      }
       throw err;
     }
   }
