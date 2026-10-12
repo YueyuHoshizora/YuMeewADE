@@ -599,12 +599,8 @@ export function openFileBrowser(project: string, task: string, workspace = activ
   };
   actions.append(encoding);
   filter.oninput = () => void run(load);
-  // Quick open: Ctrl/⌘+P jumps to the ranked file filter; Enter opens the best match, arrows walk the results.
-  filter.setAttribute('aria-keyshortcuts', 'Control+P Meta+P');
-  dialog.addEventListener('keydown', event => {
-    if (event.isComposing || event.altKey || event.shiftKey || !(event.ctrlKey || event.metaKey) || event.key.toLowerCase() !== 'p') return;
-    event.preventDefault(); filter.focus(); filter.select();
-  });
+  // Keyboard file picking in the tree filter: Enter opens the best ranked match, arrows walk the results.
+  // (Ctrl/⌘+P stays the global go-to-file picker.)
   filter.addEventListener('keydown', event => {
     if (event.isComposing) return;
     const first = results.querySelector<HTMLButtonElement>('.file-result');
