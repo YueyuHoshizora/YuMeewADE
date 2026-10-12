@@ -71,6 +71,20 @@ test('main-folder claims are exclusive even when concurrent, and clearing a body
   await assert.rejects(projects.update('C', { body: '' }), shared);
 }));
 
+test('an expected-field check sees an edit made while the update was still validating', () => withTmpWorkspace(async (ws, dir) => {
+  const projects = new ProjectLedger(ws);
+  await projects.create({ name: 'P', description: 'before' });
+  const folder = path.join(dir, 'folder'); await fs.mkdir(folder);
+  // Validation of a new main folder is slow (it reads every project); a hand edit lands meanwhile.
+  const check = projects.assertRepositoryFree.bind(projects);
+  projects.assertRepositoryFree = async (...args) => {
+    await fs.writeFile(ws.projectFile('P'), (await fs.readFile(ws.projectFile('P'), 'utf8')).replace('description: before', 'description: hand-edit'));
+    return check(...args);
+  };
+  await assert.rejects(projects.update('P', { body: folder, description: 'stale' }, { description: 'before' }), (error: AppError) => error.detail === 'project_changed');
+  assert.equal((await projects.get('P')).description, 'hand-edit');
+}));
+
 test('advancing after a reorder starts the next unfinished phase and never reopens a finished one', () => withTmpWorkspace(async ws => {
   const projects = new ProjectLedger(ws);
   await projects.create({ name: 'P', phases: ['A', 'B', 'C'] });

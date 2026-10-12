@@ -183,10 +183,11 @@ export class ProjectLedger {
   private repositoryLock(): string { return path.join(this.ws.projectsDir, '.project-repository.lock'); }
 
   private async updateLocked(id: string, patch: ProjectPatch, expected?: ProjectExpectation): Promise<Project> {
+    await this.validate(patch, id);
+    // Checked after the (slow) validation, against the file this update then rewrites: an edit made meanwhile is a conflict.
     const current = await this.get(id);
     // Structural comparison: an API caller need not reproduce the ledger's key order; JSON round-trip drops ledger-only prototypes.
     if (expected) for (const [key, value] of Object.entries(expected)) if (!isDeepStrictEqual(JSON.parse(JSON.stringify(current[key as keyof ProjectExpectation] ?? null)), value ?? null)) throw new AppError('conflict', 'project_changed');
-    await this.validate(patch, id);
     const fm = parseFrontmatter(await fs.readFile(this.ws.projectFile(id), 'utf8'));
     const values: Record<string, YamlValue> = {};
     for (const key of ['name', 'status', 'description', 'parent', 'body', 'related'] as const) if (patch[key] !== undefined) values[key] = patch[key] as YamlValue;
