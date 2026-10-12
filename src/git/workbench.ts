@@ -388,7 +388,10 @@ export class GitWorkbench {
         if (result.truncated || result.code !== 1) throw new AppError('conflict', 'git_failed');
         bytes += Buffer.byteLength(result.stdout);
         if (bytes > 2 * 1024 * 1024) { truncated = true; break; }
-        files.push({ path: relative, patch: result.stdout.split('\n').map(line => /^(?:diff --git |--- |\+\+\+ |Binary files )/.test(line) ? line.replaceAll(left, 'left').replaceAll(right, 'right') : line).join('\n') });
+        // Headers carry the absolute copy paths (`a/<left>/x`; git may print Windows roots with forward slashes);
+        // strip the roots, longest first should one contain the other.
+        const roots = [...new Set([left, right].flatMap(root => [root, root.replaceAll('\\', '/')]))].sort((x, y) => y.length - x.length);
+        files.push({ path: relative, patch: result.stdout.split('\n').map(line => /^(?:diff --git |--- |\+\+\+ |Binary files )/.test(line) ? roots.reduce((text, root) => text.replaceAll(`${root}/`, '/'), line) : line).join('\n') });
       }
       return { leftTask, rightTask, leftBranch, rightBranch, files, ...(truncated ? { truncated } : {}) };
     });

@@ -146,6 +146,9 @@ test('比較真實作業副本未提交變更且不外洩secret／不接受symli
   const comparison = await workbench.compareTasks('P', left.id, right.id);
   assert.deepEqual(comparison.files.map(file => file.path), ['solution.txt']);
   assert.match(comparison.files[0]!.patch, /-left/); assert.match(comparison.files[0]!.patch, /\+right/);
+  assert.match(comparison.files[0]!.patch, /^diff --git a\/solution\.txt b\/solution\.txt$/m);
+  assert.match(comparison.files[0]!.patch, /^--- a\/solution\.txt$/m); assert.match(comparison.files[0]!.patch, /^\+\+\+ b\/solution\.txt$/m);
+  assert.equal(comparison.files[0]!.patch.includes(ws.root), false);
   assert.equal(JSON.stringify(comparison).includes('secret-token'), false);
   await fs.symlink(path.join(ws.root, 'outside'), path.join(a, 'escape.txt'));
   await assert.rejects(workbench.compareTasks('P', left.id, right.id));
