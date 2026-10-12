@@ -8,7 +8,8 @@ export function testExplorerButton(project: string, task: string): HTMLElement {
     const scope = { project, task };
     const list = el('div', 'form');
     const configuration = input('Node'); configuration.maxLength = 80;
-    const files = input('test/example.test.ts'); files.maxLength = 16000;
+    // An example path is a hint, not a default: saving it would configure a file that does not exist.
+    const files = input('', 'test/example.test.ts'); files.maxLength = 16000;
     const framework = select((['node', 'vitest', 'jest', 'pytest', 'go'] as const).map(value => ({ value, label: t(`tests.framework.${value}`) })), 'node');
     const configFile = input(); configFile.maxLength = 4096;
     let revision = '';
@@ -54,9 +55,11 @@ export function testExplorerButton(project: string, task: string): HTMLElement {
         list.append(el('p', 'muted', latest.at), tree(latest.tree), el('pre', '', latest.result.output));
         if (latest.result.truncated) list.append(el('p', 'muted', t('tests.truncated')));
       }
+      if (!state.history.length) return;
       const history = select(state.history.map(run => ({ value: run.id, label: `${run.at} · ${run.runner} · ${t(run.result.ok ? 'tests.passed' : 'tests.failed')}` })), latest?.id ?? '');
-      const output = el('pre');
-      history.onchange = () => { const selected = state.history.find(run => run.id === history.value); output.textContent = selected?.result.output ?? ''; };
+      // The latest run's output is already shown above; this box only holds an explicitly chosen older run.
+      const output = el('pre'); output.hidden = true;
+      history.onchange = () => { const selected = state.history.find(run => run.id === history.value); output.textContent = selected?.result.output ?? ''; output.hidden = !output.textContent; };
       list.append(field(t('tests.history'), history), output);
     };
     await render();
