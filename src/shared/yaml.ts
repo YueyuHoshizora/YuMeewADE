@@ -76,7 +76,11 @@ function parseScalar(text: string, lineNo: number): YamlValue {
     }
   }
   if (t.startsWith("'")) {
-    if (!t.endsWith("'") || t.length < 2) throw new YamlError('單引號未閉合', lineNo);
+    // The first quote not doubled closes the string, and must be the last character: `'one' two 'three'` is not one string.
+    let i = 1;
+    while (i < t.length && (t[i] !== "'" || t[i + 1] === "'")) i += t[i] === "'" ? 2 : 1;
+    if (i >= t.length) throw new YamlError('單引號未閉合', lineNo);
+    if (i !== t.length - 1) throw new YamlError('單引號字串後有多餘內容', lineNo);
     return t.slice(1, -1).replace(/''/g, "'");
   }
   if (t === '|' || t === '>' || t.startsWith('|') || t.startsWith('>')) {
@@ -199,6 +203,8 @@ class Inline {
       this.ws();
       if (this.src[this.pos] !== ':') throw new YamlError('行內 map 缺少 :', this.lineNo);
       this.pos++;
+      // Same rule as block maps: a repeated key (e.g. two fullAccess values) is ambiguous, never last-one-wins.
+      if (Object.hasOwn(out, key)) throw new YamlError(`重複的鍵 ${key}`, this.lineNo);
       setKey(out, key, this.value());
       this.ws();
       const c = this.src[this.pos];
@@ -229,7 +235,8 @@ function parseValueText(text: string, lineNo: number): YamlValue {
 // ---- 區塊結構 ----
 
 /** 找出 `key: value` 的冒號位置（引號內與 URL 的 `://` 不算）。 */
-function splitKey(text: string, lineNo: number): { key: string; rest: string } | null {
+/** Splits `key: rest` the way the parser reads a map line (quote-aware, key decoded); null when the line is no map entry. */
+export function splitKey(text: string, lineNo: number): { key: string; rest: string } | null {
   let quote: '"' | "'" | null = null;
   for (let i = 0; i < text.length; i++) {
     const c = text[i];
@@ -298,9 +305,10 @@ class Block {
         else out.push(null);
         continue;
       }
-      // `- key: value` 開頭的 map：把這行視為縮排 indent+2 的 map 第一行
+      // `- key: value` 開頭的 map：把這行視為縮排 indent+2 的 map 第一行。引號鍵（`- "true": x`）也算；
+      // 單獨的引號字串（`- "a: b"`）沒有引號外的 `: `，splitKey 不會切出鍵。
       const kv = splitKey(body, line.no);
-      if (kv && !body.startsWith('[') && !body.startsWith('{') && !body.startsWith('"') && !body.startsWith("'")) {
+      if (kv && !body.startsWith('[') && !body.startsWith('{')) {
         const childIndent = indent + 2;
         this.lines[this.i] = { no: line.no, indent: childIndent, text: body };
         out.push(this.map(childIndent));

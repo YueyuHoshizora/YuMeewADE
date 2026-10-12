@@ -116,3 +116,19 @@ test('an apostrophe inside a plain scalar does not swallow the comment after it'
   // Quoted scalars still keep `#` and the `''` escape; a comment after them is still a comment.
   assert.deepEqual(parseYamlMap("a: 'it''s # x' # y\nb: \"c # d\" # e\nc: [x, 'y # z'] # w"), { a: "it's # x", b: 'c # d', c: ['x', 'y # z'] });
 });
+
+test('inline maps refuse repeated keys and a single-quoted string must end at its closing quote', () => {
+  assert.throws(() => parseYamlMap('cli: {claude: {fullAccess: false, fullAccess: true}}'), YamlError);
+  assert.throws(() => parseYamlMap("job: 'one' two 'three'"), YamlError);
+  assert.throws(() => parseYamlMap("job: 'it''s"), YamlError);
+  assert.deepEqual(parseYamlMap("job: 'it''s fine'\nempty: ''"), { job: "it's fine", empty: '' });
+});
+
+test('a list item map whose first key needs quotes round-trips', () => {
+  for (const key of ['true', 'a: b', '-key', ' lead']) {
+    const value = { value: [{ [key]: [key], other: 1 }] };
+    assert.deepEqual(parseYamlMap(stringifyYaml(value).join('\n')), value, key);
+  }
+  // A quoted string alone in a list stays a string.
+  assert.deepEqual(parseYamlMap('value:\n  - "a: b"'), { value: ['a: b'] });
+});
