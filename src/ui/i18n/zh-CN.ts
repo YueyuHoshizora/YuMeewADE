@@ -10,7 +10,7 @@ export const zhCN: Record<MessageKey, string> = {
 'usage.addAccount': '添加账号', 'usage.remove': '移除账号', 'usage.removeConfirm': '移除「{name}」在此工作区的登记？App 的加密凭据与原 CLI 设置都会保留，不会退出账号。',
 'usage.provider': 'AI',
 'usage.accountHelp': '添加账号会在 App 管理的独立文件夹中，用该 CLI 自己的 OAuth 流程登录（自动打开浏览器），不读取 CLI 默认登录。凭据导入 App 本地 SQLite，由系统安全存储加密；查询额度与对话使用这份凭据。',
-'usage.accountNotice': '底部只显示各 AI 的使用中账号。切换只影响下一次发送的指示，不会改变运行中的作业。支持查询的额度默认每 5 分钟更新，用尽与恢复时提醒；查询失败保留上次数据，并非实时额度。',
+'usage.accountNotice': '底部只显示各 AI 的使用中账号。切换只影响下一次发送的指示，不会改变运行中的作业。支持查询的额度默认每 1 分钟更新（可用 limits.usagePollSeconds 调整），用尽与恢复时提醒；查询失败保留上次数据，并非实时额度。',
 'usage.refresh': '立即查询额度', 'usage.ready': '查询成功', 'usage.unavailable': '目前无法查询', 'usage.noData': '尚无额度数据；可手动查询或等待下次更新',
 'usage.prepaidBalance': '预付余额 {balance}',
 'update.title': '有新版本可用',

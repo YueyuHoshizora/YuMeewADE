@@ -34,7 +34,7 @@ export function workflowBudgetRisk(scope: UsageScope): HTMLElement {
 }
 export function usageHistoryPanel(): HTMLElement {
   const panel = card(t('budget.history')); const result = el('div'); const project = input(); const task = input();
-  panel.append(el('p', 'muted', t('budget.provenance')), row(field(t('budget.project'), project), field(t('budget.task'), task)), button(t('usage.refresh'), async () => load()), result);
+  panel.append(el('p', 'muted', t('budget.provenance')), row(field(t('budget.project'), project), field(t('budget.task'), task)), button(t('common.refresh'), async () => load()), result);
   let before: string | undefined;
   async function load(older = false): Promise<void> {
     const query = new URLSearchParams(); if (project.value.trim()) query.set('project', project.value.trim()); if (task.value.trim()) query.set('task', task.value.trim()); if (older && before) query.set('before', before);

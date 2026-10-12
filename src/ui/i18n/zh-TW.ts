@@ -9,7 +9,7 @@ export const zhTW = {
 'usage.addAccount': '新增帳號', 'usage.remove': '移除帳號', 'usage.removeConfirm': '移除「{name}」在此工作區的登錄？App 的加密憑證與原 CLI 設定都會保留，不會登出帳號。',
 'usage.provider': 'AI',
 'usage.accountHelp': '新增帳號會在 App 管理的獨立資料夾以該 CLI 自己的 OAuth 流程登入（自動開啟瀏覽器），不讀取 CLI 預設登入。憑證匯入 App 本機 SQLite，由系統安全儲存加密；查額度與對話使用這份憑證。',
-'usage.accountNotice': '底部只顯示各 AI 的使用中帳號。切換只影響下一次送出的指示，不會改變執行中的作業。支援查詢的額度預設每 5 分鐘更新，用盡與恢復時提醒；查詢失敗保留上次資料，並非即時額度。',
+'usage.accountNotice': '底部只顯示各 AI 的使用中帳號。切換只影響下一次送出的指示，不會改變執行中的作業。支援查詢的額度預設每 1 分鐘更新（可用 limits.usagePollSeconds 調整），用盡與恢復時提醒；查詢失敗保留上次資料，並非即時額度。',
 'usage.refresh': '立即查詢額度', 'usage.ready': '查詢成功', 'usage.unavailable': '目前無法查詢', 'usage.noData': '尚無額度資料；可手動查詢或等待下次更新',
 'usage.prepaidBalance': '預付餘額 {balance}',
 'update.title': '有新版本可用',
