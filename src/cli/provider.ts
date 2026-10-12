@@ -24,7 +24,7 @@ export interface SendOptions {
   configDir?: string;
   /** 原生 slash 的完整文字；prompt 此時作為系統前言，不混入指令。 */
   slashCommand?: string;
-  /** CLI 的獨立唯讀報告，不推進或清除模型對話狀態。 */
+  /** 獨立於對話的命令（報告、改名、目標、旁支提問）：可讀用 resumeId，但不推進、替換或清除模型對話狀態。 */
   standalone?: boolean;
   /** Fast 服務層級；省略＝依 CLI 自身設定。 */
   fast?: boolean;
@@ -33,8 +33,12 @@ export interface SendOptions {
 /** `/fast` 的參數：無參數＝切換。 */
 export type FastChange = 'toggle' | 'on' | 'off' | 'status';
 
+export interface ResolvedCommand { text: string; native: boolean; standalone?: boolean; fast?: FastChange }
+
 export type CliEvent =
   | { type: 'session'; id: string }
+  /** 結束目前的 CLI 對話（Codex /new、/clear、/archive、/delete）：不保留 session，下一則指示重新開始。 */
+  | { type: 'sessionEnd' }
   | { type: 'delta'; text: string }
   /** 最終完整回覆（有些 CLI 不逐字串流，只給整段）。 */
   | { type: 'result'; text: string }
@@ -74,7 +78,7 @@ export interface CliProvider {
   send(opts: SendOptions, onEvent: (ev: CliEvent) => void): CliRun;
   commands?(cwd: string, configDir?: string): Promise<SlashCommand[]>;
   /** 原生回傳原文；自訂模板回傳展開後的提示；`fast` 是 App 保存的作業設定而非模型回合。未知指令必須拒絕。 */
-  resolveCommand?(text: string, cwd: string, configDir?: string): Promise<{ text: string; native: boolean; standalone?: boolean; fast?: FastChange }>;
+  resolveCommand?(text: string, cwd: string, configDir?: string): Promise<ResolvedCommand>;
   /** 不送指示，查指定設定目錄的帳號額度；沒有資料回 null。 */
   quota?(configDir?: string): Promise<Extract<CliEvent, { type: 'quota' }> | null>;
 }

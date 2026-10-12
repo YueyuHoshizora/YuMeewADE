@@ -8,11 +8,11 @@ import type { CliCommandConfig } from '../shared/config.ts';
 import { CREDITS_UNIT } from '../shared/types.ts';
 import type { ExtraUsage, QuotaWindow, ResetCredit, ResetCredits, SlashCommand } from '../shared/types.ts';
 import { findExecutable, minimalEnv, runLineProcess, terminateTree } from './process.ts';
-import { quotaTime, type CliEvent, type CliProvider, type CliRun, type FastChange, type SendOptions } from './provider.ts';
-import { codexPrompts, expandCodexPrompt, slashName } from './commands.ts';
+import { quotaTime, type CliEvent, type CliProvider, type CliRun, type FastChange, type ResolvedCommand, type SendOptions } from './provider.ts';
+import { codexPrompts, EXCLUDED_COMMANDS, expandCodexPrompt, slashName } from './commands.ts';
 import { AppError } from '../shared/errors.ts';
 import { readonlyConfigured, reviewArgs } from './readonly.ts';
-import { codexAppServerRun } from './codex-app-server.ts';
+import { CODEX_APP_COMMANDS, codexAppServerRequest, codexAppServerRun, codexCommandArgument, codexSkills, type CodexSkill } from './codex-app-server.ts';
 
 type QuotaEvent = Extract<CliEvent, { type: 'quota' }>;
 
@@ -314,12 +314,8 @@ export function createCodexParser(onEvent: (ev: CliEvent) => void, now: () => nu
   };
 }
 
-/** Codex TUI controls the app-server exposes per thread (codex-cli 0.162.1 `thread/compact/start`, `review/start`, `serviceTier`). */
-const CODEX_APP_COMMANDS: SlashCommand[] = [
-  { name: 'compact', description: 'Summarize the conversation to free up context' },
-  { name: 'fast', description: 'Toggle Fast mode for this task (faster, higher usage)', argumentHint: '[on|off|status]' },
-  { name: 'review', description: 'Review uncommitted changes, or the given review instructions', argumentHint: '[instructions]' },
-];
+/** `/fast` lives in the App, not the protocol: app-server keeps the tier only for the life of one process. */
+const FAST_COMMAND: SlashCommand = { name: 'fast', description: 'Toggle Fast mode for this task (faster, higher usage)', argumentHint: '[on|off|status]' };
 const FAST_ARGUMENTS: Record<string, FastChange> = { '': 'toggle', on: 'on', off: 'off', status: 'status' };
 
 export class CodexCliProvider implements CliProvider {
@@ -348,32 +344,53 @@ export class CodexCliProvider implements CliProvider {
     return readCodexQuota(configDir ?? this.home);
   }
 
-  async commands(_cwd: string, configDir?: string) {
-    const prompts = (await codexPrompts(configDir ?? this.home)).map(({ body: _body, ...command }) => command);
-    return this.supportsApprovals ? [...CODEX_APP_COMMANDS, ...prompts] : prompts;
+  private appEnv(configDir?: string): NodeJS.ProcessEnv { return configDir ? { ...this.env, CODEX_HOME: configDir } : this.env; }
+
+  private async skills(cwd: string, configDir?: string): Promise<CodexSkill[]> {
+    return codexSkills(await codexAppServerRequest(this.cfg, this.appEnv(configDir), cwd, 'skills/list', { cwds: [cwd] }));
   }
 
-  async resolveCommand(text: string, _cwd: string, configDir?: string) {
+  async commands(cwd: string, configDir?: string) {
+    const prompts = (await codexPrompts(configDir ?? this.home)).map(({ body: _body, ...command }) => command);
+    if (!this.supportsApprovals) return prompts;
+    let skills: CodexSkill[];
+    try { skills = await this.skills(cwd, configDir); } catch { throw new AppError('unavailable'); }
+    const builtins: SlashCommand[] = [...CODEX_APP_COMMANDS.values()].map(({ name, description, argumentHint }) => ({ name, description, ...(argumentHint ? { argumentHint } : {}) }));
+    const taken = new Set([...builtins.map(command => command.name), FAST_COMMAND.name, ...prompts.map(command => command.name)]);
+    // A skill is invoked by its own name, as `$name` is in the TUI; built-ins and custom prompts keep theirs.
+    const invocable = skills.filter(skill => !taken.has(skill.name) && !EXCLUDED_COMMANDS.has(skill.name) && /^[\p{L}\p{N}_:./-]{1,150}$/u.test(skill.name))
+      .map(skill => ({ name: skill.name, description: skill.description.slice(0, 2000) }));
+    return [...builtins, FAST_COMMAND, ...prompts, ...invocable].sort((a, b) => a.name.localeCompare(b.name));
+  }
+
+  async resolveCommand(text: string, cwd: string, configDir?: string): Promise<ResolvedCommand> {
     const name = slashName(text);
-    if (this.supportsApprovals && CODEX_APP_COMMANDS.some(command => command.name === name)) {
-      const argument = text.trim().slice(name!.length + 1).trim();
-      // App-server keeps the tier only for the life of one process, so /fast is a task setting the core applies to each send.
+    if (!name || EXCLUDED_COMMANDS.has(name)) throw new AppError('bad_request', 'slash_unsupported');
+    const argument = text.trim().slice(name.length + 1).trim();
+    if (this.supportsApprovals) {
       if (name === 'fast') {
         if (!Object.hasOwn(FAST_ARGUMENTS, argument.toLowerCase())) throw new AppError('bad_request', 'slash_unsupported');
         return { text: text.trim(), native: true, fast: FAST_ARGUMENTS[argument.toLowerCase()]! };
       }
-      // /compact acts on the whole thread; arguments would be silently dropped.
-      if (name === 'compact' && argument) throw new AppError('bad_request', 'slash_unsupported');
-      return { text: text.trim(), native: true };
+      const builtin = CODEX_APP_COMMANDS.get(name);
+      if (builtin) {
+        if (!codexCommandArgument(builtin, argument)) throw new AppError('bad_request', 'slash_unsupported');
+        return { text: text.trim(), native: true, ...(builtin.standalone(argument) ? { standalone: true } : {}) };
+      }
     }
     const prompt = (await codexPrompts(configDir ?? this.home)).find(command => command.name === name);
-    if (!prompt) throw new AppError('bad_request', 'slash_unsupported');
-    return { text: expandCodexPrompt(prompt.body, text.trimStart().slice(name!.length + 1).trim()), native: false };
+    if (prompt) return { text: expandCodexPrompt(prompt.body, text.trimStart().slice(name.length + 1).trim()), native: false };
+    if (this.supportsApprovals) {
+      let skills: CodexSkill[];
+      try { skills = await this.skills(cwd, configDir); } catch { throw new AppError('unavailable'); }
+      if (skills.some(skill => skill.name === name)) return { text: text.trim(), native: true };
+    }
+    throw new AppError('bad_request', 'slash_unsupported');
   }
 
   send(opts: SendOptions, onEvent: (ev: CliEvent) => void): CliRun {
     if (opts.readonly && !this.supportsReadonly) throw new AppError('bad_request', 'cli_unsupported');
-    if (!opts.readonly && (this.cfg.mode ?? 'app-server') === 'app-server') return codexAppServerRun(this.cfg, opts, opts.configDir ? { ...this.env, CODEX_HOME: opts.configDir } : this.env, onEvent);
+    if (!opts.readonly && (this.cfg.mode ?? 'app-server') === 'app-server') return codexAppServerRun(this.cfg, opts, this.appEnv(opts.configDir), onEvent);
     let completed = false;
     let failed = false;
     let thread = opts.resumeId;

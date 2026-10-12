@@ -10,21 +10,26 @@ import { DEFAULT_CONFIG } from '../shared/config.ts';
 import { AppError } from '../shared/errors.ts';
 import type { CliEvent } from './provider.ts';
 
-test('Claude discovery retains real aliases but excludes transient builtin controls and malformed metadata', () => {
+test('CLI discovery offers every real command and alias except login, logout and model, and drops malformed metadata', () => {
   assert.deepEqual(normalizeCommands([
     { name: 'compact', description: 'Summarize', argumentHint: '[instructions]', builtin: true },
     { name: 'clear', description: 'New session', aliases: ['reset', 3], builtin: true },
     { name: 'model', description: 'Transient model', builtin: true },
+    { name: 'login', description: 'Sign in', builtin: true },
+    { name: 'account', description: 'Account', aliases: ['logout'] },
     { name: 'config', description: 'Transient setting', aliases: ['settings'], builtin: true },
     { name: 'plugin:deploy', description: 'Real skill' },
     { name: '__hidden', description: 'Internal' },
     { name: 'bad name', description: 'Bad' },
     { name: 'missing-description' }, null,
   ]), [
+    { name: 'account', description: 'Account' },
     { name: 'clear', description: 'New session' },
     { name: 'compact', description: 'Summarize', argumentHint: '[instructions]' },
+    { name: 'config', description: 'Transient setting' },
     { name: 'plugin:deploy', description: 'Real skill' },
     { name: 'reset', description: 'New session' },
+    { name: 'settings', description: 'Transient setting' },
   ]);
   assert.equal(slashName('  /prompts:review FILE="a b"'), 'prompts:review');
   assert.equal(slashName('explain /compact'), null);

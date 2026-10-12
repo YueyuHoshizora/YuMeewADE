@@ -162,8 +162,8 @@ export class GeminiCliProvider implements CliProvider {
   }
   async resolveCommand(text: string, cwd: string, configDir?: string): Promise<{ text: string; native: boolean; standalone: boolean }> {
     const name = slashName(text);
-    // Discovery lists read-only reports, not arbitrary prompts or persistent TUI controls.
-    if (!name || text.trim() !== `/${name}` || !(await this.commands(cwd, configDir)).some(command => command.name === name)) {
+    // Every listed command runs as the CLI would run it, arguments included; agy itself rejects ones that take none.
+    if (!name || !(await this.commands(cwd, configDir)).some(command => command.name === name)) {
       throw new AppError('bad_request', 'slash_unsupported');
     }
     return { text: text.trim(), native: true, standalone: true };
@@ -181,7 +181,7 @@ export class GeminiCliProvider implements CliProvider {
   send(opts: SendOptions, onEvent: (ev: CliEvent) => void): CliRun {
     refuseReview(opts);
     const name = opts.slashCommand ? slashName(opts.slashCommand) : null;
-    if (opts.slashCommand && (!this.cfg.slashArgs.length || !name || opts.slashCommand.trim() !== `/${name}`)) {
+    if (opts.slashCommand && (!this.cfg.slashArgs.length || !name)) {
       const reason = 'Gemini slash command is unavailable';
       onEvent({ type: 'error', reason });
       return { stop: () => undefined, done: Promise.resolve({ ok: false, stopped: false, reason }) };
@@ -201,8 +201,10 @@ export class GeminiCliProvider implements CliProvider {
       }
       const quota = geminiQuota(obj);
       if (quota) emit(quota);
-      // Read-only reports have no conversation id and must not replace the chat session.
-      emit({ type: 'result', text: obj['response'] });
+      // Read-only reports have no conversation id and must not replace the chat session. Some commands
+      // (e.g. /agents, /permissions) answer only in structured data and leave the text empty.
+      const data = record(obj['command'])?.['data'];
+      emit({ type: 'result', text: obj['response'] || (data === undefined ? '' : `\`\`\`json\n${JSON.stringify(data, null, 2).slice(0, 100_000)}\n\`\`\``) });
     } : createGeminiParser(emit);
     const run = runLineProcess({
       command: this.cfg.command,

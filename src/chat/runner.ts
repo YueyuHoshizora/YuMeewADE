@@ -442,7 +442,8 @@ export class ChatRunner extends EventEmitter {
       s.finished = this.execute(p, t, item, provider, meta, {
         prompt: buildPrompt({ preamble, handoff, context: taskContext.text, references: references.text, text: command ? (command.native ? '' : command.text) : item.text, images }), cwd,
         ...(command?.native ? { slashCommand: command.text } : {}),
-        ...(command?.standalone ? { standalone: true } : resumeId ? { resumeId } : {}),
+        // Standalone commands may act on the session (Codex /goal, /rename) but never replace or drop it.
+        ...(command?.standalone ? { standalone: true } : {}), ...(resumeId ? { resumeId } : {}),
         ...(meta.fast?.[item.ai] === undefined ? {} : { fast: meta.fast[item.ai] }),
         model: pick.model, effort: pick.effort,
         fullAccess,
@@ -573,6 +574,7 @@ export class ChatRunner extends EventEmitter {
     const started = Date.now();
     let result: string | undefined;
     let sid = opts.resumeId;
+    let ended = false;
     let error = '';
     let usage: TurnUsage | undefined;
     let persisted = false;
@@ -603,6 +605,7 @@ export class ChatRunner extends EventEmitter {
           if (opts.fullAccess || !provider.supportsApprovals) ev.respond(false);
           else s.permissions?.request(ev);
         } else if (ev.type === 'session') sid = ev.id;
+        else if (ev.type === 'sessionEnd') { sid = undefined; ended = true; }
         else if (ev.type === 'delta') {
           s.partial += ev.text;
           this.publish(p, t, { event: 'delta', data: { request: item.id, text: ev.text } });
@@ -665,7 +668,7 @@ export class ChatRunner extends EventEmitter {
       this.publish(p, t, { event: 'row', data: row });
       delete meta.running;
       if (error && !outcome.stopped) {
-        if (opts.resumeId) {
+        if (opts.resumeId && !opts.standalone) {
           delete meta.sessions[item.ai];
           delete meta.models[item.ai];
         }
@@ -679,6 +682,9 @@ export class ChatRunner extends EventEmitter {
         if (sid) {
           meta.sessions[item.ai] = sid;
           meta.models[item.ai] = item.model ?? '';
+        } else if (ended) {
+          delete meta.sessions[item.ai];
+          delete meta.models[item.ai];
         }
         meta.seen[item.ai] = item.id;
       }
@@ -701,9 +707,9 @@ export class ChatRunner extends EventEmitter {
       delete meta.running;
       if (previousSeen === undefined) delete meta.seen[item.ai];
       else meta.seen[item.ai] = previousSeen;
-      if (opts.resumeId || previousSession === undefined) delete meta.sessions[item.ai];
+      if ((opts.resumeId && !opts.standalone) || previousSession === undefined) delete meta.sessions[item.ai];
       else meta.sessions[item.ai] = previousSession;
-      if (opts.resumeId || previousModel === undefined) delete meta.models[item.ai];
+      if ((opts.resumeId && !opts.standalone) || previousModel === undefined) delete meta.models[item.ai];
       else meta.models[item.ai] = previousModel;
       if (previousAccount === undefined) { if (meta.accounts) delete meta.accounts[item.ai]; }
       else meta.accounts = { ...meta.accounts, [item.ai]: previousAccount };

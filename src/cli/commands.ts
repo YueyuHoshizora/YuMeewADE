@@ -56,25 +56,19 @@ export async function claudeCommands(command: string, args: string[], cwd: strin
   }
 }
 
-// These change only a live CLI process (or need its UI/background lifecycle).
-// A one-turn subprocess cannot retain their semantics across composer sends.
-const CLAUDE_SESSION_CONTROLS: Record<string, true> = {
-  model: true, effort: true, fast: true, focus: true, color: true, advisor: true,
-  autocompact: true, 'output-style': true, config: true, settings: true,
-  mcp: true, 'reload-plugins': true, 'reload-skills': true, goal: true,
-  loop: true, proactive: true,
-};
+/** The only CLI commands not offered: account sign-in belongs to the App's account flow, and the model to its picker. */
+export const EXCLUDED_COMMANDS: ReadonlySet<string> = new Set(['login', 'logout', 'model']);
 
 export function normalizeCommands(values: unknown[]): SlashCommand[] {
   const commands = new Map<string, SlashCommand>();
   for (const value of values.slice(0, 1000)) {
     if (!value || typeof value !== 'object') continue;
     const row = value as Record<string, unknown>;
-    if (row['builtin'] === true && typeof row['name'] === 'string' && Object.hasOwn(CLAUDE_SESSION_CONTROLS, row['name'])) continue;
+    if (typeof row['name'] === 'string' && EXCLUDED_COMMANDS.has(row['name'])) continue;
     if (typeof row['name'] !== 'string' || typeof row['description'] !== 'string') continue;
     const names = [row['name'], ...(Array.isArray(row['aliases']) ? row['aliases'] : [])];
     for (const name of names) {
-      if (typeof name !== 'string' || !/^[\p{L}\p{N}_:./-]{1,150}$/u.test(name) || name.startsWith('__')) continue;
+      if (typeof name !== 'string' || !/^[\p{L}\p{N}_:./-]{1,150}$/u.test(name) || name.startsWith('__') || EXCLUDED_COMMANDS.has(name)) continue;
       commands.set(name, { name, description: row['description'].slice(0, 2000), ...(typeof row['argumentHint'] === 'string' && row['argumentHint'] ? { argumentHint: row['argumentHint'].slice(0, 500) } : {}) });
     }
   }

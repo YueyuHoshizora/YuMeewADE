@@ -89,31 +89,66 @@ test('a broken roles.yaml blocks only tasks that have a role', () => withTmpWork
   await s.tasks.update('P', s.task.id, { role: 'worker' });
   await assert.rejects(s.send('role-based task needs the roles file', { ai: 'codex' }), { detail: 'file_corrupt', field: 'roles.yaml' });
 }));
-test('standalone CLI reports preserve resumable conversation state on success and failure', () => withTmpWorkspace(async ws => {
+test('standalone CLI commands get the session to act on but preserve resumable conversation state on success, failure and crash', () => withTmpWorkspace(async ws => {
   const s = await setup(ws);
   await s.send('start conversation');
   await s.runner.whenIdle();
   const before = await s.store.readMeta('P', s.task.id);
   const expected = { sessions: before.sessions, models: before.models, seen: before.seen, accounts: before.accounts };
-  let succeeds = true;
+  let outcome: 'ok' | 'fail' | 'throw' = 'ok';
+  const resumed: (string | undefined)[] = [];
   Object.assign(s.mock, {
     resolveCommand: async (text: string) => ({ text, native: true, standalone: true }),
-    send: (_opts: SendOptions, onEvent: (ev: CliEvent) => void) => {
-      onEvent(succeeds ? { type: 'result', text: 'Available quota: 81%' } : { type: 'error', reason: 'report unavailable' });
-      return { stop: () => undefined, done: Promise.resolve({ ok: succeeds, stopped: false }) };
+    send: (opts: SendOptions, onEvent: (ev: CliEvent) => void) => {
+      resumed.push(opts.resumeId);
+      if (outcome === 'throw') throw new Error('transport broke');
+      onEvent(outcome === 'ok' ? { type: 'result', text: 'Available quota: 81%' } : { type: 'error', reason: 'report unavailable' });
+      return { stop: () => undefined, done: Promise.resolve({ ok: outcome === 'ok', stopped: false }) };
     },
   });
-  for (const success of [true, false]) {
-    succeeds = success;
+  for (const next of ['ok', 'fail', 'throw'] as const) {
+    outcome = next;
     await s.send('/usage');
     await s.runner.whenIdle();
     const after = await s.store.readMeta('P', s.task.id);
-    assert.deepEqual({ sessions: after.sessions, models: after.models, seen: after.seen, accounts: after.accounts }, expected);
+    assert.deepEqual({ sessions: after.sessions, models: after.models, seen: after.seen, accounts: after.accounts }, expected, next);
     const reply = (await s.store.readLog('P', s.task.id)).at(-1);
     assert.ok(reply?.role === 'assistant');
-    if (success) assert.equal(reply.text, 'Available quota: 81%');
-    else assert.equal(reply.error, 'cli_failed');
+    if (next === 'ok') assert.equal(reply.text, 'Available quota: 81%');
+    else assert.equal(reply.error, next === 'fail' ? 'cli_failed' : 'internal');
   }
+  const [session] = Object.values(before.sessions);
+  assert.ok(session);
+  assert.deepEqual(resumed, Array(3).fill(session));
+}));
+test('a command that ends the CLI session leaves the task without one, so the next instruction starts fresh', () => withTmpWorkspace(async ws => {
+  const s = await setup(ws);
+  await s.send('start conversation');
+  await s.runner.whenIdle();
+  const [ai] = Object.keys((await s.store.readMeta('P', s.task.id)).sessions);
+  assert.ok(ai);
+  const send = s.mock.send.bind(s.mock);
+  const resumed: (string | undefined)[] = [];
+  Object.assign(s.mock, {
+    resolveCommand: async (text: string) => ({ text, native: true }),
+    send: (opts: SendOptions, onEvent: (ev: CliEvent) => void) => {
+      resumed.push(opts.resumeId);
+      if (!opts.slashCommand) return send(opts, onEvent);
+      onEvent({ type: 'sessionEnd' });
+      onEvent({ type: 'result', text: 'thread: (a new one starts with the next instruction)' });
+      return { stop: () => undefined, done: Promise.resolve({ ok: true, stopped: false }) };
+    },
+  });
+  await s.send('/new');
+  await s.runner.whenIdle();
+  const after = await s.store.readMeta('P', s.task.id);
+  assert.equal(after.sessions[ai], undefined);
+  assert.equal(after.models[ai], undefined);
+  await s.send('carry on');
+  await s.runner.whenIdle();
+  assert.ok(resumed[0]);
+  assert.equal(resumed[1], undefined, 'the instruction after /new does not resume the ended session');
+  assert.ok((await s.store.readMeta('P', s.task.id)).sessions[ai], 'the fresh run records its own session');
 }));
 test('超過單輪時間上限就停止並標記 timeout，不自動接續隊列', () => withTmpWorkspace(async ws => {
   const s = await setup(ws, { chunkMs: 5 }, 0.05);

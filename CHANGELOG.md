@@ -29,6 +29,7 @@
 - `.editorconfig` 樣式配對對齊規格：以 `/` 開頭（或含 `/`）的區段只配對相對於該檔的路徑，`[/foo.txt]` 不再套到 `nested/foo.txt`；`[*]`、`[src/*]` 也涵蓋 `.eslintrc` 等點檔，字面的 `.name` 區段仍只配對自己。
 - Gemini（Antigravity）回合在步驟完成時即回報已量測的用量快照：之後回合失敗、被停止或沒有結果事件時，已知的 tokens 仍記入用量歷史，不再整輪遺失。
 - Codex `/prompts:` 自訂提示參數的雙引號內只把 `$`、`` ` ``、`"`、`\` 當跳脫字元（同 POSIX shell），`FILE="C:\Users\alice\notes.txt"` 不再被吃掉反斜線。
+- 斜線選單改為跟隨各 CLI 實際有的命令，唯一排除 `/login`、`/logout`、`/model`：Claude 不再過濾 `/config`、`/effort`、`/fast` 等程序內控制；Gemini 清單中的命令可帶參數原樣執行，只回結構化資料的命令（如 `/permissions`）顯示其 JSON，不再是空白回覆；Codex app-server 自動列出 `skills/list` 的 skills（像 TUI 一樣附上 skill 送出），並接上所有有 app-server 協定的 TUI 命令：`/goal`、`/side`／`/btw`、`/rename`、`/fork`、`/resume`、`/new`／`/clear`、`/archive`、`/delete` 與 `/status`、`/usage`、`/skills`、`/plugins`、`/apps`、`/mcp`、`/hooks`、`/experimental`、`/permissions`、`/debug-config` 報告。報告、改名、目標查詢與分支提問不推進或清除作業的對話；`/new`、`/archive`、`/delete` 結束作業目前的 Codex 對話，下一則指示開新對話。
 - 回答 AI 提問的指示若在啟動途中（建立檢查點、附加圖片等）被停止，作業維持「等待回覆」與原本的提問、已完成的作業也不會被撤銷完成；作業狀態只在指示確定開始後才更新。
 - AI 提問、作業轉為「等待回覆」時，一般排隊指示暫停出隊，不再越過未回答的問題繼續做（與自動修正、流程分支一致）；以回答身分排隊的指示照常出隊，人回答後隊列接續，畫面顯示暫停原因並保留「開始」手動執行。
 - 指示已寫入對話但在啟動 CLI 前失敗（例如寫入執行標記失敗）時，記下的失敗回覆會把作業標為未讀並更新清單，與其他結束的回合一致，不再無聲無息。
