@@ -4,7 +4,8 @@ import { createHash, randomUUID } from 'node:crypto';
 import { Workspace } from './workspace.ts';
 import { ProjectLedger } from './projects.ts';
 import { TaskLedger } from './tasks.ts';
-import { isInside, missingAs, withFileLocks, writeJson } from '../shared/fsx.ts';
+import { atomicWrite, isInside, missingAs, withFileLocks, writeJson } from '../shared/fsx.ts';
+import { parseFrontmatter, patchHeaderLines, serializeFrontmatter, type Frontmatter } from '../shared/frontmatter.ts';
 import { AppError } from '../shared/errors.ts';
 import { git } from '../git/git.ts';
 import type { CareBackup } from '../shared/types.ts';
@@ -134,6 +135,15 @@ export class BackupService {
         external.push({ project: project.id, source: body, originalSource: path.resolve(ledger.bodyPath(project)), folder: existing?.folder ?? String(external.length) });
       }
     }
+    // Archived projects keep their external code in place; restoring them later needs that code just as much.
+    for (const file of await archivedProjectFiles(this.ws)) {
+      const original = archivedBody((await fs.readFile(file, 'utf8')));
+      const body = original ? await fs.realpath(original).catch(() => null) : null;
+      if (!body || inside(root, body)) continue;
+      repositories.add(body);
+      const existing = external.find(e => e.source === body);
+      external.push({ project: path.basename(path.dirname(file)), source: body, originalSource: path.resolve(original!), folder: existing?.folder ?? String(external.length) });
+    }
     // A complete backup copying an external folder that holds the backup storage would copy its own output forever.
     if (includeExternal && external.some(e => inside(e.source, directory))) throw fail('care_backup_overlap');
     return withFileLocks([...repositories], async () => {
@@ -250,9 +260,37 @@ export class BackupService {
         }
         if ((await fs.lstat(path.join(repo, '.git')).catch(() => null))?.isDirectory()) await validateWorktreeRoot(repo);
       }
+      for (const file of await archivedProjectFiles(restored)) {
+        let parsed: Frontmatter; let moved: string;
+        // Code that no longer existed at backup time was not captured; its archive keeps the original path.
+        try { parsed = parseFrontmatter(await fs.readFile(file, 'utf8')); const body = archivedBody(parsed); if (!body) continue; moved = translate(body); } catch { continue; }
+        await atomicWrite(file, serializeFrontmatter(patchHeaderLines(parsed.headerLines, { body: moved }), parsed.body));
+        if ((await fs.lstat(path.join(moved, '.git')).catch(() => null))?.isDirectory()) {
+          await relocateWorktreeConfig(moved, path.join(moved, '.git', 'config'), moved);
+          await relocateWorktreeConfig(moved, path.join(moved, '.git', 'config.worktree'), moved);
+        }
+      }
       return { root };
     } catch (error) { await fs.rm(root, { recursive: true, force: true }); throw error; }
   }
+}
+
+/** PROJECT.md of each archived project (`Projects/.trash/{name}-{stamp}/`). */
+async function archivedProjectFiles(ws: Workspace): Promise<string[]> {
+  const trash = path.join(ws.projectsDir, '.trash');
+  const entries = await fs.readdir(trash, { withFileTypes: true }).catch((error: NodeJS.ErrnoException) => { if (error.code === 'ENOENT') return []; throw error; });
+  const files: string[] = [];
+  for (const entry of entries) {
+    if (!entry.isDirectory()) continue;
+    const file = path.join(trash, entry.name, 'PROJECT.md');
+    if ((await fs.lstat(file).catch(() => null))?.isFile()) files.push(file);
+  }
+  return files;
+}
+function archivedBody(source: string | Frontmatter): string | undefined {
+  let body: unknown;
+  try { body = (typeof source === 'string' ? parseFrontmatter(source) : source).data['body']; } catch { return undefined; }
+  return typeof body === 'string' && path.isAbsolute(body) ? body : undefined;
 }
 
 async function relocateWorktreeConfig(cwd: string, config: string, root: string): Promise<void> {

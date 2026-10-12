@@ -9,6 +9,7 @@ import { TaskLedger } from './tasks.ts';
 import { BackupService } from './backup.ts';
 import { WorktreeService } from '../git/worktree.ts';
 import { gitOk } from '../git/git.ts';
+import { ArchiveService } from './archive.ts';
 
 for (const external of [false, true]) test(`private backup restores real dirty worktree (external=${external})`, async () => {
   const temporary = await fs.mkdtemp(path.join(os.tmpdir(), 'care-backup-'));
@@ -74,6 +75,29 @@ test('a complete backup refuses an external folder that contains the backup stor
     assert.deepEqual(await fs.readdir(path.join(body, '.yumeewade', 'care', 'backups')), []);
     // Without external code the storage is outside what is copied.
     assert.equal((await backup.create(false)).complete, false);
+  } finally { await fs.rm(temporary, { recursive: true, force: true }); }
+});
+
+test('a complete backup carries an archived project\'s external code and restore points the archive at the copy', async () => {
+  const temporary = await fs.mkdtemp(path.join(os.tmpdir(), 'care-archived-'));
+  try {
+    const ws = new Workspace(path.join(temporary, 'source')); await ws.init();
+    const body = path.join(temporary, 'external'); await fs.mkdir(body);
+    await fs.writeFile(path.join(body, 'code.txt'), 'snapshot data');
+    const projects = new ProjectLedger(ws);
+    await projects.create({ name: 'P', body });
+    await projects.archive('P');
+    const backup = new BackupService(ws, path.join(temporary, 'private'));
+    const snapshot = await backup.create(true);
+    assert.equal(snapshot.externalCount, 1);
+    await fs.writeFile(path.join(body, 'code.txt'), 'changed after the backup');
+    const restored = await backup.restore(snapshot.id, path.join(temporary, 'restored'));
+    const fresh = new Workspace(restored.root); const freshProjects = new ProjectLedger(fresh); const freshTasks = new TaskLedger(fresh);
+    const archive = new ArchiveService(fresh, freshProjects, freshTasks, new WorktreeService({ ws: fresh, projects: freshProjects, tasks: freshTasks, diffBytes: 100_000 }));
+    const [entry] = await archive.list();
+    assert.ok(entry!.body && entry!.body.startsWith(restored.root));
+    await archive.restore(entry!.key);
+    assert.equal(await fs.readFile(path.join((await freshProjects.get('P')).body, 'code.txt'), 'utf8'), 'snapshot data');
   } finally { await fs.rm(temporary, { recursive: true, force: true }); }
 });
 
