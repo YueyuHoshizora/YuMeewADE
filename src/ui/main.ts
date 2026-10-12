@@ -28,7 +28,8 @@ let stateText = ''; let pendingDraw = false;
 // Route modules are intentionally deferred until their view is actually visited.
 function lazyView(load: () => Promise<View>): View {
   const node = el('div', 'page', t('common.loading')); let disposed = false; let mounted: View | undefined; let latest: AppState | undefined;
-  void run(async () => { const next = await load(); if (disposed) { next.dispose?.(); return; } mounted = next; node.replaceChildren(next.node); if (latest) next.update?.(latest); });
+  // Once mounted the wrapper must not add a box: route views bring their own padding and the task page needs #main's full height.
+  void run(async () => { const next = await load(); if (disposed) { next.dispose?.(); return; } mounted = next; node.className = 'lazy-view'; node.replaceChildren(next.node); if (latest) next.update?.(latest); });
   return { node, update: next => { latest = next; mounted?.update?.(next); }, dispose: () => { disposed = true; mounted?.dispose?.(); } };
 }
 let initialCareShown = false;
@@ -94,7 +95,7 @@ function drawShell(): void {
   const tasks = state.projects.flatMap(p => p.tasks); const replies = tasks.filter(needsReply).length; const confirmations = tasks.filter(task => task.confirm && !needsReply(task)).length;
   const menu = button('☰', () => document.body.classList.toggle('sidebar-open'), 'menu-toggle'); menu.setAttribute('aria-label', t('nav.menu'));
   header.replaceChildren(menu, link(t('app.title'), '#/turn', 'brand'), el('span', 'version', `v${state.version}`), ...(visibleUpdate(state.update) ? [updateChip(state.update!, state.version, drawShell)] : []), el('span', 'spacer'), link(`${t('nav.turn')} · ${t('tree.reply')} ${replies} · ${t('tree.confirm')} ${confirmations}`, '#/turn', 'turn-button'), link(t('nav.settings'), '#/settings', 'settings-button'));
-  header.append(button(t('terminalDock.toggle'), toggleTerminalDock));
+  header.append(button(t('terminalDock.toggle'), toggleTerminalDock, 'terminal-toggle'));
   const searching = document.activeElement instanceof HTMLInputElement && document.activeElement.classList.contains('tree-search'); const top = sidebar.scrollTop;
   const shell = { state, refresh }; sidebar.replaceChildren(link(t('overview.title'), '#/overview', 'new-project'), el('div', 'sidebar-heading', t('nav.projects')), tree(shell), button(t('project.openExisting'), () => openProjectFromFolder(shell), 'new-project'), link(t('nav.new'), '#/new', 'new-project'));
   sidebar.scrollTop = top; if (searching) sidebar.querySelector<HTMLInputElement>('.tree-search')?.focus({ preventScroll: true });

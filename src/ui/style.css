@@ -258,6 +258,7 @@
 /* A zero flex-basis let the header buttons squeeze the task title to a few characters; reserve room so they wrap instead. */
 .title-input{flex:1 1 220px;min-width:0}
 .onboarding-banner{margin-bottom:16px}
+.lazy-view{display:contents}
 /* 固定外殼尺寸；只有各畫面的捲動區能捲動，聊天控制項不擠壓整個頁面。 */
 html, body { width: 100%; height: 100%; overflow: hidden; }
 body { height: 100dvh; display: grid; grid-template-rows: 64px minmax(0, 1fr) auto; }
@@ -358,11 +359,12 @@ body { height: 100dvh; display: grid; grid-template-rows: 64px minmax(0, 1fr) au
 .tree-row.drop-before{box-shadow:0 -3px var(--accent)}.tree-row.drop-after{box-shadow:0 3px var(--accent)}.project-node>.tree-row[draggable]{cursor:grab}
 .connection-status{position:fixed;bottom:40px;left:8px;z-index:60;padding:4px 10px;border:1px solid var(--border);border-radius:8px;background:var(--panel);color:var(--yellow);font-size:12px}.connection-status[hidden]{display:none}
 @media (max-width:760px){
-  .app-header{min-width:0}.app-header .turn-button{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.app-header .settings-button,.app-header .brand,.menu-toggle{flex-shrink:0}
+  .app-header{min-width:0}.app-header .turn-button{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.app-header .settings-button,.app-header .brand,.menu-toggle{flex-shrink:0}.app-header .terminal-toggle{flex-shrink:0;white-space:nowrap;padding:5px 7px;font-size:11px}
   .sidebar-open .sidebar{width:min(285px,85vw)}.workspace,#main,.task-header,.composer,.task-footer,.transcript,.chat-card,.markdown,.row{min-width:0;max-width:100%}
-  .task-header{padding:8px 12px;max-height:25dvh;overflow:auto}.back-link{margin-bottom:4px}.task-header>.row{gap:6px}.work-info{margin-top:6px;gap:6px}
-  .composer{max-height:42dvh;overflow:auto}.composer textarea{max-height:100px}.composer-controls{flex-wrap:wrap}.composer-controls .compact-picker{min-width:0;flex-basis:100%}
-  .task-footer{max-height:22dvh;overflow:auto}.task-footer>.row{flex-wrap:wrap}.task-footer .disclosure[open]>.step-list{position:static;max-height:25dvh;margin-top:6px;padding:8px}
+  /* Header, composer and footer caps must leave the transcript a usable share of a phone screen. */
+  .task-header{padding:8px 12px;max-height:18dvh;overflow:auto}.back-link{margin-bottom:4px}.task-header>.row{gap:6px}.work-info{margin-top:6px;gap:6px}
+  .composer{max-height:32dvh;overflow:auto}.composer textarea{max-height:100px}.composer-controls{flex-wrap:wrap}.composer-controls .compact-picker{min-width:0;flex-basis:100%}
+  .task-footer{max-height:14dvh;overflow:auto}.task-footer>.row{flex-wrap:wrap}.task-footer .disclosure[open]>.step-list{position:static;max-height:25dvh;margin-top:6px;padding:8px}
   .transcript{padding:10px 12px;min-height:40px}.chat-card{padding:10px 12px;margin-bottom:10px}.chat-meta{gap:6px;margin-bottom:6px}.queue-item{flex-wrap:wrap}.queue-text{min-width:120px}.running-line{overflow-wrap:anywhere}
   .page-header h1,.task-list a,.turn-title,.log-entry,.settings-page code{overflow-wrap:anywhere}.form,.field,.card,.picker{min-width:0;max-width:100%}.code-block pre{white-space:pre;overflow-x:auto}
 }
