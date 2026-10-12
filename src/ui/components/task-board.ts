@@ -61,7 +61,7 @@ export function taskBoard(context: ViewContext, project: ProjectView, list: (tas
     }
     content.replaceChildren(board);
   }
-  const controls = row(field(t('board.view'), view), field(t('board.sort'), sort), field(t('tasks.tags'), tags), field(t('board.state'), states), field(t('board.ai'), ais), field(t('tasks.overdue'), late), field(t('board.search'), text));
+  const controls = row(field(t('board.view'), view), field(t('board.sort'), sort), field(t('overview.tagFilter'), tags), field(t('board.state'), states), field(t('board.ai'), ais), field(t('tasks.overdue'), late), field(t('board.search'), text));
   const change = () => {
     Object.assign(selection, taskSelection({ view: view.value, sort: sort.value, tag: tags.value, state: states.value, ai: ais.value, overdue: late.checked, text: text.value }));
     storeLocal(key, selection); render();

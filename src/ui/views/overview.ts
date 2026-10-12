@@ -18,7 +18,7 @@ export function overviewView(context: ViewContext): View {
     const data = aggregateOverview(context.state, tag);
     const tags = select([{ value: '', label: t('overview.allTags') }, ...data.tags.map(value => ({ value, label: value }))], tag);
     tags.onchange = () => { tag = tags.value; render(); filter.querySelector('select')?.focus(); };
-    filter.replaceChildren(field(t('tasks.tags'), tags));
+    filter.replaceChildren(field(t('overview.tagFilter'), tags));
     const totals = el('section', 'overview-card overview-wide'); totals.append(el('h2', '', t('overview.states')));
     const counts = el('div', 'overview-counts');
     for (const state of TASK_STATES) {
