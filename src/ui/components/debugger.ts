@@ -1,7 +1,7 @@
 import type { DebugAction, DebugSession, DebugValue, ExecutionRun, DapLaunch, DapSession } from '../../shared/types.ts';
 import { query, request } from '../api.ts';
 import { labelValue, t } from '../i18n/index.ts';
-import { button, el, field, input, row, run, setLocked } from './dom.ts';
+import { button, el, field, input, row, run, setLocked, UserError } from './dom.ts';
 
 export function embeddedDebugger(project: string, task: string, open?: (path: string, line: number) => void): { node: HTMLElement; attach: (run: string) => Promise<void>; launch: (config: DapLaunch) => Promise<void>; dispose: () => void } {
   const node = el('section', 'card'); const controls = row(); const stack = el('div'); const variables = el('div'); const breakpoints = el('div'); const scripts = el('datalist'); scripts.id = `debug-scripts-${crypto.randomUUID()}`;
@@ -135,7 +135,17 @@ export function debuggerWorkbench(context: { project: string; task: string; open
     saved.replaceChildren(...Object.keys(configurations).map(key => { const option = el('option'); option.value = key; option.textContent = key; return option; }));
     setLocked(choose, !saved.options.length); setLocked(remove, !saved.options.length);
   }
-  function configuration(): DapLaunch { return { adapter: JSON.parse(adapter.value) as string[], type: type.value, program: program.value, args: JSON.parse(args.value) as string[], breakpoints: JSON.parse(launchBreakpoints.value) as NonNullable<DapLaunch['breakpoints']>, stopOnEntry: stop.checked }; }
+  // Each JSON field is checked on its own, so a typo is marked on that field instead of surfacing as a network error.
+  function json<T>(node: HTMLInputElement, valid: (value: unknown) => boolean, message: string): T {
+    let value: unknown; try { value = JSON.parse(node.value); } catch { value = undefined; }
+    if (!valid(value)) { node.setCustomValidity(message); node.reportValidity(); throw new UserError(message); }
+    node.setCustomValidity(''); return value as T;
+  }
+  const strings = (value: unknown) => Array.isArray(value) && value.every(item => typeof item === 'string');
+  const points = (value: unknown) => Array.isArray(value) && value.every(item => !!item && typeof item === 'object' && typeof (item as { path?: unknown }).path === 'string' && Number.isSafeInteger((item as { line?: unknown }).line) && ['undefined', 'string'].includes(typeof (item as { condition?: unknown }).condition));
+  function configuration(): DapLaunch {
+    return { adapter: json<string[]>(adapter, value => strings(value) && (value as string[]).length > 0, t('execution.argsInvalid')), type: type.value, program: program.value, args: json<string[]>(args, strings, t('execution.argsInvalid')), breakpoints: json<NonNullable<DapLaunch['breakpoints']>>(launchBreakpoints, points, t('dap.breakpointsInvalid')), stopOnEntry: stop.checked };
+  }
   refreshConfigurations();
   node.append(el('h3', '', t('dap.title')), el('p', '', t('dap.install')), field(t('dap.type'), type), field(t('dap.adapter'), adapter), el('p', '', t('dap.examples')), field(t('dap.program'), program), field(t('dap.args'), args), field(t('dap.initialBreakpoints'), launchBreakpoints), field(t('dap.stopOnEntry'), stop), field(t('dap.name'), name), save, field(t('dap.saved'), saved), choose, remove, button(t('dap.launch'), () => panel.launch(configuration())));
   node.append(field(t('debug.run'), runs), button(t('debug.refresh'), refresh), attach, panel.node);
