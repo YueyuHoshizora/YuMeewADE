@@ -41,6 +41,24 @@ test('workspace ownership is exclusive, refuses a live PID and takes over a dead
   }
 });
 
+test('a takeover claim left by a claimant that died midway is recovered once it is old; a fresh claim still blocks', async () => {
+  const root = await fs.mkdtemp(path.join(os.tmpdir(), 'ym-lock-'));
+  const file = path.join(root, '.yumeewade', 'core.lock');
+  const child = spawn(process.execPath, ['-e', ''], { stdio: 'ignore' });
+  try {
+    await once(child, 'exit');
+    await fs.mkdir(path.dirname(file), { recursive: true });
+    await fs.writeFile(file, JSON.stringify({ pid: child.pid, port: 3212 }));
+    // The claimant linked the stale lock and then died before removing either name.
+    await fs.link(file, `${file}.stale`);
+    await assert.rejects(acquireWorkspaceLock(root, 3213), /正在接管/);
+    const release = await acquireWorkspaceLock(root, 3214, 0);
+    assert.equal(JSON.parse(await fs.readFile(file, 'utf8')).port, 3214);
+    await assert.rejects(fs.access(`${file}.stale`));
+    await release();
+  } finally { await fs.rm(root, { recursive: true, force: true }); }
+});
+
 test('release does not remove a replacement owner and malformed locks fail closed', async () => {
   const root = await fs.mkdtemp(path.join(os.tmpdir(), 'ym-lock-'));
   const file = path.join(root, '.yumeewade', 'core.lock');

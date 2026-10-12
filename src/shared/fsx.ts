@@ -125,8 +125,11 @@ export function isInside(base: string, target: string): boolean {
   return rel !== '' && rel !== '..' && !rel.startsWith(`..${path.sep}`) && !path.isAbsolute(rel);
 }
 
-/** Exclusive workspace writer ownership; a hard-link claim serializes stale-lock removal across processes. */
-export async function acquireWorkspaceLock(root: string, port: number): Promise<() => Promise<void>> {
+/**
+ * Exclusive workspace writer ownership; a hard-link claim serializes stale-lock removal across processes. A takeover
+ * takes milliseconds, so a claim older than `claimAbandonedMs` belongs to a claimant that died midway and is cleared.
+ */
+export async function acquireWorkspaceLock(root: string, port: number, claimAbandonedMs = 10_000): Promise<() => Promise<void>> {
   const file = path.join(root, '.yumeewade', 'core.lock');
   return withFileLocks([file], async () => {
     await fs.mkdir(path.dirname(file), { recursive: true });
@@ -163,6 +166,12 @@ export async function acquireWorkspaceLock(root: string, port: number): Promise<
       try { await fs.link(file, claim); }
       catch (err) {
         if ((err as NodeJS.ErrnoException).code === 'ENOENT') continue;
+        // Linking updates the inode's change time, so ctime is when the claim was made, not when the old lock was written.
+        const held = (err as NodeJS.ErrnoException).code === 'EEXIST' ? await fs.stat(claim).catch(() => null) : undefined;
+        if (held === null || held && Date.now() - held.ctimeMs >= claimAbandonedMs) {
+          await fs.unlink(claim).catch((error: NodeJS.ErrnoException) => { if (error.code !== 'ENOENT') throw error; });
+          continue;
+        }
         throw new Error('另一程序正在接管工作區核心鎖，拒絕啟動', { cause: err });
       }
       try {
