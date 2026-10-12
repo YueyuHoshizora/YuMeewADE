@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
-import type { CliEvent, CliProvider } from '../cli/provider.ts';
+import { QuotaRateLimited, type CliEvent, type CliProvider } from '../cli/provider.ts';
 import type { UsageState } from '../shared/types.ts';
 import { UsageBoard } from './usage.ts';
 import { createClaudeParser } from '../cli/claude.ts';
@@ -299,4 +299,44 @@ test('額度帳戶隔離／singleflight／失敗狀態；刪除帳戶與 close �
   await late;
   assert.equal(board.snapshot().ais[0]?.windows[0]?.usedPercent, 20);
   assert.equal(board.snapshot().ais.length, 1);
+});
+
+test('a throttled account keeps its recent reading, is not re-queried before Retry-After, and goes stale after 15 minutes', async () => {
+  let clock = Date.parse('2026-10-10T10:00:00Z');
+  const answers: (() => Extract<CliEvent, { type: 'quota' }>)[] = [];
+  let calls = 0;
+  const provider: CliProvider = {
+    name: 'claude', dangerous: false, available: async () => true, send: () => { throw new Error('unused'); },
+    quota: async () => { calls++; return answers.shift()!(); },
+  };
+  const board = new UsageBoard(() => {}, () => clock);
+  const providers = { claude: provider };
+  const status = () => board.snapshot().ais.map(item => [item.status, item.windows[0]?.usedPercent]);
+  try {
+    answers.push(() => quota(new Date(clock).toISOString(), 30));
+    await board.load(providers);
+    clock += 60_000;
+    answers.push(() => { throw new QuotaRateLimited(clock + 20 * 60_000); });
+    await board.load(providers);
+    assert.deepEqual(status(), [['ready', 30]]);
+    clock += 60_000;
+    await board.load(providers);
+    assert.equal(calls, 2);
+    assert.deepEqual(status(), [['ready', 30]]);
+    clock += 14 * 60_000;
+    await board.load(providers);
+    assert.equal(calls, 2);
+    assert.deepEqual(status(), [['unavailable', 30]]);
+    clock += 5 * 60_000;
+    answers.push(() => quota(new Date(clock).toISOString(), 40));
+    await board.load(providers);
+    assert.equal(calls, 3);
+    assert.deepEqual(status(), [['ready', 40]]);
+    // No earlier reading: throttling leaves nothing to show.
+    const empty = new UsageBoard(() => {}, () => clock);
+    answers.push(() => { throw new QuotaRateLimited(clock + 60_000); });
+    await empty.load(providers);
+    assert.deepEqual(empty.snapshot().ais.map(item => item.status), ['unavailable']);
+    empty.close();
+  } finally { board.close(); }
 });

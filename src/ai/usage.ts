@@ -1,5 +1,5 @@
 // 帳戶額度與即時輸出速度只存記憶體；不同 CLI 設定目錄的查詢與回合事件各自隔離。
-import type { CliEvent, CliProvider } from '../cli/provider.ts';
+import { QuotaRateLimited, type CliEvent, type CliProvider } from '../cli/provider.ts';
 import { log } from '../shared/log.ts';
 import type { AiUsage, Settings, UsageState } from '../shared/types.ts';
 
@@ -9,6 +9,8 @@ export type UsageEvent = Extract<CliEvent, { type: 'quota' | 'tokens' }>;
 const RATE_WINDOW_MS = 4000;
 /** 有輸出時多久重算並推送一次。 */
 const TICK_MS = 1000;
+/** 帳戶查詢被限流時，上次讀數在這段時間內仍當作目前額度；更舊就標為無法查詢。 */
+const THROTTLED_FRESH_MS = 15 * 60_000;
 
 interface Sample {
   start: number;
@@ -27,6 +29,8 @@ export class UsageBoard {
   private resetTimer: NodeJS.Timeout | null = null;
   private codexReset: string | undefined;
   private readonly queries = new Map<string, Promise<void>>();
+  /** 被限流的帳戶在 Retry-After 前不再查詢；提早重查只會延長限流。 */
+  private readonly retryAt = new Map<string, number>();
   private targets: Set<string> | null = null;
   private closed = false;
 
@@ -132,20 +136,39 @@ export class UsageBoard {
     this.targets = new Set(targets.map(target => JSON.stringify([target.ai, target.id])));
     let removed = false;
     for (const key of this.items.keys()) if (!this.targets.has(key)) { this.items.delete(key); removed = true; }
+    for (const key of this.retryAt.keys()) if (!this.targets.has(key)) this.retryAt.delete(key);
     if (removed) this.onChange(this.snapshot());
     await Promise.all(targets.map(({ ai, provider, id, configDir }) => {
       const key = JSON.stringify([ai, id]);
       const existing = this.queries.get(key);
       if (existing) return existing;
+      if ((this.retryAt.get(key) ?? 0) > this.now()) {
+        const previous = this.items.get(key);
+        if (previous?.status === 'ready' && (!previous.quotaAt || this.now() - Date.parse(previous.quotaAt) >= THROTTLED_FRESH_MS)) {
+          this.items.set(key, { ...previous, status: 'unavailable' });
+          this.onChange(this.snapshot());
+        }
+        return Promise.resolve();
+      }
       const query = (async () => {
+        let fresh = false;
         try {
           const quota = await provider.quota!(configDir);
+          this.retryAt.delete(key);
           if (quota) { this.record(ai, quota, id, true); return; }
-        } catch {
-          // 憑證錯誤與遠端回應可能含敏感資料，不記錄例外內容。
-          log.warn('查詢帳戶額度失敗', { ai, account: id });
+        } catch (error) {
+          if (error instanceof QuotaRateLimited) {
+            this.retryAt.set(key, error.retryAt);
+            log.warn('帳戶額度查詢被限流，稍後再查', { ai, account: id, retryAt: new Date(error.retryAt).toISOString() });
+            const quotaAt = this.items.get(key)?.quotaAt;
+            fresh = !!quotaAt && this.now() - Date.parse(quotaAt) < THROTTLED_FRESH_MS;
+          } else {
+            // 憑證錯誤與遠端回應可能含敏感資料，不記錄例外內容。
+            log.warn('查詢帳戶額度失敗', { ai, account: id });
+          }
         }
-        if (this.closed || !this.targets?.has(key)) return;
+        // 限流不代表額度未知：近期讀數照常顯示，等 Retry-After 後再查。
+        if (fresh || this.closed || !this.targets?.has(key)) return;
         const previous = this.items.get(key);
         this.items.set(key, previous ? { ...previous, status: 'unavailable' }
           : { ai, account: id, status: 'unavailable', windows: [], limited: false, quotaAt: null });

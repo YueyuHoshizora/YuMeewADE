@@ -79,6 +79,27 @@ export interface CliProvider {
   quota?(configDir?: string): Promise<Extract<CliEvent, { type: 'quota' }> | null>;
 }
 
+/** The quota endpoint throttled this account; querying again before `retryAt` (epoch ms) only extends the throttle. */
+export class QuotaRateLimited extends Error {
+  readonly retryAt: number;
+  constructor(retryAt: number) {
+    super('quota endpoint rate limited');
+    this.retryAt = retryAt;
+  }
+}
+
+const DEFAULT_RETRY_MS = 5 * 60_000;
+/** A 429 still means throttled even when Retry-After says 0. */
+const MIN_RETRY_MS = 60_000;
+const MAX_RETRY_MS = 60 * 60_000;
+
+/** HTTP `Retry-After` (seconds or HTTP date) → epoch ms, between one minute and an hour; missing or unusable values wait five minutes. */
+export function retryAfterAt(header: string | null, now: number): number {
+  const value = header?.trim() ?? '';
+  const delay = /^\d+$/u.test(value) ? Number(value) * 1000 : value ? Date.parse(value) - now : Number.NaN;
+  return now + (Number.isFinite(delay) && delay >= 0 ? Math.min(Math.max(delay, MIN_RETRY_MS), MAX_RETRY_MS) : DEFAULT_RETRY_MS);
+}
+
 /** A quota time a CLI reports in Unix seconds → ISO, or null when it is no usable date (`toISOString` would throw). */
 export function quotaTime(seconds: unknown): string | null {
   if (typeof seconds !== 'number' || !Number.isFinite(seconds) || seconds <= 0) return null;

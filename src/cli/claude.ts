@@ -4,7 +4,7 @@ import { randomUUID } from 'node:crypto';
 import type { Ask, CloudCredits, ExtraUsage, QuotaWindow, ResetCredit, ResetCredits, TurnUsage } from '../shared/types.ts';
 import { captureCommand, findExecutable, minimalEnv, runLineProcess } from './process.ts';
 import { readClaudeToken } from './claude-credentials.ts';
-import { quotaTime, type CliEvent, type CliProvider, type CliRun, type SendOptions } from './provider.ts';
+import { QuotaRateLimited, quotaTime, retryAfterAt, type CliEvent, type CliProvider, type CliRun, type SendOptions } from './provider.ts';
 import { claudeCommands, slashName } from './commands.ts';
 import { AppError } from '../shared/errors.ts';
 import { readonlyConfigured, reviewArgs } from './readonly.ts';
@@ -150,6 +150,8 @@ export async function fetchClaudeQuota(env: NodeJS.ProcessEnv, timeoutMs = 15_00
     redirect: 'error',
     signal: AbortSignal.timeout(timeoutMs),
   });
+  // The endpoint is shared with the CLI's own usage polling and throttles hard (429 with Retry-After of minutes).
+  if (res.status === 429) throw new QuotaRateLimited(retryAfterAt(res.headers.get('retry-after'), Date.now()));
   if (!res.ok) throw new Error(`usage endpoint ${res.status}`);
   const body: unknown = await res.json();
   const quota = claudeOauthQuota(body);

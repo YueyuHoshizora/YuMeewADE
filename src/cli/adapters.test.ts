@@ -6,7 +6,7 @@ import { ClaudeCliProvider, claudeArgs, claudeCloudCredits, claudeExtraUsage, cl
 import { CodexCliProvider, codexAppServerQuota, codexArgs, codexExtraUsage, codexQuota, createCodexParser, fetchCodexQuota, readCodexQuota } from './codex.ts';
 import { captureCommand, redactArgs } from './process.ts';
 import { MockCliProvider } from './mock.ts';
-import type { CliEvent } from './provider.ts';
+import { QuotaRateLimited, retryAfterAt, type CliEvent } from './provider.ts';
 import { promises as fs } from 'node:fs';
 import http from 'node:http';
 import os from 'node:os';
@@ -510,6 +510,7 @@ test('Claude 即時用量查詢：帶 Bearer 憑證與 beta 標頭，HTTP 錯誤
   const seen: Record<string, string | undefined>[] = [];
   const server = http.createServer((req, res) => {
     seen.push({ auth: req.headers.authorization, beta: req.headers['anthropic-beta'] as string | undefined, agent: req.headers['user-agent'] });
+    if (req.headers.authorization === 'Bearer busy') { res.writeHead(429, { 'retry-after': '120' }).end('{}'); return; }
     if (req.headers.authorization !== 'Bearer tok-1') { res.writeHead(401).end('{}'); return; }
     res.writeHead(200, { 'content-type': 'application/json' }).end(JSON.stringify({ five_hour: { utilization: 12, resets_at: null }, cedar_ember: { grants: [{ label: 'launch', resets_left: 1, ends_at: '2099-01-01T00:00:00Z' }] } }));
   });
@@ -529,6 +530,9 @@ test('Claude 即時用量查詢：帶 Bearer 憑證與 beta 標頭，HTTP 錯誤
     await fetchClaudeQuota(env, 2000, url, async () => 'tok-1', '2.1.296');
     assert.equal(seen.at(-1)?.agent, 'claude-cli/2.1.296 (external, cli)');
     await assert.rejects(fetchClaudeQuota(env, 2000, url, async () => 'bad'), /401/);
+    const before = Date.now();
+    await assert.rejects(fetchClaudeQuota(env, 2000, url, async () => 'busy'), (error: unknown) =>
+      error instanceof QuotaRateLimited && error.retryAt >= before + 120_000 && error.retryAt <= Date.now() + 120_000);
     if (process.platform !== 'darwin') {
       await creds('tok-1', Date.now() + 60_000);
       const quota = await fetchClaudeQuota(env, 2000, url);
@@ -545,6 +549,15 @@ test('Claude 即時用量查詢：帶 Bearer 憑證與 beta 標頭，HTTP 錯誤
     server.close();
     await fs.rm(dir, { recursive: true, force: true });
   }
+});
+
+test('Retry-After → retry time: seconds or HTTP date, between a minute and an hour; missing or garbage waits five minutes', () => {
+  const now = Date.parse('2026-10-12T00:00:00Z');
+  assert.equal(retryAfterAt('120', now), now + 120_000);
+  assert.equal(retryAfterAt('0', now), now + 60_000);
+  assert.equal(retryAfterAt('Mon, 12 Oct 2026 00:02:00 GMT', now), now + 120_000);
+  assert.equal(retryAfterAt('86400', now), now + 3_600_000);
+  for (const header of [null, '', 'soon', '-5', 'Sun, 11 Oct 2026 00:00:00 GMT']) assert.equal(retryAfterAt(header, now), now + 300_000);
 });
 
 test('Claude extra_usage：餘額＝月上限－已用，缺幣別預設 USD，沒有／未啟用／沒上限都是 0，格式錯誤忽略', () => {
