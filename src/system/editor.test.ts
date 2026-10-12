@@ -111,6 +111,24 @@ test('renaming only the letter case works on case-insensitive file systems and s
   } finally { editor.dispose(); }
 }));
 
+test('a file without write permission opens read-only and is never replaced by a save', { skip: process.getuid?.() === 0 && 'root bypasses file permissions' }, () => withTmpWorkspace(async ws => {
+  const projects = new ProjectLedger(ws); const tasks = new TaskLedger(ws); await projects.create({ name: 'P' });
+  const editor = new EditorService(new WorktreeService({ ws, projects, tasks, diffBytes: 100000 }), tasks, {});
+  const file = path.join(ws.projectDir('P'), 'generated.txt');
+  try {
+    await editor.mutate('P', '', { action: 'createFile', path: 'generated.txt' });
+    const writable = await editor.read('P', '', 'generated.txt');
+    await fs.chmod(file, 0o444);
+    const document = await editor.read('P', '', 'generated.txt');
+    assert.equal(document.readonly, true);
+    // Replacing the file through a temporary rename would otherwise ignore its read-only mode.
+    await assert.rejects(editor.save('P', '', 'generated.txt', 'changed', document.revision), (error: unknown) => error instanceof AppError && error.detail === 'editor_not_writable');
+    await assert.rejects(editor.apply('P', '', [{ path: 'generated.txt', revision: writable.revision, text: 'changed' }]), (error: unknown) => error instanceof AppError && error.detail === 'editor_not_writable');
+    assert.equal(await fs.readFile(file, 'utf8'), '');
+    assert.equal((await fs.stat(file)).mode & 0o777, 0o444);
+  } finally { await fs.chmod(file, 0o644).catch(() => undefined); editor.dispose(); }
+}));
+
 test('editor LSP exposes completion hover formatting rename actions and project diagnostics', () => withTmpWorkspace(async ws => {
   const projects = new ProjectLedger(ws); const tasks = new TaskLedger(ws); await projects.create({ name: 'P' });
   for (const name of ['a.ts', 'b.ts']) await fs.writeFile(path.join(ws.projectDir('P'), name), 'old');

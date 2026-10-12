@@ -149,7 +149,7 @@ export const zhTW = {
 'detail.archive_project_has_worktrees': '請先合併所有工作副本再封存',
 'detail.merge_conflict': '合併時發生衝突，請先在副本解決後再合併',
 'detail.merge_excluded': '此副本已排除合併',
-'detail.merge_in_progress': '已有尚未完成的合併，請先處理', 'detail.git_operation_in_progress': '有尚未完成的合併、rebase 或 cherry-pick（或仍標示衝突的檔案），請先完成或中止後再試', 'detail.git_no_upstream': '目前分支沒有設定上游分支', 'detail.git_not_fast_forward': '本機與上游分支都有新的提交，無法快轉；請用 rebase 或在終端機合併', 'detail.git_pull_local_changes': '本機未提交的變更與上游修改了相同檔案，請先提交、暫存（stash）或放棄這些變更',
+'detail.merge_in_progress': '已有尚未完成的合併，請先處理', 'detail.git_operation_in_progress': '有尚未完成的合併、rebase 或 cherry-pick（或仍標示衝突的檔案），請先完成或中止後再試', 'detail.git_no_upstream': '目前分支沒有設定上游分支', 'detail.git_not_fast_forward': '本機與上游分支都有新的提交，無法快轉；請用 rebase 或在終端機合併', 'detail.git_pull_local_changes': '本機未提交的變更與上游修改了相同檔案，請先提交、暫存（stash）或放棄這些變更', 'detail.editor_not_writable': '沒有寫入這個檔案（或其所在資料夾）的權限',
 'detail.worktree_exists': '副本仍存在，不能清除紀錄',
 'detail.mode_required': '執行中送出請選擇取消重做、補充說明或做完接續',
 'effort.low': '低', 'effort.medium': '中', 'effort.high': '高', 'effort.xhigh': '極高', 'effort.max': '最大', 'effort.ultra': 'Ultra',

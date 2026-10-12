@@ -27,6 +27,23 @@ async function sameEntry(a: string, b: string): Promise<boolean> {
   const [left, right] = await Promise.all([fs.lstat(a), fs.lstat(b)]);
   return left.dev === right.dev && left.ino === right.ino;
 }
+/**
+ * Saves replace the file with a renamed temporary file, which only needs a writable folder; without this check a file the
+ * user made read-only would be replaced anyway, and an unwritable folder would surface as an internal error.
+ */
+async function writable(file: string): Promise<boolean> {
+  for (const target of [file, path.dirname(file)]) {
+    const denied = await fs.access(target, constants.W_OK).then(() => false, (error: NodeJS.ErrnoException) => {
+      if (['EACCES', 'EPERM', 'EROFS'].includes(error.code ?? '')) return true;
+      throw error;
+    });
+    if (denied) return false;
+  }
+  return true;
+}
+async function assertWritable(file: string): Promise<void> {
+  if (!(await writable(file))) throw new AppError('forbidden', 'editor_not_writable');
+}
 export class EditorService {
   private clients = new Map<string, LanguageClient>();
   private versions = new Map<string, number>();
@@ -180,7 +197,7 @@ export class EditorService {
       }
       const revision = hash.update(`${stat.dev}:${stat.ino}:${stat.size}:${stat.mtimeMs}:${stat.ctimeMs}`).digest('hex');
       const language = LANGUAGE[path.extname(relative).slice(1).toLowerCase()] ?? (/dockerfile$/i.test(relative) ? 'dockerfile' : 'plaintext');
-      return { path: relative, text: binary ? '' : text, encoding, size: stat.size, binary, truncated: stat.size > this.MAX, revision, language, languageAvailable: !!this.commands[language], readonly: readonly || stat.size <= this.MAX && Buffer.byteLength(JSON.stringify(text)) > this.bodyBytes - 8192 };
+      return { path: relative, text: binary ? '' : text, encoding, size: stat.size, binary, truncated: stat.size > this.MAX, revision, language, languageAvailable: !!this.commands[language], readonly: readonly || !(await writable(file)) || stat.size <= this.MAX && Buffer.byteLength(JSON.stringify(text)) > this.bodyBytes - 8192 };
     } finally { await handle.close(); }
   }
   async read(project: string, task: string, relative: string, selected?: EditorEncoding): Promise<EditorDocument> {
@@ -206,6 +223,7 @@ export class EditorService {
     return withFileLocks([repo], async () => {
       const target = await this.target(project, task, relative);
       if (target.readonly) throw new AppError('bad_request', 'editor_readonly');
+      await assertWritable(target.file);
       return withFileLocks([target.file], async () => {
         const check = async (): Promise<void> => {
           const checked = await this.target(project, task, relative);
@@ -309,6 +327,7 @@ export class EditorService {
       const encoding = selected ?? current.encoding ?? 'UTF8';
       const encoded = encodeText(text, encoding); if (encoded.length > this.MAX) throw new AppError('too_large');
       if (current.binary || current.truncated) throw new AppError('bad_request', 'editor_readonly');
+      await assertWritable(target.file);
       if (current.revision !== revision) throw new AppError('conflict', 'editor_conflict');
       await preserveHistory(target.root, { path: relative, revision: current.revision, text: current.text, encoding: current.encoding ?? 'UTF8', reason: 'save' });
       const stat = await fs.stat(target.file);
@@ -541,6 +560,7 @@ export class EditorService {
             const change = changes[index]!; const target = targets[index]!;
             const current = await this.document(target.file, change.path);
             if (target.readonly || current.binary || current.truncated) throw new AppError('bad_request', 'editor_readonly');
+            await assertWritable(target.file);
             if (current.revision !== change.revision) throw new AppError('conflict', 'editor_conflict');
             if (Buffer.byteLength(change.text) > this.MAX || change.text.includes('\0')) throw new AppError('too_large');
             await preserveHistory(target.root, { path: change.path, revision: current.revision, text: current.text, encoding: current.encoding ?? 'UTF8', reason: 'apply' });
