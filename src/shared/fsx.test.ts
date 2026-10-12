@@ -5,7 +5,7 @@ import { promises as fs } from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { test } from 'node:test';
-import { acquireWorkspaceLock, atomicWrite, isInside, readJson } from './fsx.ts';
+import { acquireWorkspaceLock, atomicWrite, isInside, readJson, replaceFile } from './fsx.ts';
 
 test('isInside keeps names that merely start with two dots inside, and still refuses the parent and the base itself', () => {
   assert.equal(isInside('/work/repo', '/work/repo/..env.bak'), true);
@@ -98,4 +98,25 @@ test('a write cut short by a full disk leaves the old file and no partial temp f
     assert.deepEqual(await fs.readdir(root), ['task.md']);
     assert.equal(await fs.readFile(file, 'utf8'), 'old');
   } finally { await fs.rm(root, { recursive: true, force: true }); }
+});
+
+test('replacing a file briefly held open on Windows is retried; other platforms and real errors fail at once', async (t) => {
+  const root = await fs.mkdtemp(path.join(os.tmpdir(), 'ym-replace-'));
+  try {
+    const from = path.join(root, 'new.tmp'), to = path.join(root, 'task.md');
+    const rename = fs.rename;
+    let busy = 0;
+    t.mock.method(fs, 'rename', async (a: string, b: string) => {
+      if (busy-- > 0) throw Object.assign(new Error('operation not permitted'), { code: 'EPERM' });
+      return rename(a, b);
+    });
+    await fs.writeFile(from, 'new'); busy = 2;
+    await replaceFile(from, to, 'win32');
+    assert.equal(await fs.readFile(to, 'utf8'), 'new');
+    await fs.writeFile(from, 'newer'); busy = 1;
+    await assert.rejects(replaceFile(from, to, 'linux'), { code: 'EPERM' });
+    busy = 100;
+    await assert.rejects(replaceFile(from, to, 'win32'), { code: 'EPERM' });
+    assert.equal(await fs.readFile(to, 'utf8'), 'new');
+  } finally { t.mock.restoreAll(); await fs.rm(root, { recursive: true, force: true }); }
 });

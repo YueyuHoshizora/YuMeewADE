@@ -14,11 +14,26 @@ export async function atomicWrite(file: string, content: string | Uint8Array): P
     // ledger file renamed into place but empty or truncated.
     const handle = await fs.open(tmp, 'r+');
     try { await handle.sync(); } finally { await handle.close(); }
-    await fs.rename(tmp, file);
+    await replaceFile(tmp, file);
   } catch (err) {
     // A write cut short (disk full, I/O error) leaves a partial temp file that would otherwise pile up beside the ledger.
     await fs.rm(tmp, { force: true });
     throw err;
+  }
+}
+
+/**
+ * Windows refuses to replace a file that another process holds open without delete sharing — antivirus scanning the
+ * fresh temp file, a search indexer, an editor — with a transient EPERM/EACCES/EBUSY. Retry briefly there (about a
+ * second in total) instead of failing the ledger write; elsewhere these errors are real and surface at once.
+ */
+export async function replaceFile(from: string, to: string, platform: NodeJS.Platform = process.platform): Promise<void> {
+  for (let attempt = 1; ; attempt++) {
+    try { await fs.rename(from, to); return; }
+    catch (err) {
+      if (platform !== 'win32' || attempt >= 10 || !['EPERM', 'EACCES', 'EBUSY'].includes((err as NodeJS.ErrnoException).code ?? '')) throw err;
+      await new Promise(resolve => setTimeout(resolve, attempt * 20));
+    }
   }
 }
 
