@@ -98,3 +98,11 @@ test('步驟改名保留勾選，移動時連同縮排子項目一起搬且不�
   await assert.rejects(ledger.moveStep('P', task.id, 0, 'B', -1));
   await assert.rejects(ledger.moveStep('P', task.id, 0, 'A2', 1), /step_changed|conflict|步驟/);
 }));
+
+test('備註超過上限時保留最新的 500 行', () => withTmpWorkspace(async ws => {
+  await new ProjectLedger(ws).create({ name: 'P' });
+  const ledger = new TaskLedger(ws); const task = await ledger.create('P', { title: 'T' });
+  await fs.writeFile(ws.taskFile('P', task.id), `---\ntitle: T\n---\n## 備註\n${Array.from({ length: 520 }, (_, i) => `- m${i}`).join('\n')}\n`);
+  const { memo } = await ledger.sections('P', task.id);
+  assert.equal(memo.length, 500); assert.equal(memo[0], '- m20'); assert.equal(memo.at(-1), '- m519');
+}));

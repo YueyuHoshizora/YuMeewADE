@@ -93,11 +93,11 @@ export class TaskLedger {
         const heading = /^##\s+(.+?)\s*$/.exec(row);
         if (heading || /^##\s/.test(row)) { inside = !!heading && HEADINGS[kind].test(heading[1]!); continue; }
         if (inside && row.trim() && !/^\s*<!--/.test(row)) out.push(row.slice(0, SECTION_LINE_CHARS));
-        if (out.length >= SECTION_LINES_MAX) break;
       }
       return out;
     };
-    return { done: lines('done'), next: lines('next'), cautions: lines('cautions'), memo: lines('memo') };
+    // The memo is an append-only log, so a long one keeps its newest entries; the other sections keep their beginning.
+    return { done: lines('done').slice(0, SECTION_LINES_MAX), next: lines('next').slice(0, SECTION_LINES_MAX), cautions: lines('cautions').slice(0, SECTION_LINES_MAX), memo: lines('memo').slice(-SECTION_LINES_MAX) };
   }
 
   async create(project: string, input: NewTaskInput): Promise<Task> {

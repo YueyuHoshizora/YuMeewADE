@@ -202,7 +202,7 @@ HTTP JSON plus SSE, identical in desktop and web versions. Types are defined in 
 | `POST /api/order`、`/api/pin` | Project ordering and pinning |
 | `POST /api/task/new`、`/api/task/update`、`/api/task/step`、`/api/task/memo`、`/api/task/completion`、`/api/task/archive`、`/api/task/read` | Tasks |
 | `POST /api/task/step` | `{project, task}` plus exactly one of `add` (new step), `index` or `remove` (index); with `index`, exactly one of `done` (toggle), `rename` (new text) or `move` (`-1` up / `1` down, carrying indented sub-items along). Everything except adding also needs the step `text` shown, and a changed list returns 409 `step_changed` instead of touching another step |
-| `GET /api/task/sections?project=&task=` | Free-text sections of the task file `{done, next, cautions, memo}` as raw markdown lines (blank lines and comments dropped; at most 500 lines per section, 2,000 characters per line) |
+| `GET /api/task/sections?project=&task=` | Free-text sections of the task file `{done, next, cautions, memo}` as raw markdown lines (blank lines and comments dropped; at most 500 lines per section, the newest 500 for the memo log, 2,000 characters per line) |
 | `POST /api/task/bulk` | `{project, tasks: string[] (1–200, unique), action: {kind: state/phase/due/addTag/removeTag, value} or {kind: archive, confirm: true}}`; returns `results: [{task, ok, error?, detail?}]`; archive never forces working-copy removal |
 | `POST /api/start` | Quick start (create a task and send) |
 | `POST /api/chat/send` | Send `{project, task, text, ai?, model?, effort?, mode?, answer?, images?, fromQueue?}`; while running, `mode` is required: `redo`／`amend`／`queue` |
