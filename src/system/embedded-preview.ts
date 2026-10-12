@@ -1,7 +1,8 @@
 import { randomUUID } from 'node:crypto';
 import { createServer, request as httpRequest, type Server, type IncomingMessage, type ServerResponse } from 'node:http';
 import { createServer as createNetServer, type Server as NetServer } from 'node:net';
-import type { Duplex } from 'node:stream';
+import type { Duplex, Readable } from 'node:stream';
+import { StringDecoder } from 'node:string_decoder';
 import type { ChildProcess } from 'node:child_process';
 import { findExecutable, minimalEnv, spawnCli, terminateTree } from '../cli/process.ts';
 import { AppError } from '../shared/errors.ts';
@@ -120,8 +121,15 @@ export class EmbeddedPreviewService {
       const run: Run = { view: { id, project, task, state: 'starting', url, targetUrl: `http://127.0.0.1:${port}/`, output: '', exitCode: null }, child, proxy, origin, port, sockets: new Set() };
       this.pruneFinished();
       this.runs.set(id, run);
-      const append = (chunk: Buffer): void => { run.view.output = (run.view.output + chunk.toString('utf8')).slice(-32768); };
-      child.stdout?.on('data', append); child.stderr?.on('data', append);
+      // One decoder per stream: a character split across two chunks would otherwise turn into replacement characters.
+      const capture = (stream: Readable | null): void => {
+        const decoder = new StringDecoder('utf8');
+        stream?.on('data', (chunk: Buffer) => {
+          const output = (run.view.output + decoder.write(chunk)).slice(-32768);
+          run.view.output = /^[\uDC00-\uDFFF]/u.test(output) ? output.slice(1) : output;
+        });
+      };
+      capture(child.stdout); capture(child.stderr);
       child.once('error', () => { run.view.state = 'failed'; proxy?.close(); });
       child.once('exit', code => { run.view.exitCode = code; if (run.view.state !== 'stopped') run.view.state = 'failed'; for (const socket of run.sockets) socket.destroy(); proxy?.closeAllConnections(); proxy?.close(); });
       proxy.on('request', (req, res) => { void this.forward(run, req, res).catch(() => { if (!res.headersSent) res.writeHead(502); res.end(); }); });

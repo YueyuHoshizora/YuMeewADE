@@ -147,3 +147,19 @@ test('finished preview runs are bounded while live runs are never evicted', asyn
     assert.deepEqual(ids.filter(id => id !== live.id), finished.slice(-20));
   } finally { await service.dispose(); }
 });
+
+test('preview output keeps characters whose UTF-8 bytes arrive in separate chunks', async () => {
+  const service = new EmbeddedPreviewService({ cwd: async () => process.cwd(), assertTrusted: async () => {}, ideOrigins: ['http://127.0.0.1:3000'] });
+  await service.init();
+  try {
+    // '€' is E2 82 AC; the second write lands after the first chunk was already read.
+    const code = `process.stdout.write(Buffer.from([0xe2, 0x82])); setTimeout(() => { process.stdout.write(Buffer.from([0xac, 0x0a])); setTimeout(() => {}, 60000); }, 200);`;
+    const view = await service.start('project', 'task', { command: process.execPath, args: ['-e', code, '--', '{port}'] });
+    let output = '';
+    for (let tries = 0; tries < 100 && !output.includes('\n'); tries++) {
+      await new Promise(resolve => setTimeout(resolve, 20));
+      output = service.status('project', 'task', view.id).output;
+    }
+    assert.equal(output, '€\n');
+  } finally { await service.dispose(); }
+});
