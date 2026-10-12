@@ -23,6 +23,8 @@ export function selectedPatch(patch: string, selected: number[]): string {
   if (!ids.size || ids.size !== selected.length || selected.some(id => !Number.isSafeInteger(id) || !changed.has(id))) throw new AppError('bad_request', 'git_workbench_path');
   let header = patch.slice(0, patch.indexOf('@@ '));
   if (!header || /(?:rename from|rename to|Binary files|GIT binary patch)/.test(header)) throw new AppError('conflict', 'git_workbench_path');
+  // Only the chosen text lines are applied; an executable-bit change in the same diff is not one of them.
+  header = header.replace(/^(?:old|new) mode .+\n/gmu, '');
   if (header.includes('deleted file mode') && ids.size !== hunks.reduce((count, h) => count + h.lines.filter(l => l.kind !== 'context').length, 0)) {
     const oldPath = /^--- (.+)$/m.exec(header)?.[1];
     if (!oldPath) throw new AppError('conflict', 'git_workbench_path');

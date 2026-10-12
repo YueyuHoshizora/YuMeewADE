@@ -103,6 +103,18 @@ test('行暫存／取消以精確index與worktree指紋拒絕過期選取，保�
   await assert.rejects(workbench.stageLines('P', undefined, 'lines.txt', false, fresh.fingerprint, fresh.hunks.flatMap(h => h.lines).filter(line => line.kind !== 'context').map(line => line.id)));
 }));
 
+test('staging selected lines leaves an executable-bit change in the same file unstaged', { skip: process.platform === 'win32' }, () => withTmpWorkspace(async ws => {
+  const projects = new ProjectLedger(ws); const tasks = new TaskLedger(ws); await projects.create({ name: 'P' });
+  const root = ws.projectDir('P'); const full = path.join(root, 'tool.sh');
+  await fs.writeFile(full, 'one\ntwo\n'); await commitAll(root, 'base');
+  const workbench = new GitWorkbench({ ws, projects, tasks, isRunning: () => false });
+  await fs.writeFile(full, 'ONE\ntwo\n'); await fs.chmod(full, 0o755);
+  const diff = await workbench.diff('P', undefined, 'tool.sh', false);
+  await workbench.stageLines('P', undefined, 'tool.sh', false, diff.fingerprint, diff.hunks.flatMap(h => h.lines).filter(line => line.kind !== 'context').map(line => line.id));
+  assert.equal(await gitOk(root, ['show', ':tool.sh']), 'ONE\ntwo\n');
+  assert.match(await gitOk(root, ['ls-files', '-s', 'tool.sh']), /^100644 /u);
+}));
+
 test('新檔、刪檔與沒有最後換行的部分暫存保留未選取資料', () => withTmpWorkspace(async ws => {
   const projects = new ProjectLedger(ws); const tasks = new TaskLedger(ws); await projects.create({ name: 'P' });
   const root = ws.projectDir('P'); const workbench = new GitWorkbench({ ws, projects, tasks, isRunning: () => false });
