@@ -12,6 +12,7 @@ import { withTmpWorkspace } from '../testing/tmp.ts';
 import { ExecutionService } from './commands.ts';
 import { DebuggerService } from './debugger.ts';
 import { TerminalService } from './terminal.ts';
+import { executionEnv } from './execution-input.ts';
 
 async function setup(ws: Workspace) {
   const projects = new ProjectLedger(ws); const tasks = new TaskLedger(ws);
@@ -25,6 +26,12 @@ async function until(check: () => boolean): Promise<void> {
   for (let i = 0; i < 250; i++) { if (check()) return; await delay(20); }
   assert.fail('observable condition not reached');
 }
+
+test('an accepted environment name is kept as an entry even when it is __proto__', () => {
+  const env = executionEnv(JSON.parse('{"__proto__":"visible","MODE":"test"}'));
+  assert.deepEqual(Object.entries(env), [['__proto__', 'visible'], ['MODE', 'test']]);
+  assert.deepEqual(Object.entries(JSON.parse(JSON.stringify(env))), [['__proto__', 'visible'], ['MODE', 'test']]);
+});
 
 test('named configurations persist by task and run with confined cwd and explicit safe environment', () => withTmpWorkspace(async ws => {
   const { execution, task, projects, tasks } = await setup(ws);

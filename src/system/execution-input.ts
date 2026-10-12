@@ -12,7 +12,8 @@ export function executionEnv(value: unknown): Record<string, string> {
     if (!/^[A-Za-z_][A-Za-z0-9_]{0,79}$/u.test(key) || /(?:TOKEN|SECRET|PASSWORD|PASSWD|CREDENTIAL|PRIVATE|AUTH|API_KEY)|^(?:NODE_OPTIONS|NODE_PATH|LD_.*|DYLD_.*|ELECTRON_.*|PYTHONPATH|BASH_ENV|ENV|SHELLOPTS|COMSPEC)$/iu.test(key) || typeof val !== 'string' || val.length > 4096 || val.includes('\0')) throw new AppError('bad_request');
     bytes += Buffer.byteLength(key) + Buffer.byteLength(val);
     if (bytes > 16384) throw new AppError('bad_request');
-    out[key] = val;
+    // An accepted name such as `__proto__` is an entry, not a prototype assignment that would silently drop it.
+    Object.defineProperty(out, key, { value: val, enumerable: true, writable: true, configurable: true });
   }
   return out;
 }
