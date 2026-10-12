@@ -81,6 +81,14 @@ test('sent context manifests preserve exact source snapshot after later file cha
   assert.ok(s.calls[0]?.prompt.includes(manifest.context.text));
   assert.equal(manifest.context.allocations.find(row => row.id === 'source:0')?.status, 'included');
 }));
+test('a broken roles.yaml blocks only tasks that have a role', () => withTmpWorkspace(async ws => {
+  const s = await setup(ws);
+  await fs.writeFile(ws.rolesFile, 'roles:\n  - name: [unclosed\n');
+  await s.send('roleless task still runs', { ai: 'codex' }); await s.runner.whenIdle();
+  assert.equal(s.calls.length, 1);
+  await s.tasks.update('P', s.task.id, { role: 'worker' });
+  await assert.rejects(s.send('role-based task needs the roles file', { ai: 'codex' }), { detail: 'file_corrupt', field: 'roles.yaml' });
+}));
 test('standalone CLI reports preserve resumable conversation state on success and failure', () => withTmpWorkspace(async ws => {
   const s = await setup(ws);
   await s.send('start conversation');

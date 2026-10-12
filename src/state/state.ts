@@ -1,5 +1,6 @@
 import type { App } from '../server/app.ts';
-import type { AiPick, AppState, Project, Task, TaskView } from '../shared/types.ts';
+import type { AiPick, AppState, Project, Roles, Task, TaskView } from '../shared/types.ts';
+import { AppError } from '../shared/errors.ts';
 import { promises as fs } from 'node:fs';
 import path from 'node:path';
 import { pathExists, readJson } from '../shared/fsx.ts';
@@ -24,8 +25,14 @@ export type StateSnapshot = Omit<AppState, 'running' | 'unread' | 'usage'>;
 
 export async function buildState(app: App): Promise<StateSnapshot> {
   const skippedProjects: string[] = []; const unreadable: string[] = [];
+  // A hand-broken roles.yaml is listed with the other unreadable ledger files instead of failing every page; runs that need roles still report it.
+  const loadRoles = app.roles().catch((error: unknown) => {
+    if (!(error instanceof AppError && error.detail === 'file_corrupt')) throw error;
+    unreadable.push(path.relative(app.ws.root, app.ws.rolesFile));
+    return { roles: Object.create(null) as Roles['roles'] };
+  });
   const [projects, savedOrder, settings, roles, ais] = await Promise.all([
-    app.projects.list(skippedProjects), app.order.get(), app.settings.get(), app.roles(), app.ai.list(),
+    app.projects.list(skippedProjects), app.order.get(), app.settings.get(), loadRoles, app.ai.list(),
   ]);
   // Joined directly: a skipped folder name may not pass the project-name whitelist that ws.projectFile enforces.
   for (const id of skippedProjects) unreadable.push(path.relative(app.ws.root, path.join(app.ws.projectsDir, id, 'PROJECT.md')));

@@ -87,6 +87,11 @@ export class ChatRunner extends EventEmitter {
     this.deps = deps;
   }
 
+  /** A task without a role never reads roles.yaml, so a hand-broken file blocks only the role-based runs it would change. */
+  private rolesFor(task: Pick<Task, 'role'>): Promise<Roles> {
+    return task.role ? this.deps.roles() : Promise.resolve({ roles: Object.create(null) as Roles['roles'] });
+  }
+
   private slot(p: string, t: string): Slot {
     const key = `${p}\0${t}`;
     let s = this.slots.get(key);
@@ -249,7 +254,7 @@ export class ChatRunner extends EventEmitter {
   async contextPreview(p: string, t: string, ai: string, model: string): Promise<ContextPreview> {
     const task = await this.deps.tasks.get(p, t);
     const settings = await this.deps.settings.get();
-    const pick = await resolveAvailableLaunch(await this.deps.roles(), task, { cli: ai, model }, settings.initial, async cli => {
+    const pick = await resolveAvailableLaunch(await this.rolesFor(task), task, { cli: ai, model }, settings.initial, async cli => {
       const provider = this.deps.providers[cli];
       if (!provider) throw new AppError('bad_request', 'cli_unsupported', { field: cli });
       return provider.available();
@@ -303,7 +308,7 @@ export class ChatRunner extends EventEmitter {
     if (s.busy && !chosen.mode) throw new AppError('conflict', 'mode_required');
     const task = await this.deps.tasks.get(p, t);
     const settings = await this.deps.settings.get();
-    const pick = await resolveAvailableLaunch(await this.deps.roles(), task, {
+    const pick = await resolveAvailableLaunch(await this.rolesFor(task), task, {
       ...(chosen.ai ? { cli: chosen.ai } : {}),
       ...(chosen.model !== undefined ? { model: chosen.model } : {}),
       ...(chosen.effort !== undefined ? { effort: chosen.effort } : {}),
@@ -386,7 +391,7 @@ export class ChatRunner extends EventEmitter {
       const sameAccount = (meta.accounts?.[item.ai] ?? 'default') === accountId;
       const resumeId = sameAccount && (item.ai !== 'codex' || meta.models[item.ai] === item.model)
         ? meta.sessions[item.ai] : undefined;
-      const roles = await this.deps.roles();
+      const roles = await this.rolesFor(task);
       const project = await this.deps.projects.get(p);
       const preamble = resumeId
         ? `繼續作業 ${t}：${this.deps.ws.taskFile(p, t)}。工作目錄：${cwd}。先讀 ${path.join(this.deps.ws.projectDir(p), '.ai/rules.md')}；區切時更新作業檔，不要自己把 state 寫成 完成。\n請使用人類這次指示所使用的相同語言回覆。`
