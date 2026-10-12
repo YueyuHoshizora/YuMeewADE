@@ -130,6 +130,16 @@ test('steps can be renamed and reordered only with the text shown and one change
   } finally { await s.close(); }
 });
 
+test('AI names that are Object.prototype properties are unsupported, not internal errors', async () => {
+  const { server: s, project: p, task: t } = await setup();
+  try {
+    for (const ai of ['toString', 'constructor', '__proto__']) {
+      const response = await s.api('GET', `/api/task/handoff?project=${p.id}&task=${t.id}&ai=${ai}`);
+      assert.equal(response.status, 400, ai);
+    }
+  } finally { await s.close(); }
+});
+
 test('phase offer, continuation key, legacy fallback, order and pins', async () => {
   const { server: s, project: p, task: t } = await setup();
   const state = async () => (await s.api('GET', '/api/state')).json as AppState;

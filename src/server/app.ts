@@ -199,7 +199,8 @@ export class App {
       ...(process.env.YUMEEWADE_UPDATE_MAC_TEAM_ID ? { macTeamId: process.env.YUMEEWADE_UPDATE_MAC_TEAM_ID } : {}),
       ...(process.env.YUMEEWADE_UPDATE_WINDOWS_THUMBPRINT ? { windowsThumbprint: process.env.YUMEEWADE_UPDATE_WINDOWS_THUMBPRINT } : {}),
     });
-    this.providers = options.providers ?? createProviders(config, options.accounts!);
+    // Null prototype: request-supplied AI names such as "toString" must not resolve to Object.prototype members.
+    this.providers = Object.assign(Object.create(null) as Record<string, CliProvider>, options.providers ?? createProviders(config, options.accounts!));
     this.providerCapabilities = providerCapabilities(this.providers);
     this.editorProposals = new EditorProposalService({
       providers: this.providers, editor: this.editor, ws: this.ws, settings: this.settings,
