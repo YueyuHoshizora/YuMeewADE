@@ -1,7 +1,7 @@
 import type { CareBackup, CareHealth, CareCapacity, CareLifecycle } from '../../shared/types.ts';
-import { api, request } from '../api.ts';
+import { ApiFailure, api, request } from '../api.ts';
 import { t } from '../i18n/index.ts';
-import { button, card, confirmModal, el, field, input, modal, readLocal, row, storeLocal, type ViewContext } from './dom.ts';
+import { button, card, confirmModal, el, errorMessage, field, input, modal, readLocal, row, storeLocal, toast, type ViewContext } from './dom.ts';
 import { logViewer } from './log-viewer.ts';
 
 export function carePanel(context: ViewContext): HTMLElement {
@@ -15,16 +15,18 @@ export function carePanel(context: ViewContext): HTMLElement {
   const enabled = input(); enabled.type = 'checkbox';
   const interval = input('24'); interval.type = 'number'; interval.min = '1'; interval.max = '8760';
   const retention = input('10'); retention.type = 'number'; retention.min = '1'; retention.max = '1000';
-  const passwordHeaders = () => {
+  /** Undefined when the password breaks the rule; callers explain that instead of reporting a network failure. */
+  const passwordHeaders = (): Record<string, string> | undefined => {
     const bytes = new TextEncoder().encode(password.value);
-    if (password.value.length < 12 || bytes.length > 1024) throw new Error(t('care.passwordRule'));
+    if (password.value.length < 12 || bytes.length > 1024) { toast(t('care.passwordRule')); return undefined; }
     let text = ''; for (const byte of bytes) text += String.fromCharCode(byte);
     return { 'X-Backup-Password': btoa(text) };
   };
   const binary = async (url: string, body: BodyInit, headers: Record<string, string>): Promise<Response> => {
     try {
       const response = await fetch(url, { method: 'POST', headers, body });
-      if (!response.ok) { const value = await response.json() as { detail?: string }; throw new Error(value.detail ? t(`detail.${value.detail}` as Parameters<typeof t>[0]) : t('care.transferFailed')); }
+      // Keep the server's status/detail so showError names the real cause (wrong password, corrupt file, …).
+      if (!response.ok) throw new ApiFailure(response.status, await response.json());
       return response;
     } finally { password.value = ''; }
   };
@@ -65,8 +67,9 @@ export function carePanel(context: ViewContext): HTMLElement {
         await request('/api/care/delete', { id: backup.id, confirmation: backup.id }); await refresh();
       }),
       button(t('care.export'), async () => {
+        const secret = passwordHeaders(); if (!secret) return;
         if (!await confirmModal(t('care.export'), t('care.secret'))) return;
-        const response = await binary('/api/care/export', JSON.stringify({ id: backup.id }), { ...passwordHeaders(), 'Content-Type': 'application/json' });
+        const response = await binary('/api/care/export', JSON.stringify({ id: backup.id }), { ...secret, 'Content-Type': 'application/json' });
         const url = URL.createObjectURL(await response.blob()); const link = el('a'); link.href = url; link.download = `${backup.id}.ymae`; link.click(); setTimeout(() => URL.revokeObjectURL(url), 60000);
       }),
     )));
@@ -79,8 +82,9 @@ export function carePanel(context: ViewContext): HTMLElement {
     field(t('care.password'), password), el('p', '', t('care.passwordRule')),
     field(t('care.portableFile'), file), button(t('care.import'), async () => {
       const selected = file.files?.[0]; if (!selected) return;
+      const secret = passwordHeaders(); if (!secret) return;
       if (!await confirmModal(t('care.import'), t('care.restoreConfirm'))) return;
-      const response = await binary(`/api/care/import?destination=${encodeURIComponent(destination.value.trim())}`, selected, { ...passwordHeaders(), 'Content-Type': 'application/octet-stream' });
+      const response = await binary(`/api/care/import?destination=${encodeURIComponent(destination.value.trim())}`, selected, { ...secret, 'Content-Type': 'application/octet-stream' });
       const restored = await response.json() as { root: string };
       modal(t('care.import'), el('p', '', restored.root), button(t('care.open'), async () => { await api.workspace(restored.root); await context.refresh(); location.hash = '#/'; }));
       file.value = ''; await refresh();
@@ -92,7 +96,7 @@ export function carePanel(context: ViewContext): HTMLElement {
     }), scheduleStatus,
     el('p', '', t('care.diagnosticScope')), download);
   panel.append(logViewer());
-  void refresh().catch(() => { status.textContent = t('care.transferFailed'); });
+  void refresh().catch(error => { status.textContent = errorMessage(error); });
   return panel;
 }
 export function careButton(context: ViewContext): HTMLElement { return button(t('care.title'), () => modal(t('care.title'), carePanel(context))); }

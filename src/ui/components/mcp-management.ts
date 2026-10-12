@@ -1,7 +1,7 @@
 import type { McpAi, McpInput, McpList, McpTransport } from '../../shared/types.ts';
 import { query, request } from '../api.ts';
 import { t } from '../i18n/index.ts';
-import { area, button, card, confirmModal, el, field, input, row, select, type ViewContext } from './dom.ts';
+import { area, button, card, confirmModal, el, field, input, row, select, UserError, type ViewContext } from './dom.ts';
 import { aiLabel } from './display.ts';
 
 export function mcpPanel(context: ViewContext): HTMLElement {
@@ -40,7 +40,7 @@ export function mcpPanel(context: ViewContext): HTMLElement {
         const result: Record<string, string> = Object.create(null) as Record<string, string>;
         for (const line of raw.split('\n').filter(line => line.trim())) {
           const at = line.indexOf(separator); const key = line.slice(0, at).trim();
-          if (at <= 0 || Object.hasOwn(result, key)) throw new Error(t('mcp.invalid'));
+          if (at <= 0 || Object.hasOwn(result, key)) throw new UserError(t('mcp.invalid'));
           result[key] = line.slice(at + 1).trim();
         }
         return result;

@@ -2,7 +2,7 @@ import type { EditorDiagnostic, EditorDocument, EditorAction, EditorActionResult
 import { query, request } from '../api.ts';
 import { isolateHistory } from '@codemirror/commands';
 import { t } from '../i18n/index.ts';
-import { el, input, area, button, row, confirmModal, run, toast } from './dom.ts';
+import { el, input, area, button, row, confirmModal, run, toast, UserError } from './dom.ts';
 import { EditorContent } from './editor-engine.ts';
 import { FilePreview, isImage } from './file-preview.ts';
 import { selectionMention } from './editor-mention.ts';
@@ -69,7 +69,7 @@ export function openFileBrowser(project: string, task: string, workspace = activ
     const idle = [...browsers].find(([, browser]) => browser.canDispose());
     if (idle) { idle[1].dispose(); browsers.delete(idle[0]); }
   }
-  if (browsers.size >= 12) throw new Error(t('ew.recoveryLimit'));
+  if (browsers.size >= 12) throw new UserError(t('ew.recoveryLimit'));
   const ids: Record<string, string> = { project, ...(task ? { task } : {}) }; let storageKey = ''; let persistenceEnabled = false;
   const buffers = new Map<string, EditorRecovery>(); const views: { path: string | undefined; content: EditorContent; preview: FilePreview; tabs: HTMLDivElement; node: HTMLDivElement }[] = [];
   const formats = new Map<string, EditorResolvedFormatPreferences>();
@@ -97,7 +97,7 @@ export function openFileBrowser(project: string, task: string, workspace = activ
     const resolve = el('div', 'editor-conflict');
     resolve.append(el('p', 'warning', `${path}: ${t('editorUI.unresolved')}`), button(t('ew.apply'), async () => {
       views.forEach((_, index) => capture(index));
-      if (/^(<<<<<<<|=======|>>>>>>>|\|\|\|\|\|\|\|)(?: |$)/m.test(buffers.get(path)?.text ?? '')) throw new Error(t('editorUI.unresolved'));
+      if (/^(<<<<<<<|=======|>>>>>>>|\|\|\|\|\|\|\|)(?: |$)/m.test(buffers.get(path)?.text ?? '')) throw new UserError(t('editorUI.unresolved'));
       if (!await confirmModal(t('ew.apply'), t('editorUI.unresolved'), t('ew.apply'))) return;
       unresolved.delete(path); resolve.remove(); conflictPanels.delete(path); persist();
     }));
@@ -111,7 +111,7 @@ export function openFileBrowser(project: string, task: string, workspace = activ
     const banner = el('div', 'editor-conflict');
     const adopt = (document: EditorDocument, text: string, expected?: string) => {
       views.forEach((_, index) => capture(index));
-      if (disposed || (expected !== undefined && buffer.text !== expected)) throw new Error(t('detail.editor_conflict'));
+      if (disposed || (expected !== undefined && buffer.text !== expected)) throw new UserError(t('detail.editor_conflict'));
       buffer.document = document; buffer.text = text;
       conflicts.delete(path); for (const view of views) if (view.path === path) { view.content.value = text; view.preview.update(text); }
       banner.remove(); persist(); refreshTabs();
@@ -122,7 +122,7 @@ export function openFileBrowser(project: string, task: string, workspace = activ
       button(t('editorUI.merge'), async () => {
         views.forEach((_, index) => capture(index)); const local = buffer.text; const base = buffer.document.text;
         const result = await request<{ text: string; revision: string; conflicts: boolean }>('/api/editor/merge', { ...ids, path, base, local, revision: remote.revision });
-        views.forEach((_, index) => capture(index)); if (buffer.text !== local || buffer.document.text !== base) throw new Error(t('detail.editor_conflict'));
+        views.forEach((_, index) => capture(index)); if (buffer.text !== local || buffer.document.text !== base) throw new UserError(t('detail.editor_conflict'));
         adopt({ ...remote, revision: result.revision }, result.text);
         if (result.conflicts) markUnresolved(path);
       }));
@@ -231,7 +231,7 @@ export function openFileBrowser(project: string, task: string, workspace = activ
       while (new TextEncoder().encode(data).byteLength > 4 * 1024 * 1024 && recovery.length && 'clean' in recovery.at(-1)!) {
         recovery.pop(); omitted = true; data = JSON.stringify(state);
       }
-      if (new TextEncoder().encode(data).byteLength > 4 * 1024 * 1024) throw new Error(t('ew.recoveryLimit'));
+      if (new TextEncoder().encode(data).byteLength > 4 * 1024 * 1024) throw new UserError(t('ew.recoveryLimit'));
       if (omitted) output.append(el('p', 'warning', t('ew.recoveryLimit')));
       localStorage.setItem(storageKey, data);
     } catch { output.replaceChildren(el('p', 'warning', t('ew.recoveryLimit'))); toast(t('ew.recoveryLimit')); }
@@ -315,7 +315,7 @@ export function openFileBrowser(project: string, task: string, workspace = activ
   async function show(path: string, line?: number, character = 0): Promise<void> {
     const serial = ++openSerial; const index = focused;
     if (!buffers.has(path)) {
-      if (buffers.size >= 50) throw new Error(t('ew.recoveryLimit'));
+      if (buffers.size >= 50) throw new UserError(t('ew.recoveryLimit'));
       const document = await request<EditorDocument>(query('/api/editor/file', { ...ids, path }));
       const format = await request<EditorResolvedFormatPreferences>(query('/api/editor/preferences', { ...ids, path }));
       if (!disposed) formats.set(path, format);
@@ -366,13 +366,13 @@ export function openFileBrowser(project: string, task: string, workspace = activ
   }
   function current(): EditorRecovery | undefined { capture(focused); const path = views[focused]!.path; return path ? buffers.get(path) : undefined; }
   async function save(): Promise<void> {
-    if (editReserved) throw new Error(t('detail.editor_conflict'));
+    if (editReserved) throw new UserError(t('detail.editor_conflict'));
     pendingWrites++;
     try {
       const buffer = current(); if (!buffer || buffer.document.readonly || buffer.document.binary || buffer.document.truncated) return;
       const selectedEncoding = buffer.encoding ?? buffer.document.encoding ?? 'UTF8';
       if (!dirty(buffer) && selectedEncoding === (buffer.document.encoding ?? 'UTF8')) return;
-      if (conflicts.has(buffer.document.path) || unresolved.has(buffer.document.path)) throw new Error(t('editorUI.unresolved'));
+      if (conflicts.has(buffer.document.path) || unresolved.has(buffer.document.path)) throw new UserError(t('editorUI.unresolved'));
       const local = buffer.text; const format = await request<EditorResolvedFormatPreferences>(query('/api/editor/preferences', { ...ids, path: buffer.document.path }));
       const text = serializeEol(local, format.source === 'default' ? readPreferences().eol : format.eol, buffer.document.text);
       buffer.document = await request<EditorDocument>('/api/editor/save', { ...ids, path: buffer.document.path, text, revision: buffer.document.revision, encoding: selectedEncoding });
@@ -392,11 +392,11 @@ export function openFileBrowser(project: string, task: string, workspace = activ
   async function pin(path: string, start: number, end: number, revision: string): Promise<void> {
     if (!task) return;
     const document = await request<EditorDocument>(query('/api/editor/file', { ...ids, path }));
-    if (document.revision !== revision) throw new Error(t('detail.editor_conflict'));
+    if (document.revision !== revision) throw new UserError(t('detail.editor_conflict'));
     const context = await request<TaskContext>(query('/api/task/context', ids));
     if (!context.sources.some(source => source.path === path && source.start === start && source.end === end)) context.sources.push({ path, start, end });
     const checked = await request<EditorDocument>(query('/api/editor/file', { ...ids, path }));
-    if (checked.revision !== revision) throw new Error(t('detail.editor_conflict'));
+    if (checked.revision !== revision) throw new UserError(t('detail.editor_conflict'));
     await request('/api/task/context', { ...ids, context });
   }
   async function apply(changes: EditorChange[]): Promise<void> {
@@ -409,16 +409,16 @@ export function openFileBrowser(project: string, task: string, workspace = activ
       }
       const buffer = buffers.get(change.path)!;
       const base = (change as EditorChange & { baseText?: string }).baseText ?? buffer.document.text;
-      if (buffer.document.revision !== change.revision || buffer.text !== base) throw new Error(t('detail.editor_conflict'));
+      if (buffer.document.revision !== change.revision || buffer.text !== base) throw new UserError(t('detail.editor_conflict'));
       expected.push({ path: change.path, revision: change.revision, text: base });
     }
     const preview = area(changes.map(change => `${change.path}\n${buffers.get(change.path)!.text}\n→\n${change.text}`).join('\n\n')); preview.readOnly = true;
     output.replaceChildren(preview, button(t('ew.apply'), async () => {
       if (!(await confirmModal(t('ew.apply'), t('ew.confirm'), t('ew.apply')))) return;
       const release = editor.reserveAll(expected);
-      if (!release) throw new Error(t('detail.editor_conflict'));
+      if (!release) throw new UserError(t('detail.editor_conflict'));
       try {
-        if (!editor.applyEditsAll(changes.map((change, index) => ({ expected: expected[index]!, edits: [{ from: 0, to: expected[index]!.text.length, text: change.text }] })))) throw new Error(t('detail.editor_conflict'));
+        if (!editor.applyEditsAll(changes.map((change, index) => ({ expected: expected[index]!, edits: [{ from: 0, to: expected[index]!.text.length, text: change.text }] })))) throw new UserError(t('detail.editor_conflict'));
         output.replaceChildren(); persist(); refreshTabs();
       } finally { release(); }
     }));
@@ -434,7 +434,7 @@ export function openFileBrowser(project: string, task: string, workspace = activ
       const after = area(buffer.text); after.readOnly = true; after.setAttribute('aria-label', t('editorUI.local'));
       output.replaceChildren(row(before, after), button(t('editorFront.restore'), async () => {
         if (!await confirmModal(t('editorFront.restore'), dirty(buffer) ? t('editor.dirty') : t('ew.confirm'), t('editorFront.restore'))) return;
-        const release = editor.reserveAll([expected]); if (!release) throw new Error(t('detail.editor_conflict'));
+        const release = editor.reserveAll([expected]); if (!release) throw new UserError(t('detail.editor_conflict'));
         pendingWrites++;
         try {
           const document = await request<EditorDocument>('/api/editor/history/restore', { ...ids, path, id: entry.id, revision: expected.revision });
@@ -456,7 +456,7 @@ export function openFileBrowser(project: string, task: string, workspace = activ
     for (const symbol of result.symbols ?? []) output.append(button(`${symbol.container ? `${symbol.container} · ` : ''}${symbol.name} · ${symbol.path}:${symbol.line + 1}`, () => show(symbol.path, symbol.line, symbol.character)));
     if (result.hover) output.append(el('pre', '', result.hover));
     for (const suggestion of result.suggestions ?? []) output.append(button(`${suggestion.label} ${suggestion.detail ?? ''}`, () => {
-      if (editReserved || buffer.text !== snapshot) throw new Error(t('detail.editor_conflict'));
+      if (editReserved || buffer.text !== snapshot) throw new UserError(t('detail.editor_conflict'));
       activate(buffer.document.path);
       const view = views[focused]!; view.content.setRangeText(suggestion.insertText, suggestion.start ?? start, suggestion.end ?? end, 'end'); view.content.dispatchEvent(new Event('input'));
     }));
@@ -493,7 +493,7 @@ export function openFileBrowser(project: string, task: string, workspace = activ
       const changes: EditorChange[] = [];
       for (const path of new Set(found.hits.map(hit => hit.path))) {
         const document = await request<EditorDocument>(query('/api/editor/file', { ...ids, path }));
-        if (found.hits.some(hit => hit.path === path && hit.revision !== document.revision)) throw new Error(t('detail.editor_conflict'));
+        if (found.hits.some(hit => hit.path === path && hit.revision !== document.revision)) throw new UserError(t('detail.editor_conflict'));
         const text = buffers.get(path)?.text ?? document.text;
         changes.push({ path, revision: document.revision, baseText: text, text: text.replace(expression, replacement.value) });
       }
@@ -502,17 +502,17 @@ export function openFileBrowser(project: string, task: string, workspace = activ
   }
   const pathInput = input('', t('ew.path')); const destination = input('', t('ew.destination'));
   async function mutate(action: EditorMutation['action']): Promise<void> {
-    if (editReserved) throw new Error(t('detail.editor_conflict'));
+    if (editReserved) throw new UserError(t('detail.editor_conflict'));
     const path = pathInput.value; const mutation: EditorMutation = { action, path, destination: destination.value };
     if (action === 'delete' || action === 'rename') {
-      if ([...buffers.values()].some(buffer => dirty(buffer) && (buffer.document.path === path || buffer.document.path.startsWith(`${path}/`)))) throw new Error(t('ew.saveFirst'));
+      if ([...buffers.values()].some(buffer => dirty(buffer) && (buffer.document.path === path || buffer.document.path.startsWith(`${path}/`)))) throw new UserError(t('ew.saveFirst'));
       mutation.confirmation = path;
       try { mutation.revision = (await request<EditorDocument>(query('/api/editor/file', { ...ids, path }))).revision; }
       catch { mutation.revision = (await request<{ revision: string }>(query('/api/editor/folder', { ...ids, path }))).revision; }
       if (!(await confirmModal(`${t('ew.confirm')} ${path}`, path, t(`ew.${action}`)))) return;
     }
     if (action === 'delete' || action === 'rename') for (const key of buffers.keys()) if (key === path || key.startsWith(`${path}/`)) await closeDiagnostics(key);
-    if (editReserved) throw new Error(t('detail.editor_conflict'));
+    if (editReserved) throw new UserError(t('detail.editor_conflict'));
     pendingWrites++;
     try {
       await request('/api/editor/mutate', { ...ids, ...mutation });
@@ -533,7 +533,7 @@ export function openFileBrowser(project: string, task: string, workspace = activ
     const session = parsed && typeof parsed === 'object' && !Array.isArray(parsed) ? parsed as { version?: unknown; buffers?: unknown; panes?: unknown; focused?: unknown; unresolved?: unknown; split?: unknown } : undefined;
     const values = Array.isArray(parsed) ? parsed : session?.version === 3 || session?.version === 4 ? session.buffers : undefined;
     if (!Array.isArray(values) || values.length > 50 || new TextEncoder().encode(raw).byteLength > 4 * 1024 * 1024) { output.append(el('p', 'warning', t('ew.recoveryLimit'))); return; }
-    if (values.some(value => value && typeof value === 'object' && !('clean' in value && value.clean === true)) && !(await confirmModal(t('ew.recover'), t('ew.recover'), t('ew.recover')))) throw new Error(t('ew.recover'));
+    if (values.some(value => value && typeof value === 'object' && !('clean' in value && value.clean === true)) && !(await confirmModal(t('ew.recover'), t('ew.recover'), t('ew.recover')))) throw new UserError(t('ew.recover'));
     for (const value of values) { if (!value || typeof value !== 'object') continue; const candidate = value as Partial<EditorRecovery> & { clean?: boolean }; if (!candidate.document || typeof candidate.document.path !== 'string' || typeof candidate.document.revision !== 'string' || typeof candidate.text !== 'string' || candidate.text.length > 4 * 1024 * 1024) continue;
       const original = candidate.document;
       if (typeof original.text !== 'string') continue;
@@ -584,7 +584,7 @@ export function openFileBrowser(project: string, task: string, workspace = activ
   const actions = row(button(t('common.save'), save), button(t('ew.split'), () => { if (views.length < 2) { capture(focused); const path = views[focused]!.path; pane(); if (path) activate(path, 1); refreshTabs(); } }), ...(['definition', 'references', 'diagnostics', 'completion', 'hover', 'rename', 'format', 'codeActions'] as const).map(action => button(t(action === 'definition' || action === 'references' || action === 'diagnostics' ? `editor.${action}` : `ew.${action}`), () => language(action))), newName,
     button(t('ew.problems'), async () => { const problems = await request<EditorProblem[]>(query('/api/editor/problems', ids)); output.replaceChildren(...problems.map(problem => button(`${problem.path}:${problem.line + 1} ${problem.message}`, () => show(problem.path, problem.line, problem.character)))); }), ...(task ? [button(t('ew.pin'), async () => {
       const buffer = current(); if (!buffer) return;
-      if (dirty(buffer)) throw new Error(t('ew.saveFirst'));
+      if (dirty(buffer)) throw new UserError(t('ew.saveFirst'));
       await pin(buffer.document.path, buffer.text.slice(0, buffer.start).split('\n').length, buffer.text.slice(0, buffer.end).split('\n').length, buffer.document.revision);
     })] : []));
   actions.append(send);

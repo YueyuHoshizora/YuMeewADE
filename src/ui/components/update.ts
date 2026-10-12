@@ -1,7 +1,7 @@
 import type { UpdateAsset, UpdateInfo, UpdateDownloadResult } from '../../shared/types.ts';
 import { request } from '../api.ts';
 import { t } from '../i18n/index.ts';
-import { button, el, readLocal, row, storeLocal } from './dom.ts';
+import { button, el, errorMessage, readLocal, row, storeLocal } from './dom.ts';
 import { markdown } from './markdown.ts';
 
 const SKIP_KEY = 'yumeewade.skipUpdate';
@@ -26,11 +26,11 @@ function download(asset: UpdateAsset, info: UpdateInfo): HTMLElement {
       const action = async (launch: boolean): Promise<void> => {
         if (launch && !window.confirm(t('updateTrust.confirmLaunch'))) return;
         try { await request('/api/update/action', { token: result.token, launch, confirmed: true }); }
-        catch { status.textContent = t('updateTrust.failed'); }
+        catch (error) { status.textContent = `${t('updateTrust.failed')} ${errorMessage(error)}`; }
       };
       actions.replaceChildren(button(t('updateTrust.reveal'), () => { void action(false); }));
       if (result.canLaunch) actions.append(button(t('updateTrust.launch'), () => { void action(true); }, 'primary'));
-    } catch { status.textContent = t('updateTrust.failed'); }
+    } catch (error) { status.textContent = `${t('updateTrust.failed')} ${errorMessage(error)}`; }
     finally { node.disabled = false; }
   }, asset.kind === 'installer' ? 'primary' : '');
   node.title = asset.name;

@@ -1,7 +1,7 @@
 import type { TaskContext, ContextPreview, ContextManifest } from '../../shared/types.ts';
 import { request, query } from '../api.ts';
 import { t } from '../i18n/index.ts';
-import { el, button, area, modal } from './dom.ts';
+import { el, button, area, modal, UserError } from './dom.ts';
 
 export function contextButton(project: string, task: string, pick: () => { ai: string; model?: string }): HTMLButtonElement {
   return button(t('context.title'), async () => {
@@ -14,7 +14,7 @@ export function contextButton(project: string, task: string, pick: () => { ai: s
     async function save(): Promise<void> {
       const parsed = sources.value.split('\n').map(line => line.trim()).filter(Boolean).map(line => {
         const match = /^(.*):(\d+)-(\d+)\s*\|\s*(\d+)\s*\|\s*(\d+)\s*\|\s*(true|false)\s*\|\s*(\d+)$/u.exec(line);
-        if (!match) throw new Error(t('context.invalidSource'));
+        if (!match) throw new UserError(t('context.invalidSource'));
         return { path: match[1]!.trim(), start: Number(match[2]), end: Number(match[3]), priority: Number(match[4]), order: Number(match[5]), enabled: match[6] === 'true', allocatedChars: Number(match[7]) };
       });
       value = await request<TaskContext>('/api/task/context', { project, task, context: { decisions: decisions.value, sources: parsed, decisionBudget: Number(decisionBudget.value), revision: value.revision } });

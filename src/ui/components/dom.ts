@@ -43,7 +43,10 @@ export function link(label: string, hash: string, className = ''): HTMLAnchorEle
 export const projectHash = (p: string) => `#/p/${encodeURIComponent(p)}`;
 export const taskHash = (p: string, task: string) => `#/t/${encodeURIComponent(p)}/${encodeURIComponent(task)}`;
 export function toast(message: string): void { const node = document.getElementById('toast')!; node.textContent = message; node.hidden = false; window.setTimeout(() => { node.hidden = true; }, 5000); }
+/** A failure whose message is already localized for the user (validation, stale draft, …). */
+export class UserError extends Error {}
 export function errorMessage(error: unknown): string {
+  if (error instanceof UserError) return error.message;
   if (!(error instanceof ApiFailure)) return t('err.network');
   const key = (error.body.detail ? `detail.${error.body.detail}` : `err.${error.body.error}`) as MessageKey;
   return `${error.status} · ${t(key, { field: error.body.field ?? '' })}`;

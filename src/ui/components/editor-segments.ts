@@ -2,7 +2,7 @@ import type { EditorSegment } from '../../shared/types.ts';
 import type { WorkbenchPanelContext } from './files.ts';
 import { request, query } from '../api.ts';
 import { t } from '../i18n/index.ts';
-import { el, input, area, button, row, confirmModal } from './dom.ts';
+import { el, input, area, button, row, confirmModal, UserError } from './dom.ts';
 type Segment = EditorSegment & { path: string };
 export function encodingPicker(): HTMLSelectElement { const picker = el('select'); picker.setAttribute('aria-label', t('editorFront.encoding')); for (const value of ['UTF8', 'UTF8-BOM', 'UTF16LE', 'UTF16BE']) { const option = el('option', '', value); option.value = value; picker.append(option); } return picker; }
 export function segmentPanel(context: WorkbenchPanelContext): HTMLElement {
@@ -20,7 +20,7 @@ export function segmentPanel(context: WorkbenchPanelContext): HTMLElement {
   const patch = button(t('editorFront.patch'), async () => {
     if (pending || !segment || path.value !== segment.path) return;
     const release = context.editor.reserveSegment(segment.path);
-    if (!release) throw new Error(t('detail.editor_conflict'));
+    if (!release) throw new UserError(t('detail.editor_conflict'));
     const expected = segment; const local = text.value;
     pending = true;
     try {
@@ -51,7 +51,7 @@ export function segmentPanel(context: WorkbenchPanelContext): HTMLElement {
     const current = ++serial; const local = text.value;
     const result = await request<EditorSegment>(query('/api/editor/segment', { ...ids, path: selectedPath, offset: String(start), length: String(bytes) }));
     if (current !== serial) return;
-    if (text.value !== local) throw new Error(t('detail.editor_conflict'));
+    if (text.value !== local) throw new UserError(t('detail.editor_conflict'));
     segment = { ...result, path: selectedPath }; text.value = result.text; text.readOnly = false;
     offset.value = String(result.offset); status.textContent = `${result.encoding} · ${result.offset}–${result.end} / ${result.size}`; patch.disabled = false; comparison.replaceChildren();
   }), patch), status, text, comparison);

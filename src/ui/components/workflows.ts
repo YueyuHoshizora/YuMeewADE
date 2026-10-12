@@ -1,7 +1,7 @@
 import type { UsageScope, WorkflowPlan, WorkflowStep } from '../../shared/types.ts';
 import { query, request } from '../api.ts';
 import { t } from '../i18n/index.ts';
-import { area, button, confirmModal, el, field, modal, row, run, select, taskHash, type ViewContext } from './dom.ts';
+import { area, button, confirmModal, el, field, modal, row, run, select, taskHash, UserError, type ViewContext } from './dom.ts';
 import { confirmUsageRound, workflowBudgetRisk } from './usage-history.ts';
 import { renderWorkflowTimeline } from './workflow-timeline.ts';
 
@@ -91,7 +91,7 @@ export function workflowButton(context: ViewContext, project: string, task: stri
       if (!await confirmModal(t('workflow.title'), t('workflow.preserve'))) return;
       const graph = editors.map(e => {
         const [node, outcome] = e.condition.value.trim().split(':');
-        if (node && outcome !== 'success' && outcome !== 'approved' && outcome !== 'failure') throw new Error(t('workflow.graph.condition'));
+        if (node && outcome !== 'success' && outcome !== 'approved' && outcome !== 'failure') throw new UserError(t('workflow.graph.condition'));
         return { id: e.id.value.trim(), dependsOn: e.needs.value.split(',').map(id => id.trim()).filter(Boolean), upstream: e.upstream.value.split(',').map(id => id.trim()).filter(Boolean), kind: e.kind.value as WorkflowStep['kind'], role: e.role.value, text: e.text.value, review: e.review.checked, ...(node ? { condition: { node, outcome: outcome as 'success' | 'approved' | 'failure' } } : {}) };
       });
       plan = await request<WorkflowPlan>('/api/task/workflow/configure', { project, task, revision: plan.revision, dependencies: choices.filter(c => c.node.checked).map(c => c.id), steps: graph });
