@@ -9,7 +9,7 @@ import { IMAGE_TYPES, saveUpload, uploadPath } from '../../chat/attachments.ts';
 import { formatTranscript } from '../../chat/export.ts';
 import { taskKey } from '../sse.ts';
 import { addDraftImage, draftFile, draftScope, EMPTY_DRAFT, type Drafts } from '../../chat/drafts.ts';
-import { optString, reqString, type Router } from '../router.ts';
+import { optEffort, optModel, optString, reqString, type Router } from '../router.ts';
 function images(body: Record<string, unknown>, max: number): string[] | undefined {
   if (body['images'] === undefined) return undefined;
   if (!Array.isArray(body['images']) || body['images'].length > max || !body['images'].every(x => typeof x === 'string' && /^[0-9a-f-]{36}\.(png|jpe?g|webp|gif)$/u.test(x))) throw new AppError('bad_request', 'field_type', { field: 'images' });
@@ -54,7 +54,7 @@ export function registerChatRoutes(router: Router, app: App): void {
     if (mode && !SEND_MODES.includes(mode as typeof SEND_MODES[number])) throw new AppError('bad_request');
     if (body['answer'] !== undefined && typeof body['answer'] !== 'boolean') throw new AppError('bad_request');
     const input: SendInput = { project: reqString(body, 'project', 100), task: reqString(body, 'task', 100), text: optString(body, 'text', app.config.limits.promptChars) ?? '' };
-    const ai = optString(body, 'ai', 100); const model = body['model'] === '' ? '' : optString(body, 'model', 200); const effort = body['effort'] === '' ? '' : optString(body, 'effort', 20); const fromQueue = optString(body, 'fromQueue', 100); const pics = images(body, app.config.limits.imagesPerSend);
+    const ai = optString(body, 'ai', 100); const model = optModel(body); const effort = optEffort(body); const fromQueue = optString(body, 'fromQueue', 100); const pics = images(body, app.config.limits.imagesPerSend);
     if (ai) input.ai = ai; if (model !== undefined) input.model = model; if (effort !== undefined) input.effort = effort; if (mode) input.mode = mode as typeof SEND_MODES[number]; if (fromQueue) input.fromQueue = fromQueue; if (pics) input.images = pics; if (body['answer'] === true) input.answer = true;
     return app.runner.send(input);
   });
@@ -81,7 +81,7 @@ export function registerChatRoutes(router: Router, app: App): void {
     await app.trust.assertExecutable(p);
     const text = optString(body, 'text', app.config.limits.promptChars) ?? ''; const pics = images(body, app.config.limits.imagesPerSend);
     if (!text.trim() && !pics?.length) throw new AppError('bad_request');
-    const ai = reqString(body, 'ai', 100); const model = optString(body, 'model', 200) ?? ''; const effort = optString(body, 'effort', 20) ?? '';
+    const ai = reqString(body, 'ai', 100); const model = optModel(body) ?? ''; const effort = optEffort(body) ?? '';
     const bodyPath = app.projects.bodyPath(project);
     const task = await app.tasks.create(p, { title: text.trim().split('\n')[0]?.slice(0, 40) || '看圖片', phase: app.projects.currentPhase(project), cli: ai, model, effort, workspace: bodyPath === app.ws.projectDir(p) || await isRepo(bodyPath) ? 'isolated' : 'direct' });
     await writeJson(app.ws.startPickFile(p), { ai, model, effort });

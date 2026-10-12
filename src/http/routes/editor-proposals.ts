@@ -1,7 +1,7 @@
 import type { App } from '../../server/app.ts';
 import type { ProposalFileInput, ProposalSnapshot } from '../../shared/editor-proposals.ts';
 import { AppError } from '../../shared/errors.ts';
-import { Router, reqString } from '../router.ts';
+import { Router, optEffort, optModel, reqString } from '../router.ts';
 function object(value: unknown): Record<string, unknown> {
   if (!value || typeof value !== 'object' || Array.isArray(value)) throw new AppError('bad_request');
   return value as Record<string, unknown>;
@@ -24,7 +24,8 @@ export function registerEditorProposalRoutes(router: Router, app: App): void {
       if (typeof selection.from !== 'number' || typeof selection.to !== 'number') throw new AppError('bad_request');
       return { ...snapshot(value), selection: { from: selection.from, to: selection.to } };
     });
-    return app.editorProposals.generate(project, task, { files, instruction: reqString(body, 'instruction', 100_000), ai: reqString(body, 'ai', 20), ...(body.model === undefined ? {} : { model: reqString(body, 'model', 200) }), ...(body.effort === undefined ? {} : { effort: reqString(body, 'effort', 100) }) });
+    const model = optModel(body) || undefined; const effort = optEffort(body) || undefined;
+    return app.editorProposals.generate(project, task, { files, instruction: reqString(body, 'instruction', 100_000), ai: reqString(body, 'ai', 20), ...(model === undefined ? {} : { model }), ...(effort === undefined ? {} : { effort }) });
   });
   router.post('/api/editor/proposals/decide', async ({ body }) => {
     if (typeof body.accept !== 'boolean' || typeof body.version !== 'number' || !Number.isSafeInteger(body.version) || !Array.isArray(body.snapshots) || !body.snapshots.length || body.snapshots.length > 16) throw new AppError('bad_request');

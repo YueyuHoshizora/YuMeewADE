@@ -4,13 +4,14 @@ import { AppError } from '../shared/errors.ts';
 import { atomicWrite } from '../shared/fsx.ts';
 import { EFFORTS, HUMAN, type AiPick, type RoleInput, type RoleSlot, type Roles, type Task } from '../shared/types.ts';
 import { parseYamlMap, YamlError, type YamlValue } from '../shared/yaml.ts';
+import { validEffort, validModelName } from '../shared/ai-pick.ts';
 export { HUMAN } from '../shared/types.ts';
-const ROLES_MAX = 50, ROLE_JOB_MAX = 2000, ROLE_MODEL_MAX = 200;
+const ROLES_MAX = 50, ROLE_JOB_MAX = 2000;
 // Role names are object keys; these would collide with prototype machinery even on a null-prototype map's consumers.
 const RESERVED_ROLE_NAMES = new Set(['__proto__', 'constructor', 'prototype']);
 function validateSlot(s: RoleSlot): void {
-  if (!s || !['claude', 'codex', 'grok', 'gemini', 'mock', HUMAN].includes(s.cli) || typeof s.model !== 'string' || typeof s.effort !== 'string' || (s.effort && !EFFORTS.includes(s.effort))) throw new AppError('bad_request', 'invalid_effort');
-  if (s.model.length > ROLE_MODEL_MAX || /\p{Cc}/u.test(s.model)) throw new AppError('bad_request', 'field_type', { field: 'model' });
+  if (!s || !['claude', 'codex', 'grok', 'gemini', 'mock', HUMAN].includes(s.cli) || typeof s.model !== 'string' || !validEffort(s.effort)) throw new AppError('bad_request', 'invalid_effort');
+  if (!validModelName(s.model)) throw new AppError('bad_request', 'field_type', { field: 'model' });
   if (s.cli === HUMAN && (s.model || s.effort)) throw new AppError('bad_request');
 }
 function slot(v: YamlValue | undefined, where: string): RoleSlot | undefined {

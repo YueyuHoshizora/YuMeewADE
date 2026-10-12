@@ -130,6 +130,18 @@ test('steps can be renamed and reordered only with the text shown and one change
   } finally { await s.close(); }
 });
 
+test('model and effort are validated the same way before any CLI starts', async () => {
+  const { server: s, project: p, task: t } = await setup();
+  try {
+    const base = { project: p.id, task: t.id, ai: 'mock', text: 'x' };
+    for (const extra of [{ model: '--dangerous' }, { model: 'a\nb' }, { model: 'm'.repeat(201) }, { effort: 'bogus' }, { model: 42 }]) {
+      assert.equal((await s.api('POST', '/api/chat/send', { ...base, ...extra })).status, 400, JSON.stringify(extra));
+      assert.equal((await s.api('POST', '/api/review/run', { ...base, ...extra })).status, 400, JSON.stringify(extra));
+    }
+    assert.equal((await s.api('POST', '/api/chat/send', { ...base, model: '', effort: '' })).status, 200);
+  } finally { await s.close(); }
+});
+
 test('AI names that are Object.prototype properties are unsupported, not internal errors', async () => {
   const { server: s, project: p, task: t } = await setup();
   try {

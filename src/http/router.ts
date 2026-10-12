@@ -2,6 +2,7 @@
 
 import type { IncomingMessage, ServerResponse } from 'node:http';
 import { Readable } from 'node:stream';
+import { validEffort, validModelName } from '../shared/ai-pick.ts';
 import { AppError } from '../shared/errors.ts';
 import { log } from '../shared/log.ts';
 
@@ -188,5 +189,21 @@ export function optString(src: Record<string, unknown> | URLSearchParams, key: s
   if (v === undefined || v === null || v === '') return undefined;
   if (typeof v !== 'string') throw new AppError('bad_request', 'field_type', { field: key });
   if (v.length > max) throw new AppError('bad_request', 'field_too_long', { field: key });
+  return v;
+}
+
+/** Optional model id; '' is kept as an explicit "provider default". */
+export function optModel(src: Record<string, unknown>, key = 'model'): string | undefined {
+  const v = src[key];
+  if (v === undefined || v === null) return undefined;
+  if (!validModelName(v)) throw new AppError('bad_request', 'field_type', { field: key });
+  return v;
+}
+
+/** Optional reasoning effort; '' is kept as an explicit "provider default". */
+export function optEffort(src: Record<string, unknown>, key = 'effort'): string | undefined {
+  const v = src[key];
+  if (v === undefined || v === null) return undefined;
+  if (!validEffort(v)) throw new AppError('bad_request', 'invalid_effort');
   return v;
 }
