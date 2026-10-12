@@ -536,7 +536,8 @@ export interface SearchHit {
   task: string;
   /** 作業標題。 */
   title: string;
-  kind: 'task' | 'chat';
+  /** task＝標題／ID，chat＝對話列，record＝作業檔的做了什麼／下一步／注意／備註（每個作業最多一筆）。 */
+  kind: 'task' | 'chat' | 'record';
   /** kind＝chat：命中列在整份對話中的索引（同 ChatHistory.start 的座標）。 */
   index?: number;
   role?: ChatRow['role'];

@@ -1,10 +1,12 @@
 import { AppError } from '../shared/errors.ts';
-import type { ChatRow, SearchHit, SearchResult } from '../shared/types.ts';
+import type { ChatRow, SearchHit, SearchResult, TaskSections } from '../shared/types.ts';
 
 export interface SearchReaders {
   projects(): Promise<ReadonlyArray<{ id: string }>>;
   tasks(project: string): Promise<ReadonlyArray<{ id: string; title: string }>>;
   readLog(project: string, task: string): Promise<readonly ChatRow[]>;
+  /** The task file's free-text record (done / next / cautions / memo); omitted readers skip it. */
+  sections?(project: string, task: string): Promise<TaskSections>;
 }
 
 export function searchQuery(value: unknown): string {
@@ -37,6 +39,20 @@ export async function search(readers: SearchReaders, value: unknown, scanRows = 
       if (taskIndex !== -1) {
         hits.push({ project: project.id, task: task.id, title: task.title, kind: 'task', snippet: snippet(text, taskIndex, query.length) });
         if (hits.length === 50) return { hits, truncated: true };
+      }
+      if (readers.sections) {
+        // One hit per task for its record: the first matching line, in section order.
+        const record = await readers.sections(project.id, task.id);
+        for (const raw of [...record.done, ...record.next, ...record.cautions, ...record.memo]) {
+          if (++scanned > scanRows) return { hits, truncated: false, partial: true };
+          // Ledger lines carry markdown list markers; the snippet shows the text itself.
+          const line = raw.replace(/^\s*[-*+]\s+(\[[ xX]\]\s+)?/, '');
+          const match = line.toLocaleLowerCase().indexOf(query);
+          if (match === -1) continue;
+          hits.push({ project: project.id, task: task.id, title: task.title, kind: 'record', snippet: snippet(line, match, query.length) });
+          if (hits.length === 50) return { hits, truncated: true };
+          break;
+        }
       }
       const rows = await readers.readLog(project.id, task.id);
       for (let index = rows.length - 1; index >= 0; index--) {

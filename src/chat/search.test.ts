@@ -103,3 +103,11 @@ test('GET search is registered, validates q, and returns persisted chat row posi
     }
   } finally { await server.close(); }
 });
+
+test('task records are searched after the title, one hit per task from the first matching line in section order', async () => {
+  const sections = { done: ['- built the needle parser'], next: ['- needle follow-up'], cautions: [], memo: ['- 2026-10-12 12:00 Needle memo'] };
+  const result = await search({ ...readers([user('needle in chat')], 'Title'), sections: async () => sections }, 'NEEDLE');
+  assert.deepEqual(result.hits.map(hit => [hit.kind, hit.snippet]), [['record', 'built the needle parser'], ['chat', 'needle in chat']]);
+  const memoOnly = await search({ ...readers([]), sections: async () => ({ ...sections, done: [], next: [] }) }, 'needle');
+  assert.deepEqual(memoOnly.hits.map(hit => hit.kind), ['record']);
+});

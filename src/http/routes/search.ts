@@ -14,6 +14,11 @@ export function registerSearchRoutes(router: Router, app: App): void {
       projects: async () => scopedProject ? [scopedProject] : app.projects.list(),
       tasks: async (id) => scopedTask ? [scopedTask] : app.tasks.list(id),
       readLog: (id, taskId) => app.store.readLog(id, taskId),
+      // A task archived between listing and reading has no record left to search.
+      sections: (id, taskId) => app.tasks.sections(id, taskId).catch((err: unknown) => {
+        if (err instanceof AppError && err.detail === 'task_missing') return { done: [], next: [], cautions: [], memo: [] };
+        throw err;
+      }),
     }, query.get('q'));
   });
 }

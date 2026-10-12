@@ -36,9 +36,10 @@ export function searchView(context: ViewContext, params: URLSearchParams): View 
           if (!alive || current !== serial) return;
           for (const hit of data.hits) {
             const hash = taskHash(hit.project, hit.task);
-            const target = link('', hit.kind === 'chat' && hit.index !== undefined ? `${hash}?index=${hit.index}` : hash, 'search-hit');
+            const target = link('', hit.kind === 'chat' && hit.index !== undefined ? `${hash}?index=${hit.index}` : hit.kind === 'record' ? `${hash}?record=1` : hash, 'search-hit');
             target.append(el('strong', '', `${hit.project} › ${hit.title}`));
             if (hit.role) target.append(el('span', 'muted', t(hit.role === 'user' ? 'chat.you' : hit.role === 'assistant' ? 'ai.label' : 'common.details')));
+            else if (hit.kind === 'record') target.append(el('span', 'muted', t('tasks.record')));
             const snippet = el('p');
             for (const part of searchParts(hit.snippet, term)) {
               snippet.append(part.match ? el('mark', '', part.text) : document.createTextNode(part.text));

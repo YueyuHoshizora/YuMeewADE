@@ -964,7 +964,8 @@ export function taskView(
         recordBody.replaceChildren(...(parts.length ? parts : [el('p', 'empty', t('common.empty'))]));
       });
     };
-    record.open = footer.querySelector<HTMLDetailsElement>('details.record-detail')?.open ?? false;
+    // A search hit in the record links here with ?record=1; afterwards the reader's own toggle is kept.
+    record.open = footer.querySelector<HTMLDetailsElement>('details.record-detail')?.open ?? params.has('record');
     state.setAttribute('aria-label', t('task.state'));
     state.title = t('task.state');
     phase.setAttribute('aria-label', t('task.phase'));

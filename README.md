@@ -200,7 +200,7 @@ HTTP JSON 加 SSE，桌面版與網頁版完全相同。型別定義在 [`src/sh
 | `GET /api/chat/stream?project=&task=` | SSE（單一作業）：`snapshot`（最後 200 列與 `start`）／`busy`／`delta`／`row`／`queue`／`idle` |
 | `GET /api/chat/history?project=&task=&before=` | 補讀 `before` 之前的 200 列對話 |
 | `GET /api/chat/export?project=&task=&tools=` | 下載對話 Markdown（`tools=1` 含工具呼叫；不含工作區絕對路徑） |
-| `GET /api/search?q=&project=&task=` | 搜尋作業標題與對話內容（最多 50 筆）；可選 `project`（及 `task`）只搜尋該專案或作業，名稱不合法回 400、不存在回 404，`task` 必須搭配 `project` |
+| `GET /api/search?q=&project=&task=` | 搜尋作業標題、作業紀錄（做了什麼／下一步／注意／備註，每個作業最多一筆 `kind: record`）與對話內容（最多 50 筆）；可選 `project`（及 `task`）只搜尋該專案或作業，名稱不合法回 400、不存在回 404，`task` 必須搭配 `project` |
 | `POST /api/project/new`、`/api/project/update`、`/api/project/archive` | 專案 |
 | `POST /api/phase/next`、`/api/phase/continue` | 階段：`{project, phase}`，`phase` 為畫面上的目前階段；已被推進時回 409 `phase_changed` |
 | `POST /api/project/phases` | 編輯階段 `{project, previous: string[], phases: [{name, from?}]}`（最多 12 個、名稱不重複）：`from` 指向沿用的既有階段，改名時該階段的作業一起改名；`previous` 與目前不符回 409 `phase_changed`。階段只能經由此路由修改，`/api/project/update` 帶 `phases` 回 400 |
