@@ -118,7 +118,8 @@ export class UsageHistory {
     const quota = live.ais.find(entry => entry.ai === scope.ai && entry.account === scope.account);
     if (quota?.status === 'ready') {
       const windows = quota.windows.filter(window => scope.ai !== 'grok' || window.label !== 'on-demand');
-      const remaining = Math.max(0, 100 - Math.max(0, ...windows.map(window => window.usedPercent)));
+      // A limited account (the CLI reports the limit reached, possibly with no percentage windows at all) has none left.
+      const remaining = quota.limited ? 0 : Math.max(0, 100 - Math.max(0, ...windows.map(window => window.usedPercent)));
       if (quota.limited || settings.quotaRemainingPercent !== null && windows.length > 0 && remaining <= settings.quotaRemainingPercent) warnings.push({ kind: 'quota', reported: remaining, threshold: settings.quotaRemainingPercent ?? 0 });
       if (settings.cloudExpiryHours !== null && quota.cloudCredits?.expiresAt && quota.cloudCredits.balance > 0 && Date.parse(quota.cloudCredits.expiresAt) <= this.now() + settings.cloudExpiryHours * 3600000) warnings.push({ kind: 'cloudExpiry', at: quota.cloudCredits.expiresAt });
     }

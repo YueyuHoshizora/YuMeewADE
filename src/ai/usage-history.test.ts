@@ -57,6 +57,11 @@ test('reported money that adds up to exactly the threshold warns despite binary 
   assert.deepEqual((await history.check(scope, empty)).warnings, [{ kind: 'threshold', ruleId: 'usd', unit: 'claudeUsd', reported: 0.8, threshold: 0.8 }]);
   await assert.rejects(history.assertProceed(scope, empty), { detail: 'usage_ack_required' });
 });
+test('an account the CLI reports as limited warns with nothing remaining, even without percentage windows', async t => {
+  const root = await fs.mkdtemp(path.join(os.tmpdir(), 'usage-limited-')); t.after(() => fs.rm(root, { recursive: true, force: true }));
+  const live: UsageState = { ais: [{ ai: 'claude', account: 'default', status: 'ready', windows: [], limited: true, quotaAt: '2026-10-13T00:00:00Z' }], tokensPerSecond: null };
+  assert.deepEqual((await new UsageHistory(root).check(scope, live)).warnings, [{ kind: 'quota', reported: 0, threshold: 0 }]);
+});
 test('project-level work without a task is budget-checked and recorded under the project', async t => {
   const root = await fs.mkdtemp(path.join(os.tmpdir(), 'usage-project-')); t.after(() => fs.rm(root, { recursive: true, force: true }));
   const history = new UsageHistory(root);
