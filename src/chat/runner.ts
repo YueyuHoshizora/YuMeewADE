@@ -342,7 +342,9 @@ export class ChatRunner extends EventEmitter {
       // An answer queued behind a running turn is still an answer when it starts: it clears the question it replies to.
       ...(chosen.answer ? { answer: true as const } : {}),
     };
-    if (s.busy && chosen.mode === 'queue') {
+    // Instructions already waiting go first: the running turn may have finished while this one was being checked.
+    const waiting = !s.busy && chosen.mode === 'queue' && !input.fromQueue && (await this.deps.store.readQueue(p, t)).some(x => !x.error);
+    if ((s.busy || waiting) && chosen.mode === 'queue') {
       const queue = await this.deps.store.updateQueue(p, t, q => {
         if (q.length >= this.deps.limits.queueLength) throw new AppError('unavailable', 'queue_full');
         return [...q, item];

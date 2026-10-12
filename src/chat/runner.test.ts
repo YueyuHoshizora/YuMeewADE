@@ -253,6 +253,17 @@ test('mode required; redo/amend stop prior run and keep queue; normal finish dra
   await s.send('base [slow]'); await s.send('extra', { mode: 'amend' }); await s.runner.whenIdle();
   rows = await s.store.readLog('P', s.task.id); assert.ok(rows.some(r => r.role === 'user' && r.text.includes('延續已做到的部分')));
 }));
+test('a queued instruction stays behind ones already queued when the running turn ends while it is being checked', () => withTmpWorkspace(async ws => {
+  const s = await setup(ws, { chunkMs: 5 });
+  await s.send('first [slow]'); await s.send('second', { mode: 'queue' });
+  const entered = Promise.withResolvers<void>(); const release = Promise.withResolvers<void>(); let hold = true;
+  const available = s.mock.available.bind(s.mock);
+  s.mock.available = async () => { if (hold) { hold = false; entered.resolve(); await release.promise; } return available(); };
+  const idle = Promise.withResolvers<void>(); s.runner.on('event', (_p: string, _t: string, event: { event: string }) => { if (event.event === 'idle') idle.resolve(); });
+  const third = s.send('third', { mode: 'queue' }); await entered.promise; await idle.promise; release.resolve();
+  assert.equal((await third).queued, true); await s.runner.whenIdle();
+  assert.deepEqual((await s.store.readLog('P', s.task.id)).filter(row => row.role === 'user').map(row => row.text), ['first [slow]', 'second', 'third']);
+}));
 test('stop clears queue; unqueue and fromQueue; queued launch error remains', () => withTmpWorkspace(async ws => {
   const s = await setup(ws, { chunkMs: 5 }); await s.send('slow [slow]'); const queued = await s.send('remove', { mode: 'queue' });
   await s.runner.unqueue('P', s.task.id, queued.request); await s.send('discard', { mode: 'queue' }); assert.equal(await s.runner.stop('P', s.task.id), true); await s.runner.whenIdle(); assert.deepEqual(await s.store.readQueue('P', s.task.id), []);
