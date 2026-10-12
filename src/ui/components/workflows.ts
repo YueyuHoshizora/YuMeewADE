@@ -3,6 +3,7 @@ import { query, request } from '../api.ts';
 import { t } from '../i18n/index.ts';
 import { area, button, confirmModal, el, field, modal, row, run, select, taskHash, type ViewContext } from './dom.ts';
 import { confirmUsageRound, workflowBudgetRisk } from './usage-history.ts';
+import { renderWorkflowTimeline } from './workflow-timeline.ts';
 
 export function workflowButton(context: ViewContext, project: string, task: string): HTMLElement {
   return button(t('workflow.title'), async () => {
@@ -48,6 +49,7 @@ export function workflowButton(context: ViewContext, project: string, task: stri
     function renderStatus(): void {
       status.textContent = `${t(`workflow.state.${plan.state}`)} · ${plan.cursor}/${plan.steps.length}${plan.reason ? ` · ${t(`detail.${plan.reason}` as Parameters<typeof t>[0])}` : ''}`;
       if (plan.delivery) status.textContent += ` · ${t('workflow.native.delivery')}: ${t(plan.delivery.state === 'ready' ? 'verify.pass' : 'verify.fail')} · ${plan.delivery.gates.map(gate => `${gate.node}: ${t(gate.ok ? 'verify.pass' : 'verify.fail')}`).join(' · ')}`;
+      timeline.replaceChildren(renderWorkflowTimeline(plan));
       void run(renderRisk);
       save.disabled = plan.state === 'running';
       start.disabled = plan.state === 'running' || !plan.steps.some(s => plan.nodeStates?.[s.id!] === 'pending' || plan.nodeStates?.[s.id!] === 'human' && !s.review && context.state.roles.roles[s.role]?.main.cli !== '人');
@@ -112,9 +114,10 @@ export function workflowButton(context: ViewContext, project: string, task: stri
       plan = await request<WorkflowPlan>('/api/task/workflow/rerun', { project, task, revision: plan.revision, from }); renderStatus();
     });
     const history = el('div', 'workflow-results');
+    const timeline = el('div');
     const evidence = area(''); evidence.maxLength = 10000; evidence.placeholder = t('review.evidence');
     root.append(el('p', 'muted', t('workflow.help')), status, risk, field(t('workflow.dependencies'), dependencies), steps,
-      button(t('workflow.add'), () => addStep()), evidence, row(save, start, stop, approve, rerunCurrent), history);
+      button(t('workflow.add'), () => addStep()), evidence, row(save, start, stop, approve, rerunCurrent), timeline, history);
     root.prepend(el('p', 'muted', t('workflow.graph.help')));
     const graphStatus = el('pre'); root.append(graphStatus);
     modal(t('workflow.title'), root); renderStatus();

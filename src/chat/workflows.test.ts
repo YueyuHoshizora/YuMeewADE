@@ -118,3 +118,27 @@ test('native failed verification blocks review and delivery; rerun invalidates d
   const rerun = await s.workflow.rerun('P', s.task.id, 0, plan.revision);
   assert.ok(rerun.results.every(result => result.invalidatedAt)); assert.equal(rerun.nodeStates?.review, 'pending');
 }));
+
+test('resume rejects stale native verification and keeps the downstream branch unstarted', () => withTmpWorkspace(async ws => {
+  let fresh = true;
+  const s = await fixture(ws, async (_p, task) => ({ request: task, ai: 'mock', text: 'source', ok: true, approved: true, structured: true }), {
+    verify: async () => ({ ok: true, id: 'verified' }), currentVerification: async () => fresh,
+  });
+  await s.workflow.configure('P', s.task.id, [], [node('edit'), node('verify', ['edit'], { kind: 'verify', review: false }), node('human', ['verify'], { role: 'human' }), node('after', ['human'])]);
+  s.reset(); await s.workflow.start('P', s.task.id); await s.idle();
+  const paused = await s.workflow.get('P', s.task.id);
+  assert.equal(paused.nodeStates?.verify, 'succeeded');
+  assert.equal(paused.nodeStates?.human, 'human');
+  await s.workflow.approveHuman('P', s.task.id, 'Inspected', 'human', paused.revision);
+  fresh = false;
+  await assert.rejects(s.workflow.start('P', s.task.id), { detail: 'verification_required' });
+  const blocked = await s.workflow.get('P', s.task.id);
+  assert.equal(blocked.nodeStates?.after, 'pending');
+  assert.equal(blocked.branchTasks?.after, undefined);
+  assert.equal(blocked.delivery?.state, 'blocked');
+  const events = blocked.events ?? [];
+  assert.deepEqual(events.filter(event => event.node === 'verify').map(event => event.type), ['node.invalidated', 'node.started', 'node.finished']);
+  assert.equal(events.find(event => event.node === 'verify' && event.type === 'node.finished')?.request, 'verified');
+  assert(events.every((event, index) => index === 0 || event.sequence > events[index - 1]!.sequence));
+  await s.workflow.close();
+}));

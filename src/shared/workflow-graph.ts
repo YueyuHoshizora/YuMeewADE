@@ -1,9 +1,10 @@
-import type { IntegrationCandidate } from '../git/workflow-integration.ts';
+import type { WorkflowTimeline } from './workflow-timeline.ts';
 import type { WorkflowDelivery } from './workflow-delivery.ts';
+export interface IntegrationCandidate { task: string; base: string; head: string; sources: { task: string; head: string; fingerprint: string; snapshot: string }[]; conflicts: string[]; state: 'ready' | 'conflict'; diff: string; truncated: boolean }
 export interface WorkflowStep { role: string; text: string; review: boolean; id?: string; dependsOn?: string[]; upstream?: string[]; condition?: { node: string; outcome: 'success' | 'approved' | 'failure' }; kind?: 'expert' | 'join' | 'integration' | 'verify' | 'review' }
 export interface WorkflowResult { role: string; ai: string; request: string; at: string; ok: boolean; step?: number; node?: string; task?: string; invalidatedAt?: string; output?: string; approved?: boolean; evidence?: string; reviewSnapshot?: string }
 export type WorkflowNodeState = 'pending' | 'running' | 'succeeded' | 'failed' | 'skipped' | 'human';
-export interface WorkflowPlan { dependencies: string[]; steps: WorkflowStep[]; cursor: number; state: 'ready' | 'running' | 'paused' | 'failed' | 'completed'; results: WorkflowResult[]; reason?: string; revision?: number; nodeStates?: Record<string, WorkflowNodeState>; branchTasks?: Record<string, string>; candidates?: Record<string, IntegrationCandidate>; delivery?: WorkflowDelivery }
+export interface WorkflowPlan extends WorkflowTimeline { dependencies: string[]; steps: WorkflowStep[]; cursor: number; state: 'ready' | 'running' | 'paused' | 'failed' | 'completed'; results: WorkflowResult[]; reason?: string; revision?: number; nodeStates?: Record<string, WorkflowNodeState>; branchTasks?: Record<string, string>; candidates?: Record<string, IntegrationCandidate>; delivery?: WorkflowDelivery }
 
 /** Missing graph fields are the old linear schema, not implicitly parallel. */
 export function normalizeGraph(steps: WorkflowStep[]): WorkflowStep[] {

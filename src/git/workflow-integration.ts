@@ -6,11 +6,12 @@ import type { WorktreeService } from './worktree.ts';
 import { git, gitOk, commitAll, isLocalSecret } from './git.ts';
 import { AppError } from '../shared/errors.ts';
 import { isInside, withFileLocks } from '../shared/fsx.ts';
+import type { IntegrationCandidate } from '../shared/workflow-graph.ts';
 
-export interface IntegrationCandidate { task: string; base: string; head: string; sources: { task: string; head: string; fingerprint: string; snapshot: string }[]; conflicts: string[]; state: 'ready' | 'conflict'; diff: string; truncated: boolean }
 /** Candidates are ordinary isolated task worktrees; main and upstream indexes never change. */
 export class WorkflowIntegrationService {
-  constructor(private readonly deps: { tasks: TaskLedger; worktrees: WorktreeService; busy: (project: string, task: string) => boolean }) {}
+  private readonly deps: { tasks: TaskLedger; worktrees: WorktreeService; busy: (project: string, task: string) => boolean };
+  constructor(deps: { tasks: TaskLedger; worktrees: WorktreeService; busy: (project: string, task: string) => boolean }) { this.deps = deps; }
   async assertReady(project: string, candidate: IntegrationCandidate): Promise<void> {
     const task = await this.deps.tasks.get(project, candidate.task);
     if (candidate.state !== 'ready' || !task.workdir || task.workspace !== 'isolated' || this.deps.busy(project, task.id)) throw new AppError('conflict', 'workflow_busy');
@@ -62,7 +63,8 @@ export class WorkflowIntegrationService {
         const scratchDir = await this.deps.worktrees.prepareFrom(project, scratch.id, snapshot);
         for (const name of (await gitOk(task.workdir, ['ls-files', '--others', '--exclude-standard', '-z'])).split('\0').filter(Boolean).filter(name => !isLocalSecret(name))) {
           const target = path.join(scratchDir, name); await fs.mkdir(path.dirname(target), { recursive: true });
-          if (!isInside(await fs.realpath(scratchDir), await fs.realpath(path.dirname(target)))) throw new AppError('conflict', 'workflow_invalid');
+          const root = await fs.realpath(scratchDir); const parent = await fs.realpath(path.dirname(target));
+          if (parent !== root && !isInside(root, parent)) throw new AppError('conflict', 'workflow_invalid');
           const source = await this.readSource(task.workdir, name);
           await fs.writeFile(target, source.bytes, { flag: 'wx', mode: source.mode });
         }
