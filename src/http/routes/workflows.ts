@@ -13,14 +13,16 @@ export function registerWorkflowRoutes(router: Router, app: App): void {
   router.post('/api/task/workflow/configure', async ({ body }) => {
     const project = reqString(body, 'project', 120); const task = reqString(body, 'task', 120);
     if (!Array.isArray(body.dependencies) || !body.dependencies.every(d => typeof d === 'string') || !Array.isArray(body.steps) || !Number.isSafeInteger(body.revision)) throw new AppError('bad_request', 'workflow_invalid');
-    if (app.taskBusy(project, task)) throw new AppError('conflict', 'workflow_busy');
+    if (app.workflows.isBusy(project, task)) throw new AppError('conflict', 'workflow_busy');
+    if (app.taskBusy(project, task)) throw new AppError('conflict', 'task_busy');
     return app.workflows.configure(project, task, body.dependencies as string[], body.steps as WorkflowStep[], body.revision as number);
   });
   router.post('/api/task/workflow/start', async ({ body, ip }) => {
     if (!app.sendLimiter.take(ip)) throw new AppError('too_many_requests');
     const project = reqString(body, 'project', 120); const task = reqString(body, 'task', 120);
     await app.trust.assertExecutable(project);
-    if (app.taskBusy(project, task)) throw new AppError('conflict', 'workflow_busy');
+    if (app.workflows.isBusy(project, task)) throw new AppError('conflict', 'workflow_busy');
+    if (app.taskBusy(project, task)) throw new AppError('conflict', 'task_busy');
     return app.workflows.start(project, task);
   });
   router.post('/api/task/workflow/stop', async ({ body }) => {

@@ -63,3 +63,18 @@ test('chat export returns Markdown attachment and rejects unsafe names', async (
     assert.equal((await fetch(`${s.base}/api/chat/export?project=P&task=20260101-999`)).status, 404);
   } finally { await s.close(); }
 });
+
+test('sending while a terminal runs in the task reports the tool, not a role workflow', async (t) => {
+  const s = await startTestServer();
+  try {
+    await s.api('POST', '/api/project/new', { name: 'P' });
+    const task = (await s.api('POST', '/api/task/new', { project: 'P', title: 'T', workspace: 'direct' })).json as Task;
+    const running = t.mock.method(s.app.terminal, 'isRunning', (project: string, id?: string) => project === 'P' && id === task.id);
+    const blocked = await s.api('POST', '/api/chat/send', { project: 'P', task: task.id, text: 'go', ai: 'mock' });
+    assert.equal(blocked.status, 409);
+    assert.equal((blocked.json as { detail?: string }).detail, 'task_busy');
+    running.mock.restore();
+    assert.equal((await s.api('POST', '/api/chat/send', { project: 'P', task: task.id, text: 'go', ai: 'mock' })).status, 200);
+    await s.app.runner.whenIdle();
+  } finally { await s.close(); }
+});

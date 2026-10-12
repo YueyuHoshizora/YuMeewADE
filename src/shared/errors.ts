@@ -113,6 +113,7 @@ export const DETAIL_MESSAGES = {
   gh_pr_failed: '建立 Pull Request 失敗；請確認已推送來源分支與權限',
   workflow_invalid: '流程內容不合法或已完成，請先儲存有效流程',
   workflow_busy: '角色流程正在執行，請先停止',
+  task_busy: '此作業有終端機、執行、預覽、除錯、驗證、審查或 AI 正在進行，請先停止或關閉後再試',
   workflow_cycle: '作業相依不能形成循環',
   workflow_dependencies: '前置作業尚未由人核可完成',
   workflow_interrupted: '核心重啟已暫停流程，請檢查後明確繼續',

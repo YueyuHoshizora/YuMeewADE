@@ -173,7 +173,7 @@ export class App {
     this.debugger = new DebuggerService(this.execution, {
       metadataFile: (p, t) => debuggerMetadataFile(this.ws, this.tasks, p, t),
       beforeMutate: p => this.trust.assertExecutable(p),
-      beforeLaunch: async (p, t) => { await this.trust.assertExecutable(p); if (this.taskBusy(p, t)) throw new AppError('conflict', 'workflow_busy'); },
+      beforeLaunch: async (p, t) => { await this.trust.assertExecutable(p); if (this.taskBusy(p, t)) throw new AppError('conflict', 'task_busy'); },
     });
     this.integrations = new IntegrationService(this.execution, { ...config.execution, envPassthrough: config.cli.envPassthrough, beforeStart: project => this.trust.assertExecutable(project) });
     this.embeddedPreview = new EmbeddedPreviewService({
@@ -182,7 +182,7 @@ export class App {
         const trust = await this.trust.view(p);
         if (trust.state !== 'trusted' || trust.rootChanged) throw new AppError('forbidden', 'project_restricted');
       },
-      beforeStart: async (p, t) => { if (this.taskBusy(p, t)) throw new AppError('conflict', 'workflow_busy'); },
+      beforeStart: async (p, t) => { if (this.taskBusy(p, t)) throw new AppError('conflict', 'task_busy'); },
       ideOrigin: `http://${hostAuthority(config.server.host, config.server.port)}`,
       concurrent: config.limits.concurrentRuns,
     });
@@ -231,7 +231,9 @@ export class App {
       verify: (project, task) => this.verify.run(project, task),
       beforeSend: async (p, t, workflow) => {
         await this.trust.assertExecutable(p);
-        if (this.mutations.busy || this.execution.isRunning(p, t) || this.terminal.isRunning(p, t) || this.debugger.isRunning(p, t) || this.embeddedPreview.isRunning(p, t) || this.review.isBusy(p, t) || this.verify.isRunning(p, t) || this.testExplorer.isRunning(p, t) || this.editorProposals.isBusy(p, t)) throw new AppError('conflict', 'workflow_busy');
+        // Name the real blocker: a maintenance operation, or another tool on this task (not a role workflow, checked next).
+        if (this.mutations.busy) throw new AppError('conflict', 'care_busy');
+        if (this.execution.isRunning(p, t) || this.terminal.isRunning(p, t) || this.debugger.isRunning(p, t) || this.embeddedPreview.isRunning(p, t) || this.review.isBusy(p, t) || this.verify.isRunning(p, t) || this.testExplorer.isRunning(p, t) || this.editorProposals.isBusy(p, t)) throw new AppError('conflict', 'task_busy');
         await this.workflows.assertCanSend(p, t, workflow);
       },
       beforeLaunch: (project, task, ai, account) => this.usageHistory.assertProceed({ project, task, ai, account }, this.usage.snapshot()),

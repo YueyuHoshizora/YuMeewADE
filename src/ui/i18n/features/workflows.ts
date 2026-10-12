@@ -7,6 +7,7 @@ export const featureZhTW = {
   'workflow.help': '先儲存再啟動。角色備援只在主 CLI 尚未執行且不可用時使用；重啟不會續跑。唯讀審查僅支援具實際權限保護的 CLI。',
   'workflow.state.ready': '待啟動', 'workflow.state.running': '執行中', 'workflow.state.paused': '已暫停', 'workflow.state.failed': '已停止：失敗或需接手', 'workflow.state.completed': '流程完成（不等於作業核可）',
   'detail.workflow_invalid': '流程內容不合法或已完成，請先儲存有效流程', 'detail.workflow_busy': '角色流程正在執行，請先停止', 'detail.workflow_cycle': '作業相依不能形成循環',
+  'detail.task_busy': '此作業有終端機、執行、預覽、除錯、驗證、審查或 AI 正在進行，請先停止或關閉後再試',
   'detail.workflow_dependencies': '前置作業尚未由人核可完成', 'detail.workflow_interrupted': '核心重啟已暫停流程，請檢查後明確繼續',
   'detail.workflow_human': '等待人工完成及核可本階段', 'detail.workflow_step_failed': '階段失敗或需要人判斷，流程已停止', 'detail.workflow_stopped': '人已停止流程',
 } as const;
@@ -20,6 +21,7 @@ export const featureZhCN: Messages = {
   'workflow.help': '先保存再启动。仅在主 CLI 未执行且不可用时使用备用角色；重启不会续跑。只读审查仅支持有实际权限保护的 CLI。',
   'workflow.state.ready': '待启动', 'workflow.state.running': '运行中', 'workflow.state.paused': '已暂停', 'workflow.state.failed': '已停止：失败或需接手', 'workflow.state.completed': '流程完成（不等于任务确认）',
   'detail.workflow_invalid': '流程无效或已完成，请先保存有效流程', 'detail.workflow_busy': '流程运行中，请先停止', 'detail.workflow_cycle': '任务依赖不能形成循环', 'detail.workflow_dependencies': '前置任务尚未由人确认完成',
+  'detail.task_busy': '此作业有终端、运行、预览、调试、验证、审查或 AI 正在进行，请先停止或关闭后再试',
   'detail.workflow_interrupted': '核心重启已暂停流程，检查后明确继续', 'detail.workflow_human': '等待人工完成并确认阶段', 'detail.workflow_step_failed': '阶段失败或需要判断，流程停止', 'detail.workflow_stopped': '人已停止流程',
 };
 export const featureEn: Messages = {
@@ -31,6 +33,7 @@ export const featureEn: Messages = {
   'workflow.help': 'Save before starting. A backup is selected only when the primary CLI is unavailable before execution. Restart never resumes automatically. Reviews require an enforced read-only capability.',
   'workflow.state.ready': 'Ready', 'workflow.state.running': 'Running', 'workflow.state.paused': 'Paused', 'workflow.state.failed': 'Stopped: failed or needs attention', 'workflow.state.completed': 'Workflow complete (not task approval)',
   'detail.workflow_invalid': 'Invalid or completed workflow; save a valid plan first', 'detail.workflow_busy': 'Workflow running; stop it first', 'detail.workflow_cycle': 'Task dependencies cannot contain cycles', 'detail.workflow_dependencies': 'Prerequisite tasks are not human-approved',
+  'detail.task_busy': 'A terminal, run, preview, debugger, verification, review or AI is active in this task; stop or close it first',
   'detail.workflow_interrupted': 'Restart paused this workflow; inspect it before resuming', 'detail.workflow_human': 'Waiting for human completion and approval', 'detail.workflow_step_failed': 'Step failed or needs attention; workflow stopped', 'detail.workflow_stopped': 'Workflow stopped by the user',
 };
 export const featureJa: Messages = {
@@ -42,6 +45,7 @@ export const featureJa: Messages = {
   'workflow.help': '開始前に保存してください。代替CLIは実行前に主CLIが利用できない場合のみ選択します。再起動後は自動再開しません。レビューには読み取り専用の権限制御が必要です。',
   'workflow.state.ready': '開始待ち', 'workflow.state.running': '実行中', 'workflow.state.paused': '一時停止', 'workflow.state.failed': '停止：失敗または要対応', 'workflow.state.completed': 'フロー完了（タスク承認とは別）',
   'detail.workflow_invalid': '無効または完了済みです。有効なフローを保存してください', 'detail.workflow_busy': '実行中です。先に停止してください', 'detail.workflow_cycle': 'タスク依存関係に循環は使えません', 'detail.workflow_dependencies': '前提タスクが人に承認されていません',
+  'detail.task_busy': 'この作業では端末・実行・プレビュー・デバッガー・検証・レビュー・AI のいずれかが動作中です。停止または閉じてから再試行してください',
   'detail.workflow_interrupted': '再起動で停止しました。確認後に再開してください', 'detail.workflow_human': '人による完了と承認を待っています', 'detail.workflow_step_failed': '失敗または要判断のため停止しました', 'detail.workflow_stopped': 'ユーザーが停止しました',
 };
 export const featureDe: Messages = {
@@ -53,6 +57,7 @@ export const featureDe: Messages = {
   'workflow.help': 'Vor dem Start speichern. Ersatz nur, wenn die primäre CLI vor Ausführung nicht verfügbar ist. Kein automatisches Fortsetzen nach Neustart. Prüfungen benötigen echten Schreibschutz.',
   'workflow.state.ready': 'Bereit', 'workflow.state.running': 'Läuft', 'workflow.state.paused': 'Pausiert', 'workflow.state.failed': 'Gestoppt: Fehler oder Eingriff nötig', 'workflow.state.completed': 'Ablauf fertig (keine Aufgabenfreigabe)',
   'detail.workflow_invalid': 'Ungültiger oder abgeschlossener Ablauf; zuerst gültigen Plan speichern', 'detail.workflow_busy': 'Ablauf läuft; zuerst stoppen', 'detail.workflow_cycle': 'Aufgabenabhängigkeiten dürfen keine Zyklen enthalten', 'detail.workflow_dependencies': 'Voraussetzungen sind nicht manuell bestätigt',
+  'detail.task_busy': 'In dieser Aufgabe ist ein Terminal, eine Ausführung, Vorschau, ein Debugger, eine Prüfung, ein Review oder eine KI aktiv; zuerst stoppen oder schließen',
   'detail.workflow_interrupted': 'Neustart hat den Ablauf pausiert; vor Fortsetzen prüfen', 'detail.workflow_human': 'Wartet auf manuelle Fertigstellung und Bestätigung', 'detail.workflow_step_failed': 'Schritt fehlgeschlagen oder Eingriff nötig; Ablauf gestoppt', 'detail.workflow_stopped': 'Vom Benutzer gestoppt',
 };
 export const featureFr: Messages = {
@@ -64,6 +69,7 @@ export const featureFr: Messages = {
   'workflow.help': 'Enregistrer avant de démarrer. Le secours est choisi uniquement si la CLI principale est indisponible avant exécution. Pas de reprise automatique après redémarrage. Les revues exigent une protection réelle en lecture seule.',
   'workflow.state.ready': 'Prêt', 'workflow.state.running': 'En cours', 'workflow.state.paused': 'En pause', 'workflow.state.failed': 'Arrêté : échec ou intervention requise', 'workflow.state.completed': 'Flux terminé (sans validation de tâche)',
   'detail.workflow_invalid': 'Flux invalide ou terminé ; enregistrer un plan valide', 'detail.workflow_busy': 'Flux en cours ; arrêter d’abord', 'detail.workflow_cycle': 'Les dépendances ne peuvent pas former de cycle', 'detail.workflow_dependencies': 'Les tâches préalables ne sont pas validées',
+  'detail.task_busy': 'Un terminal, une exécution, un aperçu, un débogueur, une vérification, une revue ou une IA est actif dans cette tâche ; arrête-le ou ferme-le d’abord',
   'detail.workflow_interrupted': 'Le redémarrage a suspendu le flux ; vérifier avant de reprendre', 'detail.workflow_human': 'En attente de réalisation et validation humaines', 'detail.workflow_step_failed': 'Échec ou décision requise ; flux arrêté', 'detail.workflow_stopped': 'Flux arrêté par l’utilisateur',
 };
 export const featureIt: Messages = {
@@ -75,5 +81,6 @@ export const featureIt: Messages = {
   'workflow.help': 'Salva prima di avviare. La CLI di riserva viene scelta solo se quella principale non è disponibile prima dell’esecuzione. Nessuna ripresa automatica dopo riavvio. Le revisioni richiedono protezione reale in sola lettura.',
   'workflow.state.ready': 'Pronto', 'workflow.state.running': 'In esecuzione', 'workflow.state.paused': 'In pausa', 'workflow.state.failed': 'Fermo: errore o intervento richiesto', 'workflow.state.completed': 'Flusso completato (non approvazione attività)',
   'detail.workflow_invalid': 'Flusso non valido o completato; salva un piano valido', 'detail.workflow_busy': 'Flusso in esecuzione; fermalo prima', 'detail.workflow_cycle': 'Le dipendenze non possono formare cicli', 'detail.workflow_dependencies': 'Le attività preliminari non sono approvate',
+  'detail.task_busy': 'In questa attività è attivo un terminale, un’esecuzione, un’anteprima, un debugger, una verifica, una revisione o un’IA; fermalo o chiudilo prima',
   'detail.workflow_interrupted': 'Il riavvio ha sospeso il flusso; verifica prima di riprendere', 'detail.workflow_human': 'In attesa di completamento e approvazione umana', 'detail.workflow_step_failed': 'Passaggio fallito o decisione richiesta; flusso fermo', 'detail.workflow_stopped': 'Flusso fermato dall’utente',
 };

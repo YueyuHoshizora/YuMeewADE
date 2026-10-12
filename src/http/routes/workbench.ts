@@ -6,7 +6,7 @@ import type { GithubFeedbackRemote, LinkedFeedback } from '../../shared/github.t
 
 export function registerWorkbenchRoutes(router: Router, app: App): void {
   const feedback = new TaskLinkedFeedback(app.ws, app.tasks);
-  const busy = (project: string, task?: string) => { if (app.taskBusy(project, task)) throw new AppError('conflict', 'workflow_busy'); };
+  const busy = (project: string, task?: string) => { if (app.taskBusy(project, task)) throw new AppError('conflict', 'task_busy'); };
   const text = (body: Record<string, unknown>, key: string, max: number): string => {
     const value = body[key]; if (typeof value !== 'string' || value.length > max || value.includes('\0')) throw new AppError('bad_request', 'field_type', { field: key }); return value;
   };
