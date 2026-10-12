@@ -79,7 +79,7 @@ export class IntegrationService {
       // argv is passed as AppleScript data; neither folder nor command can inject AppleScript.
       await this.launch({ command: 'osascript', args: ['-e', 'on run argv\n tell application "Terminal"\n activate\n do script (item 1 of argv)\n end tell\nend run', shell] }, cwd, {});
     } else if (process.platform === 'win32') {
-      await this.launch({ command: 'wt.exe', args: ['-d', cwd, 'powershell.exe', '-NoExit', '-Command', command || '$null'] }, cwd, {});
+      await this.launch({ command: 'wt.exe', args: windowsTerminalArgs(cwd, command) }, cwd, {});
     } else {
       const env = minimalEnv(this.options.envPassthrough ?? []);
       const terminal = await findExecutable('x-terminal-emulator', env);
@@ -88,4 +88,13 @@ export class IntegrationService {
       await this.launch({ command: terminal, args: ['-e', 'sh', '-c', script] }, cwd, {}, true);
     }
   }
+}
+
+/**
+ * Windows Terminal splits its own command line into subcommands at every `;`, quoted or not; `\;` is its literal
+ * semicolon. Without escaping, `npm i; npm test` (or a folder with `;` in its name) would open as two wt actions.
+ */
+export function windowsTerminalArgs(cwd: string, command: string): string[] {
+  const literal = (value: string) => value.replaceAll(';', '\\;');
+  return ['-d', literal(cwd), 'powershell.exe', '-NoExit', '-Command', command ? literal(command) : '$null'];
 }
