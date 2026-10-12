@@ -6,6 +6,8 @@ import { aggregateOverview, type OverviewTask } from './overview-logic.ts';
 
 export function overviewView(context: ViewContext): View {
   const node = el('div', 'page overview-page'); const filter = el('div'); const content = el('div', 'overview-grid'); let tag = '';
+  // Every state refresh rebuilds the page; which state groups the reader opened is kept by state key.
+  const opened = new Set<string>();
   const lists = (items: OverviewTask[]) => {
     const list = el('ul', 'overview-list');
     for (const { project, task } of items) {
@@ -17,12 +19,16 @@ export function overviewView(context: ViewContext): View {
   function render(): void {
     const data = aggregateOverview(context.state, tag);
     const tags = select([{ value: '', label: t('overview.allTags') }, ...data.tags.map(value => ({ value, label: value }))], tag);
-    tags.onchange = () => { tag = tags.value; render(); filter.querySelector('select')?.focus(); };
+    tags.onchange = () => { tag = tags.value; render(); };
+    const refocus = filter.contains(document.activeElement);
     filter.replaceChildren(field(t('overview.tagFilter'), tags));
+    if (refocus) tags.focus();
     const totals = el('section', 'overview-card overview-wide'); totals.append(el('h2', '', t('overview.states')));
     const counts = el('div', 'overview-counts');
     for (const state of TASK_STATES) {
       const details = el('details'); details.append(el('summary', '', `${t(`state.${state}`)} · ${data.totals[state]}`), lists(data.tasks.filter(item => item.task.state === state))); counts.append(details);
+      details.open = opened.has(state);
+      details.ontoggle = () => { if (details.open) opened.add(state); else opened.delete(state); };
     }
     totals.append(counts); content.replaceChildren(totals);
     for (const [title, items] of [
