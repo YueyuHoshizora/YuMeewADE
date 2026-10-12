@@ -149,11 +149,16 @@ function load(quiet: boolean): Promise<void> {
       do {
         refreshAgain = false; const draw = pendingDraw; pendingDraw = false;
         const next = await api.state(); const text = JSON.stringify(next); const workspaceChanged = state !== null && state.root !== next.root;
-        if (workspaceChanged) window.dispatchEvent(new CustomEvent('yumeewade:workspace-changed', { detail: { root: next.root } }));
+        if (workspaceChanged) {
+          window.dispatchEvent(new CustomEvent('yumeewade:workspace-changed', { detail: { root: next.root } }));
+          // The page's CSP admits only the embedded-preview gateway that existed when it loaded, and the new workspace
+          // runs its own; views and docks were just reset for the switch, so a fresh document is the clean continuation.
+          location.reload(); return;
+        }
         notify(state, next); announceQuota(next.usage); announceUpdate(next);
-        if (!draw && !workspaceChanged && text === stateText) { usage = next.usage; drawFooter(); continue; }
+        if (!draw && text === stateText) { usage = next.usage; drawFooter(); continue; }
         stateText = text; state = next; usage = next.usage; drawShell();
-        navigate(workspaceChanged); view?.update?.(state);
+        navigate(); view?.update?.(state);
         if (!initialCareShown) { initialCareShown = true; showInitialCare({ state, refresh }); }
       } while (refreshAgain);
     } catch (error) {
