@@ -37,13 +37,45 @@ const HEADINGS = {
 const SECTION_LINES_MAX = 500;
 const SECTION_LINE_CHARS = 2000;
 
+/**
+ * Each row's `##` heading name ('' for a bare `##`), or undefined for content. A `## 注意` inside a fenced code block
+ * (an example the AI quotes) is content, not a section break; a fence that never closes is ignored, so one stray ```
+ * cannot hide every section after it.
+ */
+function headings(rows: string[]): (string | undefined)[] {
+  const marks: (string | undefined)[] = [];
+  for (let i = 0; i < rows.length; i++) {
+    const open = /^ {0,3}(`{3,}|~{3,})/.exec(rows[i]!)?.[1];
+    if (open) {
+      let close = i + 1;
+      for (; close < rows.length; close++) { const marker = /^ {0,3}(`{3,}|~{3,})\s*$/.exec(rows[close]!)?.[1]; if (marker && marker[0] === open[0] && marker.length >= open.length) break; }
+      if (close < rows.length) { for (; i <= close; i++) marks.push(undefined); i--; continue; }
+    }
+    marks.push(/^##\s/.test(rows[i]!) ? /^##\s+(.+?)\s*$/.exec(rows[i]!)?.[1] ?? '' : undefined);
+  }
+  return marks;
+}
+
 interface BodySection { rows: string[]; start: number; end: number }
-function section(body: string, kind: keyof typeof HEADINGS): BodySection {
-  const rows = body.split(/\r?\n/);
-  const start = rows.findIndex(row => { const m = /^##\s+(.+?)\s*$/.exec(row); return !!m && HEADINGS[kind].test(m[1]!); });
+/** The first (or `last`) section of a kind; edits go there, while reading collects every same-kind section (`sectionLines`). */
+function section(body: string, kind: keyof typeof HEADINGS, last = false): BodySection {
+  const rows = body.split(/\r?\n/), marks = headings(rows);
+  const matches = marks.flatMap((mark, i) => mark !== undefined && HEADINGS[kind].test(mark) ? [i] : []);
+  const start = (last ? matches.at(-1) : matches[0]) ?? -1;
   let end = rows.length;
-  if (start >= 0) for (let i = start + 1; i < rows.length; i++) if (/^##\s/.test(rows[i]!)) { end = i; break; }
+  if (start >= 0) for (let i = start + 1; i < rows.length; i++) if (marks[i] !== undefined) { end = i; break; }
   return { rows, start, end };
+}
+// Every heading of a kind counts: an AI following older rules adds its own heading next to the template's empty one.
+function sectionLines(body: string, kind: keyof typeof HEADINGS): string[] {
+  const rows = body.split(/\r?\n/), marks = headings(rows);
+  const out: string[] = []; let inside = false;
+  rows.forEach((row, i) => {
+    const mark = marks[i];
+    if (mark !== undefined) inside = HEADINGS[kind].test(mark);
+    else if (inside && row.trim() && !/^\s*<!--/.test(row)) out.push(row.slice(0, SECTION_LINE_CHARS));
+  });
+  return out;
 }
 
 export function parseSteps(body: string): Step[] {
@@ -74,12 +106,11 @@ export class TaskLedger {
   async get(project: string, id: string): Promise<Task> {
     const { data, body } = parseFrontmatter(await this.readRaw(project, id));
     const s = (k: string) => data[k] == null ? '' : String(data[k]);
-    const memo = section(body, 'memo'), next = section(body, 'next');
     // memo / next are one-line summaries for the UI, so the markdown list marker is dropped here; the full record keeps it.
-    const content = (part: BodySection) => part.start < 0 ? [] : part.rows.slice(part.start + 1, part.end).filter(row => row.trim() && !/^\s*<!--/.test(row)).map(row => row.replace(/^\s*[-*+]\s+/, ''));
+    const summary = (kind: 'memo' | 'next') => sectionLines(body, kind).map(row => row.replace(/^\s*[-*+]\s+/, ''));
     const due = typeof data['due'] === 'string' && validDue(data['due']) ? data['due'] : '';
     const tags = fileTags(data['tags']);
-    return { id, due, tags, title: s('title') || id, state: TASK_STATES.includes(s('state') as TaskState) ? s('state') as TaskState : '未開始', phase: s('phase'), role: s('role'), parent: s('parent'), kind: s('kind') === 'derived' ? 'derived' : 'main', derivedFrom: s('derivedFrom'), workspace: s('workspace') === 'direct' ? 'direct' : 'isolated', cli: s('cli') || s('owner'), model: s('model'), effort: s('effort'), question: s('question'), workdir: s('workdir'), mergeExcluded: data['mergeExcluded'] === true, updated: s('updated'), steps: parseSteps(body), memo: content(memo).at(-1) ?? '', next: content(next)[0] ?? '', ...(typeof data['issue'] === 'number' && Number.isSafeInteger(data['issue']) && data['issue'] > 0 ? { issue: data['issue'], issueUrl: /^https:\/\/[^\s]+$/.test(s('issueUrl')) ? s('issueUrl') : '' } : {}) };
+    return { id, due, tags, title: s('title') || id, state: TASK_STATES.includes(s('state') as TaskState) ? s('state') as TaskState : '未開始', phase: s('phase'), role: s('role'), parent: s('parent'), kind: s('kind') === 'derived' ? 'derived' : 'main', derivedFrom: s('derivedFrom'), workspace: s('workspace') === 'direct' ? 'direct' : 'isolated', cli: s('cli') || s('owner'), model: s('model'), effort: s('effort'), question: s('question'), workdir: s('workdir'), mergeExcluded: data['mergeExcluded'] === true, updated: s('updated'), steps: parseSteps(body), memo: summary('memo').at(-1) ?? '', next: summary('next')[0] ?? '', ...(typeof data['issue'] === 'number' && Number.isSafeInteger(data['issue']) && data['issue'] > 0 ? { issue: data['issue'], issueUrl: /^https:\/\/[^\s]+$/.test(s('issueUrl')) ? s('issueUrl') : '' } : {}) };
   }
 
   async readRaw(project: string, id: string): Promise<string> {
@@ -88,17 +119,7 @@ export class TaskLedger {
   }
   async sections(project: string, id: string): Promise<TaskSections> {
     const body = parseFrontmatter(await this.readRaw(project, id)).body;
-    const rows = body.split(/\r?\n/);
-    // Every heading of a kind counts: an AI following older rules adds its own heading next to the template's empty one.
-    const lines = (kind: keyof typeof HEADINGS) => {
-      const out: string[] = []; let inside = false;
-      for (const row of rows) {
-        const heading = /^##\s+(.+?)\s*$/.exec(row);
-        if (heading || /^##\s/.test(row)) { inside = !!heading && HEADINGS[kind].test(heading[1]!); continue; }
-        if (inside && row.trim() && !/^\s*<!--/.test(row)) out.push(row.slice(0, SECTION_LINE_CHARS));
-      }
-      return out;
-    };
+    const lines = (kind: keyof typeof HEADINGS) => sectionLines(body, kind);
     // The memo is an append-only log, so a long one keeps its newest entries; the other sections keep their beginning.
     return { done: lines('done').slice(0, SECTION_LINES_MAX), next: lines('next').slice(0, SECTION_LINES_MAX), cautions: lines('cautions').slice(0, SECTION_LINES_MAX), memo: lines('memo').slice(-SECTION_LINES_MAX) };
   }
@@ -214,7 +235,8 @@ export class TaskLedger {
     if (typeof text !== 'string' || !text.trim() || text.length > 300) throw new AppError('bad_request', 'field_type', { field: 'text' });
     return withFileLocks([this.ws.projectFile(project), this.ws.taskFile(project, id)], async () => {
       const fm = parseFrontmatter(await this.readRaw(project, id));
-      let part = section(fm.body, 'memo');
+      // The newest entry goes after the last memo heading, where the summary (the last memo line) reads it back.
+      let part = section(fm.body, 'memo', true);
       if (part.start < 0) { fm.body += '\n## 備註\n'; part = section(fm.body, 'memo'); }
       part.rows.splice(part.end, 0, `- ${nowMinute()} ${text.replace(/[\r\n]+/g, ' ').trim()}`);
       await atomicWrite(this.ws.taskFile(project, id), serializeFrontmatter(patchHeaderLines(fm.headerLines, { updated: nowMinute() }), part.rows.join('\n')));

@@ -79,6 +79,29 @@ test('舊規則的「已完成的工作」標題與範本空標題並存時合�
   assert.equal((await ledger.get('P', task.id)).next, 'go');
 }));
 
+test('作業紀錄裡程式碼區塊中的 ## 標題不切段；未收尾的區塊不吞掉後面的段落', () => withTmpWorkspace(async ws => {
+  await new ProjectLedger(ws).create({ name: 'P' });
+  const ledger = new TaskLedger(ws); const task = await ledger.create('P', { title: 'T' });
+  await fs.writeFile(ws.taskFile('P', task.id), '---\ntitle: T\n---\n## 下一步\n```md\n## 注意\n```\n- real next\n## 注意\n- real caution\n## 備註\n````\n- memo\n');
+  const sections = await ledger.sections('P', task.id);
+  assert.deepEqual(sections.next, ['```md', '## 注意', '```', '- real next']);
+  assert.deepEqual(sections.cautions, ['- real caution']);
+  assert.deepEqual(sections.memo, ['````', '- memo']);
+  await fs.writeFile(ws.taskFile('P', task.id), '---\ntitle: T\n---\n## 做了什麼\n```\n- cut off\n## 注意\n- still a caution\n');
+  assert.deepEqual((await ledger.sections('P', task.id)).cautions, ['- still a caution']);
+}));
+
+test('同類標題重複時，作業摘要與紀錄讀到相同內容，新備註接在最後一個備註段', () => withTmpWorkspace(async ws => {
+  await new ProjectLedger(ws).create({ name: 'P' });
+  const ledger = new TaskLedger(ws); const task = await ledger.create('P', { title: 'T' });
+  await fs.writeFile(ws.taskFile('P', task.id), '---\ntitle: T\n---\n## 下一步\n\n## 備註\n- old\n## Next\n- deploy\n## Memo\n- later\n');
+  const read = await ledger.get('P', task.id);
+  assert.equal(read.next, 'deploy'); assert.equal(read.memo, 'later');
+  const appended = await ledger.appendMemo('P', task.id, 'newest');
+  assert.match(appended.memo, /newest$/u);
+  assert.match((await ledger.sections('P', task.id)).memo.at(-1)!, /newest$/u);
+}));
+
 test('沒指定階段的子作業沿用上層作業的階段，明確指定（含空字串）則照指定', () => withTmpWorkspace(async ws => {
   await new ProjectLedger(ws).create({ name: 'P' });
   const ledger = new TaskLedger(ws);
