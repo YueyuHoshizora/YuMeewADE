@@ -9,8 +9,8 @@ const collapsed = new Set<string>(); const seenAttention = new Set<string>();
 let searchText = '';
 let dragging = '';
 export function needsReply(task: TaskView): boolean { return task.state !== '完成' && (task.state === '等待回覆' || !!task.question); }
-export function taskTone(state: AppState, project: string, task: TaskView): string {
-  if (state.running.some(r => r.project === project && r.task === task.id)) return 'running';
+/** Tone from the task's own state; running is decided separately from the current running set. */
+function taskTone(task: TaskView): string {
   if (needsReply(task)) return 'reply'; if (task.confirm) return 'confirm';
   if (task.state === '完成') return 'done'; if (task.state === '暫停') return 'paused';
   if (task.state === '進行中' || task.hasChat) return 'processed';
@@ -31,21 +31,35 @@ export function tree(context: ViewContext): HTMLElement {
   root.append(search, link(t('search.title'), '#/search', 'search-link'), content);
   const unreadKeys = new Set(state.unread.map(item => `${item.project}/${item.task}`));
   const unread = (p: string, task: string) => unreadKeys.has(`${p}/${task}`);
+  // Built once per render so large trees avoid repeated scans of every project/task (formerly quadratic).
+  const runningKeys = new Set(state.running.map(r => `${r.project}/${r.task}`));
+  const projectById = new Map(state.projects.map(p => [p.id, p]));
+  const taskIndexes = new Map<string, { byId: Map<string, TaskView>; children: Map<string, TaskView[]> }>();
+  const taskIndex = (p: ProjectView) => {
+    let index = taskIndexes.get(p.id);
+    if (!index) {
+      index = { byId: new Map(p.tasks.map(task => [task.id, task])), children: new Map() };
+      for (const task of p.tasks) if (task.parent) { const siblings = index.children.get(task.parent); if (siblings) siblings.push(task); else index.children.set(task.parent, [task]); }
+      taskIndexes.set(p.id, index);
+    }
+    return index;
+  };
+  const tone = (p: string, task: TaskView) => runningKeys.has(`${p}/${task.id}`) ? 'running' : taskTone(task);
   const attentionKeys = new Set<string>();
   for (const p of state.projects) {
     for (const task of p.tasks) {
-      if (!needsReply(task) && !task.confirm && !unread(p.id, task.id) && !state.running.some(r => r.project === p.id && r.task === task.id)) continue;
+      if (!needsReply(task) && !task.confirm && !unread(p.id, task.id) && !runningKeys.has(`${p.id}/${task.id}`)) continue;
       let currentTask: TaskView | undefined = task;
       const taskVisited = new Set<string>();
       while (currentTask && !taskVisited.has(currentTask.id)) {
         taskVisited.add(currentTask.id); attentionKeys.add(`${p.id}/${currentTask.id}`);
-        currentTask = p.tasks.find(t => t.id === currentTask!.parent);
+        currentTask = currentTask.parent ? taskIndex(p).byId.get(currentTask.parent) : undefined;
       }
       let currentProject: ProjectView | undefined = p;
       const projectVisited = new Set<string>();
       while (currentProject && !projectVisited.has(currentProject.id)) {
         projectVisited.add(currentProject.id); attentionKeys.add(`p/${currentProject.id}`);
-        currentProject = state.projects.find(other => other.id === currentProject!.parent);
+        currentProject = currentProject.parent ? projectById.get(currentProject.parent) : undefined;
       }
     }
   }
@@ -74,21 +88,21 @@ export function tree(context: ViewContext): HTMLElement {
   function taskNode(p: ProjectView, task: TaskView, ancestry: Set<string>): HTMLElement {
     const wrap = el('div', 'tree-node task-node'); wrap.dataset['search'] = `${task.title} ${task.id}`.toLocaleLowerCase(); if (ancestry.has(task.id)) return wrap;
     const next = new Set(ancestry).add(task.id);
-    const children = p.tasks.filter(t => t.parent === task.id);
+    const children = taskIndex(p).children.get(task.id) ?? [];
     wrap.dataset['completed'] = String(task.state === '完成' && !unread(p.id, task.id));
     const key = `${p.id}/${task.id}`; const attention = attentionKeys.has(key);
     const line = el('div', 'tree-row');
     const title = link(`${task.parent ? '↳ ' : ''}${task.title}`, taskHash(p.id, task.id), 'tree-title');
     title.append(metadataBadge(task));
     if (location.hash === title.hash) line.classList.add('selected');
-    line.append(toggle(key, !!children.length, attention), el('span', `dot ${taskTone(state, p.id, task)}`), title, menu([
+    line.append(toggle(key, !!children.length, attention), el('span', `dot ${tone(p.id, task)}`), title, menu([
       { label: t('common.rename'), action: async () => { const title = await renameModal(task.title); if (title) { await request('/api/task/update', { project: p.id, task: task.id, patch: { title } }); await refresh(); } } },
       { label: t('tree.subtask'), action: () => { location.hash = `${projectHash(p.id)}?parent=${encodeURIComponent(task.id)}#add`; } },
       { label: t('tree.newBranch'), action: () => { location.hash = `${projectHash(p.id)}?derived=${encodeURIComponent(task.id)}#add`; } },
       { label: t('common.archive'), action: async () => { if (await archiveFlow('/api/task/archive', { project: p.id, task: task.id }, task.title, 'archive_has_worktree')) await refresh(); } },
     ]));
     wrap.append(line);
-    if (task.kind === 'derived') wrap.append(el('div', 'branch-label', t('tree.branch', { source: p.tasks.find(t => t.id === task.derivedFrom)?.title ?? task.derivedFrom })));
+    if (task.kind === 'derived') wrap.append(el('div', 'branch-label', t('tree.branch', { source: (task.derivedFrom ? taskIndex(p).byId.get(task.derivedFrom)?.title : undefined) ?? task.derivedFrom })));
     const notices = badges(p, [task]); if (notices.childNodes.length) wrap.append(notices);
     const nest = el('div', 'tree-children');
     nests.set(key, nest);
@@ -97,8 +111,9 @@ export function tree(context: ViewContext): HTMLElement {
     return wrap;
   }
   function ordered(parent: string): ProjectView[] {
-    const ids = state.order[parent] ?? [];
-    return state.projects.filter(p => p.parent === parent).sort((a, b) => Number(b.pinned) - Number(a.pinned) || (ids.indexOf(a.id) < 0 ? Infinity : ids.indexOf(a.id)) - (ids.indexOf(b.id) < 0 ? Infinity : ids.indexOf(b.id)));
+    const position = new Map<string, number>(); (state.order[parent] ?? []).forEach((id, index) => { if (!position.has(id)) position.set(id, index); });
+    const at = (id: string) => position.get(id) ?? Infinity;
+    return state.projects.filter(p => p.parent === parent).sort((a, b) => Number(b.pinned) - Number(a.pinned) || at(a.id) - at(b.id));
   }
   async function move(p: ProjectView, direction: number): Promise<void> {
     const siblings = ordered(p.parent); const at = siblings.findIndex(s => s.id === p.id); const other = at + direction;
@@ -110,8 +125,8 @@ export function tree(context: ViewContext): HTMLElement {
     const wrap = el('div', 'tree-node project-node'); wrap.dataset['search'] = `${p.name} ${p.id}`.toLocaleLowerCase(); if (ancestry.has(p.id)) return wrap;
     const next = new Set(ancestry).add(p.id); const key = `p/${p.id}`;
     const attention = attentionKeys.has(key);
-    const tones = p.tasks.map(task => taskTone(state, p.id, task));
-    const tone = p.status === '完成' ? 'done' : ['running', 'reply', 'confirm', 'processed', 'untouched', 'paused', 'done'].find(t => tones.includes(t)) ?? 'untouched';
+    const tones = new Set(p.tasks.map(task => tone(p.id, task)));
+    const projectTone = p.status === '完成' ? 'done' : ['running', 'reply', 'confirm', 'processed', 'untouched', 'paused', 'done'].find(t => tones.has(t)) ?? 'untouched';
     const line = el('div', 'tree-row'); const title = link(`${p.pinned ? '◆ ' : ''}${p.parent ? '↳ ' : ''}${p.name}`, projectHash(p.id), 'tree-title');
     line.draggable = true;
     line.ondragstart = event => { dragging = p.id; event.dataTransfer?.setData('text/plain', p.id); if (event.dataTransfer) event.dataTransfer.effectAllowed = 'move'; };
@@ -126,7 +141,7 @@ export function tree(context: ViewContext): HTMLElement {
       void run(async () => { await request('/api/order', { parent: p.parent, order: siblings.map(other => other.id) }); await refresh(); });
     };
     if (location.hash === title.hash) line.classList.add('selected');
-    line.append(toggle(key, true, attention), el('span', `dot ${tone}`), title, menu([
+    line.append(toggle(key, true, attention), el('span', `dot ${projectTone}`), title, menu([
       { label: t('common.rename'), action: async () => { const name = await renameModal(p.name); if (name) { await request('/api/project/update', { project: p.id, patch: { name } }); await refresh(); } } },
       { label: t(p.pinned ? 'tree.unpin' : 'tree.pin'), action: async () => { await request('/api/pin', { project: p.id, pinned: !p.pinned }); await refresh(); } },
       { label: t('tree.up'), action: () => move(p, -1) }, { label: t('tree.down'), action: () => move(p, 1) },
@@ -136,13 +151,13 @@ export function tree(context: ViewContext): HTMLElement {
     wrap.append(line); const notices = badges(p, p.tasks); if (notices.childNodes.length) wrap.append(notices);
     const nest = el('div', 'tree-children');
     nests.set(key, nest);
-    const tasks = p.tasks.filter(t => !t.parent || !p.tasks.some(other => other.id === t.parent));
+    const tasks = p.tasks.filter(t => !t.parent || !taskIndex(p).byId.has(t.parent));
     for (const task of tasks) nest.append(taskNode(p, task, new Set()));
     for (const child of ordered(p.id)) nest.append(projectNode(child, next));
     wrap.append(nest);
     return wrap;
   }
-  const roots = ordered(''); for (const p of state.projects) if (p.parent && !state.projects.some(other => other.id === p.parent)) roots.push(p);
+  const roots = ordered(''); for (const p of state.projects) if (p.parent && !projectById.has(p.parent)) roots.push(p);
   for (const p of roots) content.append(projectNode(p, new Set()));
   for (const node of content.querySelectorAll<HTMLElement>('.tree-node')) {
     nodeIndex.push({
