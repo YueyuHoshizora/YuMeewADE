@@ -49,6 +49,10 @@ export class EmbeddedPreviewService {
   private readonly runs = new Map<string, Run>();
   private pending = 0;
   private readonly starting = new Map<string, { project: string; task: string }>();
+  private readonly preparations = new Set<Promise<void>>();
+  private readonly terminations = new Set<Promise<void>>();
+  private disposed = false;
+  private disposing?: Promise<void>;
   private gateway?: Server;
   private gatewayUrl = '';
   private initializing?: Promise<void>;
@@ -56,6 +60,7 @@ export class EmbeddedPreviewService {
   constructor(options: EmbeddedPreviewOptions) { this.options = options; }
   gatewayOrigin(): string { return this.gatewayUrl; }
   async init(): Promise<void> {
+    if (this.disposed) throw new AppError('unavailable');
     if (this.initializing) return this.initializing;
     this.initializing = this.openGateway();
     return this.initializing;
@@ -92,6 +97,7 @@ export class EmbeddedPreviewService {
   }
   status(project: string, task: string, id: string): EmbeddedPreviewState { return { ...this.owned(project, task, id).view }; }
   async start(project: string, task: string, input: EmbeddedPreviewRequest): Promise<EmbeddedPreviewState> {
+    if (this.disposed) throw new AppError('unavailable');
     if (!input || typeof input.command !== 'string' || !input.command || input.command.length > 4096 || /[\0\r\n]/u.test(input.command)) throw new AppError('bad_request');
     const args = executionArgs(input.args);
     // The server must use our assigned port, not an arbitrary URL supplied by the caller.
@@ -99,6 +105,8 @@ export class EmbeddedPreviewService {
     if (this.pending + [...this.runs.values()].filter(run => ['starting', 'running'].includes(run.view.state)).length >= (this.options.concurrent ?? 4)) throw new AppError('conflict');
     this.pending++;
     const pendingId = randomUUID();
+    const preparation = Promise.withResolvers<void>();
+    this.preparations.add(preparation.promise);
     let proxy: Server | undefined;
     let child: ChildProcess | undefined;
     try {
@@ -118,6 +126,8 @@ export class EmbeddedPreviewService {
       const proxyPort = await listen(proxy);
       const origin = `http://127.0.0.1:${proxyPort}`;
       const url = `${this.gatewayUrl}/${id}`;
+      await this.options.assertTrusted(project);
+      if (this.disposed) throw new AppError('unavailable');
       child = spawnCli(command, args.map(arg => arg.replaceAll('{port}', String(port)).replaceAll('{host}', '127.0.0.1')), { cwd, env: { ...env, HOST: '127.0.0.1', PORT: String(port) }, detached: process.platform !== 'win32', windowsHide: true, stdio: ['ignore', 'pipe', 'pipe'] });
       const run: Run = { view: { id, project, task, state: 'starting', url, targetUrl: `http://127.0.0.1:${port}/`, output: '', exitCode: null }, child, proxy, origin, port, sockets: new Set() };
       this.pruneFinished();
@@ -132,7 +142,7 @@ export class EmbeddedPreviewService {
       };
       capture(child.stdout); capture(child.stderr);
       child.once('error', () => { run.view.state = 'failed'; proxy?.close(); });
-      child.once('exit', code => { run.view.exitCode = code; if (run.view.state !== 'stopped') run.view.state = 'failed'; for (const socket of run.sockets) socket.destroy(); proxy?.closeAllConnections(); proxy?.close(); });
+      child.once('exit', code => { run.view.exitCode = code; if (run.view.state !== 'stopped') run.view.state = 'failed'; for (const socket of run.sockets) socket.destroy(); proxy?.closeAllConnections(); proxy?.close(); void this.terminate(run); });
       proxy.on('request', (req, res) => { void this.forward(run, req, res).catch(() => { if (!res.headersSent) res.writeHead(502); res.end(); }); });
       proxy.on('upgrade', (req, socket, head) => {
         void this.options.assertTrusted(project).then(() => {
@@ -157,15 +167,15 @@ export class EmbeddedPreviewService {
       void this.ready(run);
       return { ...run.view };
     } catch (error) {
-      proxy?.close(); if (child) terminateTree(child, () => undefined);
+      if (proxy) await close(proxy); if (child) terminateTree(child, () => undefined);
       throw error;
-    } finally { this.pending--; this.starting.delete(pendingId); }
+    } finally { this.pending--; this.starting.delete(pendingId); this.preparations.delete(preparation.promise); preparation.resolve(); }
   }
   private accept(run: Run, req: IncomingMessage): boolean {
     const origin = run.origin;
     return req.headers.host === new URL(origin).host && (req.headers.origin === undefined || req.headers.origin === 'null' || req.headers.origin === origin || this.options.ideOrigins.includes(req.headers.origin)) && typeof req.url === 'string' && req.url.startsWith('/') && !req.url.startsWith('//') && !/[\0\r\n\\]/u.test(req.url);
   }
-  /** Drops the oldest finished runs whose process already exited; live or still-stopping runs are never evicted. */
+  /** Drops the oldest finished runs whose leader exited; group cleanup remains tracked independently. */
   private pruneFinished(): void {
     const finished = [...this.runs.entries()].filter(([, run]) => !['starting', 'running'].includes(run.view.state) && (run.child.exitCode !== null || run.child.signalCode !== null));
     for (const [id] of finished.slice(0, Math.max(0, finished.length - FINISHED_RUNS + 1))) this.runs.delete(id);
@@ -214,18 +224,19 @@ export class EmbeddedPreviewService {
   }
   async stop(project: string, task: string, id: string): Promise<void> {
     const run = this.owned(project, task, id);
-    if (run.stopping) return run.stopping;
     run.view.state = 'stopped';
     for (const socket of run.sockets) socket.destroy();
     run.proxy.closeAllConnections(); run.proxy.close();
+    return this.terminate(run);
+  }
+  private terminate(run: Run): Promise<void> {
+    if (run.stopping) return run.stopping;
     const { promise, resolve } = Promise.withResolvers<void>();
     run.stopping = promise;
-    if (run.child.exitCode !== null || run.child.signalCode !== null) resolve();
-    else {
-      const cancel = terminateTree(run.child, resolve);
-      run.child.once('exit', () => { cancel(); resolve(); });
-    }
-    return run.stopping;
+    this.terminations.add(promise);
+    // The leader's exit is not completion: its group may still contain a server ignoring SIGTERM.
+    terminateTree(run.child, () => { this.terminations.delete(promise); resolve(); });
+    return promise;
   }
   async reload(project: string, task: string, id: string): Promise<EmbeddedPreviewState> {
     await this.options.assertTrusted(project);
@@ -234,8 +245,16 @@ export class EmbeddedPreviewService {
     return view;
   }
   async dispose(): Promise<void> {
-    await Promise.all([...this.runs.values()].map(run => this.stop(run.view.project, run.view.task, run.view.id)));
-    this.gateway?.closeAllConnections();
-    if (this.gateway) await close(this.gateway);
+    if (this.disposing) return this.disposing;
+    this.disposed = true;
+    this.disposing = (async () => {
+      await Promise.all(this.preparations);
+      await this.initializing;
+      await Promise.all([...this.runs.values()].map(run => this.stop(run.view.project, run.view.task, run.view.id)));
+      await Promise.all(this.terminations);
+      this.gateway?.closeAllConnections();
+      if (this.gateway) await close(this.gateway);
+    })();
+    return this.disposing;
   }
 }

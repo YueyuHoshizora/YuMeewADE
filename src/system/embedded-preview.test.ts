@@ -4,6 +4,7 @@ import os from 'node:os';
 import path from 'node:path';
 import { request } from 'node:http';
 import { test } from 'node:test';
+import { setImmediate } from 'node:timers/promises';
 import { EmbeddedPreviewService } from './embedded-preview.ts';
 import { AppError } from '../shared/errors.ts';
 
@@ -182,4 +183,70 @@ test('a relative preview command resolves in the task folder', { skip: process.p
     }
     assert.match(output, /RELATIVE-PREVIEW/);
   } finally { await service.dispose(); await fs.rm(folder, { recursive: true, force: true }); }
+});
+
+test('disposing fences pending preparation and permanently rejects new previews', async () => {
+  const folder = await fs.mkdtemp(path.join(os.tmpdir(), 'ym-preview-dispose-'));
+  const entered = Promise.withResolvers<void>(), gate = Promise.withResolvers<void>();
+  const service = new EmbeddedPreviewService({ cwd: async () => { entered.resolve(); await gate.promise; return folder; }, assertTrusted: async () => {}, ideOrigins: ['http://127.0.0.1:3000'] });
+  const input = { command: process.execPath, args: ['-e', serverCode, '--', '{port}'] };
+  await service.init();
+  try {
+    const pending = service.start('project', 'task', input);
+    const rejected = assert.rejects(pending, (error: unknown) => error instanceof AppError && error.code === 'unavailable');
+    await entered.promise;
+    const disposed = service.dispose();
+    gate.resolve();
+    await rejected;
+    await disposed;
+    assert.deepEqual(service.list('project', 'task'), []);
+    assert.equal(service.isBusy(), false);
+    await assert.rejects(requestStatus(service.gatewayOrigin()));
+    await assert.rejects(service.start('project', 'task', input), (error: unknown) => error instanceof AppError && error.code === 'unavailable');
+    await assert.rejects(service.init(), (error: unknown) => error instanceof AppError && error.code === 'unavailable');
+  } finally { gate.resolve(); await service.dispose(); await fs.rm(folder, { recursive: true, force: true }); }
+});
+
+test('preview rechecks trust after asynchronous launch preparation', async () => {
+  const folder = await fs.mkdtemp(path.join(os.tmpdir(), 'ym-preview-trust-'));
+  const entered = Promise.withResolvers<void>(), gate = Promise.withResolvers<void>();
+  let trusted = true;
+  const service = new EmbeddedPreviewService({ cwd: async () => { entered.resolve(); await gate.promise; return folder; }, assertTrusted: async () => { if (!trusted) throw new AppError('forbidden'); }, ideOrigins: ['http://127.0.0.1:3000'] });
+  await service.init();
+  try {
+    const pending = service.start('project', 'task', { command: process.execPath, args: ['-e', serverCode, '--', '{port}'] });
+    const rejected = assert.rejects(pending, (error: unknown) => error instanceof AppError && error.code === 'forbidden');
+    await entered.promise;
+    trusted = false; gate.resolve();
+    await rejected;
+    assert.deepEqual(service.list('project', 'task'), []);
+    assert.deepEqual(service.origins(), [service.gatewayOrigin()]);
+    assert.equal(service.isBusy(), false);
+  } finally { gate.resolve(); await service.dispose(); await fs.rm(folder, { recursive: true, force: true }); }
+});
+
+test('an exited preview launcher cannot leave a SIGTERM-resistant server behind', { skip: process.platform === 'win32' }, async () => {
+  const folder = await fs.mkdtemp(path.join(os.tmpdir(), 'ym-preview-descendant-'));
+  const service = new EmbeddedPreviewService({ cwd: async () => folder, assertTrusted: async () => {}, ideOrigins: ['http://127.0.0.1:3000'] });
+  let descendant = 0;
+  await service.init();
+  try {
+    const code = `process.on('SIGTERM', () => {}); require('node:http').createServer((req, res) => res.end('alive')).listen(Number(process.env.PORT), '127.0.0.1', () => console.log(process.pid));`;
+    const launcher = `const child = require('node:child_process').spawn(process.execPath, ['-e', ${JSON.stringify(code)}], { cwd: ${JSON.stringify(folder)}, env: process.env, stdio: ['ignore', 'pipe', 'ignore'] }); child.stdout.once('data', chunk => { process.stdout.write(chunk); child.stdout.destroy(); child.unref(); });`;
+    const view = await service.start('project', 'task', { command: process.execPath, args: ['-e', launcher, '--', '{port}'] });
+    const deadline = Date.now() + 10000;
+    while (service.status('project', 'task', view.id).exitCode === null && Date.now() < deadline) await setImmediate();
+    const finished = service.status('project', 'task', view.id);
+    descendant = Number(finished.output.trim());
+    assert.ok(descendant > 0);
+    assert.equal(finished.exitCode, 0);
+    assert.equal(finished.state, 'failed');
+    await service.stop('project', 'task', view.id);
+    await service.dispose();
+    await assert.rejects(requestStatus(view.targetUrl));
+    assert.throws(() => process.kill(descendant, 0), (error: unknown) => (error as NodeJS.ErrnoException).code === 'ESRCH');
+  } finally {
+    if (descendant) { try { process.kill(descendant, 'SIGKILL'); } catch { /* Already terminated. */ } }
+    await service.dispose(); await fs.rm(folder, { recursive: true, force: true });
+  }
 });
