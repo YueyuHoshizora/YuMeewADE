@@ -251,6 +251,19 @@ test('stash SHA防過期、drop確認、cherry-pick衝突回滾與rebase繼續�
   await assert.rejects(workbench.rewrite('P', undefined, 'abort', '', true));
 }));
 
+test('stash with untracked files leaves local secrets in the folder and out of Git objects', () => withTmpWorkspace(async ws => {
+  const projects = new ProjectLedger(ws); const tasks = new TaskLedger(ws); await projects.create({ name: 'P' });
+  const root = ws.projectDir('P'); const workbench = new GitWorkbench({ ws, projects, tasks, isRunning: () => false });
+  // An existing repository need not ignore its secrets the way a new project's .gitignore does.
+  await fs.writeFile(path.join(root, '.gitignore'), '.ai/\n'); await fs.writeFile(path.join(root, 'file.txt'), 'base\n'); await commitAll(root, 'base');
+  await fs.writeFile(path.join(root, '.env'), 'TOKEN=fake\n'); await fs.writeFile(path.join(root, 'fresh.txt'), 'fresh\n'); await fs.writeFile(path.join(root, 'file.txt'), 'changed\n');
+  await workbench.stash('P', undefined, 'push', { message: 'save', includeUntracked: true });
+  assert.equal((await gitOk(root, ['ls-tree', '-r', '--name-only', 'stash@{0}^3'])).trim(), 'fresh.txt');
+  assert.equal(await fs.readFile(path.join(root, '.env'), 'utf8'), 'TOKEN=fake\n');
+  assert.equal(await fs.readFile(path.join(root, 'file.txt'), 'utf8'), 'base\n');
+  await assert.rejects(fs.access(path.join(root, 'fresh.txt')));
+}));
+
 test('遠端新增、改名、fetch/push URL及移除驗證與確認', () => withTmpWorkspace(async ws => {
   const projects = new ProjectLedger(ws); const tasks = new TaskLedger(ws); await projects.create({ name: 'P' });
   const workbench = new GitWorkbench({ ws, projects, tasks, isRunning: () => false });
