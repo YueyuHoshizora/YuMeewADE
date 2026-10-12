@@ -123,6 +123,7 @@ export const it: Record<MessageKey, string> = {
 'turn.confirmHint': 'Controlla il risultato, poi segna l’attività come completata o continua.',
 'turn.approve': 'Segna come completata',
 'turn.continue': 'Continua',
+'turn.welcomeTitle': 'Inizia il tuo primo progetto', 'turn.welcomeBody': 'Questo spazio di lavoro non ha ancora progetti. Crea un progetto o apri una cartella di codice esistente su questo computer, poi descrivi cosa deve fare l’IA.',
 'project.openExisting': 'Apri progetto',
 'project.existingHint': 'Seleziona un progetto esistente in questo spazio di lavoro per riprendere le attività e le conversazioni originali.',
 'project.searchExisting': 'Cerca nome del progetto o cartella principale…',

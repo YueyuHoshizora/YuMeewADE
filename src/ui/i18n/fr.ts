@@ -123,6 +123,7 @@ export const fr: Record<MessageKey, string> = {
 'turn.confirmHint': 'Vérifie le résultat, puis marque la tâche comme terminée ou continue.',
 'turn.approve': 'Marquer comme terminé',
 'turn.continue': 'Continuer',
+'turn.welcomeTitle': 'Démarrer ton premier projet', 'turn.welcomeBody': 'Cet espace de travail n’a encore aucun projet. Crée un projet ou ouvre un dossier de code existant sur cet ordinateur, puis décris ce que l’IA doit faire.',
 'project.openExisting': 'Ouvrir un projet',
 'project.existingHint': 'Choisissez un projet existant de cet espace de travail pour reprendre ses tâches et conversations.',
 'project.searchExisting': 'Rechercher le nom du projet ou le dossier principal…',

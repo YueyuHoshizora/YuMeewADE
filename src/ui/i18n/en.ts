@@ -123,6 +123,7 @@ export const en: Record<MessageKey, string> = {
 'turn.confirmHint': 'Review the results, then mark as complete or continue.',
 'turn.approve': 'Mark complete',
 'turn.continue': 'Continue',
+'turn.welcomeTitle': 'Start your first project', 'turn.welcomeBody': 'This workspace has no projects yet. Create a project or open an existing code folder on this computer, then describe what you want the AI to do.',
 'project.openExisting': 'Open project',
 'project.existingHint': 'Select an existing project in this workspace to continue its original tasks and conversations.',
 'project.searchExisting': 'Search project name or main folder…',

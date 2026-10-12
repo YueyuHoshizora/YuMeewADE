@@ -123,6 +123,7 @@ export const zhCN: Record<MessageKey, string> = {
 'turn.confirmHint': '检查结果后，选择标为完成或继续进行。',
 'turn.approve': '标为完成',
 'turn.continue': '继续进行',
+'turn.welcomeTitle': '开始第一个项目', 'turn.welcomeBody': '这个工作区还没有项目。创建新项目，或打开电脑上已有的代码文件夹，再写下想让 AI 做的事。',
 'project.openExisting': '打开项目',
 'project.existingHint': '选择当前工作区的现有项目，继续使用原来的任务与对话。',
 'project.searchExisting': '搜索项目名称或主文件夹…',

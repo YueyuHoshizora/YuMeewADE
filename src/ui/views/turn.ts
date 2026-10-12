@@ -3,11 +3,18 @@ import { t } from '../i18n/index.ts';
 import { needsReply } from '../components/tree.ts';
 import { button, el, link, row, taskHash, type View, type ViewContext } from '../components/dom.ts';
 import { onboardingBanner } from '../components/onboarding.ts';
+import { openProjectFromFolder } from './projects.ts';
 
 export function turnView(context: ViewContext): View {
   const node = el('div', 'page'); const tabs = el('div', 'tabs'); const list = el('div', 'turn-list'); const hint = el('p', 'muted'); let selected: 'reply' | 'confirm' = 'reply';
+  // A workspace without projects has nothing to triage; point at the two ways to get one instead of an empty list.
+  const welcome = el('section', 'card welcome');
+  welcome.append(el('h2', '', t('turn.welcomeTitle')), el('p', 'muted', t('turn.welcomeBody')), row(button(t('project.new'), () => { location.hash = '#/new'; }, 'primary'), button(t('project.openExisting'), () => openProjectFromFolder(context))));
+  const heading = el('h1', '', t('nav.turn'));
   node.append(onboardingBanner(context));
   function render(): void {
+    const empty = !context.state.projects.length;
+    welcome.hidden = !empty; for (const part of [heading, tabs, hint, list]) part.hidden = empty;
     const items = context.state.projects.flatMap(project => project.tasks.map(task => ({ project, task, waiting: context.state.running.some(r => r.project === project.id && r.task === task.id && !!r.approvals?.length) })));
     const reply = items.filter(({ task, waiting }) => waiting || needsReply(task)); const confirm = items.filter(({ task, waiting }) => task.confirm && !waiting && !needsReply(task));
     tabs.replaceChildren(button(t('turn.reply', { n: reply.length }), () => { selected = 'reply'; render(); }, selected === 'reply' ? 'active' : ''), button(t('turn.confirm', { n: confirm.length }), () => { selected = 'confirm'; render(); }, selected === 'confirm' ? 'active' : ''));
@@ -19,5 +26,5 @@ export function turnView(context: ViewContext): View {
       return item;
     })); if (!list.childNodes.length) list.append(el('p', 'empty', t('common.empty')));
   }
-  node.append(el('h1', '', t('nav.turn')), tabs, hint, list); render(); return { node, update: state => { context.state = state; render(); } };
+  node.append(welcome, heading, tabs, hint, list); render(); return { node, update: state => { context.state = state; render(); } };
 }

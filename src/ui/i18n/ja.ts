@@ -123,6 +123,7 @@ export const ja: Record<MessageKey, string> = {
 'turn.confirmHint': '成果を確認し、完了にするか作業を続けてください。',
 'turn.approve': '完了にする',
 'turn.continue': '続ける',
+'turn.welcomeTitle': '最初のプロジェクトを始める', 'turn.welcomeBody': 'このワークスペースにはまだプロジェクトがありません。新規プロジェクトを作成するか、このコンピューターにある既存のコードフォルダーを開いて、AI にしてほしいことを書いてください。',
 'project.openExisting': 'プロジェクトを開く',
 'project.existingHint': '現在のワークスペースにある既存のプロジェクトを選び、元のタスクと会話を続けます。',
 'project.searchExisting': 'プロジェクト名またはメインフォルダーを検索…',

@@ -123,6 +123,7 @@ export const de: Record<MessageKey, string> = {
 'turn.confirmHint': 'Prüfe das Ergebnis und markiere die Aufgabe als abgeschlossen oder setze sie fort.',
 'turn.approve': 'Als abgeschlossen markieren',
 'turn.continue': 'Fortsetzen',
+'turn.welcomeTitle': 'Erstes Projekt starten', 'turn.welcomeBody': 'Dieser Arbeitsbereich hat noch keine Projekte. Erstelle ein Projekt oder öffne einen vorhandenen Code-Ordner auf diesem Computer und beschreibe dann, was die KI tun soll.',
 'project.openExisting': 'Projekt öffnen',
 'project.existingHint': 'Ein vorhandenes Projekt in diesem Arbeitsbereich auswählen und seine bisherigen Aufgaben und Gespräche fortsetzen.',
 'project.searchExisting': 'Projektname oder Hauptordner suchen…',
