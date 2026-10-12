@@ -90,7 +90,14 @@ export async function updateJson<T>(file: string, fallback: T, change: (value: T
 
 export async function appendLine(file: string, line: string): Promise<void> {
   await fs.mkdir(path.dirname(file), { recursive: true });
-  await fs.appendFile(file, line + '\n', 'utf8');
+  const handle = await fs.open(file, 'a+');
+  try {
+    const { size } = await handle.stat();
+    // An append cut short (disk full, crash) leaves a fragment without its newline. Starting on a fresh line keeps this
+    // record from being glued to that fragment, where readers would discard both as one unparsable line.
+    const last = size > 0 ? (await handle.read(Buffer.alloc(1), 0, 1, size - 1)).buffer[0] : 0x0a;
+    await handle.appendFile(`${last === 0x0a ? '' : '\n'}${line}\n`, 'utf8');
+  } finally { await handle.close(); }
 }
 
 /** 確認 target 位於 base 之內（防路徑逃逸）。 */

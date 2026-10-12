@@ -88,3 +88,14 @@ test('同大小改寫、縮短與不完整尾行都重新解析', () => withTmpW
   await fs.appendFile(file, `${json.slice(-2)}\n`);
   assert.deepEqual(await store.readLog('P', task.id), [row]);
 }));
+
+test('a message appended after a write was cut short (disk full, crash) is kept, not merged into the fragment', () => withTmpWorkspace(async ws => {
+  await new ProjectLedger(ws).create({ name: 'P' });
+  const task = await new TaskLedger(ws).create('P', { title: 'T', workspace: 'direct' });
+  const store = new ChatStore(ws);
+  const row = (text: string): ChatRow => ({ role: 'user', to: 'codex', at: 'now', request: text, text });
+  await store.append('P', task.id, row('before'));
+  await fs.appendFile(ws.chatFile('P', task.id, 'jsonl'), JSON.stringify(row('cut short')).slice(0, 20));
+  await store.append('P', task.id, row('after'));
+  assert.deepEqual((await store.readLog('P', task.id)).map(r => r.text), ['before', 'after']);
+}));
