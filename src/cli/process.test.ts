@@ -15,6 +15,19 @@ test('Windows 的環境變數名稱不分大小寫：Path／SystemRoot 依白名
   assert.deepEqual(minimalEnv(['Path', 'node_options'], { PATH: 'C:\\bin', Node_Options: '--x' }, 'win32'), { PATH: 'C:\\bin', NODE_OPTIONS: '--x', GIT_TERMINAL_PROMPT: '0' });
 });
 
+test('a malformed JSON line from a CLI is logged without its content, which may echo the prompt or a credential', { skip: process.platform === 'win32' }, async () => {
+  const written: string[] = [];
+  const write = process.stderr.write.bind(process.stderr);
+  process.stderr.write = ((chunk: string | Uint8Array) => { written.push(String(chunk)); return true; }) as typeof process.stderr.write;
+  try {
+    const run = runLineProcess({ command: '/bin/sh', args: ['-c', 'printf "{password=sk-SECRET prompt=PRIVATE\\n"'], cwd: process.cwd(), env: process.env, prompt: '', label: 'redaction-test' }, () => assert.fail('not JSON'));
+    await run.done;
+  } finally { process.stderr.write = write; }
+  const warning = written.find(line => line.includes('redaction-test') && line.includes('"level":"warn"'));
+  assert.ok(warning, 'the malformed line is still reported');
+  assert.doesNotMatch(warning, /SECRET|PRIVATE/);
+});
+
 // 真實行程樹／系統 PID 不受 fake clock 控制，以短輪詢等 OS 回收。
 test('停止會終止持有 stdout 的孫行程並及時完成', { skip: process.platform === 'win32', timeout: 8000 }, async () => {
   let pid = 0;

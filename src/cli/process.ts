@@ -188,7 +188,8 @@ function runResolvedLineProcess(opts: { command: string; args: string[]; cwd: st
       try {
         onLine(JSON.parse(line) as Record<string, unknown>);
       } catch {
-        log.warn('CLI 輸出非 JSON 行', { label: opts.label, head: line.slice(0, 80) });
+        // Never the line itself: CLI output can echo the prompt or a credential (AGENTS.md §6.8).
+        log.warn('CLI 輸出非 JSON 行', { label: opts.label, bytes: Buffer.byteLength(line) });
       }
     }
   });
