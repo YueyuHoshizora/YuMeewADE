@@ -88,6 +88,67 @@ test('activate overwrites only the default slot from an added account and reject
   } finally { await f.cleanup(); }
 });
 
+test('the selected account and the default slot refresh one record, so neither copy is left with a rotated-away token', async () => {
+  const f = await fixture();
+  try {
+    const [one, two] = [path.join(f.root, 'one'), path.join(f.root, 'two')];
+    await f.source('codex', one, codexRecord('one'));
+    await f.source('codex', two, codexRecord('two'));
+    await f.accounts.import('codex', one);
+    await f.accounts.import('codex', two);
+    const refresh = (configDir: string | undefined, record: string) => f.accounts.withEnv('codex', configDir, async env => {
+      const file = path.join(env['CODEX_HOME']!, 'auth.json');
+      const seen = await fs.readFile(file, 'utf8');
+      await fs.writeFile(file, record);
+      return seen;
+    });
+    const read = (configDir: string | undefined) => f.accounts.withEnv('codex', configDir, async env => fs.readFile(path.join(env['CODEX_HOME']!, 'auth.json'), 'utf8'));
+    await f.accounts.activate('codex', one);
+    // A run in the slot refreshes; the account's own quota/MCP home sees that refresh, and its refresh reaches the slot.
+    assert.equal(await refresh(undefined, codexRecord('one-run')), codexRecord('one'));
+    assert.equal(await refresh(one, codexRecord('one-quota')), codexRecord('one-run'));
+    assert.equal(await read(undefined), codexRecord('one-quota'));
+    // Switching away hands the newest copy back; switching back returns it to the slot.
+    await f.accounts.activate('codex', two);
+    assert.equal(await read(undefined), codexRecord('two'));
+    assert.equal(await read(one), codexRecord('one-quota'));
+    await f.accounts.activate('codex', one);
+    assert.equal(await read(undefined), codexRecord('one-quota'));
+    // An undone switch also restores who holds the slot.
+    const undo = await f.accounts.activate('codex', two);
+    await undo();
+    await refresh(one, codexRecord('one-after-undo'));
+    assert.equal(await read(undefined), codexRecord('one-after-undo'));
+    // Emptying the slot hands its copy back too.
+    await f.accounts.remove('codex');
+    assert.equal(await read(one), codexRecord('one-after-undo'));
+    await assert.rejects(read(undefined), /Account credentials unavailable/);
+  } finally { await f.cleanup(); }
+});
+
+test('linking at startup keeps the more recently refreshed of copies that already diverged', async () => {
+  const f = await fixture();
+  try {
+    const one = path.join(f.root, 'one');
+    const record = (name: string, at: string) => JSON.stringify({ ...JSON.parse(codexRecord(name)), last_refresh: at });
+    await f.source('codex', one, record('older', '2026-10-01T00:00:00Z'));
+    await f.accounts.import('codex', one);
+    await f.accounts.activate('codex', one);
+    const read = (configDir: string | undefined) => f.accounts.withEnv('codex', configDir, async env => fs.readFile(path.join(env['CODEX_HOME']!, 'auth.json'), 'utf8'));
+    // Copies refreshed apart before linking existed: after a restart the slot's newer copy wins.
+    await f.accounts.withEnv('codex', undefined, async env => fs.writeFile(path.join(env['CODEX_HOME']!, 'auth.json'), record('slot', '2026-10-03T00:00:00Z')));
+    await f.accounts.link('codex', undefined);
+    await f.accounts.withEnv('codex', one, async env => fs.writeFile(path.join(env['CODEX_HOME']!, 'auth.json'), record('own', '2026-10-02T00:00:00Z')));
+    await f.accounts.link('codex', one);
+    assert.equal(await read(one), record('slot', '2026-10-03T00:00:00Z'));
+    // The account's own copy wins when it is the newer one.
+    await f.accounts.link('codex', undefined);
+    await f.accounts.withEnv('codex', one, async env => fs.writeFile(path.join(env['CODEX_HOME']!, 'auth.json'), record('own', '2026-10-04T00:00:00Z')));
+    await f.accounts.link('codex', one);
+    assert.equal(await read(undefined), record('own', '2026-10-04T00:00:00Z'));
+  } finally { await f.cleanup(); }
+});
+
 test('undoing an activation puts the slot back to what it held before, or empties it', async () => {
   const f = await fixture();
   try {

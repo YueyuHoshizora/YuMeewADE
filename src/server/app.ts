@@ -345,6 +345,10 @@ export class App {
           try { await this.captureCredentials(ai, directory); }
           catch { log.warn('帳號憑證尚未匯入', { ai }); }
         }
+        // The slot holds the selected account's login; both must share one record or their rotating refresh tokens diverge.
+        const active = settings.accounts[ai]?.find(account => account.id === settings.activeAccounts[ai]);
+        try { await this.accounts.link(ai, active?.configDir); }
+        catch { log.warn('作用中帳號的憑證無法連結預設槽', { ai }); }
       }
     }
     await this.store.recoverInterrupted();
