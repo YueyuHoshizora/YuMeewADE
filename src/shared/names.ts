@@ -5,12 +5,16 @@ const WINDOWS_RESERVED = /^(con|prn|aux|nul|com[0-9¹²³]|lpt[0-9¹²³])$/i;
 const PROJECT_RE = /^[\p{L}\p{N}_][\p{L}\p{N}_ .-]{0,63}$/u;
 const TASK_RE = /^[A-Za-z0-9][A-Za-z0-9_-]{0,63}$/;
 
+/** A path component Windows maps to a device (`CON`, `nul.txt`, `COM¹ .md`) rather than a file or folder. */
+export function isWindowsDeviceName(part: string): boolean {
+  // `CON .txt` is still the device: Windows ignores the spaces before the extension.
+  return WINDOWS_RESERVED.test((part.split('.')[0] ?? '').trimEnd());
+}
+
 export function isValidProjectName(name: unknown): name is string {
   if (typeof name !== 'string' || !PROJECT_RE.test(name)) return false;
   if (name.includes('..') || name.endsWith('.') || name.endsWith(' ')) return false;
-  // `CON .txt` is still the device: Windows ignores the spaces before the extension.
-  if (WINDOWS_RESERVED.test((name.split('.')[0] ?? '').trimEnd())) return false;
-  return true;
+  return !isWindowsDeviceName(name);
 }
 
 export function isValidTaskId(id: unknown): id is string {

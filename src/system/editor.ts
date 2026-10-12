@@ -7,6 +7,7 @@ import { createRequire } from 'node:module';
 import { TextDecoder } from 'node:util';
 import type { WorktreeService } from '../git/worktree.ts';
 import { git, gitOk, isLocalSecret } from '../git/git.ts';
+import { isWindowsDeviceName } from '../shared/names.ts';
 import type { TaskLedger } from '../ledger/tasks.ts';
 import type { EditorDocument, EditorLocation, EditorDiagnostic } from '../shared/types.ts';
 import { AppError } from '../shared/errors.ts';
@@ -645,13 +646,15 @@ export class EditorService {
       // `renaming` is the source of a rename: on case-insensitive file systems (macOS default) a case-only rename finds the
       // source itself at the destination, which is not another file to protect.
       const validateNew = async (relative: string, renaming?: { relative: string; file: string }): Promise<string> => {
-        if (!relative || relative.length > 1000 || path.isAbsolute(relative) || relative.includes('\\') || relative.split('/').some(part => !part || part === '.' || part === '..' || part === '.git' || part === '.ai' || isLocalSecret(part))) throw new AppError('bad_request');
+        if (!relative || relative.length > 1000 || path.isAbsolute(relative) || relative.includes('\\') || relative.split('/').some(part => !part || part === '.' || part === '..' || part === '.git' || part === '.ai' || isLocalSecret(part) || process.platform === 'win32' && !windowsFileName(part))) throw new AppError('bad_request');
         const parent = path.posix.dirname(relative);
         if (parent !== '.') await this.existing(project, task, parent);
         const file = path.join(root, relative);
         if (await pathExists(file) && !(renaming && relative !== renaming.relative && relative.toLowerCase() === renaming.relative.toLowerCase() && await sameEntry(file, renaming.file))) throw new AppError('conflict', 'editor_conflict');
         return file;
       };
+      // Windows would open a device for `CON`/`nul.txt`, strip a trailing dot or space, or reject `<>:"|?*` outright.
+      const windowsFileName = (part: string) => !isWindowsDeviceName(part) && !/[ .]$/u.test(part) && !/[<>:"|?*\u0000-\u001f]/u.test(part);
       if (creation) {
         const file = await validateNew(mutation.path);
         if (mutation.action === 'createFolder') await fs.mkdir(file); else { const handle = await fs.open(file, 'wx'); await handle.close(); }
