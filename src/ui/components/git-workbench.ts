@@ -1,6 +1,7 @@
-import type { EditorDocument, GitWorkbenchStatus, GitFileDiff, GitConflictView, GitRemote, WorktreeMaintenanceEntry } from '../../shared/types.ts';
+import type { BlameLine, EditorDocument, GitWorkbenchStatus, GitFileDiff, GitConflictView, GitRemote, WorktreeMaintenanceEntry } from '../../shared/types.ts';
 import { query, request } from '../api.ts';
 import { t } from '../i18n/index.ts';
+import { localDateTime } from './display.ts';
 import { area, button, confirmModal, el, field, input, modal, row, select, toast, type ViewContext } from './dom.ts';
 import { taskComparisonButton } from './task-comparison.ts';
 import { githubPullRequestPanel } from './github.ts';
@@ -122,10 +123,31 @@ export function gitWorkbenchButton(context: ViewContext, project: string, task?:
         for (const path of result.files) view.append(button(path, () => window.dispatchEvent(new CustomEvent('yumeewade:open-file', { detail: { project, task: task ?? '', path } }))));
         modal(t('gitManage.detail'), view);
       };
-      panel.append(field(t('gitManage.path'), historyPath), row(button(t('gitManage.history'), () => history()), button(t('gitManage.blame'), async () => {
-        const result = await request<{ text: string }>(query('/api/git/blame', { ...ids, path: historyPath.value }));
-        modal(t('gitManage.blame'), el('pre', '', result.text));
-      })), field(t('gitManage.sha'), commitSha), button(t('gitManage.detail'), () => detail(commitSha.value)));
+      const openFile = (path: string, line?: number) => window.dispatchEvent(new CustomEvent('yumeewade:open-file', { detail: { project, task: task ?? '', path, ...(line ? { line } : {}) } }));
+      const blame = async () => {
+        const path = historyPath.value;
+        const { lines } = await request<{ lines: BlameLine[] }>(query('/api/git/blame', { ...ids, path }));
+        const table = el('table', 'git-blame'); const head = el('tr'); const body = el('tbody');
+        for (const key of ['gitBlame.commit', 'gitBlame.author', 'gitBlame.date', 'gitBlame.line', 'gitBlame.content'] as const) head.append(el('th', '', t(key)));
+        const thead = el('thead'); thead.append(head); table.append(thead, body);
+        // Like IDE gutters, only the first line of a run from the same commit repeats its metadata.
+        let previous = '';
+        for (const entry of lines) {
+          const commit = el('td'); const author = el('td'); const date = el('td');
+          if (entry.sha !== previous) {
+            if (entry.committed) {
+              const open = button(entry.sha.slice(0, 8), () => detail(entry.sha), 'subtle'); open.title = entry.summary; commit.append(open);
+              author.textContent = entry.author; date.textContent = entry.time ? localDateTime(entry.time) : '';
+            } else commit.textContent = t('gitBlame.uncommitted');
+          }
+          previous = entry.sha;
+          const line = el('td'); line.append(button(String(entry.line), () => openFile(path, entry.line), 'subtle'));
+          const text = el('td'); text.append(el('code', '', entry.text));
+          const item = el('tr'); item.append(commit, author, date, line, text); body.append(item);
+        }
+        modal(`${t('gitManage.blame')}: ${path}`, table);
+      };
+      panel.append(field(t('gitManage.path'), historyPath), row(button(t('gitManage.history'), () => history()), button(t('gitManage.blame'), blame)), field(t('gitManage.sha'), commitSha), button(t('gitManage.detail'), () => detail(commitSha.value)));
       const stashMessage = input(); const untracked = input(); untracked.type = 'checkbox';
       panel.append(field(t('gitManage.stashMessage'), stashMessage), field(t('gitManage.untracked'), untracked), button(t('gitManage.stashPush'), () => mutate('stash', { action: 'push', message: stashMessage.value, includeUntracked: untracked.checked })));
       for (const entry of await request<Array<{ sha: string; ref: string; message: string }>>(query('/api/git/stashes', ids))) {

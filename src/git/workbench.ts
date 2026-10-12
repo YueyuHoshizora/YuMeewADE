@@ -3,6 +3,7 @@ import path from 'node:path';
 import os from 'node:os';
 import { createHash } from 'node:crypto';
 import type { GitFileDiff, GitConflictView, TaskComparison } from '../shared/git-precision.ts';
+import { parseBlame, type BlameLine } from '../shared/git-blame.ts';
 import { parseHunks, selectedPatch } from './precision.ts';
 import type { Workspace } from '../ledger/workspace.ts';
 import type { ProjectLedger } from '../ledger/projects.ts';
@@ -142,10 +143,10 @@ export class GitWorkbench {
       return { metadata: await this.command(root, ['show', '-s', '--format=fuller', sha]), files: safe, patch: safe.length ? await this.command(root, ['show', '--format=', sha, '--', ...safe]) : '' };
     });
   }
-  async blame(project: string, task: string | undefined, relative: string): Promise<string> {
+  async blame(project: string, task: string | undefined, relative: string): Promise<BlameLine[]> {
     return this.locked(project, task, false, async root => {
       await this.safePath(root, relative);
-      return this.command(root, ['blame', '--line-porcelain', '--', relative]);
+      return parseBlame(await this.command(root, ['blame', '--line-porcelain', '--', relative]));
     });
   }
   async stashes(project: string, task?: string): Promise<Array<{ sha: string; ref: string; message: string }>> {

@@ -23,6 +23,7 @@ export type { VerificationInputModel } from './verification.ts';
 export type * from './embedded-preview.ts';
 export type * from './dap.ts';
 export type * from './workflow-timeline.ts';
+export type * from './git-blame.ts';
 
 // ---- 列舉值（寫進台帳檔案的原值；UI 依值翻譯顯示） ----
 

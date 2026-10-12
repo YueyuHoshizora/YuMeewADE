@@ -17,6 +17,7 @@ export const featureZhTW = {
   'gitManage.continue': '繼續變基',
   'gitManage.abort': '取消變基',
   'gitManage.rewriteConfirm': '將改寫目前分支；變基衝突請在三方差異中解決後繼續，或取消。',
+  'gitBlame.commit': '提交', 'gitBlame.author': '作者', 'gitBlame.date': '日期', 'gitBlame.line': '行', 'gitBlame.content': '內容', 'gitBlame.uncommitted': '尚未提交',
 };
 export const featureZhCN = {
   "gitManage.history": "提交历史",
@@ -37,6 +38,7 @@ export const featureZhCN = {
   'gitManage.continue': '继续变基',
   'gitManage.abort': '取消变基',
   'gitManage.rewriteConfirm': '将改写当前分支；变基冲突请在三方差异中解决后继续，或取消。',
+  'gitBlame.commit': '提交', 'gitBlame.author': '作者', 'gitBlame.date': '日期', 'gitBlame.line': '行', 'gitBlame.content': '内容', 'gitBlame.uncommitted': '尚未提交',
 };
 export const featureEn = {
   "gitManage.history": "Commit history",
@@ -57,6 +59,7 @@ export const featureEn = {
   'gitManage.continue': 'Continue rebase',
   'gitManage.abort': 'Abort rebase',
   'gitManage.rewriteConfirm': 'This rewrites the current branch. Resolve rebase conflicts in the three-way view, then continue or abort.',
+  'gitBlame.commit': 'Commit', 'gitBlame.author': 'Author', 'gitBlame.date': 'Date', 'gitBlame.line': 'Line', 'gitBlame.content': 'Content', 'gitBlame.uncommitted': 'Not committed',
 };
 export const featureJa = {
   "gitManage.history": "コミット履歴",
@@ -77,6 +80,7 @@ export const featureJa = {
   'gitManage.continue': 'リベースを続行',
   'gitManage.abort': 'リベースを中止',
   'gitManage.rewriteConfirm': '現在のブランチを書き換えます。競合は三者比較で解決し、続行または中止してください。',
+  'gitBlame.commit': 'コミット', 'gitBlame.author': '作成者', 'gitBlame.date': '日付', 'gitBlame.line': '行', 'gitBlame.content': '内容', 'gitBlame.uncommitted': '未コミット',
 };
 export const featureDe = {
   "gitManage.history": "Commit-Verlauf",
@@ -97,6 +101,7 @@ export const featureDe = {
   'gitManage.continue': 'Rebase fortsetzen',
   'gitManage.abort': 'Rebase abbrechen',
   'gitManage.rewriteConfirm': 'Der aktuelle Branch wird umgeschrieben. Konflikte im Dreiwegevergleich lösen, dann fortsetzen oder abbrechen.',
+  'gitBlame.commit': 'Commit', 'gitBlame.author': 'Autor', 'gitBlame.date': 'Datum', 'gitBlame.line': 'Zeile', 'gitBlame.content': 'Inhalt', 'gitBlame.uncommitted': 'Nicht committet',
 };
 export const featureFr = {
   "gitManage.history": "Historique des commits",
@@ -117,6 +122,7 @@ export const featureFr = {
   'gitManage.continue': 'Continuer le rebase',
   'gitManage.abort': 'Annuler le rebase',
   'gitManage.rewriteConfirm': 'La branche actuelle sera réécrite. Résolvez les conflits dans la vue à trois versions, puis continuez ou annulez.',
+  'gitBlame.commit': 'Commit', 'gitBlame.author': 'Auteur', 'gitBlame.date': 'Date', 'gitBlame.line': 'Ligne', 'gitBlame.content': 'Contenu', 'gitBlame.uncommitted': 'Non commité',
 };
 export const featureIt = {
   "gitManage.history": "Cronologia commit",
@@ -137,4 +143,5 @@ export const featureIt = {
   'gitManage.continue': 'Continua rebase',
   'gitManage.abort': 'Annulla rebase',
   'gitManage.rewriteConfirm': 'Il branch corrente verrà riscritto. Risolvi i conflitti nella vista a tre versioni, poi continua o annulla.',
+  'gitBlame.commit': 'Commit', 'gitBlame.author': 'Autore', 'gitBlame.date': 'Data', 'gitBlame.line': 'Riga', 'gitBlame.content': 'Contenuto', 'gitBlame.uncommitted': 'Non committato',
 };

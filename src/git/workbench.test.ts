@@ -161,7 +161,9 @@ test('歷史、提交詳情與blame限制輸入並保護機密路徑', () => wit
   assert.equal((await workbench.history('P', undefined, 100)).graph, '');
   const detail = await workbench.commitDetail('P', undefined, sha);
   assert.match(detail.metadata, /second history/); assert.deepEqual(detail.files, ['history.txt']); assert.match(detail.patch, /\+second/);
-  assert.match(await workbench.blame('P', undefined, 'history.txt'), /author YuMeewADE/);
+  const blame = await workbench.blame('P', undefined, 'history.txt');
+  assert.deepEqual(blame.map(line => [line.line, line.text, line.author, line.summary, line.committed]), [[1, 'first', 'YuMeewADE', 'first history', true], [2, 'second', 'YuMeewADE', 'second history', true]]);
+  assert.equal(blame[1]!.sha, sha);
   await assert.rejects(workbench.history('P', undefined, -1));
   await assert.rejects(workbench.commitDetail('P', undefined, '--all'));
   await assert.rejects(workbench.blame('P', undefined, '.env'));

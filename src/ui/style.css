@@ -511,3 +511,9 @@ body.terminal-dock-open { grid-template-rows: 64px minmax(0, 1fr) var(--terminal
 .debug-active-line { background: color-mix(in srgb,var(--yellow) 22%,transparent); }
 .editor-proposal-pending { background: color-mix(in srgb,var(--purple) 18%,transparent); border-bottom: 1px dashed var(--purple); }
 .proposal-gutter .debug-breakpoint { color: var(--purple); cursor: default; }
+.git-blame { border-collapse: collapse; font-size: 12px; width: 100%; }
+.git-blame th { position: sticky; top: 0; background: var(--c-161a25); text-align: left; color: var(--muted); font-weight: 600; }
+.git-blame td, .git-blame th { padding: 1px 8px; vertical-align: top; white-space: nowrap; }
+.git-blame td:last-child { width: 100%; }
+.git-blame code { white-space: pre; font-family: ui-monospace, monospace; }
+.git-blame button { padding: 0 4px; border: 0; }
