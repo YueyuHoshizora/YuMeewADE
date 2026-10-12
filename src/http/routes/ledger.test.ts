@@ -1,4 +1,6 @@
 import assert from 'node:assert/strict';
+import { promises as fs } from 'node:fs';
+import path from 'node:path';
 import { test } from 'node:test';
 import { startTestServer } from '../../testing/server.ts';
 import type { Project, Task } from '../../shared/types.ts';
@@ -31,5 +33,22 @@ test('two phase renames in a row move the tasks all the way, even when the first
     assert.equal((await first).status, 200); assert.equal((await second).status, 200);
     assert.deepEqual((await s.app.projects.get(p.id)).phases.map(phase => phase.name), ['C']);
     assert.equal((await s.app.tasks.get(p.id, task.id)).phase, 'C');
+  } finally { await s.close(); }
+});
+
+test('the main folder cannot move to another folder while tasks still have working copies of the current one', async () => {
+  const s = await startTestServer();
+  try {
+    const p = (await s.api('POST', '/api/project/new', { name: 'Body' })).json as Project;
+    const task = await s.app.tasks.create(p.id, { title: 'T' });
+    await s.app.worktree.prepare(p.id, task.id);
+    const other = path.join(s.dir, 'other'); await fs.mkdir(other);
+    const moved = await s.api('POST', '/api/project/update', { project: p.id, patch: { body: other } });
+    assert.equal(moved.status, 409); assert.equal((moved.json as { detail?: string }).detail, 'body_has_worktrees');
+    assert.equal((await s.app.projects.get(p.id)).body ?? '', '');
+    // The same folder (spelled out) and other fields stay editable.
+    assert.equal((await s.api('POST', '/api/project/update', { project: p.id, patch: { body: s.app.ws.projectDir(p.id), description: 'kept' } })).status, 200);
+    await s.app.worktree.abandon(p.id, task.id);
+    assert.equal((await s.api('POST', '/api/project/update', { project: p.id, patch: { body: other } })).status, 200);
   } finally { await s.close(); }
 });

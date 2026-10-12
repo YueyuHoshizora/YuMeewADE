@@ -86,6 +86,15 @@ export function registerLedgerRoutes(router: Router, app: App): void {
     }
     // Running work holds the current folder (worktrees, terminals, AI); it must stop before the project points elsewhere.
     if (patch.body !== undefined && app.taskBusy(project)) throw new AppError('conflict', 'git_workbench_running');
+    // Working copies are worktrees of the current repository: after a switch they could be neither resumed nor merged.
+    if (typeof patch.body === 'string' && path.resolve(patch.body || app.ws.projectDir(project)) !== path.resolve((await app.projects.get(project)).body || app.ws.projectDir(project))) {
+      try {
+        const copies = await fs.readdir(path.join(app.ws.workDir, project), { withFileTypes: true });
+        if (copies.some(entry => entry.isDirectory() || entry.isSymbolicLink())) throw new AppError('conflict', 'body_has_worktrees');
+      } catch (error) {
+        if ((error as NodeJS.ErrnoException).code !== 'ENOENT') throw error;
+      }
+    }
     const expected = body.expected === undefined ? undefined : object(body.expected);
     if (expected && Object.keys(expected).some(key => !(PROJECT_EXPECTATION_KEYS as readonly string[]).includes(key))) throw new AppError('bad_request', 'field_type', { field: 'expected' });
     const result = await app.projects.update(project, patch as ProjectPatch, expected as ProjectExpectation | undefined);
