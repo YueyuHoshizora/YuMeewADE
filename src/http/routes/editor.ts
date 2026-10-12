@@ -3,6 +3,7 @@ import { AppError } from '../../shared/errors.ts';
 import { Router, reqString } from '../router.ts';
 import type { EditorAction, EditorBufferSnapshot, EditorChange, EditorMutation } from '../../shared/editor-workbench.ts';
 import type { EditorSettingsPatch } from '../../shared/editor-preferences.ts';
+import { validateEncoding } from '../../system/editor-encoding.ts';
 export function registerEditorRoutes(router: Router, app: App): void {
   router.get('/api/editor/scope', async ({ query }) => app.editor.scope(reqString(query, 'project', 120), query.has('task') ? reqString(query, 'task', 120) : '', app.ws.root));
   router.get('/api/editor/settings', async ({ query }) => app.editor.settings(reqString(query, 'project', 120)));
@@ -28,7 +29,15 @@ export function registerEditorRoutes(router: Router, app: App): void {
     if (typeof body.base !== 'string' || typeof body.local !== 'string') throw new AppError('bad_request');
     return app.editor.merge(reqString(body, 'project', 120), body.task === undefined ? '' : reqString(body, 'task', 120), reqString(body, 'path', 1000), body.base, body.local, reqString(body, 'revision', 100));
   });
-  router.get('/api/editor/file', async ({ query }) => app.editor.read(reqString(query, 'project', 120), query.has('task') ? reqString(query, 'task', 120) : '', reqString(query, 'path', 1000)));
+  router.get('/api/editor/file', async ({ query }) => app.editor.read(reqString(query, 'project', 120), query.has('task') ? reqString(query, 'task', 120) : '', reqString(query, 'path', 1000), query.has('encoding') ? validateEncoding(query.get('encoding')) : undefined));
+  router.get('/api/editor/segment', async ({ query }) => app.editor.segment(reqString(query, 'project', 120), query.has('task') ? reqString(query, 'task', 120) : '', reqString(query, 'path', 1000), Number(query.get('offset') ?? '0'), Number(query.get('length') ?? '262144'), query.has('encoding') ? validateEncoding(query.get('encoding')) : undefined));
+  router.post('/api/editor/segment', async ({ body }) => {
+    const project = reqString(body, 'project', 120); const task = body.task === undefined ? '' : reqString(body, 'task', 120);
+    if (app.editorWriteBusy(project, task || undefined)) throw new AppError('conflict', 'editor_running');
+    if (typeof body.text !== 'string' || !Number.isSafeInteger(body.offset) || !Number.isSafeInteger(body.end)) throw new AppError('bad_request');
+    const result = await app.editor.segmentPatch(project, task, reqString(body, 'path', 1000), body.offset as number, body.end as number, body.text, reqString(body, 'revision', 100), validateEncoding(body.encoding));
+    if (task) app.verify.invalidate(project, task); app.changed(project, task || undefined); return result;
+  });
   router.get('/api/editor/image', async ({ query, res }) => {
     const image = await app.editor.image(reqString(query, 'project', 120), query.has('task') ? reqString(query, 'task', 120) : '', reqString(query, 'path', 1000));
     res.writeHead(200, {
@@ -42,7 +51,7 @@ export function registerEditorRoutes(router: Router, app: App): void {
     const project = reqString(body, 'project', 120); const task = body.task === undefined ? '' : reqString(body, 'task', 120);
     if (app.editorWriteBusy(project, task || undefined)) throw new AppError('conflict', 'editor_running');
     if (typeof body.text !== 'string') throw new AppError('bad_request');
-    const result = await app.editor.save(project, task, reqString(body, 'path', 1000), body.text, reqString(body, 'revision', 100));
+    const result = await app.editor.save(project, task, reqString(body, 'path', 1000), body.text, reqString(body, 'revision', 100), body.encoding === undefined ? undefined : validateEncoding(body.encoding));
     if (task) app.verify.invalidate(project, task); app.changed(project, task || undefined);
     return result;
   });

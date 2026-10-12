@@ -4,7 +4,9 @@ import { randomUUID } from 'node:crypto';
 import { gitOk, isLocalSecret } from '../git/git.ts';
 import { withFileLocks } from '../shared/fsx.ts';
 import { AppError } from '../shared/errors.ts';
-export interface HistoryEntry { id: string; path: string; revision: string; text: string; timestamp: number; reason: 'save' | 'apply' | 'mutate' | 'segment' }
+import { validateEncoding } from './editor-encoding.ts';
+import type { EditorHistoryEntry } from '../shared/editor-workbench.ts';
+export type HistoryEntry = EditorHistoryEntry;
 const LIMIT = 16 * 1024 * 1024;
 async function location(root: string): Promise<string> {
   const directory = (await gitOk(root, ['rev-parse', '--absolute-git-dir'])).trim();
@@ -20,6 +22,11 @@ async function load(file: string): Promise<HistoryEntry[]> {
     const stat = await handle.stat(); if (!stat.isFile() || stat.size > LIMIT) throw new AppError('too_large');
     const entries: unknown = JSON.parse(await handle.readFile('utf8'));
     if (!Array.isArray(entries) || entries.length > 200 || entries.some(item => !item || typeof item.id !== 'string' || typeof item.path !== 'string' || typeof item.text !== 'string' || typeof item.revision !== 'string' || !Number.isSafeInteger(item.timestamp))) throw new AppError('bad_request');
+    for (const item of entries) {
+      if (item.encoding !== undefined) validateEncoding(item.encoding);
+      if (item.range !== undefined && (!item.range || !Number.isSafeInteger(item.range.offset) || !Number.isSafeInteger(item.range.end) || item.range.offset < 0 || item.range.end < item.range.offset || item.range.end - item.range.offset > 262144)) throw new AppError('bad_request');
+      if (item.reason === 'segment' && !item.range) throw new AppError('bad_request');
+    }
     return entries as HistoryEntry[];
   } finally { await handle.close(); }
 }

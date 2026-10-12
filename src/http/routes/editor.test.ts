@@ -53,3 +53,28 @@ test('image route confines files, caps size and serves all supported image MIME 
     assert.equal((await response.arrayBuffer()).byteLength, 20 * 1024 * 1024);
   } finally { await server.close(); }
 });
+
+test('encoding selector and segment endpoints roundtrip bytes and expose full-file CAS', async () => {
+  const server = await startTestServer('');
+  try {
+    await server.api('POST', '/api/project/new', { name: 'Encoding' });
+    const root = await server.app.worktree.bodyPath('Encoding'); const ids = { project: 'Encoding', path: 'text.txt' };
+    await fs.writeFile(path.join(root, 'text.txt'), Buffer.concat([Buffer.from([0xff, 0xfe]), Buffer.from('語😀', 'utf16le')]));
+    const first = (await server.api('GET', '/api/editor/file?project=Encoding&path=text.txt&encoding=UTF16LE')).json as EditorDocument;
+    assert.equal(first.text, '語😀'); assert.equal(first.binary, false);
+    const converted = await server.api('POST', '/api/editor/save', { ...ids, revision: first.revision, text: first.text, encoding: 'UTF8-BOM' });
+    assert.equal(converted.status, 200); assert.deepEqual(await fs.readFile(path.join(root, 'text.txt')), Buffer.concat([Buffer.from([0xef, 0xbb, 0xbf]), Buffer.from('語😀')]));
+    assert.equal((await server.api('GET', '/api/editor/file?project=Encoding&path=text.txt&encoding=invalid')).status, 400);
+    const large = path.join(root, 'large.txt'); await fs.writeFile(large, 'a'.repeat(3 * 1024 * 1024));
+    const response = await server.api('GET', '/api/editor/segment?project=Encoding&path=large.txt&offset=2200000&length=16');
+    assert.equal(response.status, 200); const segment = response.json as { revision: string; offset: number; end: number; encoding: string };
+    const handle = await fs.open(large, 'r+'); try { await handle.write(Buffer.from('b'), 0, 1, 2800000); } finally { await handle.close(); }
+    assert.equal((await server.api('POST', '/api/editor/segment', { project: 'Encoding', path: 'large.txt', ...segment, text: '語😀' })).status, 409);
+    const current = (await server.api('GET', '/api/editor/segment?project=Encoding&path=large.txt&offset=2200000&length=16')).json as typeof segment;
+    const patch = await server.api('POST', '/api/editor/segment', { project: 'Encoding', path: 'large.txt', ...current, text: '語😀' });
+    assert.equal(patch.status, 200); const patched = patch.json as { end: number; revision: string }; assert.equal(patched.end, current.offset + Buffer.byteLength('語😀'));
+    const history = (await server.api('GET', '/api/editor/history?project=Encoding&path=large.txt')).json as { entries: { id: string }[] };
+    assert.equal((await server.api('POST', '/api/editor/history/restore', { project: 'Encoding', path: 'large.txt', id: history.entries[0]!.id, revision: patched.revision })).status, 200);
+    assert.equal((await fs.stat(large)).size, 3 * 1024 * 1024);
+  } finally { await server.close(); }
+});

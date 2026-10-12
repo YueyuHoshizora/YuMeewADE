@@ -17,6 +17,8 @@ import { EditorSettingsStore, validateEditorCommands, DEFAULT_EDITOR_FORMAT, app
 import { boundedMatches, type SearchOptions } from './editor-search.ts';
 import { historyEntries, preserveHistory, type HistoryEntry } from './editor-history.ts';
 import { advancedLanguage } from './editor-language-features.ts';
+import { decodeText, detectEncoding, encodeText, validateEncoding, type EditorEncoding } from './editor-encoding.ts';
+import { readSegment, patchSegment, type EditorSegment } from './editor-segments.ts';
 
 const LANGUAGE: Record<string, string> = { ts: 'typescript', tsx: 'typescriptreact', js: 'javascript', jsx: 'javascriptreact', mjs: 'javascript', cjs: 'javascript', json: 'json', py: 'python', rs: 'rust', go: 'go', css: 'css', scss: 'scss', html: 'html', vue: 'html', md: 'markdown', c: 'c', h: 'c', cpp: 'cpp', hpp: 'cpp', java: 'java', kt: 'kotlin', php: 'php', sql: 'sql', xml: 'xml', svg: 'xml', yaml: 'yaml', yml: 'yaml', toml: 'toml', sh: 'shellscript', bash: 'shellscript', zsh: 'shellscript', rb: 'ruby', swift: 'swift', lua: 'lua', ini: 'ini' };
 export class EditorService {
@@ -132,26 +134,77 @@ export class EditorService {
     if (!isInside(root, await fs.realpath(file))) throw new AppError('not_found', 'file_missing');
     return { root, file, readonly };
   }
-  private async document(file: string, relative: string, readonly = false): Promise<EditorDocument> {
+  private async document(file: string, relative: string, readonly = false, selected?: EditorEncoding): Promise<EditorDocument> {
+    if (selected !== undefined) validateEncoding(selected);
     const handle = await fs.open(file, constants.O_RDONLY | constants.O_NOFOLLOW);
     try {
       const stat = await handle.stat();
       if (!stat.isFile()) throw new AppError('not_found', 'file_missing');
-      const bytes = Buffer.alloc(Math.min(stat.size, this.MAX));
-      const { bytesRead } = await handle.read(bytes, 0, bytes.length, 0);
-      const body = bytes.subarray(0, bytesRead);
-      let text = ''; let binary = body.includes(0);
-      try { text = new TextDecoder('utf-8', { fatal: true }).decode(body); } catch { binary = true; }
-      const revision = createHash('sha256').update(body).update(`${stat.dev}:${stat.ino}:${stat.size}:${stat.mtimeMs}:${stat.ctimeMs}`).digest('hex');
+      if (stat.size > 128 * 1024 * 1024) throw new AppError('too_large');
+      const bytes = Buffer.alloc(Math.min(stat.size, this.MAX)); const chunk = Buffer.alloc(Math.min(stat.size, 65536));
+      const hash = createHash('sha256'); let position = 0;
+      let decoder: TextDecoder | undefined; let validText = true;
+      while (position < stat.size) {
+        const count = Math.min(chunk.length, stat.size - position); let bytesRead = 0;
+        while (bytesRead < count) { const result = await handle.read(chunk, bytesRead, count - bytesRead, position + bytesRead); if (!result.bytesRead) throw new AppError('conflict', 'editor_conflict'); bytesRead += result.bytesRead; }
+        hash.update(chunk.subarray(0, bytesRead));
+        if (!decoder) {
+          const encoding = selected ?? detectEncoding(chunk.subarray(0, bytesRead));
+          decoder = new TextDecoder(encoding === 'UTF16LE' ? 'utf-16le' : encoding === 'UTF16BE' ? 'utf-16be' : 'utf-8', { fatal: true });
+        }
+        if (validText) { try { if (decoder.decode(chunk.subarray(0, bytesRead), { stream: true }).includes('\0')) validText = false; } catch { validText = false; } }
+        if (position < bytes.length) chunk.copy(bytes, position, 0, Math.min(bytesRead, bytes.length - position));
+        position += bytesRead;
+      }
+      if (validText && decoder) { try { if (decoder.decode().includes('\0')) validText = false; } catch { validText = false; } }
+      const after = await handle.stat();
+      if (stat.size !== after.size || stat.mtimeMs !== after.mtimeMs || stat.ctimeMs !== after.ctimeMs) throw new AppError('conflict', 'editor_conflict');
+      const detected = detectEncoding(bytes); const encoding = selected ?? detected;
+      if (selected && detected !== 'UTF8' && selected !== detected) throw new AppError('bad_request');
+      let text = ''; let binary = true;
+      for (let trim = 0; validText && trim <= (stat.size > this.MAX ? 3 : 0); trim++) {
+        try { text = decodeText(bytes.subarray(0, Math.max(0, bytes.length - trim)), encoding); binary = false; break; } catch { /* A preview may end within one encoded character. */ }
+      }
+      const revision = hash.update(`${stat.dev}:${stat.ino}:${stat.size}:${stat.mtimeMs}:${stat.ctimeMs}`).digest('hex');
       const language = LANGUAGE[path.extname(relative).slice(1).toLowerCase()] ?? (/dockerfile$/i.test(relative) ? 'dockerfile' : 'plaintext');
-      return { path: relative, text: binary ? '' : text, size: stat.size, binary, truncated: stat.size > this.MAX, revision, language, languageAvailable: !!this.commands[language], readonly: readonly || Buffer.byteLength(JSON.stringify(text)) > this.bodyBytes - 8192 };
+      return { path: relative, text: binary ? '' : text, encoding, size: stat.size, binary, truncated: stat.size > this.MAX, revision, language, languageAvailable: !!this.commands[language], readonly: readonly || stat.size <= this.MAX && Buffer.byteLength(JSON.stringify(text)) > this.bodyBytes - 8192 };
     } finally { await handle.close(); }
   }
-  async read(project: string, task: string, relative: string): Promise<EditorDocument> {
+  async read(project: string, task: string, relative: string, selected?: EditorEncoding): Promise<EditorDocument> {
     const { file, readonly } = await this.target(project, task, relative);
-    const document = await this.document(file, relative, readonly);
+    const document = await this.document(file, relative, readonly, selected);
     document.languageAvailable = !!(await this.configured(project)).commands[document.language];
     return document;
+  }
+  async segment(project: string, task: string, relative: string, offset: number, length: number, selected?: EditorEncoding): Promise<EditorSegment> {
+    const target = await this.target(project, task, relative);
+    const current = await this.document(target.file, relative, target.readonly, selected);
+    const result = await readSegment(target.file, offset, length, current.revision, selected);
+    if (current.binary) throw new AppError('bad_request', 'editor_readonly');
+    const checked = await this.target(project, task, relative);
+    if (checked.file !== target.file || checked.root !== target.root) throw new AppError('conflict', 'editor_conflict');
+    if ((await this.document(target.file, relative)).revision !== current.revision) throw new AppError('conflict', 'editor_conflict');
+    return result;
+  }
+  async segmentPatch(project: string, task: string, relative: string, offset: number, end: number, text: string, revision: string, encoding: EditorEncoding): Promise<EditorSegment> {
+    validateEncoding(encoding);
+    if (Buffer.byteLength(JSON.stringify(text)) > this.bodyBytes - 8192) throw new AppError('too_large');
+    const repo = await fs.realpath(await this.worktree.bodyPath(project));
+    return withFileLocks([repo], async () => {
+      const target = await this.target(project, task, relative);
+      if (target.readonly) throw new AppError('bad_request', 'editor_readonly');
+      return withFileLocks([target.file], async () => {
+        const check = async (): Promise<void> => {
+          const checked = await this.target(project, task, relative);
+          const current = await this.document(target.file, relative, false, encoding);
+          if (checked.file !== target.file || checked.root !== target.root || checked.readonly || current.revision !== revision) throw new AppError('conflict', 'editor_conflict');
+          if (current.binary) throw new AppError('bad_request', 'editor_readonly');
+        };
+        await patchSegment(target.file, offset, end, text, encoding, check, previous => preserveHistory(target.root, { path: relative, revision, text: previous.text, encoding, range: { offset, end: previous.end }, reason: 'segment' }));
+        const current = await this.document(target.file, relative, false, encoding);
+        return { text, revision: current.revision, offset, end: offset + encodeText(text, encoding, offset === 0).length, size: current.size, encoding };
+      });
+    });
   }
   async revisions(project: string, task: string, documents: { path: string; revision: string }[]): Promise<EditorRevisionResult> {
     if (documents.length > 50 || new Set(documents.map(item => item.path)).size !== documents.length) throw new AppError('bad_request');
@@ -210,7 +263,12 @@ export class EditorService {
   async restoreHistory(project: string, task: string, relative: string, id: string, revision: string): Promise<EditorDocument> {
     const { entries } = await this.history(project, task, relative);
     const entry = entries.find(item => item.id === id); if (!entry) throw new AppError('not_found');
-    if (revision !== 'missing') return this.save(project, task, relative, entry.text, revision);
+    if (entry.range) {
+      if (revision === 'missing') throw new AppError('bad_request');
+      await this.segmentPatch(project, task, relative, entry.range.offset, entry.range.end, entry.text, revision, entry.encoding ?? 'UTF8');
+      return this.read(project, task, relative, entry.encoding);
+    }
+    if (revision !== 'missing') return this.save(project, task, relative, entry.text, revision, entry.encoding);
     const repo = await fs.realpath(await this.worktree.bodyPath(project));
     return withFileLocks([repo], async () => {
       const { root, readonly } = await this.root(project, task); if (readonly) throw new AppError('bad_request', 'editor_readonly');
@@ -218,13 +276,14 @@ export class EditorService {
       const file = path.join(root, relative);
       const tmp = path.join(path.dirname(file), `.editor-${randomUUID()}.tmp`);
       const handle = await fs.open(tmp, 'wx', 0o600);
-      try { await handle.writeFile(entry.text); await handle.sync(); await handle.close(); if (parent !== '.') await this.target(project, task, parent, false); await fs.link(tmp, file); }
+      try { await handle.writeFile(encodeText(entry.text, entry.encoding ?? 'UTF8')); await handle.sync(); await handle.close(); if (parent !== '.') await this.target(project, task, parent, false); await fs.link(tmp, file); }
       catch (error) { if ((error as NodeJS.ErrnoException).code === 'EEXIST') throw new AppError('conflict', 'editor_conflict'); throw error; }
       finally { await handle.close().catch(() => undefined); await fs.rm(tmp, { force: true }); }
       return this.document(file, relative);
     });
   }
-  async save(project: string, task: string, relative: string, text: string, revision: string): Promise<EditorDocument> {
+  async save(project: string, task: string, relative: string, text: string, revision: string, selected?: EditorEncoding): Promise<EditorDocument> {
+    if (selected !== undefined) validateEncoding(selected);
     if (Buffer.byteLength(text) > this.MAX || Buffer.byteLength(JSON.stringify(text)) > this.bodyBytes - 8192 || text.includes('\0')) throw new AppError('too_large');
     // Worktree mutations lock the canonical main repository, including task copies.
     const repo = await fs.realpath(await this.worktree.bodyPath(project));
@@ -232,17 +291,20 @@ export class EditorService {
     const target = await this.target(project, task, relative);
     if (target.readonly) throw new AppError('bad_request', 'editor_readonly');
     return withFileLocks([target.file], async () => {
-      const current = await this.document(target.file, relative);
+      let current = await this.document(target.file, relative);
+      if (current.binary && selected) current = await this.document(target.file, relative, false, selected);
+      const encoding = selected ?? current.encoding ?? 'UTF8';
+      const encoded = encodeText(text, encoding); if (encoded.length > this.MAX) throw new AppError('too_large');
       if (current.binary || current.truncated) throw new AppError('bad_request', 'editor_readonly');
       if (current.revision !== revision) throw new AppError('conflict', 'editor_conflict');
-      await preserveHistory(target.root, { path: relative, revision: current.revision, text: current.text, reason: 'save' });
+      await preserveHistory(target.root, { path: relative, revision: current.revision, text: current.text, encoding: current.encoding, reason: 'save' });
       const stat = await fs.stat(target.file);
       const tmp = path.join(path.dirname(target.file), `.editor-${randomUUID()}.tmp`);
       const handle = await fs.open(tmp, 'wx', stat.mode & 0o777);
       try {
-        await handle.writeFile(text, 'utf8'); await handle.sync(); await handle.close();
+        await handle.chmod(stat.mode & 0o777); await handle.writeFile(encoded); await handle.sync(); await handle.close();
         const checked = await this.target(project, task, relative);
-        if (checked.file !== target.file || (await this.document(target.file, relative)).revision !== revision) throw new AppError('conflict', 'editor_conflict');
+        if (checked.file !== target.file || checked.root !== target.root || checked.readonly || (await this.document(target.file, relative)).revision !== revision) throw new AppError('conflict', 'editor_conflict');
         await fs.rename(tmp, target.file);
       } finally { await handle.close().catch(() => undefined); await fs.rm(tmp, { force: true }); }
       return this.document(target.file, relative);
@@ -454,6 +516,7 @@ export class EditorService {
   }
   async apply(project: string, task: string, changes: EditorChange[]): Promise<EditorDocument[]> {
     if (!changes.length || changes.length > 50 || new Set(changes.map(change => change.path)).size !== changes.length) throw new AppError('bad_request');
+    if (Buffer.byteLength(JSON.stringify(changes)) > this.bodyBytes - 8192) throw new AppError('too_large');
     const repo = await fs.realpath(await this.worktree.bodyPath(project));
     return withFileLocks([repo], async () => {
       const targets = await Promise.all(changes.map(change => this.target(project, task, change.path)));
@@ -467,18 +530,20 @@ export class EditorService {
             if (target.readonly || current.binary || current.truncated) throw new AppError('bad_request', 'editor_readonly');
             if (current.revision !== change.revision) throw new AppError('conflict', 'editor_conflict');
             if (Buffer.byteLength(change.text) > this.MAX || change.text.includes('\0')) throw new AppError('too_large');
-            await preserveHistory(target.root, { path: change.path, revision: current.revision, text: current.text, reason: 'apply' });
+            await preserveHistory(target.root, { path: change.path, revision: current.revision, text: current.text, encoding: current.encoding, reason: 'apply' });
             const tmp = path.join(path.dirname(target.file), `.editor-${randomUUID()}.tmp`);
             const backup = `${tmp}.backup`;
             staged.push({ tmp, file: target.file, backup });
             await fs.copyFile(target.file, backup, constants.COPYFILE_EXCL);
-            const handle = await fs.open(tmp, 'wx', (await fs.stat(target.file)).mode & 0o777);
-            try { await handle.writeFile(change.text); await handle.sync(); } finally { await handle.close(); }
+            const encoded = encodeText(change.text, current.encoding ?? 'UTF8'); if (encoded.length > this.MAX) throw new AppError('too_large');
+            const mode = (await fs.stat(target.file)).mode & 0o777;
+            const handle = await fs.open(tmp, 'wx', mode);
+            try { await handle.chmod(mode); await handle.writeFile(encoded); await handle.sync(); } finally { await handle.close(); }
           }
           for (let index = 0; index < changes.length; index++) {
             const change = changes[index]!;
-            await this.target(project, task, change.path);
-            if ((await this.document(targets[index]!.file, change.path)).revision !== change.revision) throw new AppError('conflict', 'editor_conflict');
+            const checked = await this.target(project, task, change.path);
+            if (checked.file !== targets[index]!.file || checked.root !== targets[index]!.root || checked.readonly || (await this.document(targets[index]!.file, change.path)).revision !== change.revision) throw new AppError('conflict', 'editor_conflict');
           }
           for (const stage of staged) { await fs.rename(stage.tmp, stage.file); committed++; }
           return await Promise.all(changes.map((change, index) => this.document(targets[index]!.file, change.path)));
@@ -564,7 +629,7 @@ export class EditorService {
       const affected = stat.isDirectory() ? (await this.files(root)).filter(relative => relative.startsWith(`${mutation.path}/`)) : [mutation.path];
       for (const relative of affected) {
         const current = await this.read(project, task, relative);
-        if (!current.binary && !current.truncated) await preserveHistory(root, { path: relative, revision: current.revision, text: current.text, reason: 'mutate' });
+        if (!current.binary && !current.truncated) await preserveHistory(root, { path: relative, revision: current.revision, text: current.text, encoding: current.encoding, reason: 'mutate' });
       }
       if (mutation.action === 'rename') await fs.rename(target.file, await validateNew(mutation.destination ?? ''));
       else if (mutation.action === 'delete') {
