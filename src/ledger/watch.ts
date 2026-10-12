@@ -11,6 +11,8 @@ export class LedgerWatcher {
   private readonly ws: Workspace;
   private readonly changed: (project?: string, task?: string) => void;
   private readonly watchers = new Map<string, FSWatcher>();
+  /** Which directory (dev:ino) each watcher is attached to; a path removed and recreated between rebuilds is a new directory. */
+  private readonly identities = new Map<string, string>();
   private closed = false;
   private timer: NodeJS.Timeout | null = null;
   private rebuilding = false;
@@ -31,6 +33,7 @@ export class LedgerWatcher {
     this.timer = null;
     for (const watcher of this.watchers.values()) watcher.close();
     this.watchers.clear();
+    this.identities.clear();
   }
 
   private schedule(): void {
@@ -120,7 +123,11 @@ export class LedgerWatcher {
           }
           continue;
         }
-        if (this.watchers.has(dir)) continue;
+        const identity = `${stat.dev}:${stat.ino}`;
+        const existing = this.watchers.get(dir);
+        if (existing && this.identities.get(dir) === identity) continue;
+        existing?.close();
+        this.watchers.delete(dir);
         try {
           const watcher = watch(dir, { recursive: false, persistent: false }, (_event, filename) => {
             this.event(target, filename === null ? null : filename.toString());
@@ -131,6 +138,7 @@ export class LedgerWatcher {
             if (this.watchers.get(dir) === watcher) this.watchers.delete(dir);
           });
           this.watchers.set(dir, watcher);
+          this.identities.set(dir, identity);
         } catch (error) {
           log.error('無法建立台帳檔案監看', error);
         }
@@ -139,6 +147,7 @@ export class LedgerWatcher {
         if (!targets.has(dir)) {
           watcher.close();
           this.watchers.delete(dir);
+          this.identities.delete(dir);
         }
       }
     } catch (error) {

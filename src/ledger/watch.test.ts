@@ -59,3 +59,23 @@ test('external task edits identify project/task; later projects and task directo
     await fs.rm(root, { recursive: true, force: true });
   }
 });
+
+test('a task directory replaced at the same path (moved away and recreated) is watched again', async () => {
+  const root = await fs.mkdtemp(path.join(os.tmpdir(), 'ledger-watch-'));
+  const ws = new Workspace(root);
+  const events: Array<{ project?: string; task?: string }> = [];
+  const watcher = new LedgerWatcher(ws, (project, task) => events.push({ ...(project ? { project } : {}), ...(task ? { task } : {}) }));
+  try {
+    await ws.init();
+    await fs.mkdir(ws.tasksDir('P'), { recursive: true });
+    await watcher.start();
+    await until(() => events.some(event => event.task === 'task-1'), async () => { await fs.writeFile(ws.taskFile('P', 'task-1'), 'first'); });
+    // Both happen before the debounced rebuild runs, so the path never looks missing to it.
+    await fs.rename(ws.tasksDir('P'), `${ws.tasksDir('P')}.old`);
+    await fs.mkdir(ws.tasksDir('P'));
+    await until(() => events.some(event => event.task === 'task-2'), async () => { await fs.writeFile(ws.taskFile('P', 'task-2'), 'second'); });
+  } finally {
+    watcher.close();
+    await fs.rm(root, { recursive: true, force: true });
+  }
+});
