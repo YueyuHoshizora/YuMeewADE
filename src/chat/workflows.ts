@@ -12,7 +12,7 @@ import { HUMAN } from '../shared/types.ts';
 import { AppError } from '../shared/errors.ts';
 import { readJson, writeJson, withFileLocks } from '../shared/fsx.ts';
 import { log } from '../shared/log.ts';
-import { HANDOFF_NOTICE } from './prompt.ts';
+import { HANDOFF_NOTICE, quoteBoundaries } from './prompt.ts';
 import type { WorkflowIntegrationService } from '../git/workflow-integration.ts';
 import { workflowDelivery } from '../shared/workflow-delivery.ts';
 import { appendWorkflowEvent } from '../shared/workflow-timeline.ts';
@@ -265,7 +265,7 @@ export class WorkflowService {
     if (otherDirs.some(other => other.workdir && path.resolve(other.workdir) === path.resolve(task.workdir))) throw new AppError('conflict', 'workflow_invalid');
     const outputs = step.dependsOn!.map(dependency => {
       const previous = this.latest(plan, dependency);
-      return previous ? `[${dependency} · task ${previous.task ?? t} · ${previous.ok ? 'success' : 'failure'}]\n${previous.output ?? previous.evidence ?? ''}` : `[${dependency} · skipped]`;
+      return previous ? `[${dependency} · task ${previous.task ?? t} · ${previous.ok ? 'success' : 'failure'}]\n${quoteBoundaries(previous.output ?? previous.evidence ?? '')}` : `[${dependency} · skipped]`;
     });
     const background = outputs.length ? `<workflow_outputs>\n${HANDOFF_NOTICE}\n${outputs.join('\n\n')}\n</workflow_outputs>\n\n` : '';
     const text = `${background}${step.text}`;
