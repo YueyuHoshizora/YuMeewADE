@@ -3,6 +3,7 @@ import { ApiFailure, request } from '../api.ts';
 import { t } from '../i18n/index.ts';
 import { button, confirmModal, el, field, input, renameModal, row, run } from './dom.ts';
 import { TerminalScreen } from './terminal-screen.ts';
+import { terminalKey, terminalPaste } from './terminal-input.ts';
 import { bindTerminalRecovery, claimTerminalRecovery, forgetTerminalRecovery, initializeTerminalRecovery } from './terminal-recovery.ts';
 
 interface TerminalPanel { node: HTMLElement; dispose: () => void; launch: () => Promise<void>; stop: () => Promise<void>; running: () => boolean; rename: (label: string) => Promise<void> }
@@ -16,11 +17,19 @@ function terminalSession(project: string, task: string, label: string, recover?:
   let lease: TerminalLease | undefined; let alive = true; let timer: number | undefined; let after = 0; let inputQueue = ''; let sending = false;
   let starting = false;
   let replaying = false;
+  let recoveryReplay = Boolean(recover);
   const identity = () => ({ project, task, id: lease!.session.id, owner: lease!.owner });
   async function flush(): Promise<void> {
     if (sending || !lease || !alive) return;
     sending = true;
-    try { while (inputQueue && alive) { const text = inputQueue.slice(0, 16384); inputQueue = inputQueue.slice(16384); await request('/api/terminal/input', { ...identity(), text }); } }
+    try {
+      while (inputQueue && alive) {
+        let end = Math.min(16384, inputQueue.length);
+        if (end < inputQueue.length && /[\uD800-\uDBFF]/u.test(inputQueue[end - 1]!)) end--;
+        const text = inputQueue.slice(0, end); inputQueue = inputQueue.slice(end);
+        await request('/api/terminal/input', { ...identity(), text });
+      }
+    }
     finally { sending = false; }
   }
   function send(text: string): void {
@@ -33,10 +42,10 @@ function terminalSession(project: string, task: string, label: string, recover?:
     try {
       const current = await request<TerminalSession>('/api/terminal/output', { ...identity(), after });
       if (!alive) return;
-      if (current.output.length && current.output[0]!.sequence > after + 1) screen.write('\x1b[2J\x1b[H');
-      replaying = after === 0;
+      if (current.output.length && current.output[0]!.sequence > after + 1) screen.write('\x1bc');
+      replaying = recoveryReplay && after === 0;
       try { if (current.output.length) screen.write(current.output.map(event => event.text).join('')); }
-      finally { replaying = false; }
+      finally { replaying = false; recoveryReplay = false; }
       after = current.sequence; lease.session = current;
       status.textContent = `${t(current.status === 'running' ? 'tools.running' : 'tools.closed')}${current.truncated ? ' · ' + t('execution.truncated') : ''}`;
     } catch (error) {
@@ -61,7 +70,7 @@ function terminalSession(project: string, task: string, label: string, recover?:
         catch (error) { await request('/api/terminal/stop', identity()); throw error; }
       }
       if (!alive) { await request('/api/terminal/stop', identity()); return; }
-      after = 0; screen.write('\x1b[2J\x1b[H'); receiver.focus(); await poll();
+      after = 0; screen.write('\x1bc'); receiver.focus(); await poll();
     } finally { starting = false; }
   }
   async function stop(): Promise<void> {
@@ -79,19 +88,12 @@ function terminalSession(project: string, task: string, label: string, recover?:
     if (lease?.session.status === 'running') await request('/api/terminal/resize', { ...identity(), cols, rows });
     screen.resize(cols, rows);
   }));
-  const keys: Record<string, string> = { Enter: '\r', Backspace: '\x7f', Tab: '\t', Escape: '\x1b', Delete: '\x1b[3~', Insert: '\x1b[2~', Home: '\x1b[H', End: '\x1b[F', PageUp: '\x1b[5~', PageDown: '\x1b[6~', F1: '\x1bOP', F2: '\x1bOQ', F3: '\x1bOR', F4: '\x1bOS', F5: '\x1b[15~', F6: '\x1b[17~', F7: '\x1b[18~', F8: '\x1b[19~', F9: '\x1b[20~', F10: '\x1b[21~', F11: '\x1b[23~', F12: '\x1b[24~' };
   receiver.addEventListener('keydown', event => {
-    if (event.isComposing || event.metaKey || event.ctrlKey && event.shiftKey && (event.key === 'C' || event.key === 'V')) return;
-    let value = keys[event.key];
-    const arrows: Record<string, string> = { ArrowUp: 'A', ArrowDown: 'B', ArrowRight: 'C', ArrowLeft: 'D' };
-    if (arrows[event.key]) value = `\x1b${screen.applicationCursor ? 'O' : '['}${arrows[event.key]}`;
-    if (event.shiftKey && event.key === 'Tab') value = '\x1b[Z';
-    if (event.ctrlKey && event.key.length === 1) { const code = event.key.toUpperCase().charCodeAt(0); if (code >= 64 && code <= 95) value = String.fromCharCode(code - 64); else if (event.key === ' ') value = '\0'; }
-    if (event.altKey && event.key.length === 1) value = '\x1b' + event.key;
+    const value = terminalKey(event, screen.applicationCursor);
     if (value !== undefined) { event.preventDefault(); send(value); }
   });
   receiver.addEventListener('input', () => { if (receiver.value) { send(receiver.value); receiver.value = ''; } });
-  receiver.addEventListener('paste', event => { const text = event.clipboardData?.getData('text/plain'); if (text) { event.preventDefault(); send(screen.bracketedPaste ? `\x1b[200~${text}\x1b[201~` : text); } });
+  receiver.addEventListener('paste', event => { const text = event.clipboardData?.getData('text/plain'); if (text) { event.preventDefault(); send(terminalPaste(text, screen.bracketedPaste)); } });
   screen.node.addEventListener('focus', () => receiver.focus()); screen.node.addEventListener('click', () => { if (!window.getSelection()?.toString()) receiver.focus(); });
   let resizeTimer: number | undefined;
   const observer = new ResizeObserver(entries => {
@@ -102,7 +104,7 @@ function terminalSession(project: string, task: string, label: string, recover?:
     resizeTimer = window.setTimeout(() => { columns.value = String(cols); const rows = screen.rows; screen.resize(cols, rows); if (alive && lease?.session.status === 'running') void run(() => request('/api/terminal/resize', { ...identity(), cols, rows })); }, 100);
   });
   node.append(el('h3', '', t('tools.terminal')), controls, status, screen.node, receiver); observer.observe(node);
-  const dispose = () => { alive = false; clearTimeout(timer); clearTimeout(resizeTimer); observer.disconnect(); inputQueue = ''; if (lease) { forgetTerminalRecovery(lease.session.id); if (lease.session.status === 'running') void request('/api/terminal/stop', identity()).catch(() => undefined); } };
+  const dispose = () => { alive = false; clearTimeout(timer); clearTimeout(resizeTimer); observer.disconnect(); screen.dispose(); inputQueue = ''; if (lease) { forgetTerminalRecovery(lease.session.id); if (lease.session.status === 'running') void request('/api/terminal/stop', identity()).catch(() => undefined); } };
   return { node, dispose, launch, stop, running: () => lease?.session.status === 'running', rename: async value => { label = value; if (lease) await bindTerminalRecovery(identity(), label); } };
 }
 
