@@ -15,6 +15,7 @@ import { TEMPLATES_DIR, type Workspace } from './workspace.ts';
 export const RULES_MAX = 20_000;
 export const PHASE_NAME_MAX = 200;
 export const DESCRIPTION_MAX = 2000;
+export const RELATED_MAX = 50;
 
 /** Checked where phases are named (create, edit) rather than in `validate`, so hand-edited ledgers with odd names still advance. */
 function checkPhaseNames(names: string[]): void {
@@ -114,7 +115,7 @@ export class ProjectLedger {
         parent = await this.get(parent.parent);
       }
     }
-    if (patch.related !== undefined && (!Array.isArray(patch.related) || patch.related.some(v => typeof v !== 'string'))) throw new AppError('bad_request', 'field_type', { field: 'related' });
+    if (patch.related !== undefined && (!Array.isArray(patch.related) || patch.related.length > RELATED_MAX || patch.related.some(v => typeof v !== 'string' || !isValidProjectName(v) || v === id) || new Set(patch.related).size !== patch.related.length)) throw new AppError('bad_request', 'field_type', { field: 'related' });
     if (patch.phases !== undefined && (!Array.isArray(patch.phases) || patch.phases.length > 12 || patch.phases.some(p => !p || typeof p.name !== 'string' || !p.name.trim() || !PHASE_STATES.includes(p.state)))) throw new AppError('bad_request', 'field_type', { field: 'phases' });
   }
 

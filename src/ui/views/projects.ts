@@ -250,6 +250,15 @@ export function projectView(context: ViewContext, project: ProjectView, params: 
     overview.replaceChildren();
     const header = el('header', 'page-header');
     header.append(el('h1', '', project.name), el('span', 'state-chip', t(`state.${project.status}`)), el('span', 'muted', t('common.updated', { at: localTime(project.updated) })));
+    if (project.related.length) {
+      // Related projects are stored at creation; list them so the choice is visible. Archived or missing ids stay plain text.
+      const related = el('p', 'muted related-projects', `${t('project.related')}：`);
+      for (const [index, id] of project.related.entries()) {
+        const target = context.state.projects.find(other => other.id === id);
+        related.append(...(index ? [document.createTextNode('、')] : []), target ? link(target.name, projectHash(target.id)) : document.createTextNode(id));
+      }
+      header.append(related);
+    }
     const actions = row(
       button(t('common.open'), () => request('/api/open', { path: project.bodyPath })),
       button(t(project.status === '完成' ? 'project.reopen' : 'project.complete'), async () => {

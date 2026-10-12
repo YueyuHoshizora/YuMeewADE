@@ -22,6 +22,9 @@ test('專案預設、階段推進、改名不搬目錄、階層與外部本體�
   assert.equal(renamed.id, 'P'); assert.equal(renamed.name, '新名字');
   assert.equal((await projects.update('P', { description: '說'.repeat(2000) })).description.length, 2000);
   await assert.rejects(projects.update('P', { description: '說'.repeat(2001) }), (error: AppError) => error.detail === 'field_too_long' && error.field === 'description');
+  const relatedError = (error: AppError) => error.detail === 'field_type' && error.field === 'related';
+  for (const related of [['../escape'], ['P'], ['Q', 'Q'], Array.from({ length: 51 }, (_, i) => `R${i}`)]) await assert.rejects(projects.update('P', { related }), relatedError);
+  assert.equal((await projects.update('P', { related: Array.from({ length: 50 }, (_, i) => `R${i}`) })).related.length, 50);
   await projects.create({ name: 'Child', parent: 'P', body: dir, phases: ['一'] });
   await assert.rejects(projects.update('P', { parent: 'Child' }));
   await assert.rejects(projects.create({ name: 'Invalid', body: path.join(dir, 'absent') }));
