@@ -73,9 +73,11 @@ export function inspectHandoff(rows: ChatRow[], limit: number, offset = 0): Hand
     used += e.text.length + 2;
   }
   if (kept.length === 0 && entries.length > 0) {
-    // 單筆就超限：只留最新一筆的尾段
+    // 單筆就超限：只留最新一筆的尾段；起點落在 emoji 等代理對的後半時往後一格，不留下孤立代理字元。
     const last = entries.at(-1)!;
-    kept = [{ row: last.row, text: last.text.slice(Math.max(0, last.text.length - budget)) }];
+    let from = Math.max(0, last.text.length - budget);
+    if ((last.text.charCodeAt(from) & 0xfc00) === 0xdc00 && (last.text.charCodeAt(from - 1) & 0xfc00) === 0xd800) from++;
+    kept = [{ row: last.row, text: last.text.slice(from) }];
     truncated = true;
   }
   const note = truncated ? truncationNote : '';

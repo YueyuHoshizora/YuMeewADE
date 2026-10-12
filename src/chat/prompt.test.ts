@@ -10,6 +10,13 @@ test('handoff excludes tools, keeps newest text within limit', () => {
   assert.match(h, /newest/u); assert.doesNotMatch(h, /secret tool/u); assert.ok(h.includes(HANDOFF_NOTICE)); assert.ok(h.length <= 320);
   assert.match(buildPrompt({ text: 'go' }), /# 這次的指示\ngo/u);
 });
+test('a single oversized handoff row keeps whole characters at its cut', () => {
+  const overhead = `<previous_conversation>\n${HANDOFF_NOTICE}\n`.length + '\n</previous_conversation>'.length + '（更早的對話已截去）\n\n'.length;
+  // A 3-unit budget starts the tail on the second half of 😀; the cut moves past the whole emoji instead.
+  const text = buildHandoff([user('A😀BC')], overhead + 3);
+  assert.ok(text.isWellFormed(), JSON.stringify(text)); assert.ok(text.includes('（更早的對話已截去）\n\nBC\n</previous_conversation>'));
+  assert.ok(text.length <= overhead + 3, 'the cut stays within the limit');
+});
 test('question aliases, bullets, multi and stripping', () => {
   for (const tag of ['question', '質問', '問題']) {
     const parsed = parseAsk(`看完了\n[[${tag}]]\n要選哪些（可複選）\n1. A（建議）\n- B\n[[/${tag}]]`);
