@@ -1,4 +1,5 @@
 import assert from 'node:assert/strict';
+import { request } from 'node:http';
 import { test } from 'node:test';
 import { EmbeddedPreviewService } from './embedded-preview.ts';
 import { AppError } from '../shared/errors.ts';
@@ -20,6 +21,18 @@ server.on('upgrade', (req, socket) => {
 server.listen(Number(process.env.PORT), '127.0.0.1');
 `;
 
+function requestStatus(url: string, headers: Record<string, string> = {}): Promise<number> {
+  const { promise, resolve, reject } = Promise.withResolvers<number>();
+  const req = request(url, { headers }, response => {
+    response.resume();
+    response.once('end', () => resolve(response.statusCode ?? 0));
+    response.once('error', reject);
+  });
+  req.once('error', reject);
+  req.end();
+  return promise;
+}
+
 test('owned preview lifecycle isolates headers, redirects and exact nested navigation origins', async () => {
   let trusted = true;
   const service = new EmbeddedPreviewService({ cwd: async () => process.cwd(), assertTrusted: async () => { if (!trusted) throw new AppError('forbidden'); }, ideOrigin: 'http://127.0.0.1:3000' });
@@ -27,10 +40,10 @@ test('owned preview lifecycle isolates headers, redirects and exact nested navig
   const gateway = service.gatewayOrigin();
   try {
     const view = await service.start('project', 'task', { command: process.execPath, args: ['-e', serverCode, '--', '{port}'] });
-    // This integration exercises a real child binding a real TCP port; fake time cannot drive that event.
-    const deadline = Date.now() + 10000;
-    while (service.status('project', 'task', view.id).state === 'starting' && Date.now() < deadline) {
-      const delay = Promise.withResolvers<void>(); setTimeout(delay.resolve, 50); await delay.promise;
+    // Real TCP completion drives readiness; no elapsed-time polling or test-only service hooks.
+    while (service.status('project', 'task', view.id).state === 'starting') {
+      try { await requestStatus(view.targetUrl); }
+      catch (error) { if (!(error instanceof Error) || !('code' in error) || error.code !== 'ECONNREFUSED') throw error; }
     }
     assert.equal(service.status('project', 'task', view.id).state, 'running');
     assert.equal(new URL(view.url).origin, gateway);
@@ -48,10 +61,11 @@ test('owned preview lifecycle isolates headers, redirects and exact nested navig
     assert.deepEqual(await data.json(), { cookie: null, authorization: null, ok: true });
     assert.equal((await fetch(origin + '/redirect', { redirect: 'manual' })).status, 502);
     assert.equal((await fetch(origin, { headers: { Origin: 'https://example.com' } })).status, 403);
-    assert.equal((await fetch(origin, { headers: { Host: 'evil.example' } })).status, 403);
+    // Fetch may replace Host with the URL authority; node:http sends the actual adversarial header.
+    assert.equal(await requestStatus(origin, { Host: 'evil.example' }), 403);
     assert.equal((await fetch(gateway + '/unknown')).status, 404);
     assert.equal((await fetch(view.url, { headers: { Origin: 'https://example.com' } })).status, 403);
-    assert.equal((await fetch(view.url, { headers: { Host: 'evil.example' } })).status, 403);
+    assert.equal(await requestStatus(view.url, { Host: 'evil.example' }), 403);
     assert.equal((await fetch(view.url, { method: 'POST' })).status, 403);
     const preflight = await fetch(origin + '/api/data', { method: 'OPTIONS', headers: { Origin: 'null', 'Access-Control-Request-Method': 'POST', 'Access-Control-Request-Headers': 'content-type' } });
     assert.equal(preflight.status, 204);
