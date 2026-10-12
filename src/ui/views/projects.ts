@@ -4,7 +4,7 @@ import { t } from '../i18n/index.ts';
 import { attachments } from '../components/attachments.ts';
 import { aiPicker } from '../components/picker.ts';
 import { markdown } from '../components/markdown.ts';
-import { archiveFlow, area, button, card, confirmModal, disclosure, el, field, input, lines, link, projectHash, readLocal, row, run, select, storeLocal, taskHash, textModal, toast, UserError, type View, type ViewContext } from '../components/dom.ts';
+import { archiveFlow, area, button, card, checksModal, confirmModal, disclosure, el, field, input, lines, link, projectHash, readLocal, row, run, select, storeLocal, taskHash, textModal, toast, UserError, type View, type ViewContext } from '../components/dom.ts';
 import { localDateTime, localTime } from '../components/display.ts';
 import { shouldSend } from '../components/composer.ts';
 import { attachSlashCommands } from '../components/slash-menu.ts';
@@ -280,7 +280,14 @@ export function projectView(context: ViewContext, project: ProjectView, params: 
       if (description === null || description === project.description) return;
       await request('/api/project/update', { project: project.id, patch: { description } }); await context.refresh();
     });
-    overview.append(header, actions, disclosure(t('project.notes'), markdown(project.description + '\n\n' + project.notes), editDescription));
+    const editRelated = button(t('project.editRelated'), async () => {
+      const options = context.state.projects.filter(other => other.id !== project.id).map(other => ({ value: other.id, label: other.name }));
+      const related = await checksModal(t('project.editRelated'), options, project.related);
+      // Ids of archived projects are not offered, so a save drops them, the same as unchecking.
+      if (related === null || JSON.stringify(related) === JSON.stringify(project.related)) return;
+      await request('/api/project/update', { project: project.id, patch: { related } }); await context.refresh();
+    });
+    overview.append(header, actions, disclosure(t('project.notes'), markdown(project.description + '\n\n' + project.notes), row(editDescription, editRelated)));
     if (project.issues.length) {
       const localIssues = el('div', 'form');
       for (const issue of project.issues) localIssues.append(el('p', '', `${issue.level ? `[${issue.level}] ` : ''}${issue.text}`));

@@ -143,6 +143,20 @@ export function selectModal(title: string, label: string, options: { value: stri
   document.body.append(dialog); dialog.showModal(); choice.focus();
   return promise;
 }
+/** Multi-choice counterpart of selectModal; resolves the checked values in option order, or null on cancel. */
+export function checksModal(title: string, options: { value: string; label: string }[], checked: string[]): Promise<string[] | null> {
+  const { promise, resolve } = Promise.withResolvers<string[] | null>();
+  const dialog = el('dialog', 'modal decision-modal'); const grid = el('div', 'check-grid');
+  const boxes = options.map(option => { const box = input(); box.type = 'checkbox'; box.value = option.value; box.checked = checked.includes(option.value); grid.append(field(option.label, box)); return box; });
+  const form = el('form', 'form'); const save = el('button', 'primary', t('common.save')); save.type = 'submit';
+  let result: string[] | null = null;
+  form.append(options.length ? grid : el('p', 'muted', t('common.empty')), row(button(t('common.cancel'), () => dialog.close()), save));
+  form.onsubmit = event => { event.preventDefault(); result = boxes.filter(box => box.checked).map(box => box.value); dialog.close(); };
+  dialog.append(el('h2', '', title), form);
+  dialog.addEventListener('close', () => { dialog.remove(); resolve(result); }, { once: true });
+  document.body.append(dialog); dialog.showModal(); boxes[0]?.focus();
+  return promise;
+}
 export function lines(value: string): string[] { return value.split('\n').map(s => s.trim()).filter(Boolean); }
 export function readLocal<T>(key: string, fallback: T): T { try { const value = localStorage.getItem(key); return value ? JSON.parse(value) as T : fallback; } catch { return fallback; } }
 export function storeLocal(key: string, value: unknown): void { try { localStorage.setItem(key, JSON.stringify(value)); } catch { /* 儲存空間不足不阻止送出。 */ } }
