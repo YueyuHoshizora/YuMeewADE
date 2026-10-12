@@ -60,7 +60,8 @@ test('external task edits identify project/task; later projects and task directo
   }
 });
 
-test('a task directory replaced at the same path (moved away and recreated) is watched again', async () => {
+// Windows refuses to rename a directory that a watcher holds open, so the replacement cannot be staged there.
+test('a task directory replaced at the same path (moved away and recreated) is watched again', { skip: process.platform === 'win32' }, async () => {
   const root = await fs.mkdtemp(path.join(os.tmpdir(), 'ledger-watch-'));
   const ws = new Workspace(root);
   const events: Array<{ project?: string; task?: string }> = [];
