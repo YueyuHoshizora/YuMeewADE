@@ -60,6 +60,8 @@ test('Codex arguments expand quotes, positional/named placeholders and literal d
   assert.throws(() => expandCodexPrompt('x'.repeat(100_001), ''), AppError);
   assert.throws(() => promptArguments('"unterminated'), AppError);
   assert.throws(() => promptArguments('trailing\\'), AppError);
+  // Inside double quotes only $ ` " \ are escapes, as in POSIX shells: Windows paths keep their backslashes.
+  assert.deepEqual(promptArguments(String.raw`FILE="C:\Users\alice\notes.txt" "a\"b" "c\\d" unquoted\x 'single\n'`), [String.raw`FILE=C:\Users\alice\notes.txt`, 'a"b', String.raw`c\d`, 'unquotedx', String.raw`single\n`]);
 });
 
 test('Claude native clear keeps the new resume id without changing usage parsing', () => {

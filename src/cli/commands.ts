@@ -122,6 +122,8 @@ export function promptArguments(tail: string): string[] {
     const c = tail[i]!;
     if (c === '\\' && quote !== "'") {
       if (++i >= tail.length) throw new AppError('bad_request');
+      // POSIX: inside double quotes a backslash only escapes $ ` " \ and newline; `"C:\Users\a"` keeps its backslashes.
+      if (quote === '"' && !'$`"\\\n'.includes(tail[i]!)) value += '\\';
       value += tail[i]; started = true;
     } else if (quote) {
       if (c === quote) quote = ''; else value += c;
