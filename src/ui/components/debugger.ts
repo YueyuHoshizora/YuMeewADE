@@ -19,8 +19,12 @@ export function embeddedDebugger(project: string, task: string, open?: (path: st
       return item;
     }));
   }
+  let renderedSession = '';
   function render(): void {
     if (!session || !alive) return;
+    const snapshot = JSON.stringify(session);
+    if (snapshot === renderedSession) return;
+    renderedSession = snapshot;
     status.textContent = `${t(session.status === 'paused' ? 'tools.paused' : session.status === 'running' ? 'tools.running' : session.status === 'connecting' ? 'tools.connecting' : 'tools.closed')} · ${session.reason}`;
     const dap = session && 'protocol' in session ? session as DapSession : undefined;
     capabilities.textContent = dap ? `${t('dap.capabilities')} · ${labelValue(t('dap.conditional'), t(dap.capabilities.conditionalBreakpoints ? 'dap.supported' : 'dap.unsupported'))} · ${labelValue(t('dap.evaluate'), t(dap.capabilities.evaluate ? 'dap.supported' : 'dap.unsupported'))}${dap.diagnostic ? ` · ${t('dap.failure', { reason: t(`dap.${dap.diagnostic}`) })}` : ''}` : '';
