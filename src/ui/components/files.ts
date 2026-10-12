@@ -522,14 +522,25 @@ export function openFileBrowser(project: string, task: string, workspace = activ
     if (found.truncated) output.append(el('p', 'warning', t('files.more', { total: found.total, n: found.hits.length })));
     if (replace) {
       if (mode.value !== 'content') return;
-      const pattern = regex.checked ? needle : needle.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-      const expression = new RegExp(wholeWord.checked ? `\\b(?:${pattern})\\b` : pattern, caseSensitive.checked ? 'g' : 'gi');
+      // Replace covers every match, not only the page on screen; a scan that stopped early cannot promise that.
+      const hits: EditorSearchResult['hits'] = [];
+      for (let page = 1; ; page++) {
+        const part = await request<EditorSearchResult & { total: number; pageSize: number; truncated: boolean }>(query('/api/editor/search', { ...ids, q: needle, ...options, page: String(page), pageSize: '200' }));
+        if (serial !== searchSerial) return;
+        if (part.truncated || page > 50) throw new UserError(t('ew.replaceIncomplete'));
+        hits.push(...part.hits);
+        if (page * part.pageSize >= part.total) break;
+      }
+      // Same matching as the search that listed the hits (src/system/editor-search.ts): ^/$ per line, Unicode, and a
+      // letter/digit/underscore word boundary. Plain text inserts the replacement literally; regex keeps $1/$& groups.
+      const source = regex.checked ? needle : needle.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+      const expression = new RegExp(wholeWord.checked ? `(?<![\\p{L}\\p{N}_])(?:${source})(?![\\p{L}\\p{N}_])` : source, caseSensitive.checked ? 'gmu' : 'gimu');
       const changes: EditorChange[] = [];
-      for (const path of new Set(found.hits.map(hit => hit.path))) {
+      for (const path of new Set(hits.map(hit => hit.path))) {
         const document = await request<EditorDocument>(query('/api/editor/file', { ...ids, path }));
-        if (found.hits.some(hit => hit.path === path && hit.revision !== document.revision)) throw new UserError(t('detail.editor_conflict'));
+        if (hits.some(hit => hit.path === path && hit.revision !== document.revision)) throw new UserError(t('detail.editor_conflict'));
         const text = buffers.get(path)?.text ?? document.text;
-        changes.push({ path, revision: document.revision, baseText: text, text: text.replace(expression, replacement.value) });
+        changes.push({ path, revision: document.revision, baseText: text, text: regex.checked ? text.replace(expression, replacement.value) : text.replace(expression, () => replacement.value) });
       }
       if (changes.length) await apply(changes);
     }
