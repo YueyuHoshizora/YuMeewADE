@@ -263,6 +263,7 @@ export const zhCN: Record<MessageKey, string> = {
 'detail.invalid_project_name': '项目名称不合法',
 'detail.invalid_task_id': '任务 ID 不合法',
 'detail.project_exists': '同名项目已存在',
+'detail.phase_changed': '项目阶段已经变更，请刷新后再确认',
 'detail.project_missing': '项目不存在',
 'detail.task_missing': '任务不存在',
 'detail.worktree_missing': '工作副本不存在',

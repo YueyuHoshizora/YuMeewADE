@@ -263,6 +263,7 @@ export const fr: Record<MessageKey, string> = {
 'detail.invalid_project_name': 'Nom de projet invalide',
 'detail.invalid_task_id': 'ID de tâche invalide',
 'detail.project_exists': 'Un projet de ce nom existe déjà',
+'detail.phase_changed': 'La phase du projet a déjà changé ; actualise puis vérifie à nouveau',
 'detail.project_missing': 'Projet introuvable',
 'detail.task_missing': 'Tâche introuvable',
 'detail.worktree_missing': 'Copie de travail introuvable',

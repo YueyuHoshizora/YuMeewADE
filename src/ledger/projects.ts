@@ -165,9 +165,11 @@ export class ProjectLedger {
 
   bodyPath(project: Project): string { return project.body || this.ws.projectDir(project.id); }
   currentPhase(project: Project): string { return project.phases.find(p => p.state !== '完成')?.name ?? ''; }
-  async nextPhase(id: string): Promise<Project> {
+  /** Completes `expected` and starts the following phase. A stale caller (phase already advanced) gets a conflict instead of skipping a phase. */
+  async nextPhase(id: string, expected: string): Promise<Project> {
     return withFileLocks([this.ws.projectFile(id)], async () => {
       const project = await this.get(id);
+      if (this.currentPhase(project) !== expected) throw new AppError('conflict', 'phase_changed');
       const index = project.phases.findIndex(p => p.state !== '完成');
       if (index < 0) return project;
       project.phases[index]!.state = '完成';

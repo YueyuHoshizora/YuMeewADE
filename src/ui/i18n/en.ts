@@ -263,6 +263,7 @@ export const en: Record<MessageKey, string> = {
 'detail.invalid_project_name': 'Invalid project name',
 'detail.invalid_task_id': 'Invalid task ID',
 'detail.project_exists': 'A project with this name already exists',
+'detail.phase_changed': 'The project phase has already changed; refresh and check again',
 'detail.project_missing': 'Project not found',
 'detail.task_missing': 'Task not found',
 'detail.worktree_missing': 'Working copy not found',

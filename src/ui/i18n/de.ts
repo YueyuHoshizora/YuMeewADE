@@ -263,6 +263,7 @@ export const de: Record<MessageKey, string> = {
 'detail.invalid_project_name': 'Ungültiger Projektname',
 'detail.invalid_task_id': 'Ungültige Aufgaben-ID',
 'detail.project_exists': 'Ein Projekt mit diesem Namen existiert bereits',
+'detail.phase_changed': 'Die Projektphase hat sich bereits geändert; neu laden und erneut prüfen',
 'detail.project_missing': 'Projekt nicht gefunden',
 'detail.task_missing': 'Aufgabe nicht gefunden',
 'detail.worktree_missing': 'Arbeitskopie nicht gefunden',

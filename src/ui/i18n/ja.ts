@@ -263,6 +263,7 @@ export const ja: Record<MessageKey, string> = {
 'detail.invalid_project_name': '無効なプロジェクト名',
 'detail.invalid_task_id': '無効なタスク ID',
 'detail.project_exists': '同名のプロジェクトが存在します',
+'detail.phase_changed': 'プロジェクトのフェーズはすでに変わっています。再読み込みして確認してください',
 'detail.project_missing': 'プロジェクトが見つかりません',
 'detail.task_missing': 'タスクが見つかりません',
 'detail.worktree_missing': '作業コピーが見つかりません',

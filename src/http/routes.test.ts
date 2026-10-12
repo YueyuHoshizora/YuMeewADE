@@ -116,9 +116,13 @@ test('phase offer, continuation key, legacy fallback, order and pins', async () 
     const next = (await s.api('POST', '/api/task/new', { project: p.id, title: 'Next', phase: '計畫' })).json as Task;
     await s.api('POST', '/api/task/update', { project: p.id, task: next.id, patch: { state: '完成' } });
     assert.equal((await state()).projects[0]!.phaseOffer, true);
-    await s.api('POST', '/api/phase/next', { project: p.id });
+    assert.equal((await s.api('POST', '/api/phase/next', { project: p.id })).status, 400);
+    await s.api('POST', '/api/phase/next', { project: p.id, phase: '計畫' });
     assert.equal((await state()).projects[0]!.currentPhase, '實作');
     assert.equal((await state()).projects[0]!.phaseOffer, false);
+    const stale = await s.api('POST', '/api/phase/next', { project: p.id, phase: '計畫' });
+    assert.equal(stale.status, 409); assert.equal((stale.json as { detail: string }).detail, 'phase_changed');
+    assert.equal((await state()).projects[0]!.currentPhase, '實作');
     await s.api('POST', '/api/task/update', { project: p.id, task: t.id, patch: { phase: '' } });
     await s.api('POST', '/api/task/update', { project: p.id, task: next.id, patch: { phase: '' } });
     assert.equal((await state()).projects[0]!.phaseOffer, true);

@@ -106,6 +106,7 @@ export const zhTW = {
 'detail.invalid_project_name': '專案名稱不合法',
 'detail.invalid_task_id': '作業 ID 不合法',
 'detail.project_exists': '同名專案已存在',
+'detail.phase_changed': '專案階段已經變更，請重新整理後再確認',
 'detail.project_missing': '專案不存在',
 'detail.task_missing': '作業不存在',
 'detail.worktree_missing': '工作副本不存在',

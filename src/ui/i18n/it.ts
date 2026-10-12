@@ -263,6 +263,7 @@ export const it: Record<MessageKey, string> = {
 'detail.invalid_project_name': 'Nome del progetto non valido',
 'detail.invalid_task_id': 'ID attività non valido',
 'detail.project_exists': 'Esiste già un progetto con questo nome',
+'detail.phase_changed': 'La fase del progetto è già cambiata; aggiorna e verifica di nuovo',
 'detail.project_missing': 'Progetto non trovato',
 'detail.task_missing': 'Attività non trovata',
 'detail.worktree_missing': 'Copia di lavoro non trovata',

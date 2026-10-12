@@ -25,7 +25,7 @@ test('專案預設、階段推進、改名不搬目錄、階層與外部本體�
   await assert.rejects(projects.create({ name: '../escape' }));
   await assert.rejects(projects.create({ name: 'P' }));
   await assert.rejects(projects.create({ name: 'TooMany', phases: Array.from({ length: 13 }, (_, i) => String(i)) }));
-  for (let i = 0; i < 4; i++) await projects.nextPhase('P');
+  for (let i = 0; i < 4; i++) await projects.nextPhase('P', projects.currentPhase(await projects.get('P')));
   assert.equal((await projects.get('P')).status, '完成');
   assert.equal(projects.currentPhase(await projects.get('P')), '');
 }));
@@ -76,13 +76,16 @@ test('多個作業台帳同時改標題、memo 與步驟，且錯誤不阻擋後
   assert.deepEqual((await one.get('P', task.id)).steps, [{ text: 'step-1', done: true }]);
 }));
 
-test('多個專案台帳同時更新欄位與推進階段，不覆蓋先前變更', () => withTmpWorkspace(async ws => {
+test('多個專案台帳同時更新欄位與推進階段，不覆蓋先前變更，同一階段只推進一次', () => withTmpWorkspace(async ws => {
   const one = new ProjectLedger(ws), two = new ProjectLedger(ws);
   await one.create({ name: 'P' });
-  await Promise.all([one.update('P', { name: '新名字' }), two.update('P', { description: '新說明' }), one.nextPhase('P'), two.nextPhase('P')]);
+  const results = await Promise.allSettled([one.update('P', { name: '新名字' }), two.update('P', { description: '新說明' }), one.nextPhase('P', '計畫'), two.nextPhase('P', '計畫')]);
+  const rejected = results.filter(result => result.status === 'rejected');
+  assert.equal(rejected.length, 1);
+  assert.equal((rejected[0] as PromiseRejectedResult).reason.detail, 'phase_changed');
   const project = await two.get('P');
   assert.equal(project.name, '新名字'); assert.equal(project.description, '新說明');
-  assert.deepEqual(project.phases.map(phase => phase.state), ['完成', '完成', '進行中', '未開始']);
+  assert.deepEqual(project.phases.map(phase => phase.state), ['完成', '進行中', '未開始', '未開始']);
 }));
 
 test('封存與更新排隊，不遺失更新或重建已封存的目錄', () => withTmpWorkspace(async ws => {

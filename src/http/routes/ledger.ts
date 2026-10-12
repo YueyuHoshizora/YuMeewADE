@@ -116,7 +116,8 @@ export function registerLedgerRoutes(router: Router, app: App): void {
   });
   router.post('/api/phase/next', async ({ body }) => {
     const project = reqString(body, 'project', 120);
-    const result = await app.projects.nextPhase(project);
+    if (typeof body.phase !== 'string') throw new AppError('bad_request', 'field_type', { field: 'phase' });
+    const result = await app.projects.nextPhase(project, body.phase);
     await changed('phase.next', project);
     return result;
   });

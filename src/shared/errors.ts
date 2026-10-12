@@ -37,6 +37,7 @@ export const DETAIL_MESSAGES = {
   invalid_project_name: '專案名稱不合法',
   invalid_task_id: '作業 ID 不合法',
   project_exists: '同名專案已存在',
+  phase_changed: '專案階段已經變更，請重新整理後再確認',
   project_missing: '專案不存在',
   task_missing: '作業不存在',
   worktree_missing: '尚未建立工作副本',
