@@ -28,7 +28,8 @@ function stepRow(rows: string[], indices: number[], index: number, expected: str
 }
 const HEADINGS = {
   steps: /^(步驟|手順|Steps)$/i, memo: /^(備註|メモ|Memo)$/i, next: /^(下一步|次にやること|Next)$/i,
-  done: /^(做了什麼|做了什么|やったこと|Done)$/i, cautions: /^(注意|注意事項|注意点|Cautions?)$/i,
+  // 已完成的工作 is the name older project rules used for this section.
+  done: /^(做了什麼|做了什么|已完成的工作|やったこと|Done)$/i, cautions: /^(注意|注意事項|注意点|Cautions?)$/i,
 };
 // The AI writes these sections directly, so reading them is bounded rather than trusting the file size.
 const SECTION_LINES_MAX = 500;
@@ -84,9 +85,17 @@ export class TaskLedger {
   }
   async sections(project: string, id: string): Promise<TaskSections> {
     const body = parseFrontmatter(await this.readRaw(project, id)).body;
+    const rows = body.split(/\r?\n/);
+    // Every heading of a kind counts: an AI following older rules adds its own heading next to the template's empty one.
     const lines = (kind: keyof typeof HEADINGS) => {
-      const part = section(body, kind);
-      return part.start < 0 ? [] : part.rows.slice(part.start + 1, part.end).filter(row => row.trim() && !/^\s*<!--/.test(row)).slice(0, SECTION_LINES_MAX).map(row => row.slice(0, SECTION_LINE_CHARS));
+      const out: string[] = []; let inside = false;
+      for (const row of rows) {
+        const heading = /^##\s+(.+?)\s*$/.exec(row);
+        if (heading || /^##\s/.test(row)) { inside = !!heading && HEADINGS[kind].test(heading[1]!); continue; }
+        if (inside && row.trim() && !/^\s*<!--/.test(row)) out.push(row.slice(0, SECTION_LINE_CHARS));
+        if (out.length >= SECTION_LINES_MAX) break;
+      }
+      return out;
     };
     return { done: lines('done'), next: lines('next'), cautions: lines('cautions'), memo: lines('memo') };
   }

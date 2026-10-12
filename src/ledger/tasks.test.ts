@@ -67,3 +67,12 @@ test('作業紀錄區段依別名讀取、略過空行與註解，行數與行�
   assert.deepEqual(sections.memo, []);
   await assert.rejects(ledger.sections('P', '20990101-001'), /task_missing|not_found|作業/);
 }));
+
+test('舊規則的「已完成的工作」標題與範本空標題並存時合併讀取', () => withTmpWorkspace(async ws => {
+  await new ProjectLedger(ws).create({ name: 'P' });
+  const ledger = new TaskLedger(ws); const task = await ledger.create('P', { title: 'T' });
+  await fs.writeFile(ws.taskFile('P', task.id), '---\ntitle: T\n---\n## 做了什麼\n\n## 下一步\n- go\n### 細節\n- sub\n## 已完成的工作\n- legacy\n');
+  const sections = await ledger.sections('P', task.id);
+  assert.deepEqual(sections.done, ['- legacy']);
+  assert.deepEqual(sections.next, ['- go', '### 細節', '- sub']);
+}));
