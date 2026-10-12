@@ -379,7 +379,9 @@ export function configWriteTarget(config: Config): string {
 }
 
 /** 只改寫 workspace.root 那一行，其他設定與註解原樣保留；缺區塊或缺欄位時補上。 */
-export function withWorkspaceRoot(text: string, root: string): string {
+export function withWorkspaceRoot(original: string, root: string): string {
+  // A byte order mark would keep an existing first-line `workspace:` from matching and a second section would be appended.
+  const text = original.replace(/^\uFEFF/, '');
   const eol = text.includes('\r\n') ? '\r\n' : '\n';
   const lines = text.split(/\r?\n/u);
   const value = yamlScalar(root);

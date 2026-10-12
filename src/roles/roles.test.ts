@@ -52,3 +52,10 @@ test('role backup is selected only before execution when the primary is unavaila
   await assert.rejects(resolveAvailableLaunch(roles, task, {}, initial, async () => false), { detail: 'cli_unavailable' });
   await assert.rejects(resolveAvailableLaunch(roles, task, {}, initial, async () => { throw new Error('availability failure'); }), /availability failure/u);
 });
+
+test('saving roles into a file that starts with a byte order mark replaces its roles block instead of adding a second one', () => withTmpWorkspace(async ws => {
+  await fs.writeFile(ws.rolesFile, '\uFEFFroles:\n  "舊":\n    main: [codex, "m", high]\n    job: "old"\n');
+  const saved = await writeRoles(ws.rolesFile, [{ name: '新', main: { cli: 'claude', model: '', effort: '' }, job: 'new' }]);
+  assert.deepEqual(Object.keys(saved.roles), ['新']);
+  assert.deepEqual(Object.keys(parseRoles(await fs.readFile(ws.rolesFile, 'utf8')).roles), ['新']);
+}));

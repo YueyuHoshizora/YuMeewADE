@@ -13,7 +13,8 @@ export interface Frontmatter {
 const FENCE = '---';
 
 export function parseFrontmatter(text: string): Frontmatter {
-  const rows = text.split(/\r?\n/);
+  // A byte order mark from a Windows editor would hide the opening fence; rewrites drop it.
+  const rows = text.replace(/^\uFEFF/, '').split(/\r?\n/);
   if (rows[0] !== FENCE) throw new YamlError('檔案必須以 --- 開頭', 1);
   const end = rows.indexOf(FENCE, 1);
   if (end < 0) throw new YamlError('frontmatter 缺少結尾 ---', rows.length);

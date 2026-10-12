@@ -46,7 +46,8 @@ export async function readJson<T>(file: string, fallback: T): Promise<T> {
     if ((err as NodeJS.ErrnoException).code === 'ENOENT') return fallback;
     throw err;
   }
-  return JSON.parse(text) as T;
+  // JSON.parse rejects a leading byte order mark, which some Windows editors add when a user hand-edits the file.
+  return JSON.parse(text.replace(/^\uFEFF/, '')) as T;
 }
 
 export async function writeJson(file: string, value: unknown): Promise<void> {

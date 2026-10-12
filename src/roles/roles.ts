@@ -42,7 +42,8 @@ export async function writeRoles(file: string, inputs: RoleInput[]): Promise<Rol
     names.add(r.name); validateSlot(r.main); if (r.backup) validateSlot(r.backup);
     lines.push(`  ${JSON.stringify(r.name)}:`, `    main: ${encode(r.main)}`, ...(r.backup ? [`    backup: ${encode(r.backup)}`] : []), `    job: ${JSON.stringify(r.job)}`);
   }
-  const text = await fs.readFile(file, 'utf8');
+  // A byte order mark would keep the existing `roles:` line from matching and a second block would be appended.
+  const text = (await fs.readFile(file, 'utf8')).replace(/^\uFEFF/, '');
   const old = text.split('\n'); const start = old.findIndex(x => /^roles\s*:/u.test(x));
   let end = start + 1; while (end < old.length && !/^[^\s#][^:]*:/u.test(old[end] ?? '')) end++;
   const next = start < 0 ? `${text.trimEnd()}\n\n${lines.join('\n')}\n` : [...old.slice(0, start), ...lines, '', ...old.slice(end)].join('\n');

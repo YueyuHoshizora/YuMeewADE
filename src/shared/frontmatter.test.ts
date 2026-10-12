@@ -41,3 +41,9 @@ test('缺少 --- 時丟錯', () => {
   assert.throws(() => parseFrontmatter('no frontmatter'), YamlError);
   assert.throws(() => parseFrontmatter('---\na: 1\n'), YamlError);
 });
+
+test('a ledger file saved with a UTF-8 byte order mark still parses', () => {
+  const parsed = parseFrontmatter('\uFEFF---\r\nname: P\r\n---\r\nbody');
+  assert.equal(parsed.data['name'], 'P');
+  assert.equal(parsed.body, 'body');
+});

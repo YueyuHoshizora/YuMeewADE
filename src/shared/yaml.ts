@@ -39,7 +39,8 @@ function stripComment(raw: string): string {
 
 function toLines(text: string): Line[] {
   const out: Line[] = [];
-  const rows = text.split(/\r?\n/);
+  // Some Windows editors save UTF-8 with a byte order mark; it would otherwise become part of the first key.
+  const rows = text.replace(/^\uFEFF/, '').split(/\r?\n/);
   for (let i = 0; i < rows.length; i++) {
     const raw = rows[i] ?? '';
     if (raw.includes('\t')) {

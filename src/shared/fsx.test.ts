@@ -5,7 +5,7 @@ import { promises as fs } from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { test } from 'node:test';
-import { acquireWorkspaceLock } from './fsx.ts';
+import { acquireWorkspaceLock, readJson } from './fsx.ts';
 
 test('workspace ownership is exclusive, refuses a live PID and takes over a dead PID', async () => {
   const root = await fs.mkdtemp(path.join(os.tmpdir(), 'ym-lock-'));
@@ -43,5 +43,14 @@ test('release does not remove a replacement owner and malformed locks fail close
     assert.equal(JSON.parse(await fs.readFile(file, 'utf8')).token, 'replacement');
     await fs.writeFile(file, '');
     await assert.rejects(acquireWorkspaceLock(root, 3211), /拒絕啟動/);
+  } finally { await fs.rm(root, { recursive: true, force: true }); }
+});
+
+test('a JSON file hand-saved with a byte order mark is still read', async () => {
+  const root = await fs.mkdtemp(path.join(os.tmpdir(), 'ym-json-'));
+  try {
+    const file = path.join(root, 'settings.json');
+    await fs.writeFile(file, '\uFEFF{"enterToSend":true}');
+    assert.deepEqual(await readJson(file, {}), { enterToSend: true });
   } finally { await fs.rm(root, { recursive: true, force: true }); }
 });

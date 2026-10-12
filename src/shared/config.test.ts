@@ -110,3 +110,10 @@ test('native integrations preserve argv and reject missing destinations or inval
     "execution:\n  ide: { command: code, args: [1, '{cwd}'] }\n",
   ]) assert.throws(() => parseConfig(text, null), ConfigError);
 });
+
+test('switching the workspace root in a config saved with a byte order mark keeps a single workspace section', () => {
+  const next = withWorkspaceRoot('\uFEFFworkspace:\n  root: /old\nserver:\n  port: 4561\n', '/new');
+  const config = parseConfig(next, '/tmp/config.yaml');
+  assert.equal(config.workspace.root, '/new');
+  assert.equal(config.server.port, 4561);
+});

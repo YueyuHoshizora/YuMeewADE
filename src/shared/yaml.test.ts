@@ -104,3 +104,7 @@ test('yamlScalar 對特殊字串加引號', () => {
   assert.equal(yamlScalar('- item'), '"- item"');
   assert.equal(yamlScalar(' lead'), '" lead"');
 });
+
+test('a UTF-8 byte order mark from a Windows editor does not hide the first key', () => {
+  assert.deepEqual(parseYamlMap('\uFEFFserver:\n  port: 4561\nroles:\n  - a'), { server: { port: 4561 }, roles: ['a'] });
+});
