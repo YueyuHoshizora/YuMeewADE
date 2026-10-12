@@ -40,3 +40,17 @@ test('a template or template folder removed outside the app is reported as not f
   await assert.rejects(templates.get('P', 'project', 'Kept'), { status: 404 });
   await assert.rejects(templates.remove('P', 'project', 'Kept'), { status: 404 });
 }));
+
+test('templates with more steps than a task may have are neither saved nor listed', () => withTmpWorkspace(async ws => {
+  await new ProjectLedger(ws).create({ name: 'P' });
+  const tasks = new TaskLedger(ws); const templates = new TaskTemplates(ws);
+  const source = await tasks.create('P', { title: 'T', steps: Array.from({ length: 500 }, (_, i) => `s${i}`) });
+  // Hand-edited past the 500-step limit TaskLedger.create enforces.
+  const file = ws.taskFile('P', source.id);
+  await fs.writeFile(file, (await fs.readFile(file, 'utf8')).replace('- [ ] s0\n', '- [ ] s0\n- [ ] extra\n'));
+  assert.equal((await tasks.get('P', source.id)).steps.length, 501);
+  await assert.rejects(templates.saveFromTask('P', source.id, 'Big', '', 'project'), { detail: 'field_type' });
+  await fs.mkdir(path.join(ws.projectDir('P'), '.ai', 'templates'), { recursive: true });
+  await fs.writeFile(path.join(ws.projectDir('P'), '.ai', 'templates', 'Hand.md'), `---\ntitle: Hand\n---\n## 步驟\n${Array.from({ length: 501 }, (_, i) => `- [ ] s${i}`).join('\n')}\n`);
+  assert.deepEqual(await templates.list('P'), []);
+}));
