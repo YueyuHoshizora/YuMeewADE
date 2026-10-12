@@ -204,3 +204,24 @@ test('removing the active account hands the default slot to the next account, or
   assert.equal(slot.claude, undefined);
   assert.deepEqual(settings.accounts.claude!.map(account => account.name), ['Broken']);
 }));
+
+test('a rejected selection switches no credentials, and removing an account under the default label revokes the slot', () => withTmpWorkspace(async (ws, dir) => {
+  const slot: Record<string, string | undefined> = {};
+  const store = new SettingsStore(ws, DEFAULT_CONFIG, undefined, undefined, undefined, async (ai, directory) => { slot[ai] = directory; });
+  const [a, b] = [path.join(dir, 'a'), path.join(dir, 'b')];
+  await fs.mkdir(a); await fs.mkdir(b);
+  await store.addAccount('codex', 'A', a);
+  await store.addAccount('codex', 'B', b);
+  const [first, second] = (await store.get()).accounts.codex!;
+  // One unknown id rejects the whole patch before any slot is touched.
+  await assert.rejects(store.update({ activeAccounts: { codex: second!.id, gemini: 'does-not-exist' } }), { code: 'not_found' });
+  assert.equal(slot.codex, a);
+  assert.equal((await store.get()).activeAccounts.codex, first!.id);
+  // With the 'default' label no account owns the slot, which still holds A's copy: removing A must not leave it usable.
+  await store.update({ activeAccounts: { codex: 'default' } });
+  assert.equal(slot.codex, a);
+  await store.removeAccount('codex', first!.id);
+  assert.equal(slot.codex, undefined);
+  assert.ok('codex' in slot);
+  assert.equal((await store.get()).activeAccounts.codex, 'default');
+}));

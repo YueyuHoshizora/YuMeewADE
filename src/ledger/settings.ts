@@ -57,10 +57,15 @@ export class SettingsStore {
         if (typeof id !== 'string') throw new AppError('bad_request', 'field_type', { field: 'activeAccounts' });
       }
     }
-    // Switching copies the account's credentials into the App's default slot before the selection is saved.
+    // Switching copies the account's credentials into the App's default slot before the selection is saved. Every selected
+    // id is checked first: a patch rejected for one service must not have already switched another service's credentials.
     const current = await this.get();
-    for (const [ai, id] of Object.entries(patch.activeAccounts ?? {})) {
+    const selected = Object.entries(patch.activeAccounts ?? {}).map(([ai, id]) => {
       const account = current.accounts[ai]?.find(entry => entry.id === id);
+      if (id !== 'default' && !account) throw new AppError('not_found');
+      return [ai, account] as const;
+    });
+    for (const [ai, account] of selected) {
       if (account && this.activateCredentials) await this.activateCredentials(ai, account.configDir);
     }
     const saved = await updateJson<SettingsPatch>(this.file, {}, saved => {
@@ -168,7 +173,8 @@ export class SettingsStore {
       removed = accounts.find(account => account.id === id);
       if (!removed) throw new AppError('not_found');
       const remaining = accounts.filter(account => account.id !== id);
-      if (saved.activeAccounts?.[ai] === id) {
+      const active = saved.activeAccounts?.[ai];
+      if (active === id) {
         // The App's default slot still holds this account's credentials; without a handover every later run would keep
         // using the removed account. Select the next account like a first addition does, or empty the slot.
         let next = remaining[0];
@@ -179,6 +185,9 @@ export class SettingsStore {
           await this.activateCredentials?.(ai, undefined);
         }
         saved.activeAccounts = { ...saved.activeAccounts, [ai]: next?.id ?? 'default' };
+      } else if (!remaining.some(account => account.id === active)) {
+        // No registered account owns the slot ('default' selected), so it may still hold the removed account's copy.
+        await this.activateCredentials?.(ai, undefined);
       }
       saved.accounts = { ...saved.accounts, [ai]: remaining };
       await writeJson(this.file, saved);
