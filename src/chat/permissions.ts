@@ -8,8 +8,15 @@ const SECRET_KEY = /token|password|passwd|secret|api[_-]?key|authorization|cooki
 const FIELD_LIMIT = 8000;
 const CARD_LIMIT = 20_000;
 
+// Well-known credential shapes that appear without a label, e.g. `git push https://ghp_…@github.com` or an env assignment
+// the AI inlined. Prefixes plus a minimum length, so short words like `sk-video` stay readable for the review.
+const KNOWN_TOKEN = /\b(?:sk-(?:ant-|proj-)?[A-Za-z0-9_-]{20,}|gh[pousr]_[A-Za-z0-9]{20,}|github_pat_[A-Za-z0-9_]{20,}|glpat-[A-Za-z0-9_-]{20,}|xox[abprs]-[A-Za-z0-9-]{10,}|AKIA[0-9A-Z]{16}|AIza[0-9A-Za-z_-]{35}|eyJ[A-Za-z0-9_-]{8,}\.[A-Za-z0-9_-]{8,}\.[A-Za-z0-9_-]{8,})/g;
+
 function redact(text: string): string {
-  return text.replace(/((?:token|password|secret|api[_-]?key|authorization)\s*(?:[=:]\s*|\s+))(?:"[^"]*"|'[^']*'|[^\s]+)/gi, '$1[redacted]').replace(/Bearer\s+\S+/gi, 'Bearer [redacted]');
+  // URL credentials first, so `https://x-access-token:…@host` keeps its host instead of matching the `token:` label rule.
+  return text.replace(/\b([a-z][a-z0-9+.-]*:\/\/)[^\s/?#@:]*:[^\s/?#@]+@/gi, '$1[redacted]@')
+    .replace(/((?:token|password|secret|api[_-]?key|authorization)\s*(?:[=:]\s*|\s+))(?:"[^"]*"|'[^']*'|[^\s]+)/gi, '$1[redacted]').replace(/Bearer\s+\S+/gi, 'Bearer [redacted]')
+    .replace(KNOWN_TOKEN, '[redacted]');
 }
 
 /**

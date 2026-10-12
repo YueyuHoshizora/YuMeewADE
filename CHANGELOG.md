@@ -185,6 +185,7 @@
 - 台帳與設定的原子寫入在搬移成正式檔前先 fsync 暫存檔；先前寫完就 rename，當機或斷電時可能留下已換上、內容卻是空的或不完整的 `PROJECT.md`／作業檔。每次寫入約多 5 ms。
 - 內嵌網頁預覽的開發伺服器輸出改為逐流解碼 UTF-8；先前中文、emoji 等字元剛好被切在兩段輸出之間時，會顯示成 `��`。
 - 受限（`restricted`）專案也禁止查看單輪修改（`/api/chat/turn-diff`）與作業合併資訊（`/api/task/merged`），與 README 所說「禁止 Git 讀寫、作業差異」一致；先前這兩個端點沒有檢查信任。作業頁自動查詢合併資訊時遇到受限專案只是不顯示，不會跳錯誤。
+- 工具核准卡也會遮蔽沒有標籤的常見憑證（GitHub `ghp_`／`github_pat_`、OpenAI／Anthropic `sk-`、GitLab `glpat-`、Slack `xox?-`、AWS `AKIA…`、Google `AIza…`、JWT）與網址裡的 `帳號:密碼@`；先前只認得 `token=`、`password:` 這類有標籤的寫法與 `Bearer`，像 `git push https://x-access-token:ghp_…@github.com/…` 會原樣顯示。
 
 ### 驗證、審查與工作流程
 
