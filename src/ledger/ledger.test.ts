@@ -150,6 +150,10 @@ test('設定預設取 config、驗證陣列與 AI；排序與釘選；紀錄 new
   await assert.rejects(settings.update({ modelOrder: { codex: [1] as never } }));
   const order = new OrderStore(ws); assert.deepEqual(await order.setOrder('', ['B','A','B']), ['B','A']);
   await order.setPinned('B', true); await order.setPinned('A', true); assert.deepEqual(await order.setPinned('B', false), ['A']);
+  // A hand-damaged order file is named and left untouched instead of failing as an anonymous TypeError.
+  await fs.writeFile(order.file, JSON.stringify({ order: [], pins: {} }));
+  for (const change of [() => order.setPinned('A', true), () => order.setOrder('', ['A'])]) await assert.rejects(change(), { detail: 'file_corrupt', field: 'order.json' });
+  assert.equal(await fs.readFile(order.file, 'utf8'), JSON.stringify({ order: [], pins: {} }));
   const oplog = new OpLog(ws);
   for (let i = 0; i < 205; i++) await oplog.record({ action: 'test', i });
   const recent = await oplog.recent(999); assert.equal(recent.length, 200); assert.equal(recent[0]!['i'], 204);
