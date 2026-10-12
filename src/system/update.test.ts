@@ -19,6 +19,11 @@ test('compareVersions orders numerically and treats prereleases as lower', () =>
   assert.ok(compareVersions('2.0.0-beta.1', '2.0.0') < 0);
   assert.ok(compareVersions('2.0.0-beta.10', '2.0.0-beta.2') > 0);
   assert.ok(Number.isNaN(compareVersions('latest', '1.0.0')));
+  // SemVer 11.4 precedence chain, plus ASCII ordering (uppercase before lowercase) and numeric-below-alphanumeric.
+  const chain = ['1.0.0-alpha', '1.0.0-alpha.1', '1.0.0-alpha.beta', '1.0.0-beta', '1.0.0-beta.2', '1.0.0-beta.11', '1.0.0-rc.1', '1.0.0'];
+  for (let i = 1; i < chain.length; i++) assert.ok(compareVersions(chain[i]!, chain[i - 1]!) > 0, `${chain[i]} > ${chain[i - 1]}`);
+  assert.ok(compareVersions('1.0.0-alpha', '1.0.0-Z') > 0);
+  assert.ok(compareVersions('1.0.0-1', '1.0.0-0a') < 0);
 });
 
 test('pickAssets keeps only this platform and architecture, installer first', () => {

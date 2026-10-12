@@ -19,7 +19,17 @@ export function compareVersions(a: string, b: string): number {
   if (x.pre === y.pre) return 0;
   if (x.pre === undefined) return 1;
   if (y.pre === undefined) return -1;
-  return x.pre.localeCompare(y.pre, 'en', { numeric: true });
+  // SemVer 11.4: dot-separated identifiers; numeric ones compare numerically and sort below alphanumeric ones, which
+  // compare in ASCII order; with an equal prefix the shorter list is lower.
+  const p = x.pre.split('.'); const q = y.pre.split('.');
+  for (let i = 0; i < Math.min(p.length, q.length); i++) {
+    const [l, r] = [p[i]!, q[i]!]; if (l === r) continue;
+    const [ln, rn] = [/^\d+$/.test(l), /^\d+$/.test(r)];
+    if (ln && rn) return BigInt(l) < BigInt(r) ? -1 : 1;
+    if (ln !== rn) return ln ? -1 : 1;
+    return l < r ? -1 : 1;
+  }
+  return p.length - q.length;
 }
 
 interface RawAsset { name: string; url: string; size: number }
