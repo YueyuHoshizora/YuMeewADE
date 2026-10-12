@@ -16,7 +16,13 @@ import { github } from '../cli/github.ts';
 import type { GithubFeedbackInput } from '../shared/github.ts';
 
 const split = (text: string) => text.split('\0').filter(Boolean);
-const branchName = (value: string) => /^[A-Za-z0-9][A-Za-z0-9._/-]{0,199}$/.test(value) && !value.includes('..') && !value.endsWith('/') && !value.endsWith('.lock');
+/**
+ * Git's own ref-name rules (check-ref-format), so Unicode names such as `功能/修正` that Git creates and lists can be
+ * used; a leading `-` is also refused so a name can never read as an option.
+ */
+const branchName = (value: string) => typeof value === 'string' && value.length > 0 && value.length <= 200 && !value.startsWith('-') && value !== '@'
+  && !/[\x00-\x20\x7f~^:?*[\\]|\.\.|@\{/u.test(value) && !value.endsWith('.')
+  && value.split('/').every(part => !!part && !part.startsWith('.') && !part.endsWith('.lock'));
 const managementName = (value: string, max: number) => typeof value === 'string' && value.length <= max && /^[A-Za-z0-9][A-Za-z0-9._/-]*$/.test(value) && !value.includes('..') && !value.includes('//') && value.split('/').every(part => !!part && !part.startsWith('.') && !part.endsWith('.') && !part.endsWith('.lock'));
 const remoteUrl = (value: string) => {
   if (typeof value !== 'string' || !value || value.length > 2048 || /[\s\x00-\x1f\x7f]/u.test(value)) return false;
@@ -114,7 +120,7 @@ export class GitWorkbench {
     });
   }
   async manageBranch(project: string, task: string | undefined, action: string, name: string, options: { newName?: string; force?: boolean; confirmed?: boolean; forceConfirmed?: boolean }): Promise<void> {
-    if (!managementName(name, 200) || !['rename', 'delete'].includes(action) || action === 'rename' && !managementName(options.newName ?? '', 200)) throw new AppError('bad_request', 'git_branch_invalid');
+    if (!branchName(name) || !['rename', 'delete'].includes(action) || action === 'rename' && !branchName(options.newName ?? '')) throw new AppError('bad_request', 'git_branch_invalid');
     if (action === 'delete' && (options.confirmed !== true || options.force && options.forceConfirmed !== true)) throw new AppError('bad_request', 'git_confirm_required');
     return this.locked(project, task, true, async root => {
       // Live task names are ledger-owned: renaming would sever the same ownership as deletion.

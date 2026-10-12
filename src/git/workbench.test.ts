@@ -289,6 +289,21 @@ test('discarding unstaged edits of a staged rename keeps the rename', () => with
   assert.equal((await gitOk(root, ['status', '--porcelain'])).trim(), 'R  old.txt -> new.txt');
 }));
 
+test('Unicode branch names Git accepts can be created, switched, renamed and deleted; option-like and invalid names cannot', () => withTmpWorkspace(async ws => {
+  const projects = new ProjectLedger(ws); const tasks = new TaskLedger(ws); await projects.create({ name: 'P' });
+  const root = ws.projectDir('P'); const workbench = new GitWorkbench({ ws, projects, tasks, isRunning: () => false });
+  await fs.writeFile(path.join(root, 'file.txt'), 'base\n'); await commitAll(root, 'base');
+  await workbench.branch('P', undefined, '功能/修正', true);
+  await workbench.branch('P', undefined, 'main', false);
+  await workbench.branch('P', undefined, '功能/修正', false);
+  assert.equal((await gitOk(root, ['symbolic-ref', '--short', 'HEAD'])).trim(), '功能/修正');
+  await workbench.branch('P', undefined, 'main', false);
+  await workbench.manageBranch('P', undefined, 'rename', '功能/修正', { newName: '機能/修正' });
+  await workbench.manageBranch('P', undefined, 'delete', '機能/修正', { confirmed: true });
+  assert.equal((await gitOk(root, ['branch', '--list', '機能/修正'])).trim(), '');
+  for (const name of ['-x', 'a..b', 'a b', 'a/.b', 'x.lock', 'a@{b']) await assert.rejects(workbench.branch('P', undefined, name, true), { detail: 'git_branch_invalid' });
+}));
+
 test('遠端新增、改名、fetch/push URL及移除驗證與確認', () => withTmpWorkspace(async ws => {
   const projects = new ProjectLedger(ws); const tasks = new TaskLedger(ws); await projects.create({ name: 'P' });
   const workbench = new GitWorkbench({ ws, projects, tasks, isRunning: () => false });
