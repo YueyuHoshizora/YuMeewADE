@@ -60,6 +60,7 @@ export const zhTW = {
 'search.title': '搜尋所有對話', 'search.placeholder': '搜尋作業與對話內容…', 'search.truncated': '結果過多，請縮小搜尋範圍。',
 'search.partial': '對話量太大，只搜尋了部分內容，結果可能不完整；請改用更精確的關鍵字。',
 'search.scopeTask': '只搜尋這個作業：{title}',
+'search.noResults': '找不到含有「{q}」的作業或對話',
 'find.label': '在畫面中尋找', 'find.next': '下一個', 'find.previous': '上一個', 'find.none': '找不到符合的文字',
 'settings.theme': '外觀', 'settings.theme.system': '跟隨系統', 'settings.theme.light': '淺色', 'settings.theme.dark': '深色',
 'settings.notifications': '作業完成或需要回答時通知', 'settings.notificationPermission': '允許系統通知', 'notification.done': 'AI 已完成回覆', 'notification.answer': 'AI 需要你的回答',

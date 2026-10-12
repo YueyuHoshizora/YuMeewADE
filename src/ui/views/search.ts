@@ -46,7 +46,7 @@ export function searchView(context: ViewContext, params: URLSearchParams): View 
             target.append(snippet);
             results.append(target);
           }
-          status.textContent = data.partial ? t('search.partial') : data.truncated ? t('search.truncated') : data.hits.length ? '' : t('common.empty');
+          status.textContent = data.partial ? t('search.partial') : data.truncated ? t('search.truncated') : data.hits.length ? '' : t('search.noResults', { q: term });
         } catch (error) {
           if (alive && current === serial) { status.textContent = ''; throw error; }
         }

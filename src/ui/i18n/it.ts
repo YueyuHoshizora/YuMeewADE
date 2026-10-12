@@ -61,6 +61,7 @@ export const it: Record<MessageKey, string> = {
 'search.title': 'Cerca in tutte le conversazioni', 'search.placeholder': 'Cerca nelle attività e nelle conversazioni…', 'search.truncated': 'Troppi risultati. Affina la ricerca.',
 'search.partial': 'Troppe conversazioni; è stata cercata solo una parte e i risultati possono essere incompleti. Usa un termine più preciso.',
 'search.scopeTask': 'Solo questa attività: {title}',
+'search.noResults': 'Nessuna attività o conversazione contiene «{q}»',
 'find.label': 'Trova nella pagina', 'find.next': 'Risultato successivo', 'find.previous': 'Risultato precedente', 'find.none': 'Nessuna corrispondenza',
 'settings.theme': 'Aspetto', 'settings.theme.system': 'Sistema', 'settings.theme.light': 'Chiaro', 'settings.theme.dark': 'Scuro',
 'settings.notifications': 'Notifica al termine delle attività o quando serve una risposta', 'settings.notificationPermission': 'Consenti notifiche di sistema', 'notification.done': 'L’IA ha completato la risposta', 'notification.answer': 'L’IA ha bisogno della tua risposta',

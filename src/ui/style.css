@@ -390,6 +390,7 @@ body { height: 100dvh; display: grid; grid-template-rows: 64px minmax(0, 1fr) au
 .search-hit { display: block; padding: 12px; border: 1px solid var(--border); border-radius: 10px; }
 .search-hit .muted { margin-left: 8px; }
 .search-hit p { color: inherit; white-space: pre-wrap; margin: 8px 0 0; }
+.search-hit mark { color: inherit; background: color-mix(in srgb, var(--accent) 35%, transparent); border-radius: 3px; padding: 0 1px; }
 .search-highlight { outline: 3px solid var(--accent); outline-offset: 3px; }
 .load-earlier { display: block; margin: 0 auto 12px; }
 .visually-hidden {

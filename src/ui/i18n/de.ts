@@ -61,6 +61,7 @@ export const de: Record<MessageKey, string> = {
 'search.title': 'Alle Gespräche durchsuchen', 'search.placeholder': 'Aufgaben und Gesprächsinhalte durchsuchen…', 'search.truncated': 'Zu viele Ergebnisse. Suche eingrenzen.',
 'search.partial': 'Zu viele Gespräche; nur ein Teil wurde durchsucht, Ergebnisse können unvollständig sein. Genaueren Begriff verwenden.',
 'search.scopeTask': 'Nur diese Aufgabe: {title}',
+'search.noResults': 'Keine Aufgaben oder Gespräche enthalten „{q}“',
 'find.label': 'Auf Seite suchen', 'find.next': 'Nächster Treffer', 'find.previous': 'Vorheriger Treffer', 'find.none': 'Keine Treffer',
 'settings.theme': 'Darstellung', 'settings.theme.system': 'System', 'settings.theme.light': 'Hell', 'settings.theme.dark': 'Dunkel',
 'settings.notifications': 'Bei Abschluss oder nötiger Antwort benachrichtigen', 'settings.notificationPermission': 'Systembenachrichtigungen erlauben', 'notification.done': 'Die KI hat ihre Antwort abgeschlossen', 'notification.answer': 'Die KI benötigt deine Antwort',

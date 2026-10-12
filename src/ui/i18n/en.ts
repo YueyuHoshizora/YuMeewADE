@@ -61,6 +61,7 @@ export const en: Record<MessageKey, string> = {
 'search.title': 'Search all conversations', 'search.placeholder': 'Search tasks and conversation content…', 'search.truncated': 'Too many results. Refine your search.',
 'search.partial': 'Too many conversations to scan; only part was searched and results may be incomplete. Try a more specific term.',
 'search.scopeTask': 'Only this task: {title}',
+'search.noResults': 'No tasks or conversations contain “{q}”',
 'find.label': 'Find in page', 'find.next': 'Next match', 'find.previous': 'Previous match', 'find.none': 'No matches',
 'settings.theme': 'Appearance', 'settings.theme.system': 'System', 'settings.theme.light': 'Light', 'settings.theme.dark': 'Dark',
 'settings.notifications': 'Notify when tasks finish or need an answer', 'settings.notificationPermission': 'Allow system notifications', 'notification.done': 'AI has finished replying', 'notification.answer': 'AI needs your answer',
