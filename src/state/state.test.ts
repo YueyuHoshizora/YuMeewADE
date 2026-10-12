@@ -119,6 +119,22 @@ test('a corrupt completion or start-pick file is reported once and the rest of t
   } finally { await f.close(); }
 });
 
+test('an unfinished task without a phase keeps the next-phase offer back, like the current-phase list that shows it', async () => {
+  const f = await fixture();
+  try {
+    f.app.close();
+    await f.app.projects.create({ name: 'Phased' });
+    const phase = f.app.projects.currentPhase(await f.app.projects.get('Phased'));
+    const done = await f.app.tasks.create('Phased', { title: 'assigned', phase, workspace: 'direct' });
+    await f.app.tasks.update('Phased', done.id, { state: '完成' });
+    const loose = await f.app.tasks.create('Phased', { title: 'no phase', workspace: 'direct' });
+    const offer = async () => { f.app.changed(); return (await f.app.state()).projects.find(project => project.id === 'Phased')!.phaseOffer; };
+    assert.equal(await offer(), false);
+    await f.app.tasks.update('Phased', loose.id, { state: '完成' });
+    assert.equal(await offer(), true);
+  } finally { await f.close(); }
+});
+
 test('concurrent rebuilds share a snapshot and invalidation during a build cannot cache stale data', async () => {
   const f = await fixture();
   try {

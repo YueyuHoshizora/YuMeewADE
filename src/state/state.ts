@@ -58,7 +58,9 @@ export async function buildState(app: App): Promise<StateSnapshot> {
       completion(app.completion.phaseContinued(project.id), undefined),
       fs.stat(bodyPath).catch(() => null),
     ]);
-    return { ...project, tasks: taskViews, currentPhase, phaseOffer: Boolean(currentPhase) && group.length > 0 && group.every((task) => task.state === '完成') && continued !== phaseKey(group), isGit, bodyPath, bodyMissing: !body?.isDirectory(), dir: app.ws.projectDir(project.id), startPick, pinned: savedOrder.pins.includes(project.id) };
+    // Tasks without a phase are listed with the current phase's tasks, so an unfinished one still holds the phase open.
+    const phaseDone = group.length > 0 && group.every((task) => task.state === '完成') && !tasks.some((task) => !task.phase && task.state !== '完成');
+    return { ...project, tasks: taskViews, currentPhase, phaseOffer: Boolean(currentPhase) && phaseDone && continued !== phaseKey(group), isGit, bodyPath, bodyMissing: !body?.isDirectory(), dir: app.ws.projectDir(project.id), startPick, pinned: savedOrder.pins.includes(project.id) };
   }));
   // Keyed by project name, which may be `constructor` or `__proto__`: no inherited keys may stand in for a parent.
   const order: Record<string, string[]> = Object.create(null);
