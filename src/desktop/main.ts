@@ -165,6 +165,11 @@ function createWindow(url: string): BrowserWindow {
       if (/^https?:/.test(target)) void shell.openExternal(target);
     }
   });
+  // The editor's beforeunload guard makes Electron cancel close/reload/quit silently; ask instead of trapping the window.
+  win.webContents.on('will-prevent-unload', (event) => {
+    const choice = dialog.showMessageBoxSync(win, { type: 'warning', title: 'YuMeewADE', message: '還有尚未儲存的編輯內容，確定要離開？', detail: '離開後，尚未寫入檔案的變更不會被儲存。', buttons: ['離開', '留下'], defaultId: 1, cancelId: 1 });
+    if (choice === 0) event.preventDefault();
+  });
   win.webContents.setWindowOpenHandler(({ url: target }) => {
     if (/^https?:/.test(target)) void shell.openExternal(target);
     return { action: 'deny' };
@@ -175,7 +180,8 @@ function createWindow(url: string): BrowserWindow {
   return win;
 }
 
-app.on('before-quit', (event) => {
+// Stop the core only after every window agreed to close: a window that keeps unsaved edits aborts the quit and still needs it.
+app.on('will-quit', (event) => {
   disposeTray?.(); disposeTray = undefined;
   if (shutdownComplete) return;
   const ownedCore = core;
