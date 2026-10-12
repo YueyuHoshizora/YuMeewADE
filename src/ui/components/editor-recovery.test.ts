@@ -44,6 +44,17 @@ test('without its own record a new window takes the newest stale layout and the 
   assert.deepEqual(result.adopted.sort(), ['legacy', 'w:newer']);
 });
 
+test('a newer stale record without a buffer list neither blocks older drafts nor gets adopted', () => {
+  const damaged = { key: 'w:damaged', raw: JSON.stringify({ version: 4, at: 2, buffers: null }) };
+  const healthy = { key: 'w:healthy', raw: record(1, [draft('notes.txt', 'unsaved draft')]) };
+  const fresh = mergeRecovery(null, [damaged, healthy], 100_000, 30_000);
+  assert.deepEqual(paths(fresh.raw), ['notes.txt=unsaved draft']);
+  assert.deepEqual(fresh.adopted, ['w:healthy']);
+  const merged = mergeRecovery(record(100_000, []), [damaged, healthy], 100_000, 30_000);
+  assert.deepEqual(paths(merged.raw), ['notes.txt=unsaved draft']);
+  assert.deepEqual(merged.adopted, ['w:healthy']);
+});
+
 test('this window\'s own corrupt record is reported rather than silently replaced', () => {
   assert.throws(() => mergeRecovery('{', [{ key: 'w:dead', raw: record(1, [draft('a.ts', 'A')]) }], 100_000, 30_000), SyntaxError);
 });

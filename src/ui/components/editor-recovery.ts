@@ -23,6 +23,8 @@ export function mergeRecovery(own: string | null, others: { key: string; raw: st
     let value: unknown; try { value = JSON.parse(raw); } catch { continue; }
     const at = value && typeof value === 'object' && !Array.isArray(value) && typeof (value as { at?: unknown }).at === 'number' ? (value as { at: number }).at : 0;
     if (now - at < liveMs) continue;
+    // A damaged record can neither lead nor be adopted (deleted): healthy older windows still recover their drafts.
+    if (!buffersOf(value)) continue;
     stale.push({ key, at, value });
   }
   if (!stale.length) return { raw: own, adopted: [] };
@@ -34,7 +36,7 @@ export function mergeRecovery(own: string | null, others: { key: string; raw: st
   const adopted = own === null ? [stale[0]!.key] : [];
   for (const record of own === null ? stale.slice(1) : stale) {
     let complete = true;
-    for (const buffer of buffersOf(record.value) ?? []) {
+    for (const buffer of buffersOf(record.value)!) {
       const path = draftPath(buffer); if (path === undefined) continue;
       const at = merged.findIndex(item => item && typeof item === 'object' && item.document?.path === path);
       if (at >= 0 && merged[at]!.clean === true) merged[at] = buffer;

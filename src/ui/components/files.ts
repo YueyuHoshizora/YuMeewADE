@@ -639,11 +639,11 @@ export function openFileBrowser(project: string, task: string, workspace = activ
       view.content.scrollLeft = typeof saved.left === 'number' && Number.isFinite(saved.left) && saved.left >= 0 ? saved.left : 0;
     }
     if (session?.version === 4) for (let index = 0; index < savedPanes.length; index++) {
-      const saved = savedPanes[index] as { navigation?: { entries?: unknown; cursor?: unknown } };
-      const entries = saved.navigation?.entries;
+      const saved = savedPanes[index] as { navigation?: { entries?: unknown; cursor?: unknown } } | null;
+      const entries = saved?.navigation?.entries;
       if (!Array.isArray(entries) || entries.length > 200) continue;
       const valid = entries.filter((entry): entry is Position => entry && typeof entry.path === 'string' && buffers.has(entry.path) && ['start', 'end', 'top', 'left'].every(key => typeof entry[key] === 'number' && Number.isFinite(entry[key]) && entry[key] >= 0) && Number.isSafeInteger(entry.start) && Number.isSafeInteger(entry.end) && entry.end >= entry.start);
-      const cursor = saved.navigation?.cursor;
+      const cursor = saved?.navigation?.cursor;
       navigation[index] = { entries: valid, cursor: typeof cursor === 'number' && Number.isSafeInteger(cursor) && cursor >= -1 && cursor < valid.length ? cursor : valid.length - 1 };
     }
     if (savedPanes.length) {
