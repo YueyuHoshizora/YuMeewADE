@@ -81,7 +81,7 @@ export class VerifyService {
     if (!cached || this.runs.has(key) || this.opts.isRunning(project, task)) return null;
     try {
       const context = await this.context(project, task);
-      const fingerprint = await verificationFingerprint(context.cwd, context.configuration, context.model);
+      const fingerprint = await verificationFingerprint(context.cwd, context.configuration, context.model, context.ledgerData);
       const current = await this.context(project, task);
       if (cached.fingerprint === fingerprint && current.cwd === context.cwd && current.configuration === context.configuration && this.last.get(key) === cached && !this.runs.has(key) && !this.opts.isRunning(project, task)) return cached.status;
     } catch { /* 無法可靠讀取輸入即失效，不能沿用綠燈。 */ }
@@ -154,10 +154,10 @@ export class VerifyService {
     const checks = parseVerificationChecks(project.checks?.length ? project.checks : project.verify.trim() ? [{ name: 'verify', command: project.verify }] : []);
     if (requireChecks && !checks.length) throw new AppError('bad_request');
     const cwd = await fs.realpath(task.workdir || projects.bodyPath(project)).catch(() => null);
-    const [workspace, body] = await Promise.all([fs.realpath(ws.root), fs.realpath(projects.bodyPath(project)).catch(() => null)]);
+    const [workspace, body, ledger] = await Promise.all([fs.realpath(ws.root), fs.realpath(projects.bodyPath(project)).catch(() => null), fs.realpath(ws.projectDir(projectId))]);
     if (!cwd || !(await fs.stat(cwd).catch(() => null))?.isDirectory() || (!isInside(workspace, cwd) && !(body && (cwd === body || isInside(body, cwd))))) throw new AppError('bad_request');
     const model = parseVerificationInputModel(project.verificationInputs);
-    return { cwd, checks, model, configuration: JSON.stringify([project.verify, checks, project.requireVerification, model]) };
+    return { cwd, checks, model, ledgerData: path.join(ledger, '.ai'), configuration: JSON.stringify([project.verify, checks, project.requireVerification, model]) };
   }
 
   private async execute(projectId: string, taskId: string, entry: { stop?: (() => void) | undefined; cancelled?: boolean }): Promise<VerifyResult> {
@@ -170,7 +170,7 @@ export class VerifyService {
     const started = Date.now();
     const deadline = started + this.opts.config.limits.verifySeconds * 1000;
     try {
-      const before = await verificationFingerprint(context.cwd, context.configuration, context.model);
+      const before = await verificationFingerprint(context.cwd, context.configuration, context.model, context.ledgerData);
       if (this.closed || this.opts.isRunning(projectId, taskId)) throw new AppError('conflict');
       const steps = [];
       for (const check of context.checks) {
@@ -180,7 +180,7 @@ export class VerifyService {
         if (result.timedOut || this.closed) break;
       }
       const current = await this.context(projectId, taskId);
-      const after = await verificationFingerprint(current.cwd, current.configuration, current.model).catch(() => null);
+      const after = await verificationFingerprint(current.cwd, current.configuration, current.model, current.ledgerData).catch(() => null);
       drifted ||= before !== after;
       const failed = steps.find(step => !step.ok);
       const output = steps.length === 1 ? steps[0]!.output : steps.map(step => `[${step.name}] ${step.ok ? 'PASS' : 'FAIL'}\\n${step.output}`).join('\\n');

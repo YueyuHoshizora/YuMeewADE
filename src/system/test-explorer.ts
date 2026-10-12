@@ -154,7 +154,8 @@ export class TestExplorerService {
         const real = await fs.realpath(path.resolve(root, selected.file));
         if (!isInside(root, real) || !(await fs.stat(real)).isFile() || !config.files.some(file => file === '.' || selected.file === file || selected.file?.startsWith(`${file}/`))) throw new AppError('bad_request');
       }
-      const before = await verificationFingerprint(root, configuration, projectModel);
+      const ledgerData = path.join(await fs.realpath(this.opts.ws.projectDir(project)), '.ai');
+      const before = await verificationFingerprint(root, configuration, projectModel, ledgerData);
       const temporary = await fs.mkdtemp(path.join(os.tmpdir(), 'yumeewade-tests-'));
       let result: VerifyResult;
       let tree: TestCaseNode[] = [];
@@ -182,7 +183,7 @@ export class TestExplorerService {
       const current = await this.state(project, task);
       const currentConfig = current.configurations.find(c => c.name === runner);
       const currentModel = parseVerificationInputModel((await this.opts.projects.get(project)).verificationInputs);
-      const after = await verificationFingerprint(await this.cwd(project, task), JSON.stringify([currentConfig, currentModel]), currentModel).catch(() => null);
+      const after = await verificationFingerprint(await this.cwd(project, task), JSON.stringify([currentConfig, currentModel]), currentModel, ledgerData).catch(() => null);
       if (result.output.length > 65536) { result.output = result.output.slice(-65536); result.truncated = true; }
       result.drifted = before !== after; if (result.drifted) result.ok = false;
       const run: TestExplorerRun = { id: randomUUID(), at: new Date().toISOString(), runner, ...(selection ? { selection } : {}), before, after, result, tree };

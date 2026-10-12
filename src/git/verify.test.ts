@@ -47,6 +47,29 @@ test('verify reports passing and failing exits', () => withTmpWorkspace(async ws
   } finally { await service.stopAll(); }
 }));
 
+test('ledger bookkeeping under the project .ai keeps a direct task green; source and a main folder .ai still invalidate', () => withTmpWorkspace(async ws => {
+  const { service, projects, task } = await setup(ws, nodeCommand('0'));
+  try {
+    assert.equal((await service.run('P', task.id)).ok, true);
+    // Chat, task and workflow files live in the ledger folder, which is also the direct task's working root.
+    await fs.mkdir(path.join(ws.projectDir('P'), '.ai', 'chat'), { recursive: true });
+    await fs.appendFile(path.join(ws.projectDir('P'), '.ai', 'chat', `${task.id}.jsonl`), '{"role":"user"}\n');
+    await fs.mkdir(path.join(ws.projectDir('P'), '.ai', 'workflows'), { recursive: true });
+    await fs.writeFile(path.join(ws.projectDir('P'), '.ai', 'workflows', `${task.id}.json`), '{}');
+    assert.equal((await service.status('P', task.id))?.ok, true);
+    await fs.writeFile(path.join(ws.projectDir('P'), 'source.ts'), 'changed');
+    assert.equal(await service.status('P', task.id), null);
+    // An external main folder's own .ai directory is project content, not ledger bookkeeping.
+    const body = path.join(ws.root, 'external-body');
+    await fs.mkdir(path.join(body, '.ai'), { recursive: true });
+    await gitOk(body, ['init', '-q']);
+    await projects.update('P', { body });
+    assert.equal((await service.run('P', task.id)).ok, true);
+    await fs.writeFile(path.join(body, '.ai', 'input.json'), '{}');
+    assert.equal(await service.status('P', task.id), null);
+  } finally { await service.stopAll(); }
+}));
+
 test('verify runs a direct task in a project body folder outside the workspace', () => withTmpWorkspace(async (ws, dir) => {
   const body = path.join(dir, 'external-body');
   await fs.mkdir(body);

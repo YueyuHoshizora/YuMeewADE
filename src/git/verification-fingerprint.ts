@@ -17,8 +17,13 @@ function glob(pattern: string): RegExp {
   return new RegExp(`^${expression}(?:/.*)?$`, 'u');
 }
 
-/** 保守策略：除 Git 管理資料外連 ignored/generated 檔也納入，不把可能的輸入當作輸出忽略。 */
-export async function verificationFingerprint(root: string, configuration: string, value?: VerificationInputModel): Promise<string> {
+/**
+ * 保守策略：除 Git 管理資料外連 ignored/generated 檔也納入，不把可能的輸入當作輸出忽略。
+ * `ledgerData` is the realpath of the project's ledger `.ai` directory. When the verified root is (or contains)
+ * the ledger folder, chat/task/workflow bookkeeping lives there and must not invalidate verification;
+ * a main folder's own `.ai` is a different path and stays fingerprinted.
+ */
+export async function verificationFingerprint(root: string, configuration: string, value?: VerificationInputModel, ledgerData?: string): Promise<string> {
   root = await fs.realpath(root);
   const model = parseVerificationInputModel(value);
   const inputs = model.inputs?.map(glob);
@@ -61,6 +66,7 @@ export async function verificationFingerprint(root: string, configuration: strin
       const managed = path.relative(root, path.join(dir, entry.name)).split(path.sep);
       if (entry.isFile() && managed.length === 3 && managed[0] === '.ai' && managed[1] === 'verification' && /^[A-Za-z0-9_-]+(?:\.tests)?\.json(?:\.\d+\.[a-f0-9-]+\.tmp)?$/.test(entry.name)) continue;
       const file = path.join(dir, entry.name);
+      if (ledgerData && file === ledgerData) continue;
       const relative = path.relative(root, file);
       const portable = relative.split(path.sep).join('/');
       const directoryLike = entry.isDirectory() || entry.isSymbolicLink();
