@@ -98,7 +98,7 @@ export function openShortcutHelp(): void {
     ['? · ⌘/Ctrl+/', t('palette.help')], ['/ · ⌘/Ctrl+K', t('palette.sidebar')],
     ['⌘/Ctrl+Shift+F', t('search.title')], ['⌘/Ctrl+Enter · Enter · Shift+Enter', t('palette.send')],
     ['↑↓ · Enter · Tab · Esc', t('palette.menuKeys')], ['Esc', t('palette.treeEsc')],
-    ['⌘/Ctrl+S', t('palette.save')], ['Ctrl · Enter · ↑↓←→', t('palette.terminal')],
+    ['⌘/Ctrl+S', t('palette.save')], ['Ctrl · Enter · ↑↓←→', t('palette.terminal')], ['⌘/Ctrl+Click', t('palette.terminalLinks')],
   ];
   if (document.querySelector('.cm-editor')) shortcuts.push(['⌘/Ctrl+F · ⌘/Ctrl+Z · ⌘/Ctrl+Shift+Z · Ctrl+Y · Ctrl+Space · ⌘/Ctrl+Shift+L', t('palette.editorKeys')]);
   dialog.append(row(el('h2', '', t('palette.help')), button(t('common.close'), () => dialog.close())), ...shortcuts.map(([keys, description]) => row(el('kbd', '', keys), el('span', '', description))));

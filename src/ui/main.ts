@@ -16,6 +16,7 @@ import { showInitialCare } from './components/care.ts';
 import { mountTerminalDock, toggleTerminalDock } from './components/terminal-dock.ts';
 import { openCommandPalette, paletteShortcut } from './components/palette.ts';
 import { openFindBar } from './components/find-bar.ts';
+import { terminalFilePath } from './components/terminal-links.ts';
 import { mountEditorWorkbench, setWorkbenchScope } from './components/editor-loader.ts';
 
 const header = document.getElementById('header')!; const sidebar = document.getElementById('sidebar')!; const main = document.getElementById('main')!; const footer = document.getElementById('footer')!;
@@ -159,6 +160,16 @@ window.addEventListener('yumeewade:menu', event => {
   const command = (event as CustomEvent<{ command: string }>).detail?.command;
   if (command === 'palette' && state) openCommandPalette({ state, refresh });
   else if (command === 'find') openFindBar();
+});
+// Terminal paths are printed relative to (or absolute within) the same root the task editor uses.
+window.addEventListener('yumeewade:terminal-path', event => {
+  const { project: projectId, task: taskId, path, line } = (event as CustomEvent<{ project: string; task: string; path: string; line?: number }>).detail;
+  const project = state?.projects.find(p => p.id === projectId); const task = project?.tasks.find(item => item.id === taskId);
+  if (!project) return;
+  const root = task && task.workspace !== 'direct' && task.workdir && !task.copyMissing ? task.workdir : project.bodyPath;
+  const relative = terminalFilePath(path, root);
+  if (!relative) { toast(t('terminalLinks.outside')); return; }
+  window.dispatchEvent(new CustomEvent('yumeewade:open-file', { detail: { project: projectId, task: taskId, path: relative, ...(line ? { line } : {}) } }));
 });
 window.addEventListener('keydown', event => {
   if (state && paletteShortcut(event, { state, refresh })) return;

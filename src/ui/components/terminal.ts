@@ -94,6 +94,19 @@ function terminalSession(project: string, task: string, label: string, recover?:
   });
   receiver.addEventListener('input', () => { if (receiver.value) { send(receiver.value); receiver.value = ''; } });
   receiver.addEventListener('paste', event => { const text = event.clipboardData?.getData('text/plain'); if (text) { event.preventDefault(); send(terminalPaste(text, screen.bracketedPaste)); } });
+  // Handled on mousedown: focusing the hidden input on press can scroll the dock before the click lands.
+  let linkPress = false;
+  screen.node.addEventListener('mousedown', event => {
+    linkPress = false;
+    if (event.button !== 0 || (!event.metaKey && !event.ctrlKey)) return;
+    const link = screen.linkAt(event.clientX, event.clientY); if (!link) return;
+    event.preventDefault(); linkPress = true;
+    if (link.kind === 'url') window.open(link.url, '_blank', 'noopener,noreferrer');
+    else window.dispatchEvent(new CustomEvent('yumeewade:terminal-path', { detail: { project, task, path: link.path, ...(link.line ? { line: link.line } : {}) } }));
+  });
+  // Registered before the focus handler so the click that finishes a link press does not move focus into the shell.
+  screen.node.addEventListener('click', event => { if (linkPress) { linkPress = false; event.stopImmediatePropagation(); } });
+  screen.node.addEventListener('mousemove', event => { screen.node.style.cursor = (event.metaKey || event.ctrlKey) && screen.linkAt(event.clientX, event.clientY) ? 'pointer' : ''; });
   screen.node.addEventListener('focus', () => receiver.focus()); screen.node.addEventListener('click', () => { if (!window.getSelection()?.toString()) receiver.focus(); });
   let resizeTimer: number | undefined;
   const observer = new ResizeObserver(entries => {
