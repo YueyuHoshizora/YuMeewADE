@@ -15,6 +15,14 @@ test('redacts home paths, JSON credentials, bearer tokens, JWT and opaque tokens
   assert.equal(redactLog('C:\\\\Users\\\\alice\\\\work', 'C:\\Users\\alice'), '~\\\\work');
 });
 
+test('a redacted JSON log entry is still valid JSON with its level, so level filters keep it', () => {
+  const line = JSON.stringify({ level: 'error', msg: 'request failed: token="abc" Bearer xyz', data: { password: 'p"q', nested: [{ apiKey: 'k' }] } });
+  const entry = JSON.parse(redactLog(`${line}\n${line}`, '').split('\n')[1]!) as { level: string; msg: string; data: { password: string; nested: { apiKey: string }[] } };
+  assert.equal(entry.level, 'error');
+  assert.ok(!entry.msg.includes('abc') && !entry.msg.includes('xyz'), entry.msg);
+  assert.equal(entry.data.password, '[REDACTED]'); assert.equal(entry.data.nested[0]!.apiKey, '[REDACTED]');
+});
+
 test('tail is capped by bytes and lines, skips partial records and handles missing files', async () => {
   const root = await fs.mkdtemp(path.join(os.tmpdir(), 'log-tail-'));
   try {

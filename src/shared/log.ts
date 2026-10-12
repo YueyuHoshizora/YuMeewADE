@@ -72,17 +72,35 @@ export const log = new Logger();
 export const LOG_TAIL_BYTES = 256 * 1024;
 export const LOG_TAIL_LINES = 1000;
 
-/** Defense in depth, not a guarantee that arbitrary log messages contain no secrets. */
+const SECRET_NAME = /token|secret|password|credential|authorization|api[_-]?key/i;
+function redactText(text: string): string {
+  return text
+    .replace(/((?:token|secret|password|authorization|api[_-]?key)\s*[=:]\s*)(?:"[^"\n]*"|'[^'\n]*'|[^\s,;"}]+)/gi, '$1[REDACTED]')
+    .replace(/\bBearer\s+[A-Za-z0-9._~+/-]+=*/gi, 'Bearer [REDACTED]')
+    .replace(/\b(?:sk-[A-Za-z0-9_-]+|gh[pousr]_[A-Za-z0-9_]+|github_pat_[A-Za-z0-9_]+|eyJ[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+)\b/g, '[REDACTED]')
+    .replace(/\b[A-Za-z0-9_/-]{32,}\b/g, '[REDACTED]');
+}
+function redactValue(value: unknown, key?: string): unknown {
+  if (typeof value === 'string') return key !== undefined && SECRET_NAME.test(key) ? '[REDACTED]' : redactText(value);
+  if (Array.isArray(value)) return value.map(item => redactValue(item));
+  if (value && typeof value === 'object') return Object.fromEntries(Object.entries(value).map(([name, item]) => [name, redactValue(item, name)]));
+  return value;
+}
+
+/**
+ * Defense in depth, not a guarantee that arbitrary log messages contain no secrets. A JSON log line is redacted value by
+ * value and serialized again, so the entry stays valid JSON (text patterns run on raw JSON could eat an escape).
+ */
 export function redactLog(text: string, home = os.homedir()): string {
   if (home) {
     text = text.replaceAll(home, '~').replaceAll(JSON.stringify(home).slice(1, -1), '~');
   }
-  return text
-    .replace(/("(?:[^"]*(?:token|secret|password|credential|authorization|api[_-]?key)[^"]*)"\s*:\s*)"(?:\\.|[^"\\])*"/gi, '$1"[REDACTED]"')
-    .replace(/((?:token|secret|password|authorization|api[_-]?key)\s*[=:]\s*)[^\s,;"}]+/gi, '$1[REDACTED]')
-    .replace(/\bBearer\s+[A-Za-z0-9._~+/-]+=*/gi, 'Bearer [REDACTED]')
-    .replace(/\b(?:sk-[A-Za-z0-9_-]+|gh[pousr]_[A-Za-z0-9_]+|github_pat_[A-Za-z0-9_]+|eyJ[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+)\b/g, '[REDACTED]')
-    .replace(/\b[A-Za-z0-9_/-]{32,}\b/g, '[REDACTED]');
+  return text.split('\n').map(line => {
+    if (line.startsWith('{')) {
+      try { return JSON.stringify(redactValue(JSON.parse(line))); } catch { /* not a JSON entry: redact as text */ }
+    }
+    return redactText(line.replace(/("(?:[^"]*(?:token|secret|password|credential|authorization|api[_-]?key)[^"]*)"\s*:\s*)"(?:\\.|[^"\\])*"/gi, '$1"[REDACTED]"'));
+  }).join('\n');
 }
 
 /** Reads only a fixed local file, without following log-file or parent-directory symlinks. */
