@@ -21,6 +21,8 @@ const header = document.getElementById('header')!; const sidebar = document.getE
 mountTerminalDock();
 mountEditorWorkbench(main);
 let state: AppState | null = null; let usage: UsageState = { ais: [], tokensPerSecond: null }; let view: View | null = null; let route = ''; let viewTarget = ''; let refreshJob: Promise<void> | null = null; let refreshAgain = false; let debounce: number | undefined;
+/** Serialized last drawn snapshot; background polls skip rebuilding the sidebar and view when it is unchanged. */
+let stateText = ''; let pendingDraw = false;
 // Route modules are intentionally deferred until their view is actually visited.
 function lazyView(load: () => Promise<View>): View {
   const node = el('div', 'page', t('common.loading')); let disposed = false; let mounted: View | undefined; let latest: AppState | undefined;
@@ -126,15 +128,22 @@ function navigate(force = false): void {
   main.replaceChildren(view.node); main.scrollTop = 0; document.body.classList.remove('sidebar-open'); drawShell();
   setWorkbenchScope(project?.id ?? '', task?.id ?? '', state.root);
 }
-function refresh(): Promise<void> {
+/** Full redraw after any explicit change; exposed to views, so it must not accept arguments. */
+function refresh(): Promise<void> { return load(false); }
+/** `quiet` is for background polls: an identical snapshot only refreshes the time-based footer. */
+function load(quiet: boolean): Promise<void> {
+  if (!quiet) pendingDraw = true;
   // 建立後的呼叫必須等到真正取得新 state；正在抓取時不能提早 resolve。
   if (refreshJob) { refreshAgain = true; return refreshJob; }
   refreshJob = (async () => {
     try {
       do {
-        refreshAgain = false; const next = await api.state(); const workspaceChanged = state !== null && state.root !== next.root;
+        refreshAgain = false; const draw = pendingDraw; pendingDraw = false;
+        const next = await api.state(); const text = JSON.stringify(next); const workspaceChanged = state !== null && state.root !== next.root;
         if (workspaceChanged) window.dispatchEvent(new CustomEvent('yumeewade:workspace-changed', { detail: { root: next.root } }));
-        notify(state, next); announceQuota(next.usage); announceUpdate(next); state = next; usage = next.usage; drawShell();
+        notify(state, next); announceQuota(next.usage); announceUpdate(next);
+        if (!draw && !workspaceChanged && text === stateText) { usage = next.usage; drawFooter(); continue; }
+        stateText = text; state = next; usage = next.usage; drawShell();
         navigate(workspaceChanged); view?.update?.(state);
         if (!initialCareShown) { initialCareShown = true; showInitialCare({ state, refresh }); }
       } while (refreshAgain);
@@ -158,8 +167,10 @@ window.addEventListener('keydown', event => {
   if (event.isComposing || event.keyCode === 229 || (event.target instanceof Element && event.target.closest('input,textarea,select,[contenteditable]'))) return;
   if (event.key === '/' || ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === 'k')) { event.preventDefault(); document.body.classList.add('sidebar-open'); sidebar.querySelector<HTMLInputElement>('.tree-search')?.focus(); }
 });
-window.addEventListener('focus', () => { void refresh(); });
-window.setInterval(() => { void refresh(); }, 15_000);
+window.addEventListener('focus', () => { void load(true); });
+// Hidden windows rely on the SSE stream for changes; the poll is only a fallback while visible.
+document.addEventListener('visibilitychange', () => { if (!document.hidden) void load(true); });
+window.setInterval(() => { if (!document.hidden) void load(true); }, 15_000);
 window.setInterval(() => { deliverQuota(quotaCountdowns(usage, Date.now(), firedCountdowns)); }, 15_000);
 const events = stream('/api/events', {
   changed: () => { window.clearTimeout(debounce); debounce = window.setTimeout(() => { void refresh(); }, 150); },
