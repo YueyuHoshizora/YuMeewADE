@@ -30,6 +30,8 @@ async function close(server: Server | NetServer): Promise<void> {
   server.close(() => resolve());
   await promise;
 }
+/** Finished runs stay listable (exit code, last output) but only this many are kept. */
+const FINISHED_RUNS = 20;
 /** Every proxy has a distinct origin; no project response or credential enters the IDE origin. */
 export class EmbeddedPreviewService {
   private readonly runs = new Map<string, Run>();
@@ -106,6 +108,7 @@ export class EmbeddedPreviewService {
       const url = `${this.gatewayUrl}/${id}`;
       child = spawnCli(command, args.map(arg => arg.replaceAll('{port}', String(port)).replaceAll('{host}', '127.0.0.1')), { cwd, env: { ...env, HOST: '127.0.0.1', PORT: String(port) }, detached: process.platform !== 'win32', windowsHide: true, stdio: ['ignore', 'pipe', 'pipe'] });
       const run: Run = { view: { id, project, task, state: 'starting', url, targetUrl: `http://127.0.0.1:${port}/`, output: '', exitCode: null }, child, proxy, origin, port, sockets: new Set() };
+      this.pruneFinished();
       this.runs.set(id, run);
       const append = (chunk: Buffer): void => { run.view.output = (run.view.output + chunk.toString('utf8')).slice(-32768); };
       child.stdout?.on('data', append); child.stderr?.on('data', append);
@@ -142,6 +145,11 @@ export class EmbeddedPreviewService {
   private accept(run: Run, req: IncomingMessage): boolean {
     const origin = run.origin;
     return req.headers.host === new URL(origin).host && (req.headers.origin === undefined || req.headers.origin === 'null' || req.headers.origin === origin || req.headers.origin === this.options.ideOrigin) && typeof req.url === 'string' && req.url.startsWith('/') && !req.url.startsWith('//') && !/[\0\r\n\\]/u.test(req.url);
+  }
+  /** Drops the oldest finished runs whose process already exited; live or still-stopping runs are never evicted. */
+  private pruneFinished(): void {
+    const finished = [...this.runs.entries()].filter(([, run]) => !['starting', 'running'].includes(run.view.state) && (run.child.exitCode !== null || run.child.signalCode !== null));
+    for (const [id] of finished.slice(0, Math.max(0, finished.length - FINISHED_RUNS + 1))) this.runs.delete(id);
   }
   private async forward(run: Run, req: IncomingMessage, res: ServerResponse): Promise<void> {
     if (!this.accept(run, req)) { res.writeHead(403); res.end(); return; }

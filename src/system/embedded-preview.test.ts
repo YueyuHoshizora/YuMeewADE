@@ -112,3 +112,25 @@ test('pending starts block global destructive work without counting an idle gate
   assert.equal(service.isRunning('project', 'task'), false);
   await service.dispose();
 });
+
+test('finished preview runs are bounded while live runs are never evicted', async () => {
+  const service = new EmbeddedPreviewService({ cwd: async () => process.cwd(), assertTrusted: async () => undefined, ideOrigin: 'http://127.0.0.1:3000' });
+  await service.init();
+  try {
+    const live = await service.start('project', 'task', { command: process.execPath, args: ['-e', serverCode, '--', '{port}'] });
+    const finished: string[] = [];
+    for (let index = 0; index < 22; index++) {
+      const view = await service.start('project', 'task', { command: process.execPath, args: ['-e', 'process.exit(3)', '--', '{port}'] });
+      // The child exits by itself; wait for the real exit to be recorded before the next start can prune it.
+      const deadline = Date.now() + 10000;
+      while (service.status('project', 'task', view.id).exitCode === null && Date.now() < deadline) {
+        const tick = Promise.withResolvers<void>(); setTimeout(tick.resolve, 10); await tick.promise;
+      }
+      assert.equal(service.status('project', 'task', view.id).exitCode, 3);
+      finished.push(view.id);
+    }
+    const ids = service.list('project', 'task').map(view => view.id);
+    assert.ok(ids.includes(live.id), 'a live preview must stay listed');
+    assert.deepEqual(ids.filter(id => id !== live.id), finished.slice(-20));
+  } finally { await service.dispose(); }
+});
