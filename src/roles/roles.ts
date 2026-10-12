@@ -2,10 +2,9 @@
 import { promises as fs } from 'node:fs';
 import { AppError } from '../shared/errors.ts';
 import { atomicWrite } from '../shared/fsx.ts';
-import { HUMAN, type AiPick, type RoleInput, type RoleSlot, type Roles, type Task } from '../shared/types.ts';
+import { EFFORTS, HUMAN, type AiPick, type RoleInput, type RoleSlot, type Roles, type Task } from '../shared/types.ts';
 import { parseYamlMap, YamlError, type YamlValue } from '../shared/yaml.ts';
 export { HUMAN } from '../shared/types.ts';
-export const EFFORTS = ['low', 'medium', 'high', 'xhigh', 'max'];
 const ROLES_MAX = 50, ROLE_JOB_MAX = 2000, ROLE_MODEL_MAX = 200;
 // Role names are object keys; these would collide with prototype machinery even on a null-prototype map's consumers.
 const RESERVED_ROLE_NAMES = new Set(['__proto__', 'constructor', 'prototype']);

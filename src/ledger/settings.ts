@@ -5,8 +5,12 @@ import path from 'node:path';
 import type { Config } from '../shared/config.ts';
 import { AppError } from '../shared/errors.ts';
 import { readJson, updateJson, withFileLocks, writeJson } from '../shared/fsx.ts';
-import type { Settings, SettingsPatch } from '../shared/types.ts';
+import { EFFORTS, type Settings, type SettingsPatch } from '../shared/types.ts';
 import type { Workspace } from './workspace.ts';
+
+// `accounts` is managed only through the account routes, never by a settings patch.
+const SETTINGS_KEYS = new Set(['initial', 'hiddenModels', 'modelOrder', 'fullAccess', 'activeAccounts']);
+const MODEL_NAME_MAX = 200, MODEL_LIST_MAX = 500;
 
 export class SettingsStore {
   private readonly file: string;
@@ -32,13 +36,15 @@ export class SettingsStore {
   }
   async update(patch: SettingsPatch): Promise<Settings> {
     if (!patch || typeof patch !== 'object' || Array.isArray(patch)) throw new AppError('bad_request', 'field_type');
-    if ('accounts' in patch) throw new AppError('bad_request', 'field_type', { field: 'accounts' });
-    if (patch.initial !== undefined && (!patch.initial || typeof patch.initial !== 'object' || !['claude', 'codex', 'grok', 'gemini'].includes(patch.initial.ai) || typeof patch.initial.model !== 'string' || typeof patch.initial.effort !== 'string')) throw new AppError('bad_request', 'field_type', { field: 'initial' });
+    // Only known sections are accepted, so nothing else reaches settings.json or the activity log.
+    for (const key of Object.keys(patch)) if (!SETTINGS_KEYS.has(key)) throw new AppError('bad_request', 'field_type', { field: key });
+    const modelName = (value: unknown) => typeof value === 'string' && value.length <= MODEL_NAME_MAX && !/\p{Cc}/u.test(value);
+    if (patch.initial !== undefined && (!patch.initial || typeof patch.initial !== 'object' || !['claude', 'codex', 'grok', 'gemini'].includes(patch.initial.ai) || !modelName(patch.initial.model) || typeof patch.initial.effort !== 'string' || (patch.initial.effort !== '' && !EFFORTS.includes(patch.initial.effort)))) throw new AppError('bad_request', 'field_type', { field: 'initial' });
     for (const key of ['hiddenModels', 'modelOrder', 'fullAccess'] as const) {
       const value = patch[key]; if (value === undefined) continue;
       if (!value || typeof value !== 'object' || Array.isArray(value)) throw new AppError('bad_request', 'field_type', { field: key });
       for (const [ai, item] of Object.entries(value)) {
-        if (!['claude', 'codex', 'grok', 'gemini'].includes(ai) || (key === 'fullAccess' ? typeof item !== 'boolean' : !Array.isArray(item) || item.some(v => typeof v !== 'string'))) throw new AppError('bad_request', 'field_type', { field: key });
+        if (!['claude', 'codex', 'grok', 'gemini'].includes(ai) || (key === 'fullAccess' ? typeof item !== 'boolean' : !Array.isArray(item) || item.length > MODEL_LIST_MAX || !item.every(modelName))) throw new AppError('bad_request', 'field_type', { field: key });
       }
     }
     if (patch.activeAccounts !== undefined) {

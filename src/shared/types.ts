@@ -43,6 +43,8 @@ export const PHASE_STATES = ['未開始', '進行中', '完成'] as const;
 export type PhaseState = (typeof PHASE_STATES)[number];
 /** Most phases a project may have; the phase editor stops offering "add" here. */
 export const PHASES_MAX = 12;
+/** Reasoning-effort values any CLI accepts; '' means the provider default. */
+export const EFFORTS: readonly string[] = ['low', 'medium', 'high', 'xhigh', 'max'];
 
 /** 能實際對話的 AI（mock 僅測試用，UI 不列出）。 */
 export const AI_NAMES = ['claude', 'codex', 'grok', 'gemini', 'mock'] as const;

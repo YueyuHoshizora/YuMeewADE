@@ -9,12 +9,11 @@ import type { Workspace } from '../ledger/workspace.ts';
 import type { Config } from '../shared/config.ts';
 import { AppError } from '../shared/errors.ts';
 import { writeJson } from '../shared/fsx.ts';
-import type { AiInfo, ModelInfo, Settings } from '../shared/types.ts';
+import { EFFORTS, type AiInfo, type ModelInfo, type Settings } from '../shared/types.ts';
 
 type CatalogAi = 'claude' | 'codex' | 'grok' | 'gemini';
 type ModelCache = Pick<AiInfo, 'models' | 'source' | 'refreshedAt'> & { profile?: string };
 const NAMES: CatalogAi[] = ['claude', 'codex', 'grok', 'gemini'];
-const EFFORTS = ['low', 'medium', 'high', 'xhigh', 'max'];
 const BUILTIN: Record<CatalogAi, [string, string][]> = {
   claude: [['claude-opus-5-5', 'Opus 5.5'], ['claude-sonnet-5-5', 'Sonnet 5.5'], ['claude-fable-5-1', 'Fable 5.1'], ['claude-haiku-5-5', 'Haiku 5.5']],
   codex: [['gpt-6.1-sol', 'GPT-6.1-Sol'], ['gpt-6-astra', 'GPT-6-Astra']],

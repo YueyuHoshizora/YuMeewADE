@@ -153,3 +153,16 @@ test('failed activation of the first account never saves a selected but unusable
   assert.deepEqual(saved.accounts, {});
   assert.deepEqual(saved.activeAccounts, {});
 }));
+
+test('settings patches reject unknown keys, invalid efforts, oversized models and model lists', () => withTmpWorkspace(async ws => {
+  const store = new SettingsStore(ws, DEFAULT_CONFIG);
+  const rejects = (patch: unknown) => assert.rejects(store.update(patch as never), (err: unknown) => err instanceof AppError && err.code === 'bad_request');
+  await rejects({ junk: 1 });
+  await rejects({ initial: { ai: 'codex', model: 'm', effort: 'bogus' } });
+  await rejects({ initial: { ai: 'codex', model: 'm'.repeat(201), effort: 'high' } });
+  await rejects({ initial: { ai: 'codex', model: 'bad\nmodel', effort: 'high' } });
+  await rejects({ hiddenModels: { codex: Array.from({ length: 501 }, (_, i) => `m${i}`) } });
+  await rejects({ modelOrder: { codex: ['m'.repeat(201)] } });
+  const saved = await store.update({ initial: { ai: 'codex', model: 'm'.repeat(200), effort: '' }, hiddenModels: { codex: ['a'] } });
+  assert.equal(saved.initial.effort, ''); assert.deepEqual(saved.hiddenModels, { codex: ['a'] });
+}));
