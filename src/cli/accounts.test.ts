@@ -88,6 +88,35 @@ test('activate overwrites only the default slot from an added account and reject
   } finally { await f.cleanup(); }
 });
 
+test('credentials left behind by a crashed run never override an explicit activate, import or remove', async () => {
+  const f = await fixture();
+  try {
+    const extra = path.join(f.root, 'extra');
+    await f.source('codex', path.join(f.root, '.codex'), codexRecord('first'));
+    await f.source('codex', extra, codexRecord('extra'));
+    await f.accounts.import('codex');
+    await f.accounts.import('codex', extra);
+    let slot = '';
+    await f.accounts.withEnv('codex', undefined, async env => { slot = env['CODEX_HOME']!; });
+    // A killed core never reaches release(): the run's auth file stays in the runtime home.
+    const crash = () => fs.writeFile(path.join(slot, 'auth.json'), codexRecord('crashed'), { mode: 0o600 });
+    const current = () => f.accounts.withEnv('codex', undefined, async env => fs.readFile(path.join(env['CODEX_HOME']!, 'auth.json'), 'utf8'));
+    await crash();
+    await f.accounts.activate('codex', extra);
+    assert.equal(await current(), codexRecord('extra'));
+    await crash();
+    await f.accounts.import('codex', undefined, true);
+    assert.equal(await current(), codexRecord('first'));
+    await crash();
+    await f.accounts.remove('codex');
+    await f.accounts.import('codex');
+    assert.equal(await current(), codexRecord('first'));
+    // Without an explicit change, the leftover is still the newest token and is recovered as before.
+    await crash();
+    assert.equal(await current(), codexRecord('crashed'));
+  } finally { await f.cleanup(); }
+});
+
 const geminiRecord = (token: string) => JSON.stringify({ token: { access_token: token, refresh_token: 'refresh', token_type: 'Bearer', expiry: '2030-01-01T00:00:00Z' }, auth_method: 'oauth', id_token: 'id' });
 const geminiToken = (home: string) => path.join(home, '.gemini', 'antigravity-cli', 'antigravity-oauth-token');
 

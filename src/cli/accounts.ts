@@ -28,6 +28,9 @@ const HOME_VARIABLE: Record<Ai, string> = { claude: 'CLAUDE_CONFIG_DIR', codex: 
 const GEMINI_TOKEN = path.join('.gemini', 'antigravity-cli', 'antigravity-oauth-token');
 interface Profile { ai: Ai; source: string; key: string; runtime: string; authSource: string }
 interface RuntimeLease { env: NodeJS.ProcessEnv; authFile: string; text: string; refs: number; unlock: () => Promise<void>; service?: string; socketDirectory?: string }
+const runtimeAuthFile = (profile: Profile) => path.join(profile.runtime, profile.ai === 'claude' ? '.credentials.json' : profile.ai === 'gemini' ? GEMINI_TOKEN : 'auth.json');
+/** Claude on macOS keeps its runtime OAuth in a keychain item derived from the config directory, not in a file. */
+const managedKeychainService = (profile: Profile) => `Claude Code-credentials-${createHash('sha256').update(profile.runtime.normalize('NFC')).digest('hex').slice(0, 8)}`;
 
 function object(value: unknown): value is Record<string, unknown> {
   return !!value && typeof value === 'object' && !Array.isArray(value);
@@ -164,6 +167,7 @@ export class CredentialAccounts {
           text = keychain ?? await readBounded(profile.authSource);
         } else text = await readBounded(profile.authSource);
         validate(profile.ai, text);
+        await this.discardRuntimeAuth(profile);
         await this.vault.write(profile.ai, profile.key, text);
       } catch { throw new Error(FAILURE); }
     });
@@ -181,6 +185,8 @@ export class CredentialAccounts {
     const profile = this.profile(ai, configDir);
     await this.serial(profile, async () => {
       if (this.runtimes.has(profile.runtime)) throw new Error(FAILURE);
+      try { await this.discardRuntimeAuth(profile); }
+      catch { throw new Error(FAILURE); }
       await this.vault.remove(profile.ai, profile.key);
     });
   }
@@ -195,6 +201,7 @@ export class CredentialAccounts {
         const text = await this.vault.read(source.ai, source.key);
         if (text === null) throw new Error(FAILURE);
         validate(source.ai, text);
+        await this.discardRuntimeAuth(slot);
         await this.vault.write(slot.ai, slot.key, text);
       } catch { throw new Error(FAILURE); }
     });
@@ -253,13 +260,11 @@ export class CredentialAccounts {
       await this.prepare(profile);
       // Reuse the core's stale-PID recovery for each managed CLI home.
       const unlock = await acquireWorkspaceLock(profile.runtime, 0);
-      lease = { env: { ...this.env }, authFile: path.join(profile.runtime, profile.ai === 'claude' ? '.credentials.json' : profile.ai === 'gemini' ? GEMINI_TOKEN : 'auth.json'), text, refs: 1, unlock };
+      lease = { env: { ...this.env }, authFile: runtimeAuthFile(profile), text, refs: 1, unlock };
       await this.seed(profile);
       if (profile.ai === 'claude') {
         lease.env['CLAUDE_CONFIG_DIR'] = profile.runtime;
-        if (process.platform === 'darwin') {
-          lease.service = `Claude Code-credentials-${createHash('sha256').update(profile.runtime.normalize('NFC')).digest('hex').slice(0, 8)}`;
-        }
+        if (process.platform === 'darwin') lease.service = managedKeychainService(profile);
       } else if (profile.ai === 'codex') lease.env['CODEX_HOME'] = profile.runtime;
       else if (profile.ai === 'gemini') {
         lease.env['HOME'] = profile.runtime;
@@ -311,6 +316,24 @@ export class CredentialAccounts {
         }
       }
     }, true);
+  }
+
+  /**
+   * A killed core never reaches release(), so its last run's auth file (or managed keychain item) stays in the
+   * runtime home and acquire() would recover it over the vault. Explicit activate/import/remove decide the
+   * account instead, so the leftover is dropped first; another live process still holding the home refuses.
+   */
+  private async discardRuntimeAuth(profile: Profile): Promise<void> {
+    try { await fs.lstat(profile.runtime); }
+    catch (error) { if ((error as NodeJS.ErrnoException).code === 'ENOENT') return; throw error; }
+    const unlock = await acquireWorkspaceLock(profile.runtime, 0);
+    try {
+      if (profile.ai === 'claude' && process.platform === 'darwin') await this.deleteManagedKeychain(managedKeychainService(profile));
+      for (const name of await fs.readdir(profile.runtime)) {
+        if (AUTH_FILES.has(name) || name.startsWith('auth.json.') || name.startsWith('.credentials.json.')) await fs.rm(path.join(profile.runtime, name), { force: true });
+      }
+      await fs.rm(runtimeAuthFile(profile), { force: true });
+    } finally { await unlock(); }
   }
 
   private async cleanup(profile: Profile, lease: RuntimeLease): Promise<void> {
