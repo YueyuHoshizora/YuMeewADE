@@ -76,3 +76,19 @@ test('scheduled failure is persisted, notified once and shutdown stops schedulin
     await assert.rejects(service.backup(true), { detail: 'care_closed' });
   } finally { await fs.rm(temporary, { recursive: true, force: true }); }
 });
+
+test('a workspace opened through a symlinked path keeps the same backup schedule', async () => {
+  const temporary = await fs.mkdtemp(path.join(os.tmpdir(), 'care-alias-'));
+  try {
+    const ws = new Workspace(path.join(temporary, 'workspace')); await ws.init();
+    const alias = path.join(temporary, 'alias'); await fs.symlink(ws.root, alias);
+    const directory = path.join(temporary, 'private');
+    const options = { ws, config: { ...DEFAULT_CONFIG, workspace: { root: ws.root } }, catalog: { list: async () => [] }, settings: { get: async () => settings }, version: '1.0.0', privateDirectory: directory, loginState: async () => 'unknown' as const, counts: async () => ({ projects: 0, tasks: 0, running: 0 }), reserve: async <T>(work: () => Promise<T>): Promise<T> => work() };
+    const original = new CareService(options); await original.init();
+    await original.setSchedule({ enabled: true, intervalHours: 5, retention: 3, includeExternal: false }); await original.close();
+    const viaAlias = new CareService({ ...options, ws: new Workspace(alias) }); await viaAlias.init();
+    assert.equal(viaAlias.scheduleStatus().schedule.intervalHours, 5);
+    await viaAlias.setSchedule({ enabled: true, intervalHours: 6, retention: 3, includeExternal: false }); await viaAlias.close();
+    assert.equal((await fs.readdir(directory)).filter(name => name.startsWith('schedule-')).length, 1);
+  } finally { await fs.rm(temporary, { recursive: true, force: true }); }
+});

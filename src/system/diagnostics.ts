@@ -38,13 +38,23 @@ export class CareService {
   private readonly options: CareOptions;
   private timer: NodeJS.Timeout | undefined;
   private running: Promise<void> | undefined;
-  private readonly lifecycleFile: string;
+  private lifecycleFile: string;
   private lifecycle: CareLifecycle = { schedule: { enabled: false, intervalHours: 24, retention: 10, includeExternal: true }, running: false, lastAttempt: null, lastSuccess: null, lastFailure: null, nextAttempt: null };
   constructor(options: CareOptions) {
     this.options = options;
     this.directory = options.privateDirectory ?? path.join(os.homedir(), '.yumeewade', 'care');
     this.backups = new BackupService(options.ws, path.join(this.directory, 'backups'));
-    this.lifecycleFile = path.join(this.directory, `schedule-${createHash('sha256').update(path.resolve(options.ws.root)).digest('hex')}.json`);
+    this.lifecycleFile = this.scheduleFile(path.resolve(options.ws.root));
+  }
+  private scheduleFile(root: string): string { return path.join(this.directory, `schedule-${createHash('sha256').update(root).digest('hex')}.json`); }
+  /** One schedule per real workspace: opening it through a symlinked path must find the same file (PLAN: canonical root). */
+  private async locateSchedule(): Promise<void> {
+    const canonical = this.scheduleFile(await fs.realpath(this.options.ws.root).catch(() => path.resolve(this.options.ws.root)));
+    // A schedule saved under the alias path (before canonical keys) is still read once, then saved canonically.
+    if (canonical !== this.lifecycleFile && await fs.lstat(canonical).then(() => false, () => true) && await fs.lstat(this.lifecycleFile).then(() => true, () => false)) {
+      const legacy = this.lifecycleFile; this.lifecycleFile = canonical; return this.readSchedule(legacy);
+    }
+    this.lifecycleFile = canonical; return this.readSchedule(canonical);
   }
   private check(): void { if (this.closed) throw new AppError('unavailable', 'care_closed'); }
   health(network = false): Promise<CareHealth> { this.check(); return healthCheck(this.options, network); }
@@ -61,15 +71,18 @@ export class CareService {
   }
   async init(): Promise<void> {
     this.check();
+    await this.locateSchedule();
+    this.arm();
+  }
+  private async readSchedule(file: string): Promise<void> {
     try {
-      const stat = await fs.lstat(this.lifecycleFile); if (!stat.isFile() || stat.size > 16384) throw new AppError('conflict', 'care_backup_invalid');
-      const value = JSON.parse(await fs.readFile(this.lifecycleFile, 'utf8')) as CareLifecycle;
+      const stat = await fs.lstat(file); if (!stat.isFile() || stat.size > 16384) throw new AppError('conflict', 'care_backup_invalid');
+      const value = JSON.parse(await fs.readFile(file, 'utf8')) as CareLifecycle;
       this.validateSchedule(value.schedule);
       for (const date of [value.lastAttempt, value.lastSuccess, value.nextAttempt]) if (date !== null && (typeof date !== 'string' || !Number.isFinite(Date.parse(date)))) throw new AppError('conflict', 'care_backup_invalid');
       if (value.lastFailure !== null && value.lastFailure !== 'care_backup_invalid') throw new AppError('conflict', 'care_backup_invalid');
       this.lifecycle = { ...value, running: false };
     } catch (error) { if ((error as NodeJS.ErrnoException).code !== 'ENOENT') throw error; }
-    this.arm();
   }
   scheduleStatus(): CareLifecycle { this.check(); return structuredClone(this.lifecycle); }
   private validateSchedule(schedule: CareSchedule): void {
