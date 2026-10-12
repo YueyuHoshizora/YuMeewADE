@@ -7,6 +7,8 @@ test('Windows 的環境變數名稱不分大小寫：Path／SystemRoot 依白名
   const source = { Path: 'C:\\Windows', SystemRoot: 'C:\\Windows', ComSpec: 'cmd.exe', Codex_Home: 'C:\\c', My_Var: 'x', lc_all: 'C', OPENAI_API_KEY: 'secret' };
   assert.deepEqual(minimalEnv(['MY_VAR'], source, 'win32'), { PATH: 'C:\\Windows', SystemRoot: 'C:\\Windows', ComSpec: 'cmd.exe', CODEX_HOME: 'C:\\c', MY_VAR: 'x', lc_all: 'C', GIT_TERMINAL_PROMPT: '0' });
   assert.deepEqual(minimalEnv(['MY_VAR'], source, 'linux'), { SystemRoot: 'C:\\Windows', ComSpec: 'cmd.exe', GIT_TERMINAL_PROMPT: '0' });
+  // A passthrough entry naming a built-in variable in another case does not rename it.
+  assert.deepEqual(minimalEnv(['Path', 'node_options'], { PATH: 'C:\\bin', Node_Options: '--x' }, 'win32'), { PATH: 'C:\\bin', NODE_OPTIONS: '--x', GIT_TERMINAL_PROMPT: '0' });
 });
 
 // 真實行程樹／系統 PID 不受 fake clock 控制，以短輪詢等 OS 回收。

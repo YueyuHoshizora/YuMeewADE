@@ -17,7 +17,9 @@ const CLI_HOME_ENV = ['CODEX_HOME', 'CLAUDE_CONFIG_DIR', 'GROK_HOME'];
 export function minimalEnv(passthrough: string[], source: NodeJS.ProcessEnv = process.env, platform: NodeJS.Platform = process.platform): NodeJS.ProcessEnv {
   const caseless = platform === 'win32';
   const fold = (name: string) => caseless ? name.toUpperCase() : name;
-  const allowed = new Map([...BASE_ENV, ...CLI_HOME_ENV, ...passthrough].map(name => [fold(name), name]));
+  // Built-in spellings win over a passthrough entry naming the same variable, so lookups such as env['PATH'] keep working;
+  // other passthrough names come out upper-case on Windows, where later `delete env['NODE_OPTIONS']` style filters expect it.
+  const allowed = new Map([...passthrough.map(fold), ...BASE_ENV, ...CLI_HOME_ENV].map(name => [fold(name), name]));
   const out: NodeJS.ProcessEnv = {};
   for (const [k, v] of Object.entries(source)) {
     if (v === undefined) continue;
