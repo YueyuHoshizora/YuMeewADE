@@ -882,7 +882,8 @@ export function taskView(
       });
     };
     const phase = select(
-      [{ value: '', label: t('common.none') }, ...project.phases.map(p => ({ value: p.name, label: p.name }))],
+      // A phase removed from the project stays on its tasks; keep it selectable instead of showing "none".
+      [{ value: '', label: t('common.none') }, ...project.phases.map(p => ({ value: p.name, label: p.name })), ...(task.phase && !project.phases.some(p => p.name === task.phase) ? [{ value: task.phase, label: task.phase }] : [])],
       task.phase);
     phase.onchange = () => {
       void run(async () => {
