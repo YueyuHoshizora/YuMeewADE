@@ -43,3 +43,20 @@ for (const conflicting of [false, true]) test(`candidate snapshots working chang
   await fs.writeFile(path.join(repo, 'dirty.txt'), 'not selected');
   await assert.rejects(service.create('P', parent.id, parent.role, sources), { code: 'conflict' });
 }));
+
+test('a source that cannot be integrated is refused before any candidate task or worktree is created', () => withTmpWorkspace(async ws => {
+  const projects = new ProjectLedger(ws); await projects.create({ name: 'P' });
+  const tasks = new TaskLedger(ws); const parent = await tasks.create('P', { title: 'workflow' });
+  const worktrees = new WorktreeService({ ws, projects, tasks, diffBytes: 100000 });
+  const repo = await worktrees.bodyPath('P');
+  await fs.writeFile(path.join(repo, 'shared.txt'), 'base\n'); await commitAll(repo, 'base');
+  const ready = await tasks.create('P', { title: 'ready', workspace: 'isolated' }); await worktrees.prepare('P', ready.id);
+  const direct = await tasks.create('P', { title: 'direct', workspace: 'direct' });
+  const service = new WorkflowIntegrationService({ tasks, worktrees, busy: () => false });
+  const before = (await tasks.list('P')).length;
+  const worktreesBefore = await gitOk(repo, ['worktree', 'list', '--porcelain']);
+  await assert.rejects(service.create('P', parent.id, parent.role, [ready.id, direct.id]), { code: 'conflict' });
+  await assert.rejects(service.create('P', parent.id, parent.role, [ready.id, 'missing-task']));
+  assert.equal((await tasks.list('P')).length, before);
+  assert.equal(await gitOk(repo, ['worktree', 'list', '--porcelain']), worktreesBefore);
+}));

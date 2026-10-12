@@ -5,7 +5,8 @@ import type { TaskLedger } from '../ledger/tasks.ts';
 import type { WorktreeService } from './worktree.ts';
 import { git, gitOk, commitAll, isLocalSecret } from './git.ts';
 import { AppError } from '../shared/errors.ts';
-import { isInside, withFileLocks } from '../shared/fsx.ts';
+import { isInside, pathExists, withFileLocks } from '../shared/fsx.ts';
+import type { Task } from '../shared/types.ts';
 import type { IntegrationCandidate } from '../shared/workflow-graph.ts';
 
 /** Candidates are ordinary isolated task worktrees; main and upstream indexes never change. */
@@ -44,16 +45,23 @@ export class WorkflowIntegrationService {
     return withFileLocks([path.join(repo, '.ai', 'workflow-integration')], async () => {
       const base = (await gitOk(repo, ['rev-parse', 'HEAD'])).trim();
       if ((await gitOk(repo, ['status', '--porcelain', '--untracked-files=all'])).trim()) throw new AppError('conflict');
-      const candidateTask = await this.deps.tasks.create(project, { title: `${parent} · integration`, role, parent, kind: 'derived', derivedFrom: parent, workspace: 'isolated' });
-      const dir = await this.deps.worktrees.prepareFrom(project, candidateTask.id, base);
-      const records: IntegrationCandidate['sources'] = [];
+      const common = async (root: string): Promise<string> => fs.realpath(path.resolve(root, (await gitOk(root, ['rev-parse', '--git-common-dir'])).trim()));
+      const repository = await common(repo);
+      // Everything that can refuse a source is checked before any derived task or worktree exists, so a refusal leaves nothing behind.
+      const checked: Task[] = [];
       for (const source of sources) {
         if (this.deps.busy(project, source)) throw new AppError('conflict', 'workflow_busy');
         const task = await this.deps.tasks.get(project, source);
-        if (task.workspace !== 'isolated' || !task.workdir) throw new AppError('conflict', 'workflow_invalid');
-        const common = async (root: string): Promise<string> => fs.realpath(path.resolve(root, (await gitOk(root, ['rev-parse', '--git-common-dir'])).trim()));
-        if (await common(task.workdir) !== await common(dir)) throw new AppError('conflict', 'workflow_invalid');
+        if (task.workspace !== 'isolated' || !task.workdir || !(await pathExists(task.workdir))) throw new AppError('conflict', 'workflow_invalid');
+        if (await common(task.workdir) !== repository) throw new AppError('conflict', 'workflow_invalid');
         if ((await gitOk(task.workdir, ['ls-files', '-u'])).trim()) throw new AppError('conflict', 'merge_conflict');
+        checked.push(task);
+      }
+      const candidateTask = await this.deps.tasks.create(project, { title: `${parent} · integration`, role, parent, kind: 'derived', derivedFrom: parent, workspace: 'isolated' });
+      const dir = await this.deps.worktrees.prepareFrom(project, candidateTask.id, base);
+      const records: IntegrationCandidate['sources'] = [];
+      for (const task of checked) {
+        const source = task.id;
         const fingerprint = await this.fingerprint(task.workdir); const head = (await gitOk(task.workdir, ['rev-parse', 'HEAD'])).trim();
         // stash create writes objects only, without modifying the source index or checkout.
         const stash = (await gitOk(task.workdir, ['stash', 'create'])).trim();
