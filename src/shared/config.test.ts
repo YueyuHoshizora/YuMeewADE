@@ -128,6 +128,15 @@ test('switching the workspace root in a config saved with a byte order mark keep
   assert.equal(config.server.port, 4561);
 });
 
+test('switching the workspace root rewrites a quoted or inline workspace section instead of adding a duplicate', () => {
+  for (const text of ['workspace: { root: "/old" }\nserver:\n  port: 4561\n', '"workspace":\n  root: "/old"\nserver:\n  port: 4561\n', "workspace:\n  'root': /old # moved\nserver:\n  port: 4561\n"]) {
+    const next = withWorkspaceRoot(text, '/new');
+    const config = parseConfig(next, '/tmp/config.yaml');
+    assert.equal(config.workspace.root, '/new', text); assert.equal(config.server.port, 4561);
+    assert.equal(next.match(/workspace/gu)?.length, 1, next);
+  }
+});
+
 test('misspelled keys are rejected instead of silently falling back to defaults', () => {
   for (const [text, key] of [
     ['cli:\n  codex:\n    fullAcess: false\n', 'cli.codex.fullAcess'],

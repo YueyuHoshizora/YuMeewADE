@@ -403,23 +403,27 @@ export function withWorkspaceRoot(original: string, root: string): string {
   const eol = text.includes('\r\n') ? '\r\n' : '\n';
   const lines = text.split(/\r?\n/u);
   const value = yamlScalar(root);
-  const start = lines.findIndex(line => /^workspace:\s*(#.*)?$/u.test(line));
+  // The key may be quoted, and the section may be an inline map (`workspace: { root: … }`; root is its only key).
+  const key = (name: string) => `(?:${name}|"${name}"|'${name}')`;
+  const start = lines.findIndex(line => new RegExp(`^${key('workspace')}\\s*:\\s*(?:\\{.*\\}\\s*)?(#.*)?$`, 'u').test(line));
   if (start < 0) {
     const head = text === '' || text.endsWith('\n') ? text : text + eol;
     return `${head}workspace:${eol}  root: ${value}${eol}`;
   }
+  if (/:\s*\{/u.test(lines[start]!)) { lines.splice(start, 1, 'workspace:', `  root: ${value}`); return lines.join(eol); }
   let at = -1;
   for (let i = start + 1; i < lines.length; i++) {
     const line = lines[i]!;
     if (/^[^\s#]/u.test(line)) break;
-    if (/^ +root:(\s|$)/u.test(line)) { at = i; break; }
+    if (new RegExp(`^ +${key('root')}\\s*:(\\s|$)`, 'u').test(line)) { at = i; break; }
   }
   if (at < 0) lines.splice(start + 1, 0, `  root: ${value}`);
   else {
     const line = lines[at]!;
-    const indent = line.slice(0, line.indexOf('root:'));
+    const indent = /^ */u.exec(line)![0];
     // 行尾註解不含引號才保留，避免把引號值裡的 # 誤當註解
-    const comment = /\s+#[^"']*$/u.exec(line.slice(indent.length + 'root:'.length))?.[0] ?? '';
+    const rest = line.slice(line.indexOf(':', indent.length) + 1);
+    const comment = /\s+#[^"']*$/u.exec(rest)?.[0] ?? '';
     lines[at] = `${indent}root: ${value}${comment}`;
   }
   return lines.join(eol);
