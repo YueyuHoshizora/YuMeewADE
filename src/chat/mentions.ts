@@ -46,6 +46,11 @@ export async function resolveMentions(text: string, cwd: string, limits: { menti
       handle = await fs.open(full, constants.O_RDONLY | constants.O_NOFOLLOW);
       const stat = await handle.stat();
       if (!stat.isFile()) continue;
+      // O_NOFOLLOW guards only the last component: a folder swapped for a link between the check above and the open would
+      // redirect it. The opened file must still be the one the path names inside the workspace.
+      const now = await fs.stat(full).catch(() => null);
+      const real = await fs.realpath(full).catch(() => null);
+      if (!now || now.dev !== stat.dev || now.ino !== stat.ino || !real || !isInside(root, real)) { mention.status = 'excluded'; continue; }
       const budget = Math.min(fileLimit, remaining);
       if (budget <= 0) { mention.status = 'truncated'; continue; }
       const buffer = Buffer.alloc(Math.min(stat.size, budget));

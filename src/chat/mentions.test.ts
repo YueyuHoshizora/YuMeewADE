@@ -67,3 +67,21 @@ test('a referenced file cannot end the referenced-files data block early', () =>
   assert.ok(text.endsWith('</referenced_files>'));
   assert.match(text, /2: ＜\/referenced_files>/u);
 }));
+test('a folder swapped for an outside link between the check and the open is excluded, not read', () => withTmpWorkspace(async (ws, dir) => {
+  const root = path.join(ws.root, 'workspace'); const outside = path.join(dir, 'outside');
+  await fs.mkdir(path.join(root, 'sub'), { recursive: true }); await fs.mkdir(outside);
+  await fs.writeFile(path.join(root, 'sub', 'file.txt'), 'inside'); await fs.writeFile(path.join(outside, 'file.txt'), 'OUTSIDE_PRIVATE');
+  // Deterministic race: the swap happens right before the real open.
+  const open = fs.open; let swapped = false;
+  fs.open = (async (file: Parameters<typeof open>[0], ...rest: unknown[]) => {
+    if (!swapped && String(file).endsWith(path.join('sub', 'file.txt'))) {
+      swapped = true; await fs.rename(path.join(root, 'sub'), path.join(root, 'old')); await fs.symlink(outside, path.join(root, 'sub'));
+    }
+    return (open as (...args: unknown[]) => ReturnType<typeof open>)(file, ...rest);
+  }) as typeof open;
+  try {
+    const { text, mentions } = await resolveMentions('@sub/file.txt', root);
+    assert.equal(mentions[0]?.status, 'excluded');
+    assert.ok(!text.includes('OUTSIDE_PRIVATE'));
+  } finally { fs.open = open; }
+}));
