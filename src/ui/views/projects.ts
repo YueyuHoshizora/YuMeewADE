@@ -4,7 +4,7 @@ import { labelValue, t } from '../i18n/index.ts';
 import { attachments } from '../components/attachments.ts';
 import { aiPicker } from '../components/picker.ts';
 import { markdown } from '../components/markdown.ts';
-import { archiveFlow, area, button, card, checksModal, confirmModal, disclosure, el, field, input, lines, link, projectHash, readLocal, row, run, select, storeLocal, taskHash, textModal, toast, UserError, workspaceLocalKey, type View, type ViewContext } from '../components/dom.ts';
+import { archiveFlow, area, button, card, checksModal, confirmModal, disclosure, el, errorMessage, field, input, lines, link, projectHash, readLocal, row, run, select, storeLocal, taskHash, textModal, toast, UserError, workspaceLocalKey, type View, type ViewContext } from '../components/dom.ts';
 import { localDateTime, localTime } from '../components/display.ts';
 import { shouldSend } from '../components/composer.ts';
 import { attachSlashCommands } from '../components/slash-menu.ts';
@@ -332,10 +332,20 @@ export function projectView(context: ViewContext, project: ProjectView, params: 
       await request('/api/project/update', { project: project.id, patch: { body: body.trim() }, expected: { body: project.body } }); await context.refresh();
     });
     const editNotes = button(t('project.editNotes'), async () => {
-      const original = (await request<{ text: string }>(query('/api/project/notes', { project: project.id }))).text;
-      const text = await textModal(t('project.editNotes'), original, 20_000, 14);
-      if (text === null || text === original.trim()) return;
-      await request('/api/project/notes', { project: project.id, text, previous: original }); await context.refresh();
+      const latest = async () => (await request<{ text: string }>(query('/api/project/notes', { project: project.id }))).text;
+      let original = await latest(); let draft = original; let reference: { label: string; text: string } | undefined;
+      for (;;) {
+        const text = await textModal(t('project.editNotes'), draft, 20_000, 14, reference);
+        if (text === null || text === original.trim()) return;
+        try { await request('/api/project/notes', { project: project.id, text, previous: original }); break; }
+        catch (error) {
+          // Saved elsewhere meanwhile: keep the user's text and show the newer notes beside it instead of discarding the edit.
+          if (!(error instanceof ApiFailure && error.body.detail === 'notes_changed')) throw error;
+          toast(errorMessage(error));
+          original = await latest(); draft = text; reference = { label: t('project.notesLatest'), text: original };
+        }
+      }
+      await context.refresh();
     });
     if (project.bodyMissing) overview.append(header, el('p', 'warning', t('project.bodyMissing', { path: project.bodyPath })), row(editBody()));
     else overview.append(header);

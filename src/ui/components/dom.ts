@@ -137,12 +137,16 @@ export function renameModal(value: string): Promise<string | null> {
   document.body.append(dialog); dialog.showModal(); name.focus(); name.select();
   return promise;
 }
-/** Multi-line counterpart of renameModal; resolves null on cancel. */
-export function textModal(title: string, value: string, maxLength: number, rows = 6): Promise<string | null> {
+/**
+ * Multi-line counterpart of renameModal; resolves null on cancel.
+ * `reference` shows read-only text above the editor, e.g. the newer version saved elsewhere while the user kept their own edit.
+ */
+export function textModal(title: string, value: string, maxLength: number, rows = 6, reference?: { label: string; text: string }): Promise<string | null> {
   const { promise, resolve } = Promise.withResolvers<string | null>();
   const dialog = el('dialog', 'modal decision-modal'); const text = area(value); text.maxLength = maxLength; text.rows = rows;
   const form = el('form', 'form'); const save = el('button', 'primary', t('common.save')); save.type = 'submit';
   let result: string | null = null;
+  if (reference) { const latest = el('details'); latest.open = true; latest.append(el('summary', '', reference.label), el('pre', '', reference.text)); form.append(latest); }
   form.append(text, row(button(t('common.cancel'), () => dialog.close()), save));
   form.onsubmit = event => { event.preventDefault(); result = text.value.trim(); dialog.close(); };
   dialog.append(dialogHeading(dialog, title), form);
