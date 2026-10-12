@@ -89,6 +89,7 @@ export const DETAIL_MESSAGES = {
   git_no_upstream: '目前分支沒有設定上游分支',
   git_not_fast_forward: '本機與上游分支都有新的提交，無法快轉；請用 rebase 或在終端機合併',
   editor_not_writable: '沒有寫入這個檔案（或其所在資料夾）的權限',
+  body_not_folder: '主資料夾必須是已存在資料夾的絕對路徑',
   git_pull_local_changes: '本機未提交的變更與上游修改了相同檔案，請先提交、暫存（stash）或放棄這些變更',
   worktree_exists: '副本仍存在，不能清除紀錄',
   unmerge_unavailable: '主資料夾之後已有變更或未提交的內容，無法自動撤銷這次合併',

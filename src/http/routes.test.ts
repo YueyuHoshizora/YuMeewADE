@@ -152,6 +152,11 @@ test('a moved main folder is flagged in the state and the project can be pointed
     assert.equal(await flagged(), false);
     const moved = path.join(s.dir, 'moved'); await fs.rename(body, moved);
     assert.equal(await flagged(), true);
+    // A mistyped location is reported as such, not as a malformed field.
+    for (const wrong of [body, 'relative/path']) {
+      const refused = await s.api('POST', '/api/project/update', { project: project.id, patch: { body: wrong } });
+      assert.deepEqual([refused.status, (refused.json as { detail: string }).detail], [400, 'body_not_folder']);
+    }
     assert.equal((await s.api('POST', '/api/project/update', { project: project.id, patch: { body: moved } })).status, 200);
     assert.equal(await flagged(), false);
     const view = (await s.api('GET', `/api/project/trust?project=${project.id}`)).json as ProjectTrustView;

@@ -104,7 +104,7 @@ export class ProjectLedger {
     if (patch.autoFix !== undefined && (typeof patch.autoFix !== 'number' || !Number.isInteger(patch.autoFix) || patch.autoFix < 0 || patch.autoFix > AUTO_FIX_MAX)) throw new AppError('bad_request', 'field_type', { field: 'autoFix' });
     if (patch.status !== undefined && !PROJECT_STATUSES.includes(patch.status)) throw new AppError('bad_request', 'invalid_state');
     if (patch.body) {
-      if (!path.isAbsolute(patch.body) || !(await fs.stat(patch.body).catch(() => null))?.isDirectory()) throw new AppError('bad_request', 'field_type', { field: 'body' });
+      if (!path.isAbsolute(patch.body) || !(await fs.stat(patch.body).catch(() => null))?.isDirectory()) throw new AppError('bad_request', 'body_not_folder', { field: 'body' });
     }
     if (patch.parent) {
       let parent = await this.get(patch.parent);
