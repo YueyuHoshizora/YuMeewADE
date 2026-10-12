@@ -142,7 +142,8 @@ createInterface({input:process.stdin}).on('line', line => {
   send({method:'turn/started',params:{threadId:'thread',turn:{id:'auto',rootTurnId:'auto'}}}); done('thread','auto','working on '+p.objective); }
  else if(m.method==='skills/list') send({id:m.id,result:{data:[{cwd:p.cwds[0],errors:[],skills:[{name:'lint',description:'Lint',path:'/skills/lint/SKILL.md',enabled:true}]}]}});
  else if(m.method==='account/rateLimits/read') send({id:m.id,result:{rateLimits:{limitId:'codex',limitName:null,primary:{usedPercent:40,windowDurationMins:300,resetsAt:0},secondary:null,credits:null},rateLimitsByLimitId:null}});
- else if(m.method==='turn/start') { const id='turn-'+p.threadId; send({id:m.id,result:{turn:{id}}}); done(p.threadId,id,JSON.stringify(p.input)); }
+ else if(m.method==='turn/start') { const id='turn-'+p.threadId; // response, delta and completion in one write, so they arrive as one stdout chunk
+  console.log([{id:m.id,result:{turn:{id}}},{method:'item/agentMessage/delta',params:{threadId:p.threadId,turnId:id,itemId:'m'+id,delta:JSON.stringify(p.input)}},{method:'turn/completed',params:{threadId:p.threadId,turn:{id,status:'completed',error:null}}}].map(x=>JSON.stringify(x)).join(String.fromCharCode(10))); }
  else if(m.id!==undefined) process.exit(9);
 }).on('close',()=>process.exit(0));`;
 test('app-server carries the TUI commands it has a protocol for, keeping or replacing the session as the TUI does', async () => {

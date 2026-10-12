@@ -230,7 +230,7 @@ export function codexAppServerRun(cfg: CliCommandConfig, opts: SendOptions, env:
   const turns = new Set<string>();
   const ownTurn = (id: unknown) => turns.size === 0 || (typeof id === 'string' && turns.has(id));
   const started = Date.now(); const runId = randomUUID();
-  const pending = new Map<number, { resolve: (value: unknown) => void; reject: (error: Error) => void; timer: ReturnType<typeof setTimeout> }>();
+  const pending = new Map<number, { method: string; resolve: (value: unknown) => void; reject: (error: Error) => void; timer: ReturnType<typeof setTimeout> }>();
   const approvals = new Map<string | number, { deny: () => void }>();
   const streamedItems = new Set<string>();
   // File-change approvals only carry the item id; the files and diff arrive earlier in that item's `item/started`.
@@ -254,7 +254,7 @@ export function codexAppServerRun(cfg: CliCommandConfig, opts: SendOptions, env:
     if (pending.size >= 16) return Promise.reject(new Error('Too many app-server requests'));
     const id = ++sequence; const result = Promise.withResolvers<unknown>();
     const timer = setTimeout(() => { pending.delete(id); result.reject(new Error('App-server request timed out')); fail(); }, 30_000);
-    pending.set(id, { ...result, timer }); send({ id, method, params }); return result.promise;
+    pending.set(id, { ...result, timer, method }); send({ id, method, params }); return result.promise;
   };
   let interruptTimer: ReturnType<typeof setTimeout> | undefined;
   const stop = () => {
@@ -267,7 +267,14 @@ export function codexAppServerRun(cfg: CliCommandConfig, opts: SendOptions, env:
     const message = object(value);
     if (typeof message['method'] !== 'string') {
       const id = message['id']; if (typeof id !== 'number' || !pending.has(id)) throw new Error('Unexpected RPC response');
-      const item = pending.get(id)!; pending.delete(id); clearTimeout(item.timer);
+      const item = pending.get(id)!;
+      // The turn a start opens is registered right here: its deltas and turn/completed may follow in the same stdout
+      // chunk, before any continuation awaiting this response gets to run.
+      if (!message['error'] && (item.method === 'turn/start' || item.method === 'review/start')) {
+        const active = object(object(message['result'])['turn']); if (typeof active['id'] !== 'string') throw new Error('Missing turn id');
+        turns.add(active['id']); turn = active['id'];
+      }
+      pending.delete(id); clearTimeout(item.timer);
       if (message['error']) item.reject(new Error('App-server request failed')); else item.resolve(message['result']); return;
     }
     const method = message['method']; const params = object(message['params'] ?? {});
@@ -379,9 +386,9 @@ export function codexAppServerRun(cfg: CliCommandConfig, opts: SendOptions, env:
     if (stopped) { child.stdin.end(); return; }
     const turnStart = (input: unknown[]) => request('turn/start', { threadId: thread, cwd: opts.cwd, model: opts.model ?? null, effort: opts.effort ?? null, approvalPolicy: common.approvalPolicy, approvalsReviewer: 'user', sandboxPolicy: full ? { type: 'dangerFullAccess' } : { type: 'workspaceWrite', writableRoots: [opts.cwd, ...(opts.addDirs ?? [])], networkAccess: false, excludeTmpdirEnvVar: true, excludeSlashTmp: true }, input: [...input, ...(opts.images ?? []).map(image => ({ type: 'localImage', path: image }))] });
     const prompt = (tail: string) => ({ type: 'text', text: tail ? `${opts.prompt}\n${tail}` : opts.prompt, text_elements: [] });
-    let opened: Record<string, unknown> | undefined;
+    // thread/compact/start answers `{}`; its turn id arrives with turn/started. Started turns are registered by handle().
     if (command === 'compact') await request('thread/compact/start', { threadId: thread });
-    else if (command === 'review') opened = object(await request('review/start', { threadId: thread, delivery: 'inline', target: reviewInstructions ? { type: 'custom', instructions: reviewInstructions } : { type: 'uncommittedChanges' } }));
+    else if (command === 'review') await request('review/start', { threadId: thread, delivery: 'inline', target: reviewInstructions ? { type: 'custom', instructions: reviewInstructions } : { type: 'uncommittedChanges' } });
     else if (command === 'goal') {
       // Setting an active goal makes Codex start a turn toward it by itself; that turn (possibly already
       // streamed before this response is processed) is the answer. No turn means the goal itself is.
@@ -390,18 +397,13 @@ export function codexAppServerRun(cfg: CliCommandConfig, opts: SendOptions, env:
         if (object(goal)['status'] !== 'active') { answer(goalReport(goal)); return; }
         goalTimer = setTimeout(() => { if (!turn && !settled) answer(goalReport(goal)); }, 60_000);
       }
-    } else if (side) opened = object(await turnStart([prompt(argument)]));
+    } else if (side) await turnStart([prompt(argument)]);
     else if (command !== null) {
       const skill = codexSkills(await request('skills/list', { cwds: [opts.cwd] })).find(candidate => candidate.name === command);
       if (!skill) throw new Error('Unknown Codex command');
       // Mirrors the TUI composer: the `$name` mention in the text plus the skill attachment.
-      opened = object(await turnStart([prompt(`$${skill.name}${argument ? ` ${argument}` : ''}`), { type: 'skill', name: skill.name, path: skill.path }]));
-    } else opened = object(await turnStart([prompt('')]));
-    // thread/compact/start answers `{}`; its turn id arrives with turn/started.
-    if (opened) {
-      const active = object(opened['turn']); if (typeof active['id'] !== 'string') throw new Error('Missing turn id');
-      turns.add(active['id']); turn = active['id'];
-    }
+      await turnStart([prompt(`$${skill.name}${argument ? ` ${argument}` : ''}`), { type: 'skill', name: skill.name, path: skill.path }]);
+    } else await turnStart([prompt('')]);
     if (stopped && turn) void request('turn/interrupt', { threadId: thread, turnId: turn }).catch(fail);
   })().catch(fail);
   return { stop, done: completion.promise };
