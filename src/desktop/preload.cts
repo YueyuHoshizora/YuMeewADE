@@ -10,7 +10,7 @@ electron.contextBridge.exposeInMainWorld('yumeewade', Object.freeze({
   focus: (): void => electron.ipcRenderer.send('focus-window'),
   onMenuCommand: (callback: (command: string) => void): (() => void) => {
     const listener = (_event: Electron.IpcRendererEvent, command: unknown): void => {
-      if (typeof command === 'string' && ['new-project', 'open-project', 'settings', 'palette', 'search'].includes(command)) callback(command);
+      if (typeof command === 'string' && ['new-project', 'open-project', 'settings', 'palette', 'search', 'find'].includes(command)) callback(command);
     };
     electron.ipcRenderer.on('menu-command', listener);
     return () => { electron.ipcRenderer.removeListener('menu-command', listener); };

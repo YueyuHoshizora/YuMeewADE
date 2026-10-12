@@ -15,6 +15,7 @@ import { openUsageDetails } from './components/usage-details.ts';
 import { showInitialCare } from './components/care.ts';
 import { mountTerminalDock, toggleTerminalDock } from './components/terminal-dock.ts';
 import { openCommandPalette, paletteShortcut } from './components/palette.ts';
+import { openFindBar } from './components/find-bar.ts';
 import { mountEditorWorkbench, setWorkbenchScope } from './components/editor-loader.ts';
 
 const header = document.getElementById('header')!; const sidebar = document.getElementById('sidebar')!; const main = document.getElementById('main')!; const footer = document.getElementById('footer')!;
@@ -155,13 +156,22 @@ function load(quiet: boolean): Promise<void> {
 }
 window.addEventListener('hashchange', () => { void run(async () => navigate()); });
 window.addEventListener('yumeewade:menu', event => {
-  if ((event as CustomEvent<{ command: string }>).detail?.command === 'palette' && state) openCommandPalette({ state, refresh });
+  const command = (event as CustomEvent<{ command: string }>).detail?.command;
+  if (command === 'palette' && state) openCommandPalette({ state, refresh });
+  else if (command === 'find') openFindBar();
 });
 window.addEventListener('keydown', event => {
   if (state && paletteShortcut(event, { state, refresh })) return;
   if ((event.ctrlKey || event.metaKey) && event.shiftKey && event.key.toLowerCase() === 'f') {
     event.preventDefault();
     location.hash = '#/search';
+    return;
+  }
+  // Electron has no find bar; browsers keep their own. Editors and the terminal claim the key first via preventDefault.
+  const desktop = window.yumeewade;
+  if (desktop?.desktop && !event.defaultPrevented && !event.shiftKey && !event.altKey && (desktop.platform === 'darwin' ? event.metaKey : event.ctrlKey) && event.key.toLowerCase() === 'f') {
+    event.preventDefault();
+    openFindBar();
     return;
   }
   if (event.isComposing || event.keyCode === 229 || (event.target instanceof Element && event.target.closest('input,textarea,select,[contenteditable]'))) return;

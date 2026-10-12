@@ -60,6 +60,7 @@ export const de: Record<MessageKey, string> = {
 'chat.earlier': 'Ältere Nachrichten laden',
 'search.title': 'Alle Gespräche durchsuchen', 'search.placeholder': 'Aufgaben und Gesprächsinhalte durchsuchen…', 'search.truncated': 'Zu viele Ergebnisse. Suche eingrenzen.',
 'search.partial': 'Zu viele Gespräche; nur ein Teil wurde durchsucht, Ergebnisse können unvollständig sein. Genaueren Begriff verwenden.',
+'find.label': 'Auf Seite suchen', 'find.next': 'Nächster Treffer', 'find.previous': 'Vorheriger Treffer', 'find.none': 'Keine Treffer',
 'settings.theme': 'Darstellung', 'settings.theme.system': 'System', 'settings.theme.light': 'Hell', 'settings.theme.dark': 'Dunkel',
 'settings.notifications': 'Bei Abschluss oder nötiger Antwort benachrichtigen', 'settings.notificationPermission': 'Systembenachrichtigungen erlauben', 'notification.done': 'Die KI hat ihre Antwort abgeschlossen', 'notification.answer': 'Die KI benötigt deine Antwort',
 'connection.reconnecting': 'Verbindung zum Kern getrennt. Erneute Verbindung…',

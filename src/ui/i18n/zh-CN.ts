@@ -60,6 +60,7 @@ export const zhCN: Record<MessageKey, string> = {
 'chat.earlier': '载入更早的消息',
 'search.title': '搜索所有对话', 'search.placeholder': '搜索作业和对话内容…', 'search.truncated': '结果过多，请缩小搜索范围。',
 'search.partial': '对话量太大，只搜索了部分内容，结果可能不完整；请改用更精确的关键字。',
+'find.label': '在页面中查找', 'find.next': '下一个', 'find.previous': '上一个', 'find.none': '找不到匹配的文字',
 'settings.theme': '外观', 'settings.theme.system': '跟随系统', 'settings.theme.light': '浅色', 'settings.theme.dark': '深色',
 'settings.notifications': '作业完成或需要回答时通知', 'settings.notificationPermission': '允许系统通知', 'notification.done': 'AI 已完成回复', 'notification.answer': 'AI 需要你的回答',
 'connection.reconnecting': '核心连接中断，正在重新连接…',

@@ -517,3 +517,7 @@ body.terminal-dock-open { grid-template-rows: 64px minmax(0, 1fr) var(--terminal
 .git-blame td:last-child { width: 100%; }
 .git-blame code { white-space: pre; font-family: ui-monospace, monospace; }
 .git-blame button { padding: 0 4px; border: 0; }
+.find-bar { position: fixed; top: 8px; right: 16px; z-index: 1000; display: flex; gap: 6px; align-items: center; padding: 6px 8px; border: 1px solid var(--border); border-radius: 8px; background: var(--c-161a25); box-shadow: 0 6px 20px rgb(0 0 0 / 35%); }
+.find-bar input { width: 220px; }
+::highlight(find-match) { background-color: rgb(255 214 10 / 35%); }
+::highlight(find-current) { background-color: rgb(255 150 0 / 80%); color: #000; }
