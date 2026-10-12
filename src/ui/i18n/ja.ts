@@ -31,7 +31,7 @@ export const ja: Record<MessageKey, string> = {
 'project.verify': '検証コマンド',
 'project.verifyHint': '作業の worktree で実行（例：npm test）。PROJECT.md に保存されます。',
 'project.autoFix': '検証失敗時の自動修正', 'project.autoFixHint': 'AI が指示を終えると上の検証コマンドを自動実行し、失敗したら出力を同じ AI に返します。ここで設定した回数まで繰り返します。検証コマンドの設定が必要で、新しい指示を出すとカウントはリセットされます。', 'project.autoFixOff': 'オフ', 'project.autoFixTimes': '最大 {n} 回',
-'running.chip': '実行中 {n}', 'running.title': '実行中の AI', 'running.stopAll': 'すべて停止', 'running.stopAllConfirm': '現在実行中の {n} 件の AI を停止しますか？すでに行ったファイル変更は残りますが、これらのタスクの待機中の指示は消去されます。', 'running.stopping': '停止中…',
+'running.review': '読み取り専用レビュー', 'running.chip': '実行中 {n}', 'running.title': '実行中の AI', 'running.stopAll': 'すべて停止', 'running.stopAllConfirm': '現在実行中の {n} 件の AI を停止しますか？すでに行ったファイル変更は残りますが、これらのタスクの待機中の指示は消去されます。', 'running.stopping': '停止中…',
 'project.rules': 'AI ルール', 'project.rulesHint': 'AI は毎回の実行の最初にこのルール（.ai/rules.md）を読みます。変更は次の指示から反映されます。', 'project.rulesPlaceholder': 'このプロジェクトの規約、禁止事項、テスト方法…', 'log.project.rules': 'AI ルールを更新',
 'verify.run': '検証を実行', 'verify.running': '検証中…', 'verify.pass': '成功', 'verify.fail': '失敗',
 'verify.result': '終了コード {code} · {seconds} 秒', 'verify.timedOut': '検証がタイムアウトし、停止しました。',

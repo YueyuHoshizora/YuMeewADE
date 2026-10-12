@@ -291,7 +291,7 @@ export class App {
       counts: async () => {
         const projects = await this.projects.list();
         const tasks = await Promise.all(projects.map(project => this.tasks.list(project.id)));
-        return { projects: projects.length, tasks: tasks.reduce((n, list) => n + list.length, 0), running: this.runner.running().length };
+        return { projects: projects.length, tasks: tasks.reduce((n, list) => n + list.length, 0), running: this.runner.running().length + this.review.active().length };
       },
     });
     // AI 一開始動手，之前的驗證結果就不再代表目前的檔案。
@@ -394,7 +394,7 @@ export class App {
       }
     }
     const update = this.update.snapshot();
-    return { ...value, running: this.runner.running(), unread: this.runner.unread(), usage: this.usage.snapshot(), ...(update ? { update } : {}) };
+    return { ...value, running: [...this.runner.running(), ...this.review.active()], unread: this.runner.unread(), usage: this.usage.snapshot(), ...(update ? { update } : {}) };
   }
 
   /** 通知所有客戶端重抓 /api/state；100ms 內的多次變更合併成一次。 */

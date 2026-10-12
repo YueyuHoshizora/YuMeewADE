@@ -7,6 +7,7 @@ import { button, confirmModal, el, input, projectHash, row, run, searchHash, tas
 import { executionButton } from './execution.ts';
 import { openFileBrowser } from './editor-loader.ts';
 import { fileQuery, rank, routeScope } from './palette-logic.ts';
+import { stopRunning } from './running.ts';
 
 type Command = { label: string; action: () => unknown };
 let active: HTMLDialogElement | undefined;
@@ -72,7 +73,7 @@ export function openCommandPalette(context: ViewContext): void {
   }
   if (context.state.running.length) commands.push({ label: t('running.stopAll'), action: async () => {
     if (!await confirmModal(t('running.stopAll'), t('running.stopAllConfirm', { n: context.state.running.length }), t('chat.stop'))) return;
-    await Promise.all(context.state.running.map(info => request('/api/chat/stop', { project: info.project, task: info.task }))); await context.refresh();
+    await Promise.all(context.state.running.map(stopRunning)); await context.refresh();
   } });
   picker(t('palette.title'), query => rank(commands, query));
 }

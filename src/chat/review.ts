@@ -5,7 +5,7 @@ import type { WorktreeService } from '../git/worktree.ts';
 import type { TaskLedger } from '../ledger/tasks.ts';
 import type { SettingsStore } from '../ledger/settings.ts';
 import type { Config } from '../shared/config.ts';
-import type { Ask, ChatEvent, ChatRow, ReviewCapability, ReviewInput, ReviewResult, TurnUsage } from '../shared/types.ts';
+import type { Ask, ChatEvent, ChatRow, ReviewCapability, ReviewInput, ReviewResult, RunningInfo, TurnUsage } from '../shared/types.ts';
 import { AppError } from '../shared/errors.ts';
 import path from 'node:path';
 import type { Workspace } from '../ledger/workspace.ts';
@@ -26,7 +26,7 @@ interface Dependencies {
 
 /** Review never reads/writes conversation metadata or resumes a writing session. */
 export class ReviewService {
-  private readonly running = new Map<string, { run?: CliRun; stopped: boolean; done?: Promise<ReviewResult> }>();
+  private readonly running = new Map<string, { run?: CliRun; stopped: boolean; done?: Promise<ReviewResult>; info: RunningInfo }>();
   private closed = false;
   private readonly deps: Dependencies;
   constructor(deps: Dependencies) { this.deps = deps; }
@@ -98,10 +98,13 @@ export class ReviewService {
     const provider = this.deps.providers[input.ai];
     if (!provider?.supportsReadonly || !provider.readonlyEnforcement) return Promise.reject(new AppError('bad_request', 'cli_unsupported'));
     if (!input.text.trim() || input.text.length > this.deps.limits.promptChars) return Promise.reject(new AppError('bad_request'));
-    const entry: { run?: CliRun; stopped: boolean; done?: Promise<ReviewResult> } = { stopped: false };
+    const request = randomUUID();
+    const entry: { run?: CliRun; stopped: boolean; done?: Promise<ReviewResult>; info: RunningInfo } = { stopped: false,
+      info: { kind: 'review', project, task, request, ai: input.ai, startedAt: new Date().toISOString(), ...(input.model ? { model: input.model } : {}), ...(input.effort ? { effort: input.effort } : {}) } };
     this.running.set(key, entry);
+    this.deps.onChanged(project, task);
     entry.done = (async () => {
-      const request = randomUUID(); const started = Date.now();
+      const started = Date.now();
       let text = ''; let session: string | undefined; let usage: TurnUsage | undefined; let asks: Ask[] | undefined;
       let failure = false; let timer: NodeJS.Timeout | undefined; let appended = false;
       try {
@@ -158,6 +161,8 @@ export class ReviewService {
     })();
     return entry.done;
   }
+  /** Read-only reviews in progress, listed with chat runs so they can be seen and stopped from the running panel. */
+  active(): RunningInfo[] { return [...this.running.values()].map(entry => ({ ...entry.info })); }
   async close(): Promise<void> {
     this.closed = true;
     for (const entry of this.running.values()) { entry.stopped = true; entry.run?.stop(); }

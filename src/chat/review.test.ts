@@ -86,9 +86,11 @@ test('stop while user transcript append is pending prevents provider launch', { 
     send: () => { launches++; return { stop() {}, done: Promise.resolve({ ok: true, stopped: false }) }; } };
   const worktree = new WorktreeService({ ws, projects, tasks, diffBytes: DEFAULT_CONFIG.limits.diffBytes });
   const service = new ReviewService({ ws, providers: { codex: provider }, tasks, settings, store, worktree, limits: DEFAULT_CONFIG.limits, onChanged() {}, isRunning: () => false, publish() {} });
-  const running = service.run('P', task.id, { ai: 'codex', text: 'review' });
+  const running = service.run('P', task.id, { ai: 'codex', text: 'review', model: 'm' });
   const rejected = assert.rejects(running, { code: 'conflict' });
   await entered.promise;
+  // While it runs, the review is listed with chat runs and says how it must be stopped.
+  assert.deepEqual(service.active().map(info => [info.kind, info.project, info.task, info.ai, info.model]), [['review', 'P', task.id, 'codex', 'm']]);
   assert.equal(service.stop('P', task.id), true);
   release.resolve();
   await rejected;
@@ -96,6 +98,7 @@ test('stop while user transcript append is pending prevents provider launch', { 
   const last = (await store.readLog('P', task.id)).at(-1);
   assert.ok(last?.role === 'assistant' && last.stopped);
   assert.equal(service.isBusy(), false);
+  assert.deepEqual(service.active(), []);
   await service.close();
 }));
 
