@@ -24,7 +24,7 @@ import { TASK_STATES, type BulkTaskAction, type BulkTaskResult } from '../../sha
 import type { MessageKey } from '../i18n/zh-TW.ts';
 
 async function startWithBudget(context: ViewContext, input: StartInput): Promise<void> {
-  // Checked before prepare so a missing AI never leaves an empty task behind.
+  // The server only rejects an empty AI as a missing field; say why nothing can start instead.
   if (!input.ai) throw new UserError(t('onboarding.banner'));
   const { task } = await request<{ task: Task }>('/api/start/prepare', input);
   const draftKey = `yumeewade.draft.${input.project}/${task.id}`;
