@@ -8,6 +8,7 @@ import path from 'node:path';
 import { pathToFileURL } from 'node:url';
 import { stripVTControlCharacters } from 'node:util';
 import type { Task, TerminalLease, TerminalSession } from '../src/shared/types.ts';
+import { seedUpgradeFixture, assertUpgradeFixture } from '../src/testing/upgrade-fixture.ts';
 
 export function artifactKind(name: string, platform: NodeJS.Platform): string | null {
   if (platform === 'darwin') return name.endsWith('.dmg') ? 'dmg' : name.endsWith('.zip') ? 'zip' : null;
@@ -151,6 +152,7 @@ async function smoke(artifact: string, kind: string, expectedVersion: string): P
     const home = path.join(temporary, 'home');
     const workspace = path.join(temporary, 'workspace');
     await mkdir(home); await mkdir(workspace);
+    const retained = await seedUpgradeFixture(workspace);
     const port = await availablePort();
     const origin = `http://127.0.0.1:${port}`;
     const config = path.join(temporary, 'config.yaml');
@@ -223,6 +225,11 @@ async function smoke(artifact: string, kind: string, expectedVersion: string): P
       if (!response.ok || !(await response.text()).length || response.headers.get('content-type')?.includes('text/html')) throw new Error(`UI asset unavailable: ${asset}`);
     }
     const state = await fetch(`${origin}/api/state`, { signal: AbortSignal.timeout(5000) });
+    const stateValue = await state.json() as { projects?: { id: string; tasks?: { id: string; title: string; steps?: { done: boolean }[] }[] }[] };
+    const retainedProject = stateValue.projects?.find(project => project.id === 'UpgradeRetained');
+    const retainedTask = retainedProject?.tasks?.find(task => task.id === '20261011-001');
+    if (!retainedTask || retainedTask.title !== 'Retained legacy task' || retainedTask.steps?.[0]?.done !== true) throw new Error('Legacy ledger upgrade lost project/task data');
+    await assertUpgradeFixture(workspace, retained);
     if (!state.ok) throw new Error('Public application state unavailable');
     const post = async <T>(route: string, body: Record<string, unknown>): Promise<T> => {
       const response = await fetch(`${origin}${route}`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body), signal: AbortSignal.timeout(10_000) });
