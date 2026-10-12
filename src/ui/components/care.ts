@@ -48,7 +48,7 @@ export function carePanel(context: ViewContext): HTMLElement {
   };
   const checked = button(t('care.check'), async () => {
     show(await request<CareHealth>('/api/care/health', { network: network.checked }));
-    panel.dataset['checked'] = 'true';
+    panel.dataset['checked'] = 'true'; panel.dispatchEvent(new Event('checked'));
   });
   const refresh = async () => {
     const entries = (await request<{ backups: CareBackup[] }>('/api/care/backups')).backups;
@@ -104,9 +104,13 @@ export function careButton(context: ViewContext): HTMLElement { return button(t(
 export function showInitialCare(context: ViewContext): void {
   if (readLocal<boolean>('yumeewade.care.checked', false)) return;
   const panel = carePanel(context);
-  modal(t('care.title'), el('p', '', t('care.initial')), panel, button(t('care.acknowledge'), () => {
+  // Disabled until the check ran, so acknowledging never silently does nothing.
+  const acknowledge = button(t('care.acknowledge'), () => {
     if (panel.dataset['checked'] !== 'true') return;
     storeLocal('yumeewade.care.checked', true);
     panel.closest('dialog')?.close();
-  }));
+  }, 'primary');
+  acknowledge.disabled = true;
+  panel.addEventListener('checked', () => { acknowledge.disabled = false; acknowledge.focus(); });
+  modal(t('care.title'), el('p', '', t('care.initial')), panel, acknowledge);
 }
