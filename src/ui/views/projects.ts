@@ -66,12 +66,9 @@ export async function openProjectFromFolder(context: ViewContext): Promise<void>
   const archivedName = archived.find(entry => [entry.project, entry.name].some(sameKey));
   if (archivedName && archivedName !== archivedBody && await offerRestore(context, archivedName)) return;
   if (!await confirmModal(t('project.adoptTitle'), t('project.adoptMessage', { name }), t('project.adoptAccept'))) return;
-  try {
-    const project = await api.createProject({ name, description: '', phases: lines(t('project.defaultPhases')), body: value, parent: '', related: [] });
-    await context.refresh(); location.hash = projectHash(project.id);
-  } catch (error) {
-    if (error instanceof ApiFailure) toast(error.message); else throw error;
-  }
+  // Failures (e.g. a folder name that is not a valid project name) reach the caller's run(), which shows the translated detail.
+  const project = await api.createProject({ name, description: '', phases: lines(t('project.defaultPhases')), body: value, parent: '', related: [] });
+  await context.refresh(); location.hash = projectHash(project.id);
 }
 
 /** 確認後還原封存專案並開啟；回傳是否已還原。 */
