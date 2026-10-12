@@ -194,6 +194,16 @@ export class EditorService {
     if (listed && !(await this.files(root)).includes(relative)) throw new AppError('not_found', 'file_missing');
     return { root, file: await resolveIn(root, relative, listed), readonly };
   }
+  /** Same checks as `target` for many paths in one request (symbols, references, problems): the root and file listing are read once. */
+  private async listedLookup(project: string, task: string): Promise<(relative: string) => Promise<string>> {
+    const { root } = await this.root(project, task); let listed: Promise<Set<string>> | undefined;
+    return async relative => {
+      validRelative(relative);
+      listed ??= this.files(root).then(files => new Set(files));
+      if (!(await listed).has(relative)) throw new AppError('not_found', 'file_missing');
+      return resolveIn(root, relative, true);
+    };
+  }
   /** Unlisted lookup (folders, parents of new files) where a path missing on disk is the caller's 404, not an internal error. */
   private existing(project: string, task: string, relative: string): Promise<{ root: string; file: string; readonly: boolean }> {
     return this.target(project, task, relative, false).catch(missingAs(() => new AppError('not_found', 'file_missing')));
@@ -461,7 +471,7 @@ export class EditorService {
       const result = await client.request(action === 'documentSymbols' ? 'textDocument/documentSymbol' : 'workspace/symbol', action === 'documentSymbols' ? { textDocument: { uri } } : { query: newName ?? '' });
       if (result !== null && !Array.isArray(result)) throw new AppError('bad_request');
       const symbols: NonNullable<EditorActionResult['symbols']> = [];
-      let count = 0;
+      let count = 0; const lookup = await this.listedLookup(project, task);
       const visit = async (values: unknown[], container?: string, depth = 0): Promise<void> => {
         if (depth > 32) throw new AppError('too_large');
         for (const value of values) {
@@ -471,7 +481,7 @@ export class EditorService {
           const start = (item.location?.range ?? item.selectionRange ?? item.range)?.start;
           if (typeof item.name !== 'string' || item.name.length > 1000 || !Number.isSafeInteger(item.kind) || !start || !Number.isSafeInteger(start.line) || !Number.isSafeInteger(start.character) || start.line < 0 || start.character < 0) continue;
           let relativePath: string;
-          try { relativePath = item.location?.uri ? path.relative(root, fileURLToPath(item.location.uri)).split(path.sep).join('/') : relative; await this.target(project, task, relativePath); } catch { continue; }
+          try { relativePath = item.location?.uri ? path.relative(root, fileURLToPath(item.location.uri)).split(path.sep).join('/') : relative; await lookup(relativePath); } catch { continue; }
           symbols.push({ name: item.name, kind: item.kind!, path: relativePath, line: start.line, character: start.character, ...(container || item.containerName ? { container: (container ?? item.containerName)!.slice(0, 1000) } : {}) });
           if (Array.isArray(item.children)) await visit(item.children, item.name, depth + 1);
         }
@@ -732,12 +742,12 @@ export class EditorService {
     const commands = (await this.configured(project)).commands;
     const paths = (await this.files(root)).filter(relative => !!commands[LANGUAGE[path.extname(relative).slice(1).toLowerCase()] ?? 'plaintext']);
     if (paths.length > 1000) throw new AppError('too_large');
-    const checked = new Set<string>(); let bytes = 0;
+    const checked = new Set<string>(); let bytes = 0; const lookup = await this.listedLookup(project, task);
     for (const relative of paths) {
       const document = await this.read(project, task, relative);
       if (document.binary || document.truncated) throw new AppError('bad_request', 'editor_readonly');
       bytes += document.size; if (bytes > 32 * 1024 * 1024) throw new AppError('too_large');
-      const uri = pathToFileURL((await this.target(project, task, relative)).file).href;
+      const uri = pathToFileURL(await lookup(relative)).href;
       const text = this.snapshots.get(`${root}\0${uri}`)?.text ?? document.text;
       const result = await this.language(project, task, relative, text, 0, 0, 'diagnostics');
       checked.add(relative);
@@ -747,7 +757,7 @@ export class EditorService {
       if (!key.startsWith(`${root}\0`)) continue;
       for (const [uri, items] of client.diagnostics) {
         let relative: string;
-        try { relative = path.relative(root, fileURLToPath(uri)).split(path.sep).join('/'); await this.target(project, task, relative); } catch { continue; }
+        try { relative = path.relative(root, fileURLToPath(uri)).split(path.sep).join('/'); await lookup(relative); } catch { continue; }
         if (checked.has(relative)) continue;
         for (const value of items) {
           const item = value as { range?: { start?: { line: number; character: number } }; message?: string; severity?: number };
