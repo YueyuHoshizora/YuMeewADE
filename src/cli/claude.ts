@@ -225,10 +225,11 @@ export function createClaudeParser(onEvent: (ev: CliEvent) => void, now: () => n
         const ev = obj['event'];
         if (!ev || typeof ev !== 'object') return;
         const e = ev as Record<string, unknown>;
-        // Nested agent streams can interleave with the main stream; each has its own message clock.
+        // Nested agent streams can interleave with the main stream; each has its own message clock. Their text is the
+        // subagent's own work, handed back to the main agent as a tool result, never part of the reply shown to the human.
         const key = typeof obj['parent_tool_use_id'] === 'string' ? obj['parent_tool_use_id'] : '';
         if (e['type'] === 'message_start') {
-          sawStream = false;
+          if (!key) sawStream = false;
           const message = e['message'];
           const usage = message && typeof message === 'object' && 'usage' in message ? message.usage : undefined;
           messages.set(key, {
@@ -255,7 +256,7 @@ export function createClaudeParser(onEvent: (ev: CliEvent) => void, now: () => n
         if (e['type'] === 'message_stop') messages.delete(key);
         if (e['type'] === 'content_block_delta') {
           const delta = e['delta'];
-          if (!delta || typeof delta !== 'object') return;
+          if (key || !delta || typeof delta !== 'object') return;
           if ('type' in delta && delta.type === 'text_delta' && 'text' in delta && typeof delta.text === 'string') {
             sawStream = true;
             streamed += delta.text;
@@ -267,10 +268,12 @@ export function createClaudeParser(onEvent: (ev: CliEvent) => void, now: () => n
       case 'assistant': {
         const msg = obj['message'];
         if (!msg || typeof msg !== 'object' || !('content' in msg) || !Array.isArray(msg.content)) return;
+        // A subagent's tools still show as activity; its text stays out of the main reply (see stream_event).
+        const nested = obj['parent_tool_use_id'] != null;
         for (const block of msg.content as unknown[]) {
           if (!block || typeof block !== 'object' || !('type' in block)) continue;
           if (block.type === 'tool_use') handleTool(block as Record<string, unknown>);
-          else if (!sawStream && block.type === 'text' && 'text' in block && typeof block.text === 'string') {
+          else if (!nested && !sawStream && block.type === 'text' && 'text' in block && typeof block.text === 'string') {
             streamed += block.text;
             onEvent({ type: 'delta', text: block.text });
           }

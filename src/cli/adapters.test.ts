@@ -591,3 +591,30 @@ lines.on('line', line => {
     }
   } finally { await fs.rm(dir, { recursive: true, force: true }); }
 });
+
+test('claude: subagent text never enters the main reply, streamed or whole', () => {
+  const nested = { parent_tool_use_id: 'task-1', session_id: SID };
+  const events = collect(createClaudeParser, [
+    { type: 'stream_event', event: { type: 'message_start', message: {} }, session_id: SID },
+    { type: 'stream_event', event: { type: 'content_block_delta', delta: { type: 'text_delta', text: 'Let me delegate. ' } }, session_id: SID },
+    // The subagent streams while the main message is open, then sends its whole message and a tool call.
+    { type: 'stream_event', event: { type: 'message_start', message: {} }, ...nested },
+    { type: 'stream_event', event: { type: 'content_block_delta', delta: { type: 'text_delta', text: 'subagent notes' } }, ...nested },
+    { type: 'assistant', message: { content: [{ type: 'text', text: 'subagent notes' }, { type: 'tool_use', name: 'Read', id: 'r1', input: { file_path: '/x/a.ts' } }] }, ...nested },
+    { type: 'stream_event', event: { type: 'message_stop' }, ...nested },
+    { type: 'stream_event', event: { type: 'content_block_delta', delta: { type: 'text_delta', text: 'Done.' } }, session_id: SID },
+    { type: 'assistant', message: { content: [{ type: 'text', text: 'Let me delegate. Done.' }] }, session_id: SID },
+    { type: 'result', subtype: 'success', is_error: false, result: 'Let me delegate. Done.', session_id: SID },
+  ]);
+  assert.deepEqual(events.filter(e => e.type === 'delta').map(e => (e as { text: string }).text), ['Let me delegate. ', 'Done.']);
+  assert.deepEqual(events.filter(e => e.type === 'tool'), [{ type: 'tool', text: 'Read: /x/a.ts' }]);
+  assert.deepEqual(events.at(-1), { type: 'result', text: 'Let me delegate. Done.' });
+  // Without partial messages only whole messages arrive; the subagent's is still skipped.
+  const whole = collect(createClaudeParser, [
+    { type: 'assistant', message: { content: [{ type: 'text', text: 'subagent notes' }] }, ...nested },
+    { type: 'assistant', message: { content: [{ type: 'text', text: 'main answer' }] }, session_id: SID },
+    { type: 'result', subtype: 'success', is_error: false, result: 'main answer', session_id: SID },
+  ]);
+  assert.deepEqual(whole.filter(e => e.type === 'delta'), [{ type: 'delta', text: 'main answer' }]);
+  assert.deepEqual(whole.at(-1), { type: 'result', text: 'main answer' });
+});
