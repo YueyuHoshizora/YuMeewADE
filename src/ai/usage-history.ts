@@ -74,7 +74,16 @@ export class UsageHistory {
     if (!size) return;
     if (size > MAX_BYTES) throw new AppError('too_large');
     const stream = createReadStream(this.file, { encoding: 'utf8' }); const lines = createInterface({ input: stream, crlfDelay: Infinity });
-    try { for await (const line of lines) { if (line.length > 8192) throw new AppError('too_large'); if (line) yield record(JSON.parse(line) as unknown); } }
+    try {
+      for await (const line of lines) {
+        if (line.length > 8192) throw new AppError('too_large');
+        if (!line) continue;
+        // An append cut short (crash, disk full) leaves a fragment that is not JSON; it never became a report. appendLine
+        // starts the next record on a fresh line, so skipping the fragment keeps recording and launches working.
+        let value: unknown; try { value = JSON.parse(line); } catch { continue; }
+        yield record(value);
+      }
+    }
     finally { lines.close(); stream.destroy(); }
   }
   async view(filter: Partial<UsageScope> = {}, before?: string): Promise<UsageHistoryView> {

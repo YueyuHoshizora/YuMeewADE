@@ -24,6 +24,15 @@ test('durable attributed reports preserve unknown and separate units without cou
   assert.equal(view.totals.find(entry => entry.ai === 'codex')!.codexCredits, 0.5);
   await assert.rejects(history.record({ ...scope, requestId: 'bad', usage: null, codexCredits: 1 }));
 });
+test('a report cut short by a crash is skipped; history, later reports and launches keep working', async t => {
+  const root = await fs.mkdtemp(path.join(os.tmpdir(), 'usage-torn-')); t.after(() => fs.rm(root, { recursive: true, force: true }));
+  const history = new UsageHistory(root);
+  await history.record({ ...scope, requestId: 'good', usage: { input: 10, output: 2 } });
+  await fs.appendFile(path.join(root, '.yumeewade', 'usage.jsonl'), '{"requestId":"interrupted');
+  await history.record({ ...scope, requestId: 'next', usage: { input: 1, output: 1 } });
+  assert.deepEqual((await history.view()).records.map(entry => entry.requestId).sort(), ['good', 'next']);
+  await history.assertProceed(scope, empty);
+});
 test('configured warnings require current scoped one-use acknowledgment and never assert costs for unknown usage', async t => {
   const root = await fs.mkdtemp(path.join(os.tmpdir(), 'usage-budget-')); t.after(() => fs.rm(root, { recursive: true, force: true }));
   let now = Date.parse('2026-10-11T00:00:00Z'); const history = new UsageHistory(root, () => now);
