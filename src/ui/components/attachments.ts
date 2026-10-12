@@ -3,10 +3,11 @@ import { api, request, query } from '../api.ts';
 import { labelValue, t } from '../i18n/index.ts';
 import { el, button, iconButton, showError, toast } from './dom.ts';
 
-export function attachments(project: string, limits: Limits, target: HTMLElement, scope = 'quickstart'): { node: HTMLElement; strip: HTMLElement; ids: () => string[]; clear: () => Promise<void>; ready: () => Promise<void>; dispose: () => void } {
+export function attachments(project: string, limits: Limits, target: HTMLElement, scope = 'quickstart'): { node: HTMLElement; strip: HTMLElement; ids: () => string[]; clear: () => Promise<void>; ready: () => Promise<void>; reload: () => Promise<void>; dispose: () => void } {
   const node = el('div', 'attachments'); const strip = el('div', 'image-strip'); const picker = el('input'); picker.type = 'file'; picker.accept = 'image/png,image/jpeg,image/webp,image/gif'; picker.multiple = true; picker.hidden = true;
   let images: UploadResult[] = []; let pending = 0; let disposed = false;
-  let chain = request<{ images: UploadResult[] }>(query('/api/chat/draft', { project, scope })).then(draft => { images = draft.images; if (!disposed) render(); });
+  const load = () => request<{ images: UploadResult[] }>(query('/api/chat/draft', { project, scope })).then(draft => { images = draft.images; if (!disposed) render(); });
+  let chain = load();
   const status = el('span', 'muted');
   function render(): void {
     strip.replaceChildren(...images.map(image => {
@@ -43,5 +44,5 @@ export function attachments(project: string, limits: Limits, target: HTMLElement
     const ids = images.map(image => image.id);
     await request('/api/chat/draft', { project, scope, remove: ids });
     images = images.filter(image => !ids.includes(image.id)); if (!disposed) render();
-  }, ready: () => chain, dispose: () => { disposed = true; target.removeEventListener('drop', drop); target.removeEventListener('dragover', drag); target.removeEventListener('paste', paste); } };
+  }, ready: () => chain, reload: () => (chain = chain.then(load)), dispose: () => { disposed = true; target.removeEventListener('drop', drop); target.removeEventListener('dragover', drag); target.removeEventListener('paste', paste); } };
 }

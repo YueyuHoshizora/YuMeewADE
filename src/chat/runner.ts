@@ -22,6 +22,7 @@ import { buildHandoff, buildPreamble, buildPrompt, inspectHandoff } from './prom
 import { buildTaskContext, recordContextManifest } from './context.ts';
 import { ChatStore, type ChatMeta } from './store.ts';
 import { attachImages } from './attachments.ts';
+import { updateDraft } from './drafts.ts';
 import { parseMentions, resolveMentions } from './mentions.ts';
 import { parseAsk } from './ask.ts';
 import { slashName } from '../cli/commands.ts';
@@ -787,13 +788,22 @@ export class ChatRunner extends EventEmitter {
     });
   }
 
-  unqueue(p: string, t: string, id: string): Promise<QueueItem[]> {
+  /** `restore` puts the removed item's images back into the task's draft so the instruction can be edited and sent again. */
+  unqueue(p: string, t: string, id: string, restore = false): Promise<QueueItem[]> {
     return this.lock(p, t, async () => {
       await this.deps.tasks.get(p, t);
+      let removed: QueueItem | undefined;
       const q = await this.deps.store.updateQueue(p, t, q => {
-        if (!q.some(x => x.id === id)) throw new AppError('not_found', 'queue_item_missing');
+        removed = q.find(x => x.id === id);
+        if (!removed) throw new AppError('not_found', 'queue_item_missing');
         return q.filter(x => x.id !== id);
       });
+      if (restore && removed?.images?.length) {
+        const images = removed.images;
+        await updateDraft(this.deps.ws, p, t, draft => {
+          for (const image of images) if (draft.images.length < this.deps.limits.imagesPerSend && !draft.images.some(x => x.id === image)) draft.images.push({ id: image, name: image, url: '' });
+        });
+      }
       this.publish(p, t, { event: 'queue', data: q });
       this.deps.onChanged(p, t);
       return q;

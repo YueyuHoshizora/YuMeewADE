@@ -335,6 +335,14 @@ export function taskView(
           `${aiLabel(item.ai)} · ${modelLabel(context.state, item.ai, item.model)} · ${effortLabel(item.effort)}`
         ));
       if (item.error) q.append(el('span', 'error-mark', t('chat.error')));
+      // Editing moves the instruction (and its images) back into the composer; the queue item is removed.
+      q.append(iconButton('✎', labelValue(t('chat.editQueued'), t('chat.next', { n: index + 1 })), async () => {
+        queue = await request<QueueItem[]>('/api/chat/unqueue', { project: project.id, task: task.id, id: item.id, restore: true });
+        renderQueue();
+        const current = draft.value.trim();
+        draft.value = current ? `${current}\n\n${item.text}` : item.text; storeLocal(draftKey, draft.value); resizeDraft(); draft.focus();
+        if (item.images?.length) await upload.reload();
+      }));
       q.append(iconButton('×', labelValue(t('common.remove'), t('chat.next', { n: index + 1 })), async () => {
         queue = await request<QueueItem[]>('/api/chat/unqueue', { project: project.id, task: task.id, id: item.id });
         renderQueue();

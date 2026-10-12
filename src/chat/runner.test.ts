@@ -26,6 +26,7 @@ import { WorkflowService } from './workflows.ts';
 import { UsageHistory } from '../ai/usage-history.ts';
 import { AppError } from '../shared/errors.ts';
 import { saveContext, readContextManifest } from './context.ts';
+import { readDraft } from './drafts.ts';
 async function setup(ws: Workspace, options: MockOptions = {}, runSeconds = 600, overrides: Partial<RunnerDeps> = {}) {
   const projects = new ProjectLedger(ws); await projects.create({ name: 'P' });
   const tasks = new TaskLedger(ws); const task = await tasks.create('P', { title: 'T', workspace: 'direct' });
@@ -193,6 +194,17 @@ test('stop clears queue; unqueue and fromQueue; queued launch error remains', ()
   const started = (await s.store.readLog('P', s.task.id)).find(r => r.role === 'user' && r.text === 'from disk');
   assert.ok(started?.role === 'user'); assert.equal(started.mode, 'queue');
   await s.send('normal'); await s.store.updateQueue('P', s.task.id, () => [{ id: 'bad', text: 'x', ai: 'missing', at: 't' }]); await s.runner.whenIdle(); assert.equal((await s.store.readQueue('P', s.task.id))[0]?.error, 'bad_request');
+}));
+test('unqueue with restore returns queued images to the task draft so the instruction can be edited', () => withTmpWorkspace(async ws => {
+  const s = await setup(ws, { chunkMs: 5 }); await s.send('slow [slow]');
+  const image = '11111111-1111-4111-8111-111111111111.png';
+  const kept = await s.send('edit me', { mode: 'queue', images: [image] });
+  const dropped = await s.send('drop me', { mode: 'queue', images: ['22222222-2222-4222-8222-222222222222.png'] });
+  assert.deepEqual((await s.runner.unqueue('P', s.task.id, kept.request, true)).map(item => item.text), ['drop me']);
+  assert.deepEqual((await readDraft(ws, 'P', s.task.id)).images.map(item => item.id), [image]);
+  await s.runner.unqueue('P', s.task.id, dropped.request);
+  assert.deepEqual((await readDraft(ws, 'P', s.task.id)).images.map(item => item.id), [image], 'a plain removal does not touch the draft');
+  await s.runner.stop('P', s.task.id); await s.runner.whenIdle();
 }));
 test('codex model change starts new session, switching gets unseen handoff, completion approval revoked', () => withTmpWorkspace(async ws => {
   const s = await setup(ws); await s.tasks.update('P', s.task.id, { state: '完成' }); await s.completion.approve('P', s.task.id);
