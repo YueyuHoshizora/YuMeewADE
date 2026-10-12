@@ -21,7 +21,7 @@ import { taskTemplates } from '../components/task-templates.ts';
 import { memoryPanel } from '../components/memory.ts';
 import { taskBoard } from '../components/task-board.ts';
 import { phaseEditor } from '../components/phase-editor.ts';
-import { TASK_STATES, type BulkTaskAction, type BulkTaskResult } from '../../shared/types.ts';
+import { PHASES_MAX, TASK_STATES, type BulkTaskAction, type BulkTaskResult } from '../../shared/types.ts';
 import type { MessageKey } from '../i18n/zh-TW.ts';
 
 async function startWithBudget(context: ViewContext, input: StartInput): Promise<void> {
@@ -124,7 +124,9 @@ export function newProjectView(context: ViewContext, params: URLSearchParams): V
   form.append(field(t('project.name'), name), existing, field(t('project.firstTask'), first), field(t('project.description'), description), field(t('project.phases'), phases), details, submit);
   form.onsubmit = event => { event.preventDefault(); void run(async () => {
     submit.disabled = true;
-    try { const project = await api.createProject({ name: name.value.trim(), description: description.value.trim(), phases: lines(phases.value), body: body.value.trim(), parent: parent.value, related });
+    try {
+      if (lines(phases.value).length > PHASES_MAX) throw new UserError(t('phases.tooMany', { n: PHASES_MAX }));
+      const project = await api.createProject({ name: name.value.trim(), description: description.value.trim(), phases: lines(phases.value), body: body.value.trim(), parent: parent.value, related });
       // 建立台帳成功後立即離開此表單；即使第一輪失敗，也不能重複建立專案。
       await context.refresh(); location.hash = projectHash(project.id);
       if (first.value.trim()) await startWithBudget(context, { project: project.id, text: first.value.trim(), ...context.state.settings.initial });
