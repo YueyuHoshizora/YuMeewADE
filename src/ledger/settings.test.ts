@@ -126,7 +126,7 @@ test('OAuth add without a folder logs in inside an app-generated isolated direct
 }));
 
 test('first account is selected per service; later additions preserve the selection', () => withTmpWorkspace(async (ws, dir) => {
-  const slots: Record<string, string> = {};
+  const slots: Record<string, string | undefined> = {};
   const store = new SettingsStore(ws, DEFAULT_CONFIG, undefined, undefined, undefined, async (ai, directory) => { slots[ai] = directory; });
   for (const ai of ['claude', 'codex', 'grok', 'gemini']) {
     const firstDir = path.join(dir, ai, 'first');
@@ -165,4 +165,42 @@ test('settings patches reject unknown keys, invalid efforts, oversized models an
   await rejects({ modelOrder: { codex: ['m'.repeat(201)] } });
   const saved = await store.update({ initial: { ai: 'codex', model: 'm'.repeat(200), effort: '' }, hiddenModels: { codex: ['a'] } });
   assert.equal(saved.initial.effort, ''); assert.deepEqual(saved.hiddenModels, { codex: ['a'] });
+}));
+
+test('removing the active account hands the default slot to the next account, or empties it', () => withTmpWorkspace(async (ws, dir) => {
+  const slot: Record<string, string | undefined> = {};
+  const forgotten: string[] = [];
+  let broken = '';
+  const store = new SettingsStore(ws, DEFAULT_CONFIG, undefined, undefined, undefined, async (ai, directory) => {
+    if (directory !== undefined && directory === broken) throw new AppError('unavailable', 'credentials_unavailable');
+    slot[ai] = directory;
+  }, async (_ai, directory) => { forgotten.push(directory); });
+  const dirs = ['one', 'two', 'three'].map(name => path.join(dir, name));
+  for (const folder of dirs) await fs.mkdir(folder);
+  for (const [index, folder] of dirs.entries()) await store.addAccount('codex', `A${index}`, folder);
+  const [one, two, three] = (await store.get()).accounts.codex!;
+  // Removing an inactive account leaves the selection and the slot alone.
+  let settings = await store.removeAccount('codex', two!.id);
+  assert.equal(settings.activeAccounts.codex, one!.id);
+  assert.equal(slot.codex, dirs[0]);
+  assert.deepEqual(forgotten, [dirs[1]]);
+  // Removing the active one selects the next account and copies its credentials into the slot.
+  settings = await store.removeAccount('codex', one!.id);
+  assert.equal(settings.activeAccounts.codex, three!.id);
+  assert.equal(slot.codex, dirs[2]);
+  // The last account leaves an empty slot rather than the removed account's credentials.
+  settings = await store.removeAccount('codex', three!.id);
+  assert.equal(settings.activeAccounts.codex, 'default');
+  assert.equal(slot.codex, undefined);
+  assert.ok('codex' in slot);
+  assert.deepEqual(forgotten, [dirs[1], dirs[0], dirs[2]]);
+  // A next account whose credentials cannot be activated is not selected; the slot is emptied instead.
+  await store.addAccount('claude', 'First', dirs[0]!);
+  await store.addAccount('claude', 'Broken', dirs[1]!);
+  broken = dirs[1]!;
+  const claude = (await store.get()).accounts.claude!;
+  settings = await store.removeAccount('claude', claude[0]!.id);
+  assert.equal(settings.activeAccounts.claude, 'default');
+  assert.equal(slot.claude, undefined);
+  assert.deepEqual(settings.accounts.claude!.map(account => account.name), ['Broken']);
 }));

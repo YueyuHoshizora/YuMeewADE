@@ -19,12 +19,15 @@ export class SettingsStore {
   private readonly importCredentials: ((ai: string, directory: string) => Promise<void>) | undefined;
   private readonly loginCredentials: ((ai: string, directory: string) => Promise<void>) | undefined;
   private readonly profileDirectory: ((ai: string) => string) | undefined;
-  private readonly activateCredentials: ((ai: string, directory: string) => Promise<void>) | undefined;
-  constructor(ws: Workspace, config: Config, importCredentials?: (ai: string, directory: string) => Promise<void>, loginCredentials?: (ai: string, directory: string) => Promise<void>, profileDirectory?: (ai: string) => string, activateCredentials?: (ai: string, directory: string) => Promise<void>) {
+  private readonly activateCredentials: ((ai: string, directory: string | undefined) => Promise<void>) | undefined;
+  private readonly forgetCredentials: ((ai: string, directory: string) => Promise<void>) | undefined;
+  /** `activateCredentials` copies an account into the App's default slot, or empties the slot when `directory` is undefined. */
+  constructor(ws: Workspace, config: Config, importCredentials?: (ai: string, directory: string) => Promise<void>, loginCredentials?: (ai: string, directory: string) => Promise<void>, profileDirectory?: (ai: string) => string, activateCredentials?: (ai: string, directory: string | undefined) => Promise<void>, forgetCredentials?: (ai: string, directory: string) => Promise<void>) {
     this.importCredentials = importCredentials;
     this.loginCredentials = loginCredentials;
     this.profileDirectory = profileDirectory;
     this.activateCredentials = activateCredentials;
+    this.forgetCredentials = forgetCredentials;
     this.file = path.join(ws.internalDir, 'settings.json');
     this.defaults = { initial: { ai: 'codex', model: 'gpt-6.1-sol', effort: 'high' }, hiddenModels: {}, modelOrder: {}, fullAccess: { claude: config.cli.claude.fullAccess, codex: config.cli.codex.fullAccess, grok: config.cli.grok.fullAccess, gemini: config.cli.gemini.fullAccess }, accounts: {}, activeAccounts: {} };
   }
@@ -158,12 +161,31 @@ export class SettingsStore {
   async removeAccount(ai: string, id: string): Promise<Settings> {
     this.validateAi(ai);
     if (typeof id !== 'string' || !id) throw new AppError('bad_request', 'field_required', { field: 'id' });
-    const saved = await updateJson<SettingsPatch>(this.file, {}, saved => {
+    let removed: { configDir: string } | undefined;
+    const saved = await withFileLocks([this.file], async () => {
+      const saved = await readJson<SettingsPatch>(this.file, {});
       const accounts = saved.accounts?.[ai] ?? [];
-      if (!accounts.some(account => account.id === id)) throw new AppError('not_found');
-      saved.accounts = { ...saved.accounts, [ai]: accounts.filter(account => account.id !== id) };
-      if (saved.activeAccounts?.[ai] === id) saved.activeAccounts = { ...saved.activeAccounts, [ai]: 'default' };
+      removed = accounts.find(account => account.id === id);
+      if (!removed) throw new AppError('not_found');
+      const remaining = accounts.filter(account => account.id !== id);
+      if (saved.activeAccounts?.[ai] === id) {
+        // The App's default slot still holds this account's credentials; without a handover every later run would keep
+        // using the removed account. Select the next account like a first addition does, or empty the slot.
+        let next = remaining[0];
+        try { await this.activateCredentials?.(ai, next?.configDir); }
+        catch (error) {
+          if (!next) throw error;
+          next = undefined;
+          await this.activateCredentials?.(ai, undefined);
+        }
+        saved.activeAccounts = { ...saved.activeAccounts, [ai]: next?.id ?? 'default' };
+      }
+      saved.accounts = { ...saved.accounts, [ai]: remaining };
+      await writeJson(this.file, saved);
+      return saved;
     });
+    // Its stored copy would otherwise be reused, unread, if the same folder is added again after a new login there.
+    await this.forgetCredentials?.(ai, removed!.configDir);
     return this.merge(saved);
   }
 }

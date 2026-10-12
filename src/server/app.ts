@@ -148,9 +148,13 @@ export class App {
       return this.accounts.newProfileDirectory(ai);
     }, async (ai, directory) => {
       if (this.accounts) {
-        try { await this.accounts.activate(ai, directory); }
+        try { await (directory === undefined ? this.accounts.remove(ai) : this.accounts.activate(ai, directory)); }
         catch { throw new AppError('unavailable', 'credentials_unavailable'); }
       }
+    }, async (ai, directory) => {
+      // Best effort: the account is already gone from settings; a copy still held by a running CLI stays encrypted in the vault.
+      try { await this.accounts?.remove(ai, directory); }
+      catch { log.warn('移除帳號後的憑證副本未清除', { ai }); }
     });
     this.trust = new ProjectTrustService(this.ws, this.projects, this.tasks, this.settings);
     this.usageHistory = new UsageHistory(this.ws.root);
