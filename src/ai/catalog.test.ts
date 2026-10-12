@@ -91,6 +91,20 @@ test('missing and malformed caches use builtin lists; settings are read per get 
   await assert.rejects(f.catalog.get('mock'), (err: unknown) => err instanceof AppError && err.detail === 'cli_unsupported');
 });
 
+test('an unreadable CLI cache falls back to builtins, and a failed start retries instead of failing forever', async (t) => {
+  const f = await fixture(t);
+  await fs.mkdir(path.join(f.home, '.codex/models_cache.json'), { recursive: true });
+  await fs.mkdir(path.join(f.home, '.claude/cache/model-catalog/models.json'), { recursive: true });
+  const [claude, codex] = await f.catalog.list();
+  assert.equal(claude!.source, 'builtin'); assert.equal(codex!.source, 'builtin');
+  // The App's own catalog file unreadable: this call fails, the next one (after repair) works.
+  const other = await fixture(t);
+  await fs.mkdir(path.join(other.ws.internalDir, 'models.json'), { recursive: true });
+  await assert.rejects(other.catalog.list());
+  await fs.rm(path.join(other.ws.internalDir, 'models.json'), { recursive: true });
+  assert.equal((await other.catalog.list()).length, 4);
+});
+
 test('Claude refresh only rereads local cache and persisted catalog survives restart', async (t) => {
   const f = await fixture(t);
   await f.catalog.get('claude');

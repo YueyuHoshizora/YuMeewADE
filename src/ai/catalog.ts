@@ -242,23 +242,21 @@ export class AiCatalog {
     const result = await captureCommand({ command, args: ['--version'], env, timeoutMs: 10_000 });
     return { available: true, version: result.ok ? /\b\d+\.\d+\.\d+\b/.exec(result.stdout + '\n' + result.stderr)?.[0] ?? '' : '' };
   }
+  /** The CLI's own model cache; one it cannot read (missing, a folder, no permission) counts as absent so builtins apply. */
   private async localModels(ai: CatalogAi): Promise<ModelInfo[]> {
     if (ai === 'grok' || ai === 'gemini') return [];
-    if (ai === 'codex') return parseModels(ai, await json(path.join(this.home, '.codex', 'models_cache.json')));
-    const dir = path.join(this.home, '.claude', 'cache', 'model-catalog');
-    let files: string[];
-    try { files = (await fs.readdir(dir)).filter((file) => file.endsWith('.json')); }
-    catch (err) {
-      if (['ENOENT', 'ENOTDIR'].includes((err as NodeJS.ErrnoException).code ?? '')) return [];
-      throw err;
-    }
-    const candidates = await Promise.all(files.map(async (file) => {
-      try { const stat = await fs.stat(path.join(dir, file)); return { file, mtime: stat.isFile() ? stat.mtimeMs : -1 }; }
-      catch (err) { if ((err as NodeJS.ErrnoException).code === 'ENOENT') return { file, mtime: -1 }; throw err; }
-    }));
-    candidates.sort((a, b) => b.mtime - a.mtime || a.file.localeCompare(b.file));
-    const newest = candidates.find((candidate) => candidate.mtime >= 0);
-    return newest ? parseModels(ai, await json(path.join(dir, newest.file))) : [];
+    try {
+      if (ai === 'codex') return parseModels(ai, await json(path.join(this.home, '.codex', 'models_cache.json')));
+      const dir = path.join(this.home, '.claude', 'cache', 'model-catalog');
+      const files = (await fs.readdir(dir)).filter((file) => file.endsWith('.json'));
+      const candidates = await Promise.all(files.map(async (file) => {
+        try { const stat = await fs.stat(path.join(dir, file)); return { file, mtime: stat.isFile() ? stat.mtimeMs : -1 }; }
+        catch { return { file, mtime: -1 }; }
+      }));
+      candidates.sort((a, b) => b.mtime - a.mtime || a.file.localeCompare(b.file));
+      const newest = candidates.find((candidate) => candidate.mtime >= 0);
+      return newest ? parseModels(ai, await json(path.join(dir, newest.file))) : [];
+    } catch { return []; }
   }
   private init(): Promise<void> {
     this.initialized ??= (async () => {
@@ -287,6 +285,8 @@ export class AiCatalog {
       }
       await writeJson(this.file, this.cache);
     })();
+    // A failure (e.g. the App's own models.json unreadable) must not be cached forever: the next call retries.
+    this.initialized.catch(() => { this.initialized = undefined; });
     return this.initialized;
   }
   private persist(name: CatalogAi, value: ModelCache): Promise<void> {
