@@ -16,7 +16,7 @@ function key(password: string, salt: Buffer): Promise<Buffer> {
 }
 function bound(): Transform { let bytes = 0; return new Transform({ transform(chunk: Buffer, _encoding, done) { bytes += chunk.length; done(bytes > PORTABLE_LIMIT ? new AppError('too_large') : null, chunk); } }); }
 interface Entry { name: string; kind: 'file' | 'directory' | 'link'; size: number; executable: boolean; target?: string }
-function safe(name: string): boolean { return name.length > 0 && name.length <= 4096 && !name.includes('\\') && !/[\0\r\n:]/u.test(name) && !path.posix.isAbsolute(name) && name.split('/').every(part => part !== '' && part !== '.' && part !== '..' && !/^(credentials\.sqlite(?:[-.].*)?|credentials\.key|master\.key|core\.lock|cli-accounts|auth\.json|\.credentials\.json|\.device-keys\.json|antigravity-oauth-token)$/i.test(part)); }
+function safe(name: string): boolean { return name.length > 0 && name.length <= 4096 && !name.includes('\\') && !/[\0\r\n:]/u.test(name) && !path.posix.isAbsolute(name) && name.split('/').every(part => part !== '' && part !== '.' && part !== '..' && !/^(credentials\.sqlite(?:[-.].*)?|credentials\.key|master\.key|core\.lock|cli-accounts|auth\.json(?:\..*)?|\.credentials\.json(?:\..*)?|\.device-keys\.json|antigravity-oauth-token)$/i.test(part)); }
 export async function encryptSnapshot(folder: string, output: string, password: string): Promise<void> {
   const salt = randomBytes(16); const iv = randomBytes(12); const secret = await key(password, salt);
   const cipher = createCipheriv('aes-256-gcm', secret, iv); secret.fill(0);

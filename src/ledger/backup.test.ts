@@ -69,6 +69,7 @@ test('a link to an excluded credential file is left out, so the snapshot still r
   try {
     const ws = new Workspace(path.join(temporary, 'source')); await ws.init();
     await fs.writeFile(path.join(ws.root, 'auth.json'), 'credential');
+    for (const copy of ['auth.json.backup', '.credentials.json.tmp']) await fs.writeFile(path.join(ws.root, copy), 'credential');
     await fs.symlink('auth.json', path.join(ws.root, 'auth-link'));
     await fs.mkdir(path.join(ws.root, 'cli-accounts')); await fs.writeFile(path.join(ws.root, 'cli-accounts', 'token'), 'x');
     await fs.symlink(path.join('cli-accounts', 'token'), path.join(ws.root, 'token-link'));
@@ -76,7 +77,7 @@ test('a link to an excluded credential file is left out, so the snapshot still r
     const snapshot = await backup.create(true); assert.equal(snapshot.complete, true);
     const destination = path.join(temporary, 'destination');
     await backup.restore(snapshot.id, destination);
-    for (const name of ['auth.json', 'auth-link', 'cli-accounts', 'token-link']) await assert.rejects(fs.lstat(path.join(destination, name)), { code: 'ENOENT' });
+    for (const name of ['auth.json', 'auth.json.backup', '.credentials.json.tmp', 'auth-link', 'cli-accounts', 'token-link']) await assert.rejects(fs.lstat(path.join(destination, name)), { code: 'ENOENT' });
     assert.ok((await fs.readdir(destination)).includes('roles.yaml'));
   } finally { await fs.rm(temporary, { recursive: true, force: true }); }
 });

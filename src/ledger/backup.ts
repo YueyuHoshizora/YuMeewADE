@@ -13,7 +13,8 @@ import type { CareCapacity } from '../shared/backup-types.ts';
 import { encryptSnapshot, receiveEncrypted, decryptSnapshot } from './portable-backup.ts';
 
 interface Manifest { format: 1; id: string; createdAt: string; root: string; originalRoot: string; external: { project: string; source: string; originalSource: string; folder: string }[]; complete: boolean; fingerprint: string }
-const excluded = (name: string) => /^(credentials\.sqlite(?:[-.].*)?|credentials\.key|master\.key|core\.lock|cli-accounts|auth\.json|\.credentials\.json|\.device-keys\.json|antigravity-oauth-token)$/i.test(name);
+// Also the CLIs' own copies of a login (auth.json.bak, .credentials.json.tmp…), which the account code treats as credentials too.
+const excluded = (name: string) => /^(credentials\.sqlite(?:[-.].*)?|credentials\.key|master\.key|core\.lock|cli-accounts|auth\.json(?:\..*)?|\.credentials\.json(?:\..*)?|\.device-keys\.json|antigravity-oauth-token)$/i.test(name);
 const fail = (detail: 'care_changed' | 'care_backup_invalid' | 'care_destination_exists' | 'care_external_required' | 'care_repository_unsupported' | 'care_backup_overlap') => new AppError('conflict', detail);
 /** A backup id or destination parent that does not exist is invalid input, not an internal error. */
 const invalidIfMissing = missingAs(() => fail('care_backup_invalid'));
