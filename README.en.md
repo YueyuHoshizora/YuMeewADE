@@ -175,11 +175,15 @@ Configuration lookup order: the `YUMEEWADE_CONFIG` environment variable → `con
 |---|---|---|
 | `server` | `host`、`port` | Loopback only; default `127.0.0.1:4560` |
 | `workspace` | `root` | Workspace root; default `~/Documents/YuMeewWorkspace`. Switching it in Settings rewrites this line |
-| `cli.claude` / `cli.codex` / `cli.grok` | `command`、`baseArgs`、`fullAccess`、`fullAccessArgs`、`safeArgs` | Commands and headless-mode flags; `fullAccess` sets the default permissions, overridden by the toggle in Settings |
+| `update` | `enabled`, `repo`, `checkHours` | Check the GitHub releases page for a new version (notification only, never installs); defaults on, `YueyuHoshizora/YuMeewADE`, every 6 hours |
+| `execution` | `ide`, `terminal`, `browser` | External tools as `{command, args}`; see “Integration config” |
+| `cli.claude` / `cli.codex` / `cli.grok` / `cli.gemini` | `command`、`baseArgs`、`fullAccess`、`fullAccessArgs`、`safeArgs` | Commands and headless-mode flags; `fullAccess` sets the default permissions, overridden by the toggle in Settings |
 | `cli.claude` | `approvalArgs` | Safe-mode bidirectional stream-json permission flags; empty disables interactive approval |
 | `limits` | `approvalSeconds` | Approval timeout seconds, default 120; timeout denies |
 | `cli.<ai>` | `mcpListArgs`, `mcpAddArgs`, `mcpRemoveArgs` | MCP command templates; empty arrays disable management. Codex HTTP headers use the isolated native config.toml table |
 | `cli` | `envPassthrough` | Additional environment variables allowed through to CLI child processes (by default, only PATH / HOME / LANG and similar variables) |
+| `cli.codex` | `mode`, `appServerArgs` | Transport for ordinary conversations: `app-server` (default) or `exec` |
+| `cli.<ai>` | `readonlyArgs`, `quotaArgs`, `authRefreshArgs`, `loginArgs`, `commandsArgs`, `slashArgs` | Subcommands for read-only review, quota queries, token renewal, account login, and slash-command discovery and execution; see the comments in the `config.yaml` template for each field and what an empty array means |
 | `limits` | `bodyBytes`、`promptChars`、`sendPerMinute`、`concurrentRuns`、`sseConnections`、`queueLength`、`handoffChars`、`heartbeatSeconds`、`diffBytes`、`uploadBytes`、`imagesPerSend`、`verifySeconds` (verification timeout, default 600)、`verifyOutputBytes` (tail bytes of verification output kept, default 65536)、`runSeconds` (maximum run time of one AI turn; it is stopped and marked as timed out beyond this, default 7200) | Resource and request limits |
 | `limits` | `usagePollSeconds` | Account quota query interval in seconds; default `60` = 1 minute |
 | `limits` | `mentionFileBytes`, `mentionTotalBytes` | @reference read limits per file / per instruction, in bytes; defaults 65536 / 262144 |

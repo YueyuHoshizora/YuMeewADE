@@ -175,11 +175,15 @@ npm run desktop      # 桌面版（開發機）
 |---|---|---|
 | `server` | `host`、`port` | ループバックのみ許可。既定は `127.0.0.1:4560` |
 | `workspace` | `root` | ワークスペースのルート。既定は `~/Documents/YuMeewWorkspace`。設定画面で切り替えるとこの行が書き換わります |
-| `cli.claude` / `cli.codex` / `cli.grok` | `command`、`baseArgs`、`fullAccess`、`fullAccessArgs`、`safeArgs` | コマンドとヘッドレスモードのフラグ。`fullAccess` は既定の権限で、設定画面の切り替えが優先 |
+| `update` | `enabled`、`repo`、`checkHours` | GitHub のリリースページで新しいバージョンを確認（通知のみ、自動インストールなし）。既定は有効、`YueyuHoshizora/YuMeewADE`、6 時間ごと |
+| `execution` | `ide`、`terminal`、`browser` | 外部ツールの `{command, args}`。「統合設定」を参照 |
+| `cli.claude` / `cli.codex` / `cli.grok` / `cli.gemini` | `command`、`baseArgs`、`fullAccess`、`fullAccessArgs`、`safeArgs` | コマンドとヘッドレスモードのフラグ。`fullAccess` は既定の権限で、設定画面の切り替えが優先 |
 | `cli.claude` | `approvalArgs` | 安全モードの双方向 stream-json 承認フラグ。空リストで無効化 |
 | `limits` | `approvalSeconds` | 承認待ち秒数、既定120。時間切れは拒否 |
 | `cli.<ai>` | `mcpListArgs`, `mcpAddArgs`, `mcpRemoveArgs` | MCP コマンドテンプレート。空配列で無効化。Codex HTTP headers は隔離 config.toml のネイティブ表を使用 |
 | `cli` | `envPassthrough` | CLI 子プロセスに追加で渡す環境変数（既定では PATH／HOME／LANG などのみ） |
+| `cli.codex` | `mode`、`appServerArgs` | 通常の会話の転送方式：`app-server`（既定）または `exec` |
+| `cli.<ai>` | `readonlyArgs`、`quotaArgs`、`authRefreshArgs`、`loginArgs`、`commandsArgs`、`slashArgs` | 読み取り専用レビュー、利用枠の取得、トークン更新、アカウント追加時のログイン、スラッシュコマンドの探索と実行に使うサブコマンド。各フィールドと空配列の意味はテンプレート `config.yaml` のコメントを参照 |
 | `limits` | `bodyBytes`、`promptChars`、`sendPerMinute`、`concurrentRuns`、`sseConnections`、`queueLength`、`handoffChars`、`heartbeatSeconds`、`diffBytes`、`uploadBytes`、`imagesPerSend`、`verifySeconds`（検証のタイムアウト、既定 600）、`verifyOutputBytes`（検証出力の末尾保持バイト数、既定 65536）、`runSeconds`（AI 1 ターンの最長実行時間。超えると停止してタイムアウト扱い、既定 7200） | 各種上限 |
 | `limits` | `usagePollSeconds` | 利用枠取得間隔（秒）、既定 `60`＝1 分 |
 | `limits` | `mentionFileBytes`、`mentionTotalBytes` | @引用のファイル単位／指示単位の読み取り上限（バイト）、既定 65536／262144 |

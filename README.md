@@ -181,11 +181,15 @@ npm run desktop      # 桌面版（開發機）
 |---|---|---|
 | `server` | `host`、`port` | 只允許 loopback；預設 `127.0.0.1:4560` |
 | `workspace` | `root` | 工作區根目錄，預設 `~/Documents/YuMeewWorkspace`；設定頁切換時會改寫這一行 |
-| `cli.claude` / `cli.codex` / `cli.grok` | `command`、`baseArgs`、`fullAccess`、`fullAccessArgs`、`safeArgs` | 指令與無頭模式旗標；`fullAccess` 是預設權限，設定頁的開關優先 |
+| `update` | `enabled`、`repo`、`checkHours` | 檢查 GitHub 發行頁有沒有新版本（只通知，不自動安裝）；預設開啟、`YueyuHoshizora/YuMeewADE`、每 6 小時 |
+| `execution` | `ide`、`terminal`、`browser` | 外部工具的 `{command, args}`，見「整合設定」 |
+| `cli.claude` / `cli.codex` / `cli.grok` / `cli.gemini` | `command`、`baseArgs`、`fullAccess`、`fullAccessArgs`、`safeArgs` | 指令與無頭模式旗標；`fullAccess` 是預設權限，設定頁的開關優先 |
 | `cli.claude` | `approvalArgs` | 安全模式雙向 stream-json 權限旗標；空清單停用互動核准 |
 | `limits` | `approvalSeconds` | 核准逾時秒數，預設 120，逾時拒絕 |
 | `cli.<ai>` | `mcpListArgs`、`mcpAddArgs`、`mcpRemoveArgs` | MCP 指令範本；空陣列停用管理。Codex HTTP headers 存入隔離 config.toml 原生表 |
 | `cli` | `envPassthrough` | 額外放行給 CLI 子行程的環境變數（預設只給 PATH／HOME／LANG 等） |
+| `cli.codex` | `mode`、`appServerArgs` | 一般對話的傳輸：`app-server`（預設）或 `exec` |
+| `cli.<ai>` | `readonlyArgs`、`quotaArgs`、`authRefreshArgs`、`loginArgs`、`commandsArgs`、`slashArgs` | 唯讀審查、額度查詢、權杖換發、新增帳號登入、斜線指令探索與執行的子命令；各欄位與空陣列的意義見範本 `config.yaml` 的註解 |
 | `limits` | `bodyBytes`、`promptChars`、`sendPerMinute`、`concurrentRuns`、`sseConnections`、`queueLength`、`handoffChars`、`heartbeatSeconds`、`diffBytes`、`uploadBytes`、`imagesPerSend`、`verifySeconds`（驗證逾時，預設 600）、`verifyOutputBytes`（驗證輸出保留尾端位元組，預設 65536）、`runSeconds`（單輪 AI 執行時間上限，超過就停止並標記逾時，預設 7200） | 各種上限 |
 | `limits` | `usagePollSeconds` | 帳號額度查詢間隔（秒），預設 `60`＝1 分鐘 |
 | `limits` | `mentionFileBytes`、`mentionTotalBytes` | @引用每檔／每次指示讀取上限（位元組），預設 65536／262144 |
