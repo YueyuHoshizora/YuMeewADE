@@ -769,8 +769,10 @@ export class EditorService {
         const current = await this.read(project, task, relative).catch((error: unknown) => { if (error instanceof AppError && error.status === 404) return undefined; throw error; });
         if (current && !current.binary && !current.truncated) await preserveHistory(root, { path: relative, revision: current.revision, text: current.text, encoding: current.encoding ?? 'UTF8', mode: (await fs.lstat(path.join(root, relative))).mode & 0o777, reason: 'mutate' });
       }
-      // Saving history took a while: an edit made meanwhile must not be renamed away or deleted on the old approval.
+      // Saving history took a while: an edit made meanwhile must not be renamed away or deleted on the old approval, and
+      // a file created at the destination meanwhile must not be overwritten.
       await unchanged();
+      if (destination) await validateNew(mutation.destination ?? '', { relative: mutation.path, file: target.file });
       if (destination) await fs.rename(target.file, destination);
       else if (mutation.action === 'delete') {
         if (stat.isDirectory()) {

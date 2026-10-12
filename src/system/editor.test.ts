@@ -171,6 +171,22 @@ test('delete and rename recheck the revision after saving history, so an edit ma
   } finally { editor.dispose(); }
 }));
 
+test('a rename does not overwrite a file created at the destination while history was being saved', () => withTmpWorkspace(async ws => {
+  const projects = new ProjectLedger(ws); const tasks = new TaskLedger(ws); await projects.create({ name: 'P' });
+  const editor = new EditorService(new WorktreeService({ ws, projects, tasks, diffBytes: 100000 }), tasks, {});
+  const root = ws.projectDir('P'); const destination = path.join(root, 'b.txt');
+  try {
+    await fs.writeFile(path.join(root, 'a.txt'), 'source');
+    const revision = (await editor.read('P', '', 'a.txt')).revision;
+    const read = editor.read.bind(editor);
+    editor.read = async (...args: Parameters<EditorService['read']>) => { const document = await read(...args); await fs.writeFile(destination, 'created meanwhile'); return document; };
+    await assert.rejects(editor.mutate('P', '', { action: 'rename', path: 'a.txt', confirmation: 'a.txt', revision, destination: 'b.txt' }), (error: unknown) => error instanceof AppError && error.detail === 'editor_conflict');
+    editor.read = read;
+    assert.equal(await fs.readFile(destination, 'utf8'), 'created meanwhile');
+    assert.equal(await fs.readFile(path.join(root, 'a.txt'), 'utf8'), 'source');
+  } finally { editor.dispose(); }
+}));
+
 test('a file without write permission opens read-only and is never replaced by a save', { skip: process.getuid?.() === 0 && 'root bypasses file permissions' }, () => withTmpWorkspace(async ws => {
   const projects = new ProjectLedger(ws); const tasks = new TaskLedger(ws); await projects.create({ name: 'P' });
   const editor = new EditorService(new WorktreeService({ ws, projects, tasks, diffBytes: 100000 }), tasks, {});
