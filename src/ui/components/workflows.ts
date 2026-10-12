@@ -1,6 +1,6 @@
 import type { UsageScope, VerifyStatus, WorkflowPlan, WorkflowStep } from '../../shared/types.ts';
 import { query, request } from '../api.ts';
-import { t } from '../i18n/index.ts';
+import { labelValue, t } from '../i18n/index.ts';
 import { area, button, confirmModal, el, field, modal, row, run, select, setLocked, taskHash, UserError, type ViewContext } from './dom.ts';
 import { confirmUsageRound, workflowBudgetRisk } from './usage-history.ts';
 import { readonlyDiffView, verificationStatusView } from './verification-view.ts';
@@ -50,7 +50,7 @@ export function workflowButton(context: ViewContext, project: string, task: stri
     function renderStatus(): void {
       status.textContent = `${t(`workflow.state.${plan.state}`)} · ${plan.cursor}/${plan.steps.length}${plan.reason ? ` · ${t(`detail.${plan.reason}` as Parameters<typeof t>[0])}` : ''}`;
       // "Blocked" only means the gates are not all satisfied yet; a gate without a result has not run rather than failed.
-      if (plan.delivery) status.textContent += ` · ${t('workflow.native.delivery')}: ${t(plan.delivery.state === 'ready' ? 'workflow.delivery.ready' : 'workflow.delivery.blocked')}${plan.delivery.gates.map(gate => ` · ${gate.node}: ${t(gate.ok ? 'verify.pass' : gate.at ? 'verify.fail' : 'workflow.delivery.pending')}`).join('')}`;
+      if (plan.delivery) status.textContent += ` · ${labelValue(t('workflow.native.delivery'), t(plan.delivery.state === 'ready' ? 'workflow.delivery.ready' : 'workflow.delivery.blocked'))}${plan.delivery.gates.map(gate => ` · ${gate.node}: ${t(gate.ok ? 'verify.pass' : gate.at ? 'verify.fail' : 'workflow.delivery.pending')}`).join('')}`;
       timeline.replaceChildren(renderWorkflowTimeline(plan));
       void run(renderRisk);
       setLocked(save, plan.state === 'running');

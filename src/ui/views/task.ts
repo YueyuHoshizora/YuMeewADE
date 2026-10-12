@@ -5,7 +5,7 @@ import type {
 } from '../../shared/types.ts';
 import { TASK_STATES } from '../../shared/types.ts';
 import { api, query, request } from '../api.ts';
-import { getLocale, t } from '../i18n/index.ts';
+import { getLocale, labelValue, t } from '../i18n/index.ts';
 import { attachments } from '../components/attachments.ts';
 import { aiPicker } from '../components/picker.ts';
 import { copyText, markdown } from '../components/markdown.ts';
@@ -335,7 +335,7 @@ export function taskView(
           `${aiLabel(item.ai)} · ${modelLabel(context.state, item.ai, item.model)} · ${effortLabel(item.effort)}`
         ));
       if (item.error) q.append(el('span', 'error-mark', t('chat.error')));
-      q.append(iconButton('×', `${t('common.remove')}: ${t('chat.next', { n: index + 1 })}`, async () => {
+      q.append(iconButton('×', labelValue(t('common.remove'), t('chat.next', { n: index + 1 })), async () => {
         queue = await request<QueueItem[]>('/api/chat/unqueue', { project: project.id, task: task.id, id: item.id });
         renderQueue();
       }));
@@ -848,7 +848,7 @@ export function taskView(
         const open = button(file, () => openDiff(file), 'subtle git-file');
         open.title = file;
         item.append(open);
-        const revert = iconButton('↩', `${t('git.revertFile')}: ${file}`, async () => {
+        const revert = iconButton('↩', labelValue(t('git.revertFile'), file), async () => {
           if (busy || !await confirmModal(t('git.revertFile'), t('git.revertConfirm', { file }), t('git.revertFile'))) return;
           await request('/api/task/revert-file', { project: project.id, task: task.id, path: file });
           await context.refresh();
@@ -905,7 +905,7 @@ export function taskView(
       };
       steps.append(row(
         field(step.text, check),
-        iconButton('×', `${t('common.remove')}: ${step.text}`, async () => {
+        iconButton('×', labelValue(t('common.remove'), step.text), async () => {
           try { await request('/api/task/step', { project: project.id, task: task.id, remove: index, text: step.text }); }
           finally { await context.refresh(); }
         }),

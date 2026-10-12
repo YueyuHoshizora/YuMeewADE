@@ -1,6 +1,6 @@
 import type { McpAi, McpInput, McpList, McpTransport } from '../../shared/types.ts';
 import { query, request } from '../api.ts';
-import { t } from '../i18n/index.ts';
+import { labelValue, t } from '../i18n/index.ts';
 import { area, button, card, confirmModal, el, field, input, row, select, UserError, type ViewContext } from './dom.ts';
 import { aiLabel } from './display.ts';
 
@@ -17,8 +17,8 @@ export function mcpPanel(context: ViewContext): HTMLElement {
       content.append(button(t('mcp.refresh'), load));
       for (const server of result.servers) {
         const details = el('div'); details.append(el('strong', '', server.name), el('p', 'muted', `${server.transport} · ${server.command ?? server.url ?? '—'} · ${server.scope} · ${t(`mcp.status.${server.status}`)}`));
-        if (server.envKeys.length) details.append(el('p', 'muted', `${t('mcp.env')}: ${server.envKeys.join(', ')}`));
-        if (server.headerKeys.length) details.append(el('p', 'muted', `${t('mcp.headers')}: ${server.headerKeys.join(', ')}`));
+        if (server.envKeys.length) details.append(el('p', 'muted', labelValue(t('mcp.env'), server.envKeys.join(', '))));
+        if (server.headerKeys.length) details.append(el('p', 'muted', labelValue(t('mcp.headers'), server.headerKeys.join(', '))));
         details.append(button(t('common.remove'), async () => {
           if (!await confirmModal(t('mcp.removeTitle'), t('mcp.removeConfirm', { name: server.name }), t('common.remove'))) return;
           await request('/api/mcp/remove', { ai, name: server.name, confirmed: true }); await load();

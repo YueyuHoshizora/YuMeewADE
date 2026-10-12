@@ -48,6 +48,7 @@ import * as codemirror from './codemirror.ts';
 import * as oplog from './oplog.ts';
 import * as phases from './phases.ts';
 import * as projectDetails from './project-details.ts';
+import * as labelValue from './label-value.ts';
 
 export const featureZhTW = {
   ...archive.featureZhTW,
@@ -101,6 +102,7 @@ export const featureZhTW = {
   ...oplog.featureZhTW,
   ...phases.featureZhTW,
   ...projectDetails.featureZhTW,
+  ...labelValue.featureZhTW,
 };
 export const featureZhCN = {
   ...archive.featureZhCN,
@@ -154,6 +156,7 @@ export const featureZhCN = {
   ...oplog.featureZhCN,
   ...phases.featureZhCN,
   ...projectDetails.featureZhCN,
+  ...labelValue.featureZhCN,
 };
 export const featureEn = {
   ...archive.featureEn,
@@ -207,6 +210,7 @@ export const featureEn = {
   ...oplog.featureEn,
   ...phases.featureEn,
   ...projectDetails.featureEn,
+  ...labelValue.featureEn,
 };
 export const featureJa = {
   ...archive.featureJa,
@@ -260,6 +264,7 @@ export const featureJa = {
   ...oplog.featureJa,
   ...phases.featureJa,
   ...projectDetails.featureJa,
+  ...labelValue.featureJa,
 };
 export const featureDe = {
   ...archive.featureDe,
@@ -313,6 +318,7 @@ export const featureDe = {
   ...oplog.featureDe,
   ...phases.featureDe,
   ...projectDetails.featureDe,
+  ...labelValue.featureDe,
 };
 export const featureFr = {
   ...archive.featureFr,
@@ -366,6 +372,7 @@ export const featureFr = {
   ...oplog.featureFr,
   ...phases.featureFr,
   ...projectDetails.featureFr,
+  ...labelValue.featureFr,
 };
 export const featureIt = {
   ...archive.featureIt,
@@ -419,4 +426,5 @@ export const featureIt = {
   ...oplog.featureIt,
   ...phases.featureIt,
   ...projectDetails.featureIt,
+  ...labelValue.featureIt,
 };

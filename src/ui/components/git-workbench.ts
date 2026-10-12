@@ -1,6 +1,6 @@
 import type { BlameLine, EditorDocument, GitWorkbenchStatus, GitFileDiff, GitConflictView, GitRemote, WorktreeMaintenanceEntry } from '../../shared/types.ts';
 import { query, request } from '../api.ts';
-import { t } from '../i18n/index.ts';
+import { labelValue, t } from '../i18n/index.ts';
 import { localDateTime } from './display.ts';
 import { area, button, confirmModal, el, field, input, modal, row, select, toast, type ViewContext } from './dom.ts';
 import { taskComparisonButton } from './task-comparison.ts';
@@ -39,11 +39,11 @@ export function gitWorkbenchButton(context: ViewContext, project: string, task?:
         content.closest('dialog')?.close();
       });
       apply.disabled = !diff.selectable;
-      modal(`${t(staged ? 'gitPrecision.reverseDiff' : 'gitPrecision.diff')}: ${path}`, sideDiff(content, { ...ids, path, mode: staged ? 'staged' : 'working' }), apply);
+      modal(labelValue(t(staged ? 'gitPrecision.reverseDiff' : 'gitPrecision.diff'), path), sideDiff(content, { ...ids, path, mode: staged ? 'staged' : 'working' }), apply);
     };
     const refresh = async () => {
       const state = await request<GitWorkbenchStatus>(query('/api/git/status', ids));
-      panel.replaceChildren(el('p', '', `${t(state.location === 'main' ? 'workbench.main' : 'workbench.task')}: ${state.root}`), el('p', '', `${t('workbench.branch')}: ${state.branch}`), el('p', '', `${t('workbench.upstream')}: ${state.upstream ?? '—'} / ${state.ahead} / ${state.behind}`), button(t('workbench.refresh'), refresh));
+      panel.replaceChildren(el('p', '', labelValue(t(state.location === 'main' ? 'workbench.main' : 'workbench.task'), state.root)), el('p', '', labelValue(t('workbench.branch'), state.branch)), el('p', '', `${labelValue(t('workbench.upstream'), state.upstream ?? '—')} / ${state.ahead} / ${state.behind}`), button(t('workbench.refresh'), refresh));
       panel.append(button(t('worktrees.title'), async () => {
         const content = el('div', 'form');
         const reload = async () => {
@@ -97,9 +97,9 @@ export function gitWorkbenchButton(context: ViewContext, project: string, task?:
                 await mutate('resolve', { path: file.path });
                 text.closest('dialog')?.close(); versions.closest('dialog')?.close();
               });
-              modal(`${t('workbench.edit')}: ${file.path}`, field(file.path, text), save);
+              modal(labelValue(t('workbench.edit'), file.path), field(file.path, text), save);
             });
-            modal(`${t('workbench.edit')}: ${file.path}`, versions, edit, button(t('gitPrecision.resolveCurrent'), async () => {
+            modal(labelValue(t('workbench.edit'), file.path), versions, edit, button(t('gitPrecision.resolveCurrent'), async () => {
               await mutate('resolve', { path: file.path }); versions.closest('dialog')?.close();
             }));
           }));
@@ -145,7 +145,7 @@ export function gitWorkbenchButton(context: ViewContext, project: string, task?:
           const text = el('td'); text.append(el('code', '', entry.text));
           const item = el('tr'); item.append(commit, author, date, line, text); body.append(item);
         }
-        modal(`${t('gitManage.blame')}: ${path}`, table);
+        modal(labelValue(t('gitManage.blame'), path), table);
       };
       panel.append(field(t('gitManage.path'), historyPath), row(button(t('gitManage.history'), () => history()), button(t('gitManage.blame'), blame)), field(t('gitManage.sha'), commitSha), button(t('gitManage.detail'), () => detail(commitSha.value)));
       const stashMessage = input(); const untracked = input(); untracked.type = 'checkbox';
@@ -183,7 +183,7 @@ export function gitWorkbenchButton(context: ViewContext, project: string, task?:
         const fetchUrl = input(entry.fetchUrls[0] ?? ''); fetchUrl.maxLength = 2048;
         const pushUrl = input(entry.pushUrls[0] ?? ''); pushUrl.maxLength = 2048;
         const group = el('section', 'form');
-        group.append(el('h3', '', entry.name), el('pre', '', `${t('gitRemote.fetchUrl')}: ${entry.fetchUrls.join('\n')}\n${t('gitRemote.pushUrl')}: ${entry.pushUrls.join('\n')}`), field(t('workbench.remote'), newName), button(t('gitRemote.rename'), () => mutate('remote', { action: 'rename', name: entry.name, newName: newName.value })), field(t('gitRemote.fetchUrl'), fetchUrl), button(t('gitRemote.setUrl'), () => mutate('remote', { action: 'set-url', name: entry.name, url: fetchUrl.value })), field(t('gitRemote.pushUrl'), pushUrl), button(t('gitRemote.setUrl'), () => mutate('remote', { action: 'set-url', name: entry.name, url: pushUrl.value, push: true })), button(t('gitRemote.remove'), async () => {
+        group.append(el('h3', '', entry.name), el('pre', '', `${labelValue(t('gitRemote.fetchUrl'), entry.fetchUrls.join('\n'))}\n${labelValue(t('gitRemote.pushUrl'), entry.pushUrls.join('\n'))}`), field(t('workbench.remote'), newName), button(t('gitRemote.rename'), () => mutate('remote', { action: 'rename', name: entry.name, newName: newName.value })), field(t('gitRemote.fetchUrl'), fetchUrl), button(t('gitRemote.setUrl'), () => mutate('remote', { action: 'set-url', name: entry.name, url: fetchUrl.value })), field(t('gitRemote.pushUrl'), pushUrl), button(t('gitRemote.setUrl'), () => mutate('remote', { action: 'set-url', name: entry.name, url: pushUrl.value, push: true })), button(t('gitRemote.remove'), async () => {
           if (await confirmModal(t('gitRemote.remove'), entry.name, t('gitRemote.remove'))) await mutate('remote', { action: 'remove', name: entry.name, confirmed: true });
         }));
         panel.append(group);

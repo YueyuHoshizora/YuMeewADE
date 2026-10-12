@@ -46,6 +46,9 @@ export function t(key: MessageKey, params: Record<string, string | number> = {})
   return template.replace(/\{(\w+)\}/g, (_, name: string) => (name in params ? String(params[name]) : `{${name}}`));
 }
 
+/** Joins a translated label and a value with the locale's separator (full-width colon in CJK, spaced colon in French). */
+export function labelValue(label: string, value: string | number): string { return t('common.labelValue', { label, value }); }
+
 /** 動態組出的鍵（例如操作紀錄的 action）是否有翻譯；沒有就由呼叫端顯示原值。 */
 export function hasMessage(key: string): key is MessageKey {
   return Object.hasOwn(zhTW, key);

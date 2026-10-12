@@ -1,6 +1,6 @@
 import type { CareBackup, CareHealth, CareCapacity, CareLifecycle } from '../../shared/types.ts';
 import { ApiFailure, api, request } from '../api.ts';
-import { t } from '../i18n/index.ts';
+import { labelValue, t } from '../i18n/index.ts';
 import { button, card, confirmModal, el, errorMessage, field, input, modal, readLocal, row, storeLocal, toast, type ViewContext } from './dom.ts';
 import { formatBytes, localDateTime } from './display.ts';
 import { logViewer } from './log-viewer.ts';
@@ -33,17 +33,17 @@ export function carePanel(context: ViewContext): HTMLElement {
   };
   const showSchedule = (value: CareLifecycle) => {
     enabled.checked = value.schedule.enabled; interval.value = String(value.schedule.intervalHours); retention.value = String(value.schedule.retention);
-    scheduleStatus.textContent = `${t('care.lastSuccess')}: ${value.lastSuccess ? localDateTime(value.lastSuccess) : t('care.unknown')} · ${t('care.nextAttempt')}: ${value.nextAttempt ? localDateTime(value.nextAttempt) : t('care.no')}${value.lastFailure ? ` · ${t('care.scheduleFailed')}` : ''}`;
+    scheduleStatus.textContent = `${labelValue(t('care.lastSuccess'), value.lastSuccess ? localDateTime(value.lastSuccess) : t('care.unknown'))} · ${labelValue(t('care.nextAttempt'), value.nextAttempt ? localDateTime(value.nextAttempt) : t('care.no'))}${value.lastFailure ? ` · ${t('care.scheduleFailed')}` : ''}`;
     scheduleStatus.className = value.lastFailure ? 'warning' : '';
   };
   const yes = (value: boolean) => t(value ? 'care.yes' : 'care.no');
   const show = (health: CareHealth) => {
     status.replaceChildren(...[
       `Node ${health.node} · Electron ${health.electron ?? t('care.no')} · Git ${health.git.version || yes(health.git.available)}`,
-      `${t('care.writable')}: ${yes(health.writable)} · ${t('care.loopback')}: ${yes(health.loopback)} · ${t('care.binding')}: ${yes(health.boundToLoopback)}`,
-      `${t('care.network')}: ${health.network === 'not-tested' ? t('care.unknown') : yes(health.network === 'reachable')}`,
-      `${t('care.trust')}: ${health.buildTrust === 'signed' ? t('care.yes') : t('care.unknown')}`,
-      ...health.clis.map(cli => `${cli.name}: ${yes(cli.available)} ${cli.version} · ${t('care.login')}: ${cli.loginState === 'unknown' ? t('care.unknown') : yes(cli.loginState === 'stored')} · ${t('care.fullAccess')}: ${cli.fullAccess ? t('care.yes') : t('care.no')}`),
+      `${labelValue(t('care.writable'), yes(health.writable))} · ${labelValue(t('care.loopback'), yes(health.loopback))} · ${labelValue(t('care.binding'), yes(health.boundToLoopback))}`,
+      labelValue(t('care.network'), health.network === 'not-tested' ? t('care.unknown') : yes(health.network === 'reachable')),
+      labelValue(t('care.trust'), health.buildTrust === 'signed' ? t('care.yes') : t('care.unknown')),
+      ...health.clis.map(cli => `${cli.name}: ${yes(cli.available)} ${cli.version} · ${labelValue(t('care.login'), cli.loginState === 'unknown' ? t('care.unknown') : yes(cli.loginState === 'stored'))} · ${labelValue(t('care.fullAccess'), cli.fullAccess ? t('care.yes') : t('care.no'))}`),
     ].map(text => el('p', '', text)));
   };
   const checked = button(t('care.check'), async () => {
@@ -53,7 +53,7 @@ export function carePanel(context: ViewContext): HTMLElement {
   const refresh = async () => {
     const entries = (await request<{ backups: CareBackup[] }>('/api/care/backups')).backups;
     const disk = await request<CareCapacity>('/api/care/capacity');
-    capacity.textContent = `${t('care.capacity')}: ${formatBytes(disk.usedBytes)} / ${formatBytes(disk.availableBytes)} ${t('care.available')}`;
+    capacity.textContent = `${labelValue(t('care.capacity'), formatBytes(disk.usedBytes))} / ${formatBytes(disk.availableBytes)} ${t('care.available')}`;
     showSchedule(await request<CareLifecycle>('/api/care/schedule'));
     backups.replaceChildren(...entries.map(backup => row(
       el('span', '', `${localDateTime(backup.createdAt)} · ${t(backup.complete ? 'care.complete' : 'care.partial')} · ${t('care.externalCount', { n: backup.externalCount })} · ${formatBytes(backup.bytes)}`),

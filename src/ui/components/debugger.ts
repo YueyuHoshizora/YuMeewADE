@@ -1,6 +1,6 @@
 import type { DebugAction, DebugSession, DebugValue, ExecutionRun, DapLaunch, DapSession } from '../../shared/types.ts';
 import { query, request } from '../api.ts';
-import { t } from '../i18n/index.ts';
+import { labelValue, t } from '../i18n/index.ts';
 import { button, el, field, input, row, run, setLocked } from './dom.ts';
 
 export function embeddedDebugger(project: string, task: string, open?: (path: string, line: number) => void): { node: HTMLElement; attach: (run: string) => Promise<void>; launch: (config: DapLaunch) => Promise<void>; dispose: () => void } {
@@ -23,7 +23,7 @@ export function embeddedDebugger(project: string, task: string, open?: (path: st
     if (!session || !alive) return;
     status.textContent = `${t(session.status === 'paused' ? 'tools.paused' : session.status === 'running' ? 'tools.running' : session.status === 'connecting' ? 'tools.connecting' : 'tools.closed')} · ${session.reason}`;
     const dap = session && 'protocol' in session ? session as DapSession : undefined;
-    capabilities.textContent = dap ? `${t('dap.capabilities')} · ${t('dap.conditional')}: ${t(dap.capabilities.conditionalBreakpoints ? 'dap.supported' : 'dap.unsupported')} · ${t('dap.evaluate')}: ${t(dap.capabilities.evaluate ? 'dap.supported' : 'dap.unsupported')}${dap.diagnostic ? ` · ${t('dap.failure', { reason: t(`dap.${dap.diagnostic}`) })}` : ''}` : '';
+    capabilities.textContent = dap ? `${t('dap.capabilities')} · ${labelValue(t('dap.conditional'), t(dap.capabilities.conditionalBreakpoints ? 'dap.supported' : 'dap.unsupported'))} · ${labelValue(t('dap.evaluate'), t(dap.capabilities.evaluate ? 'dap.supported' : 'dap.unsupported'))}${dap.diagnostic ? ` · ${t('dap.failure', { reason: t(`dap.${dap.diagnostic}`) })}` : ''}` : '';
     condition.disabled = Boolean(dap && !dap.capabilities.conditionalBreakpoints);
     watch.disabled = Boolean(dap && !dap.capabilities.evaluate);
     risk.textContent = t(dap ? 'dap.expressionRisk' : 'debug.risk');

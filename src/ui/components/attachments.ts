@@ -1,6 +1,6 @@
 import type { Limits, UploadResult } from '../../shared/types.ts';
 import { api, request, query } from '../api.ts';
-import { t } from '../i18n/index.ts';
+import { labelValue, t } from '../i18n/index.ts';
 import { el, button, iconButton, showError, toast } from './dom.ts';
 
 export function attachments(project: string, limits: Limits, target: HTMLElement, scope = 'quickstart'): { node: HTMLElement; strip: HTMLElement; ids: () => string[]; clear: () => Promise<void>; ready: () => Promise<void>; dispose: () => void } {
@@ -11,7 +11,7 @@ export function attachments(project: string, limits: Limits, target: HTMLElement
   function render(): void {
     strip.replaceChildren(...images.map(image => {
       const tile = el('div', 'image-tile'); const img = el('img'); img.src = image.url; img.alt = image.name;
-      tile.append(img, iconButton('×', `${t('common.remove')}: ${image.name}`, async () => {
+      tile.append(img, iconButton('×', labelValue(t('common.remove'), image.name), async () => {
         await request('/api/chat/draft', { project, scope, remove: [image.id] });
         images = images.filter(i => i.id !== image.id); render();
       }, 'image-remove'));
