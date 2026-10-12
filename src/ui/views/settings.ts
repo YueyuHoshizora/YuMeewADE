@@ -86,7 +86,8 @@ export function settingsView(context: ViewContext, redraw: () => void): View {
   const roles = card(t('settings.roles')); const roleList = el('div', 'role-list');
   const drafts: { node: HTMLElement; value: () => RoleInput }[] = [];
   function addRole(role: RoleInput): void {
-    const name = input(role.name); const job = input(role.job);
+    // Same bounds as roles.yaml writes on the core (name 60, job 2000).
+    const name = input(role.name); name.maxLength = 60; const job = input(role.job); job.maxLength = 2000;
     const main = aiPicker(state, { ai: role.main.cli, model: role.main.model, effort: role.main.effort }, undefined, true);
     const backup = aiPicker(state, { ai: role.backup?.cli ?? '人', model: role.backup?.model ?? '', effort: role.backup?.effort ?? '' }, undefined, true);
     const panel = el('div', 'role-row'); const slot = (pick: AiPick): RoleSlot => ({ cli: pick.ai, model: pick.model, effort: pick.effort });

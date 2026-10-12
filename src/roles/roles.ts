@@ -6,8 +6,12 @@ import { HUMAN, type AiPick, type RoleInput, type RoleSlot, type Roles, type Tas
 import { parseYamlMap, YamlError, type YamlValue } from '../shared/yaml.ts';
 export { HUMAN } from '../shared/types.ts';
 export const EFFORTS = ['low', 'medium', 'high', 'xhigh', 'max'];
+const ROLES_MAX = 50, ROLE_JOB_MAX = 2000, ROLE_MODEL_MAX = 200;
+// Role names are object keys; these would collide with prototype machinery even on a null-prototype map's consumers.
+const RESERVED_ROLE_NAMES = new Set(['__proto__', 'constructor', 'prototype']);
 function validateSlot(s: RoleSlot): void {
   if (!s || !['claude', 'codex', 'grok', 'gemini', 'mock', HUMAN].includes(s.cli) || typeof s.model !== 'string' || typeof s.effort !== 'string' || (s.effort && !EFFORTS.includes(s.effort))) throw new AppError('bad_request', 'invalid_effort');
+  if (s.model.length > ROLE_MODEL_MAX || /\p{Cc}/u.test(s.model)) throw new AppError('bad_request', 'field_type', { field: 'model' });
   if (s.cli === HUMAN && (s.model || s.effort)) throw new AppError('bad_request');
 }
 function slot(v: YamlValue | undefined, where: string): RoleSlot | undefined {
@@ -17,7 +21,8 @@ function slot(v: YamlValue | undefined, where: string): RoleSlot | undefined {
 }
 export function parseRoles(text: string): Roles {
   const raw = parseYamlMap(text)['roles'];
-  const roles: Roles['roles'] = {};
+  // Null prototype: `roles.roles[name]` must not find toString / constructor for names that are not roles.
+  const roles: Roles['roles'] = Object.create(null) as Roles['roles'];
   if (raw && typeof raw === 'object' && !Array.isArray(raw)) for (const [name, def] of Object.entries(raw)) {
     if (!def || typeof def !== 'object' || Array.isArray(def)) throw new YamlError(`roles.${name} 必須是 map`, 0);
     const main = slot(def['main'], name); if (!main) throw new YamlError(`roles.${name}.main 必填`, 0);
@@ -28,12 +33,12 @@ export function parseRoles(text: string): Roles {
 }
 export async function loadRoles(file: string): Promise<Roles> { return parseRoles(await fs.readFile(file, 'utf8')); }
 export async function writeRoles(file: string, inputs: RoleInput[]): Promise<Roles> {
-  if (!Array.isArray(inputs)) throw new AppError('bad_request');
+  if (!Array.isArray(inputs) || inputs.length > ROLES_MAX) throw new AppError('bad_request');
   const names = new Set<string>();
   const lines = ['roles:'];
   const encode = (s: RoleSlot) => s.cli === HUMAN ? '[人]' : `[${[s.cli, s.model, s.effort].map(x => JSON.stringify(x)).join(', ')}]`;
   for (const r of inputs) {
-    if (!r || typeof r.name !== 'string' || !r.name.trim() || r.name.length > 60 || /[\r\n\0]/u.test(r.name) || names.has(r.name) || typeof r.job !== 'string' || /[\r\n\0]/u.test(r.job)) throw new AppError('bad_request');
+    if (!r || typeof r.name !== 'string' || !r.name.trim() || r.name.length > 60 || /[\r\n\0]/u.test(r.name) || RESERVED_ROLE_NAMES.has(r.name) || names.has(r.name) || typeof r.job !== 'string' || r.job.length > ROLE_JOB_MAX || /[\r\n\0]/u.test(r.job)) throw new AppError('bad_request');
     names.add(r.name); validateSlot(r.main); if (r.backup) validateSlot(r.backup);
     lines.push(`  ${JSON.stringify(r.name)}:`, `    main: ${encode(r.main)}`, ...(r.backup ? [`    backup: ${encode(r.backup)}`] : []), `    job: ${JSON.stringify(r.job)}`);
   }

@@ -28,6 +28,19 @@ test('role write round-trip retains header and unrelated sections', () => withTm
   await assert.rejects(writeRoles(ws.rolesFile, [{ name: 'x', job: '', main: { cli: 'codex', model: 'm', effort: 'ultra' } }]));
 }));
 
+test('role lookups ignore Object.prototype names and role input is bounded', () => withTmpWorkspace(async ws => {
+  const roles = parseRoles('roles:\n  build: { main: [codex, m, high] }\n');
+  for (const name of ['toString', 'constructor', '__proto__', 'hasOwnProperty']) assert.equal(roles.roles[name], undefined);
+  const role = (name: string, job = '', model = 'm') => ({ name, job, main: { cli: 'codex', model, effort: 'high' } });
+  for (const name of ['__proto__', 'constructor', 'prototype']) await assert.rejects(writeRoles(ws.rolesFile, [role(name)]));
+  await assert.rejects(writeRoles(ws.rolesFile, Array.from({ length: 51 }, (_, i) => role(`r${i}`))));
+  await assert.rejects(writeRoles(ws.rolesFile, [role('r', 'x'.repeat(2001))]));
+  await assert.rejects(writeRoles(ws.rolesFile, [role('r', '', 'm'.repeat(201))]));
+  await assert.rejects(writeRoles(ws.rolesFile, [role('r', '', 'bad\u0001model')]));
+  const ok = await writeRoles(ws.rolesFile, [...Array.from({ length: 49 }, (_, i) => role(`r${i}`)), role('last', 'x'.repeat(2000), 'm'.repeat(200))]);
+  assert.equal(Object.keys(ok.roles).length, 50);
+}));
+
 test('role backup is selected only before execution when the primary is unavailable', async () => {
   const roles = parseRoles('roles:\n  build:\n    main: [claude, primary-model, max]\n    backup: [codex, backup-model, high]\n');
   const task = { role: 'build', cli: '', model: '', effort: '' };
