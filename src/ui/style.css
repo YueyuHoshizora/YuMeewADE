@@ -259,6 +259,11 @@
 .title-input{flex:1 1 220px;min-width:0}
 .onboarding-banner{margin-bottom:16px}
 .lazy-view{display:contents}
+.workbench-group>summary{list-style:none;cursor:pointer;padding:7px 12px;border:1px solid var(--border);border-radius:9px;background:var(--c-23283a)}
+.workbench-group>summary::-webkit-details-marker{display:none}
+.workbench-group>summary::after{content:" ▾";color:var(--muted)}
+.workbench-group[open]{flex-basis:100%}
+.workbench-group[open]>summary{display:inline-block;margin-bottom:8px;border-color:var(--accent)}
 /* 固定外殼尺寸；只有各畫面的捲動區能捲動，聊天控制項不擠壓整個頁面。 */
 html, body { width: 100%; height: 100%; overflow: hidden; }
 body { height: 100dvh; display: grid; grid-template-rows: 64px minmax(0, 1fr) auto; }

@@ -2,7 +2,7 @@ import type { EditorDiagnostic, EditorDocument, EditorAction, EditorActionResult
 import { query, request } from '../api.ts';
 import { isolateHistory } from '@codemirror/commands';
 import { t } from '../i18n/index.ts';
-import { el, input, area, button, row, confirmModal, errorMessage, run, toast, UserError } from './dom.ts';
+import { el, input, area, button, row, confirmModal, errorMessage, readLocal, run, storeLocal, toast, UserError } from './dom.ts';
 import { EditorContent } from './editor-engine.ts';
 import { FilePreview, isImage } from './file-preview.ts';
 import { selectionMention } from './editor-mention.ts';
@@ -597,23 +597,34 @@ export function openFileBrowser(project: string, task: string, workspace = activ
   pane();
   const send = button(t('editorEvents.send'), sendSelection);
   send.disabled = !task; send.title = t(task ? 'editorEvents.shortcut' : 'editorEvents.noTask');
-  const actions = row(button(t('common.save'), save), button(t('ew.split'), () => { if (views.length < 2) { capture(focused); const path = views[focused]!.path; pane(); if (path) activate(path, 1); refreshTabs(); } }), ...(['definition', 'references', 'diagnostics', 'completion', 'hover', 'rename', 'format', 'codeActions'] as const).map(action => button(t(action === 'definition' || action === 'references' || action === 'diagnostics' ? `editor.${action}` : `ew.${action}`), () => language(action))), newName,
+  // Everyday controls stay visible; the rest are grouped so the editor keeps most of the panel height.
+  const groupKey = 'yumeewade.workbench.groups';
+  const group = (key: string, title: string, ...children: Node[]): HTMLDetailsElement => {
+    const node = el('details', 'workbench-group'); node.append(el('summary', '', title), ...children);
+    node.open = readLocal<Record<string, boolean>>(groupKey, {})[key] === true;
+    node.addEventListener('toggle', () => storeLocal(groupKey, { ...readLocal<Record<string, boolean>>(groupKey, {}), [key]: node.open }));
+    return node;
+  };
+  const codeTools = row(...(['definition', 'references', 'diagnostics', 'completion', 'hover', 'rename', 'format', 'codeActions'] as const).map(action => button(t(action === 'definition' || action === 'references' || action === 'diagnostics' ? `editor.${action}` : `ew.${action}`), () => language(action))), newName,
     button(t('ew.problems'), async () => { const problems = await request<EditorProblem[]>(query('/api/editor/problems', ids)); output.replaceChildren(...problems.map(problem => button(`${problem.path}:${problem.line + 1} ${problem.message}`, () => show(problem.path, problem.line, problem.character)))); }), ...(task ? [button(t('ew.pin'), async () => {
       const buffer = current(); if (!buffer) return;
       if (dirty(buffer)) throw new UserError(t('ew.saveFirst'));
       await pin(buffer.document.path, buffer.text.slice(0, buffer.start).split('\n').length, buffer.text.slice(0, buffer.end).split('\n').length, buffer.document.revision);
     })] : []));
-  actions.append(send);
-  actions.append(button(t('editorUI.outline'), () => language('documentSymbols')), button(t('editorUI.symbols'), () => language('workspaceSymbols')));
-  actions.append(button(t('editorFront.history'), localHistory));
-  actions.append(...(['signatureHelp', 'implementation', 'inlayHints', 'callHierarchy'] as const).map(action => button(t(`editorFront.${action}`), () => language(action))));
+  codeTools.append(button(t('editorUI.outline'), () => language('documentSymbols')), button(t('editorUI.symbols'), () => language('workspaceSymbols')));
+  codeTools.append(button(t('editorFront.history'), localHistory));
+  codeTools.append(...(['signatureHelp', 'implementation', 'inlayHints', 'callHierarchy'] as const).map(action => button(t(`editorFront.${action}`), () => language(action))));
+  const actions = row(button(t('common.save'), save), button(t('ew.split'), () => { if (views.length < 2) { capture(focused); const path = views[focused]!.path; pane(); if (path) activate(path, 1); refreshTabs(); } }), send);
   encoding.onchange = () => {
     const buffer = current(); if (!buffer || views[focused]!.content.readOnly || editReserved) return;
     buffer.encoding = encoding.value as NonNullable<EditorRecovery['encoding']>;
     for (const tabs of paneTabs) for (const tab of tabs) if (tab.path === buffer.document.path) tab.preview = false;
     persist(); refreshTabs();
   };
-  actions.append(encoding);
+  actions.append(encoding,
+    group('code', t('ew.groupCode'), codeTools),
+    group('files', t('ew.groupFiles'), row(pathInput, destination, ...(['createFile', 'createFolder', 'rename', 'delete'] as const).map(action => button(t(`ew.${action}`), () => mutate(action))))),
+    group('search', t('ew.groupSearch'), searchOptions, row(sourceSearch, replacement, button(t('ew.search'), () => { searchPage = 1; return search(false); }), button(t('ew.replacePreview'), () => { searchPage = 1; return search(true); }))));
   filter.oninput = () => void run(load);
   // Keyboard file picking in the tree filter: Enter opens the best ranked match, arrows walk the results.
   // (Ctrl/⌘+P stays the global go-to-file picker.)
@@ -719,7 +730,7 @@ export function openFileBrowser(project: string, task: string, workspace = activ
     if (views.length === 2) splitResize.value = views[0]!.node.style.flex || '50';
     try { if (storageKey) localStorage.setItem(`${storageKey}:layout`, JSON.stringify(layout)); } catch { output.append(el('p', 'warning', t('ew.recoveryLimit'))); }
   }
-  dialog.append(row(el('h2', '', t('files.title')), dock, resize), actions, row(pathInput, destination, ...(['createFile', 'createFolder', 'rename', 'delete'] as const).map(action => button(t(`ew.${action}`), () => mutate(action)))), searchOptions, row(sourceSearch, replacement, button(t('ew.search'), () => { searchPage = 1; return search(false); }), button(t('ew.replacePreview'), () => { searchPage = 1; return search(true); })), filter);
+  dialog.append(row(el('h2', '', t('files.title')), dock, resize), actions, filter);
   dialog.prepend(row(treeResize, splitResize));
   dialog.append(conflictHost);
   const body = el('div', 'editor-workbench-body'); body.append(results, panes); dialog.append(body, output, panelHost);
