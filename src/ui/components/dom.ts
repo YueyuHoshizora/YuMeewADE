@@ -8,7 +8,19 @@ export function el<K extends keyof HTMLElementTagNameMap>(tag: K, className = ''
 export function button(label: string, action: () => unknown, className = ''): HTMLButtonElement {
   const node = el('button', className, label); node.type = 'button';
   // Availability owned by the caller (see setLocked) survives the action, e.g. when the action re-renders and disables it.
-  node.onclick = () => { void run(async () => { node.disabled = true; try { await action(); } finally { node.disabled = lockedButtons.has(node); } }); }; return node;
+  node.onclick = () => { void run(async () => {
+    // Disabling the focused button drops keyboard focus to <body>; hand it back afterwards, to this button or,
+    // when the action re-rendered it, to the replacement with the same accessible name.
+    const hadFocus = document.activeElement === node;
+    node.disabled = true;
+    try { await action(); } finally {
+      node.disabled = lockedButtons.has(node);
+      if (hadFocus && (!document.activeElement || document.activeElement === document.body)) {
+        const label = node.getAttribute('aria-label');
+        (node.isConnected ? node : label ? document.querySelector<HTMLElement>(`button[aria-label="${CSS.escape(label)}"]`) : null)?.focus();
+      }
+    }
+  }); }; return node;
 }
 const lockedButtons = new WeakSet<HTMLButtonElement>();
 /** Sets a button's caller-owned availability; `button()` keeps it after its own action finishes. */
