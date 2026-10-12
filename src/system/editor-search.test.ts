@@ -13,6 +13,19 @@ test('regex anchors match every line while literal text stays literal', async ()
   assert.deepEqual((await createMatcher('^Needle', { caseSensitive: true }).match('^Needle and Needle')).offsets, [[0, 7]]);
 });
 
+test('anchors in a CRLF text match each line once, and offsets point into the original text', async () => {
+  const text = 'alpha\r\nbeta\r\n';
+  const starts = createMatcher('^', { regex: true });
+  try { assert.deepEqual((await starts.match(text)).offsets, [[0, 0], [7, 7], [13, 13]]); } finally { starts.close(); }
+  const empty = createMatcher('^$', { regex: true });
+  try { assert.deepEqual((await empty.match(text)).offsets, [[13, 13]]); } finally { empty.close(); }
+  const ends = createMatcher('a$', { regex: true });
+  try { assert.deepEqual((await ends.match(text)).offsets, [[4, 5], [10, 11]]); } finally { ends.close(); }
+  // A line break in the query matches the whole CRLF; text after the first CRLF keeps its original offset.
+  assert.deepEqual((await createMatcher('a\nbe', {}).match(text)).offsets, [[4, 9]]);
+  assert.deepEqual((await createMatcher('beta', {}).match(text)).offsets, [[7, 11]]);
+});
+
 test('one regex matcher serves many texts and still stops a catastrophic pattern', async () => {
   const matcher = createMatcher('line\\s+two', { regex: true });
   try {

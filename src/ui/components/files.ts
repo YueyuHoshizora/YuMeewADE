@@ -537,8 +537,8 @@ export function openFileBrowser(project: string, task: string, workspace = activ
         hits.push(...part.hits);
         if (page * part.pageSize >= part.total) break;
       }
-      // Same matching as the search that listed the hits (src/system/editor-search.ts): ^/$ per line, Unicode, and a
-      // letter/digit/underscore word boundary. Plain text inserts the replacement literally; regex keeps $1/$& groups.
+      // Same matching as the search that listed the hits (src/system/editor-search.ts): ^/$ per line with CRLF read as LF,
+      // Unicode, and a letter/digit/underscore word boundary. Plain text inserts the replacement literally; regex keeps $1/$& groups.
       const source = regex.checked ? needle : needle.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
       const expression = new RegExp(wholeWord.checked ? `(?<![\\p{L}\\p{N}_])(?:${source})(?![\\p{L}\\p{N}_])` : source, caseSensitive.checked ? 'gmu' : 'gimu');
       const changes: EditorChange[] = []; const paths = new Set(hits.map(hit => hit.path));
@@ -547,8 +547,9 @@ export function openFileBrowser(project: string, task: string, workspace = activ
       for (const path of paths) {
         const document = await request<EditorDocument>(query('/api/editor/file', { ...ids, path }));
         if (hits.some(hit => hit.path === path && hit.revision !== document.revision)) throw new UserError(t('detail.editor_conflict'));
-        const text = buffers.get(path)?.text ?? document.text;
-        changes.push({ path, revision: document.revision, baseText: text, text: regex.checked ? text.replace(expression, replacement.value) : text.replace(expression, () => replacement.value) });
+        const text = buffers.get(path)?.text ?? document.text; const lf = text.replace(/\r\n/g, '\n');
+        const replaced = regex.checked ? lf.replace(expression, replacement.value) : lf.replace(expression, () => replacement.value);
+        changes.push({ path, revision: document.revision, baseText: text, text: lf === text ? replaced : serializeEol(replaced, 'preserve', text) });
       }
       if (changes.length) await apply(changes);
     }
