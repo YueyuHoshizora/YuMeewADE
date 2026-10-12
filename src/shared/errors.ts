@@ -113,6 +113,7 @@ export const DETAIL_MESSAGES = {
   verification_required: '請先對目前內容執行全部驗證並通過，再合併',
   editor_conflict: '檔案已被外部修改；保留編輯內容，請重新開啟檔案比對',
   editor_readonly: '二進位或截斷檔案不可編輯',
+  editor_move_into_self: '不能把資料夾移到它自己裡面',
   editor_language_unavailable: '本機語言服務未設定、失敗或逾時',
   editor_running: '作業執行中，請先停止再儲存',
   git_workbench_running: '請先停止此專案所有執行中的作業',

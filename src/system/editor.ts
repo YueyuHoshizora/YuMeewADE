@@ -666,13 +666,23 @@ export class EditorService {
         await this.target(project, task, mutation.path);
         if ((await this.document(target.file, mutation.path)).revision !== mutation.revision) throw new AppError('conflict', 'editor_conflict');
       }
+      const destination = mutation.action === 'rename' ? await validateNew(mutation.destination ?? '', { relative: mutation.path, file: target.file }) : undefined;
+      // The OS refuses to move a folder under itself (EINVAL), which would surface as an internal error. Compare
+      // inodes so a case-variant destination on a case-insensitive file system is caught too.
+      if (destination && stat.isDirectory()) {
+        for (let directory = path.dirname(destination); directory.length >= root.length; directory = path.dirname(directory)) {
+          const info = await fs.stat(directory);
+          if (info.dev === stat.dev && info.ino === stat.ino) throw new AppError('bad_request', 'editor_move_into_self');
+          if (path.dirname(directory) === directory) break;
+        }
+      }
       const affected = stat.isDirectory() ? (await this.files(root)).filter(relative => relative.startsWith(`${mutation.path}/`)) : [mutation.path];
       for (const relative of affected) {
         // Tracked files already deleted from the folder have nothing to preserve.
         const current = await this.read(project, task, relative).catch((error: unknown) => { if (error instanceof AppError && error.status === 404) return undefined; throw error; });
         if (current && !current.binary && !current.truncated) await preserveHistory(root, { path: relative, revision: current.revision, text: current.text, encoding: current.encoding ?? 'UTF8', reason: 'mutate' });
       }
-      if (mutation.action === 'rename') await fs.rename(target.file, await validateNew(mutation.destination ?? '', { relative: mutation.path, file: target.file }));
+      if (destination) await fs.rename(target.file, destination);
       else if (mutation.action === 'delete') {
         if (stat.isDirectory()) {
           const staged = path.join(root, `.editor-delete-${randomUUID()}`);

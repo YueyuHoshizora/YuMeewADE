@@ -80,7 +80,12 @@ test('editor CRUD, folder revisions and preview-bound multidocument replacement'
     for (const file of ['a.txt', 'b.txt']) assert.equal(await fs.readFile(path.join(root, 'src', file), 'utf8'), 'one replacement two replacement');
     const revision = await editor.folderRevision('P', '', 'src');
     await assert.rejects(editor.mutate('P', '', { action: 'delete', path: 'src', revision: revision.revision }));
-    await editor.mutate('P', '', { action: 'rename', path: 'src', destination: 'renamed', confirmation: 'src', revision: revision.revision });
+    await editor.mutate('P', '', { action: 'createFolder', path: 'src/sub' });
+    // A folder moved under itself is refused up front, including through a case-variant path on case-insensitive disks.
+    const caseInsensitive = await fs.access(path.join(root, 'SRC')).then(() => true, () => false);
+    for (const destination of ['src/sub/moved', 'src/moved', ...(caseInsensitive ? ['SRC/sub/moved'] : [])]) await assert.rejects(editor.mutate('P', '', { action: 'rename', path: 'src', destination, confirmation: 'src', revision: (await editor.folderRevision('P', '', 'src')).revision }), (error: unknown) => error instanceof AppError && error.detail === 'editor_move_into_self', destination);
+    await fs.rmdir(path.join(root, 'src/sub'));
+    await editor.mutate('P', '', { action: 'rename', path: 'src', destination: 'renamed', confirmation: 'src', revision: (await editor.folderRevision('P', '', 'src')).revision });
     assert.equal(await fs.readFile(path.join(root, 'renamed/a.txt'), 'utf8'), 'one replacement two replacement');
     const stale = await editor.folderRevision('P', '', 'renamed');
     await fs.writeFile(path.join(root, 'renamed/a.txt'), 'changed');
