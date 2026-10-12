@@ -199,7 +199,7 @@ class Inline {
       this.ws();
       if (this.src[this.pos] !== ':') throw new YamlError('行內 map 缺少 :', this.lineNo);
       this.pos++;
-      out[key] = this.value();
+      setKey(out, key, this.value());
       this.ws();
       const c = this.src[this.pos];
       if (c === ',') {
@@ -250,6 +250,11 @@ function splitKey(text: string, lineNo: number): { key: string; rest: string } |
     }
   }
   return null;
+}
+
+/** A key such as `__proto__` is data: assignment would change the map's prototype instead of adding the entry. */
+function setKey(map: YamlMap, key: string, value: YamlValue): void {
+  Object.defineProperty(map, key, { value, enumerable: true, writable: true, configurable: true });
 }
 
 class Block {
@@ -323,14 +328,14 @@ class Block {
       if (kv.rest === '') {
         const next = this.peek();
         if (next && next.indent > indent) {
-          out[kv.key] = this.node(next.indent);
+          setKey(out, kv.key, this.node(next.indent));
         } else if (next && next.indent === indent && (next.text === '-' || next.text.startsWith('- '))) {
-          out[kv.key] = this.list(indent);
+          setKey(out, kv.key, this.list(indent));
         } else {
-          out[kv.key] = null;
+          setKey(out, kv.key, null);
         }
       } else {
-        out[kv.key] = parseValueText(kv.rest, line.no);
+        setKey(out, kv.key, parseValueText(kv.rest, line.no));
       }
     }
     return out;

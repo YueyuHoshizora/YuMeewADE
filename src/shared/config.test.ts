@@ -135,6 +135,9 @@ test('misspelled keys are rejected instead of silently falling back to defaults'
     ['limits:\n  sendPerMinut: 1\n', 'limits.sendPerMinut'],
     ['server:\n  hots: 127.0.0.1\n', 'server.hots'],
     ['servers:\n  port: 1\n', 'servers'],
+    // `__proto__` is just an unknown key, never a way to inject inherited settings.
+    ['__proto__: { server: { port: 4999 } }\n', '__proto__'],
+    ['server:\n  __proto__:\n    port: 1\n', 'server.__proto__'],
   ] as const) {
     assert.throws(() => parseConfig(text, null), (error: unknown) => error instanceof ConfigError && error.message.startsWith(`${key} `), key);
   }
