@@ -161,6 +161,13 @@ test('超過單輪時間上限就停止並標記 timeout，不自動接續隊列
   assert.equal((await s.store.readQueue('P', s.task.id)).length, 1, 'the queue waits for a human after a timeout');
   assert.equal((await s.store.readLog('P', s.task.id)).some(r => r.role === 'user' && r.text === 'after'), false);
 }));
+test("a queued instruction keeps its CLI-default model and effort instead of the running turn's choices", () => withTmpWorkspace(async ws => {
+  const s = await setup(ws, { chunkMs: 5 });
+  await s.send('first [slow]', { ai: 'codex', model: 'custom-model', effort: 'max' });
+  await s.send('second', { mode: 'queue', ai: 'codex', model: '', effort: '' });
+  await s.runner.whenIdle();
+  assert.deepEqual(s.calls.map(c => [c.model ?? '', c.effort ?? '']), [['custom-model', 'max'], ['', '']]);
+}));
 test('fork 從指定指示的檢查點長出分支作業，帶走之前的對話但不帶附件，並拒絕執行中', () => withTmpWorkspace(async ws => {
   const s = await setup(ws, { chunkMs: 5 });
   await s.send('first'); await s.runner.whenIdle(); await s.send('second'); await s.runner.whenIdle();

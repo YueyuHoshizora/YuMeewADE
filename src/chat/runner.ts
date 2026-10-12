@@ -293,8 +293,9 @@ export class ChatRunner extends EventEmitter {
       if (!item) throw new AppError('not_found', 'queue_item_missing');
       chosen = {
         project: p, task: t, text: item.text, ai: item.ai, mode: 'queue',
-        ...(item.model ? { model: item.model } : {}),
-        ...(item.effort ? { effort: item.effort } : {}),
+        // The queue keeps the choice resolved when it was queued; '' is a real choice (the CLI's default), not "unset".
+        ...(item.model !== undefined ? { model: item.model } : {}),
+        ...(item.effort !== undefined ? { effort: item.effort } : {}),
         ...(item.images ? { images: item.images } : {}),
         ...(item.answer ? { answer: true } : {}),
       };
