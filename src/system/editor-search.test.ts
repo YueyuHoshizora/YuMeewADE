@@ -26,3 +26,12 @@ test('one regex matcher serves many texts and still stops a catastrophic pattern
   } finally { slow.close(); }
   assert.throws(() => createMatcher('(', { regex: true }), { code: 'bad_request', detail: 'search_regex_invalid' });
 });
+
+test('zero-width regex matches advance over full Unicode code points and reset for each file', async () => {
+  const matcher = createMatcher('(?=.)|$', { regex: true });
+  try {
+    assert.deepEqual(await matcher.match('a\u{1f408}b'), { offsets: [[0, 0], [1, 1], [3, 3], [4, 4]], truncated: false });
+    assert.deepEqual(await matcher.match('\u{1f408}'), { offsets: [[0, 0], [2, 2]], truncated: false });
+    assert.deepEqual(await matcher.match(''), { offsets: [[0, 0]], truncated: false });
+  } finally { matcher.close(); }
+});
