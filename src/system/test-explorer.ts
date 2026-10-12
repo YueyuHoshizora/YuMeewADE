@@ -17,6 +17,22 @@ import type { VerifyResult } from '../shared/types.ts';
 
 /** Upper bound for a runner report, read from stdout or a report file. */
 const REPORT_BYTES = 8 * 1024 * 1024;
+const TREE_BYTES = 2 * 1024 * 1024;
+
+/** Bound serialized names/diagnostics as well as case count; reserve history space for the run metadata/output. */
+function boundTree(tree: TestCaseNode[]): boolean {
+  let remaining = TREE_BYTES - 2; let truncated = false;
+  const visit = (nodes: TestCaseNode[]): void => {
+    for (let index = 0; index < nodes.length; index++) {
+      const node = nodes[index]!;
+      // Each child is charged separately, including its separator; empty child-array brackets are already charged here.
+      const bytes = Buffer.byteLength(JSON.stringify({ ...node, children: [] })) + 1;
+      if (bytes > remaining) { nodes.splice(index); remaining = 0; truncated = true; return; }
+      remaining -= bytes; visit(node.children);
+    }
+  };
+  visit(tree); return truncated;
+}
 
 /**
  * Node's indented TAP: subtest declarations precede children and the parent result. Beyond TEST_CASE_LIMIT cases, 50 levels
@@ -206,6 +222,7 @@ export class TestExplorerService {
       const after = await verificationFingerprint(await this.cwd(project, task), JSON.stringify([currentConfig, currentModel]), currentModel, ledgerData).catch(() => null);
       if (result.output.length > 65536) { result.output = result.output.slice(-65536); result.truncated = true; }
       result.drifted = before !== after; if (result.drifted) result.ok = false;
+      if (boundTree(tree)) parsed.truncated = true;
       const run: TestExplorerRun = { id: randomUUID(), at: new Date().toISOString(), runner, ...(selection ? { selection } : {}), before, after, result, tree, ...(parsed.truncated ? { treeTruncated: true } : {}) };
       const file = await this.file(project, task, true);
       await withFileLocks([this.opts.ws.projectFile(project), file], async () => {

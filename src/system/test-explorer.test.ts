@@ -70,3 +70,25 @@ test('a Node suite whose TAP outgrows the shown output tail is still discovered 
     assert.ok(run.tree.every(node => node.status === 'passed'));
   } finally { await verify.stopAll(); }
 }));
+
+test('large failure reports retain a bounded, visibly partial history instead of losing the run', () => withTmpWorkspace(async ws => {
+  const projects = new ProjectLedger(ws), tasks = new TaskLedger(ws);
+  await projects.create({ name: 'P' });
+  const task = await tasks.create('P', { title: 'Tests', workspace: 'direct' });
+  const root = projects.bodyPath(await projects.get('P'));
+  await fs.writeFile(path.join(root, 'failures.test.js'), `const {test}=require('node:test');for(let i=0;i<1200;i++)test('failure '+i+' '+ 'x'.repeat(1900),()=>{throw new Error('failure detail');});`);
+  const verify = new VerifyService({ ws, projects, tasks, config: parseConfig('', null), isRunning: () => false });
+  const options = { ws, projects, tasks, verify, beforeRun: async () => {}, isRunning: () => false };
+  const explorer = new TestExplorerService(options);
+  try {
+    await explorer.save('P', task.id, { name: 'node', files: ['failures.test.js'] }, (await explorer.state('P', task.id)).revision);
+    const run = await explorer.run('P', task.id, 'node');
+    assert.equal(run.result.ok, false);
+    assert.equal(run.treeTruncated, true);
+    assert.equal(run.tree[0]!.name, 'failure 0 ' + 'x'.repeat(1900)); assert.equal(run.tree[0]!.status, 'failed');
+    assert.match(run.tree[0]!.error!, /failure detail/u);
+    const history = (await new TestExplorerService(options).state('P', task.id)).history;
+    assert.deepEqual(history, [run]);
+    assert.ok(Buffer.byteLength(JSON.stringify(history) + '\n') <= 4 * 1024 * 1024);
+  } finally { await verify.stopAll(); }
+}));
