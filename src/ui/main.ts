@@ -175,6 +175,8 @@ window.addEventListener('yumeewade:terminal-path', event => {
   if (!relative) { toast(t('terminalLinks.outside')); return; }
   window.dispatchEvent(new CustomEvent('yumeewade:open-file', { detail: { project: projectId, task: taskId, path: relative, ...(line ? { line } : {}) } }));
 });
+// html/body never scroll (overflow:hidden); a focus() or scrollIntoView() that still moves the root would leave the user stuck, so undo it.
+window.addEventListener('scroll', () => { if (window.scrollX || window.scrollY) window.scrollTo(0, 0); }, { passive: true });
 window.addEventListener('keydown', event => {
   if (state && paletteShortcut(event, { state, refresh })) return;
   if ((event.ctrlKey || event.metaKey) && event.shiftKey && event.key.toLowerCase() === 'f') {
