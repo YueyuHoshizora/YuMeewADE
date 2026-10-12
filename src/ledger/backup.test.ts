@@ -63,6 +63,21 @@ test('backup rejects escaping symlinks and restore rejects altered snapshots', a
   } finally { await fs.rm(temporary, { recursive: true, force: true }); }
 });
 
+test('unknown backup ids and destinations under a missing folder are refused as invalid, not internal errors', async () => {
+  const temporary = await fs.mkdtemp(path.join(os.tmpdir(), 'care-missing-'));
+  try {
+    const ws = new Workspace(path.join(temporary, 'source')); await ws.init();
+    const backup = new BackupService(ws, path.join(temporary, 'private'));
+    const unknown = '00000000-0000-0000-0000-000000000000';
+    await assert.rejects(backup.delete(unknown, unknown), { detail: 'care_backup_invalid' });
+    await assert.rejects(backup.restore(unknown, path.join(temporary, 'x')), { detail: 'care_backup_invalid' });
+    const snapshot = await backup.create(true);
+    await assert.rejects(backup.restore(snapshot.id, path.join(temporary, 'no', 'such', 'dir')), { detail: 'care_backup_invalid' });
+    await fs.writeFile(path.join(temporary, 'private', snapshot.id, 'manifest.json'), '{not json');
+    await assert.rejects(backup.delete(snapshot.id, snapshot.id), { detail: 'care_backup_invalid' });
+  } finally { await fs.rm(temporary, { recursive: true, force: true }); }
+});
+
 for (const external of [false, true]) test(`restore isolates main and linked worktree-specific roots (external=${external})`, async () => {
   const temporary = await fs.mkdtemp(path.join(os.tmpdir(), 'care-worktree-config-'));
   try {

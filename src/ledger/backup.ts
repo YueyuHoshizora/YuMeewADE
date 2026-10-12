@@ -14,6 +14,11 @@ import { encryptSnapshot, receiveEncrypted, decryptSnapshot } from './portable-b
 interface Manifest { format: 1; id: string; createdAt: string; root: string; originalRoot: string; external: { project: string; source: string; originalSource: string; folder: string }[]; complete: boolean; fingerprint: string }
 const excluded = (name: string) => /^(credentials\.sqlite(?:[-.].*)?|credentials\.key|master\.key|core\.lock|cli-accounts|auth\.json|\.credentials\.json|\.device-keys\.json|antigravity-oauth-token)$/i.test(name);
 const fail = (detail: 'care_changed' | 'care_backup_invalid' | 'care_destination_exists' | 'care_external_required' | 'care_repository_unsupported') => new AppError('conflict', detail);
+/** A backup id or destination parent that does not exist is invalid input, not an internal error. */
+const invalidIfMissing = (error: unknown): never => {
+  if (['ENOENT', 'ENOTDIR'].includes((error as NodeJS.ErrnoException).code ?? '')) throw fail('care_backup_invalid');
+  throw error;
+};
 const inside = (root: string, file: string) => root === file || isInside(root, file);
 
 /** Private snapshots intentionally contain prompts and local .env files; never served as downloads. */
@@ -110,10 +115,11 @@ export class BackupService {
     if (!/^[0-9a-f-]{36}$/.test(id)) throw fail('care_backup_invalid');
     const directory = await this.privateRoot();
     const folder = path.join(directory, id);
-    if ((await fs.lstat(folder)).isSymbolicLink()) throw fail('care_backup_invalid');
-    const manifestFile = path.join(folder, 'manifest.json'); const stat = await fs.lstat(manifestFile);
+    if ((await fs.lstat(folder).catch(invalidIfMissing)).isSymbolicLink()) throw fail('care_backup_invalid');
+    const manifestFile = path.join(folder, 'manifest.json'); const stat = await fs.lstat(manifestFile).catch(invalidIfMissing);
     if (!stat.isFile() || stat.size > 1024 * 1024) throw fail('care_backup_invalid');
-    const value = JSON.parse(await fs.readFile(manifestFile, 'utf8')) as Manifest;
+    let value: Manifest;
+    try { value = JSON.parse(await fs.readFile(manifestFile, 'utf8')) as Manifest; } catch (error) { if (error instanceof SyntaxError) throw fail('care_backup_invalid'); throw error; }
     if (!value || value.format !== 1 || value.id !== id || typeof value.createdAt !== 'string' || !Number.isFinite(Date.parse(value.createdAt)) || typeof value.fingerprint !== 'string' || !/^[0-9a-f]{64}$/.test(value.fingerprint) || typeof value.root !== 'string' || !path.isAbsolute(value.root) || typeof value.originalRoot !== 'string' || !path.isAbsolute(value.originalRoot) || typeof value.complete !== 'boolean' || !Array.isArray(value.external) || value.external.length > 10000 || value.external.some(e => !e || typeof e.project !== 'string' || typeof e.folder !== 'string' || !/^[0-9]+$/.test(e.folder) || typeof e.source !== 'string' || !path.isAbsolute(e.source) || typeof e.originalSource !== 'string' || !path.isAbsolute(e.originalSource))) throw fail('care_backup_invalid');
     return value;
   }
@@ -163,7 +169,7 @@ export class BackupService {
     const manifest = await this.manifest(id);
     if (!manifest.complete) throw fail('care_external_required');
     if (!path.isAbsolute(destination) || /[\0\r\n]/.test(destination)) throw fail('care_backup_invalid');
-    const parent = await fs.realpath(path.dirname(destination));
+    const parent = await fs.realpath(path.dirname(destination)).catch(invalidIfMissing);
     const root = path.join(parent, path.basename(destination));
     if (inside(await fs.realpath(this.ws.root), root) || inside(await this.privateRoot(), root)) throw fail('care_backup_invalid');
     try { await fs.mkdir(root, { mode: 0o700 }); } catch (error) { if ((error as NodeJS.ErrnoException).code === 'EEXIST') throw fail('care_destination_exists'); throw error; }
