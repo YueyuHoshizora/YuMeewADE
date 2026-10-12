@@ -19,6 +19,21 @@ async function setup(ws: Workspace, verify: string, limits = '', isRunning = () 
   return { service, projects, tasks, task };
 }
 
+test('cancelling before spawn prevents commands from running and cannot leave a passing result', () => withTmpWorkspace(async ws => {
+  const { projects, tasks, task, service: unused } = await setup(ws, nodeCommand("require('node:fs').writeFileSync('should-not-exist','ran')"));
+  await unused.stopAll();
+  const entered = Promise.withResolvers<void>(); const release = Promise.withResolvers<void>();
+  const service = new VerifyService({ ws, projects, tasks, config: parseConfig('', null), isRunning: () => false, beforeRun: async () => { entered.resolve(); await release.promise; } });
+  try {
+    const pending = service.run('P', task.id);
+    await entered.promise; service.cancel('P', task.id); release.resolve();
+    const result = await pending;
+    assert.equal(result.ok, false); assert.equal(result.timedOut, false);
+    await assert.rejects(fs.access(path.join(ws.projectDir('P'), 'should-not-exist')), { code: 'ENOENT' });
+    assert.notEqual((await service.status('P', task.id))?.ok, true);
+  } finally { release.resolve(); await service.stopAll(); }
+}));
+
 const nodeCommand = (code: string) => `"${process.execPath}" -e "${code}"`;
 
 test('verify reports passing and failing exits', () => withTmpWorkspace(async ws => {

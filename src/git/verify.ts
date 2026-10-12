@@ -24,7 +24,7 @@ interface VerifyOptions {
 
 export class VerifyService {
   private readonly opts: VerifyOptions;
-  private readonly runs = new Map<string, { stop?: (() => void) | undefined; done?: Promise<VerifyResult> }>();
+  private readonly runs = new Map<string, { stop?: (() => void) | undefined; done?: Promise<VerifyResult>; cancelled?: boolean }>();
   private readonly last = new Map<string, { status: VerifyStatus; fingerprint: string }>();
   private readonly invalidated = new Set<string>();
   private readonly revocations = new Set<Promise<void>>();
@@ -116,7 +116,7 @@ export class VerifyService {
   run(project: string, task: string): Promise<VerifyResult> {
     const key = JSON.stringify([project, task]);
     if (this.closed || this.runs.has(key) || this.opts.isRunning(project, task) || this.runs.size >= this.opts.config.limits.concurrentRuns) throw new AppError('conflict');
-    const entry: { stop?: (() => void) | undefined; done?: Promise<VerifyResult> } = {};
+    const entry: { stop?: (() => void) | undefined; done?: Promise<VerifyResult>; cancelled?: boolean } = {};
     // Reserve before reading the ledger so concurrent requests cannot both start.
     this.runs.set(key, entry);
     this.last.delete(key);
@@ -124,25 +124,28 @@ export class VerifyService {
     return entry.done;
   }
 
-  /** Explicit Node argv runs share process limits/trust but never satisfy the full-check gate. */
-  runNodeTests(project: string, task: string, files: string[], pattern?: string): Promise<VerifyResult> {
+
+  /** Internal argv-only runner; HTTP callers select validated framework configurations. */
+  runFrameworkTests(project: string, task: string, command: string, args: string[]): Promise<VerifyResult> {
     const key = JSON.stringify([project, task]);
     if (this.closed || this.runs.has(key) || this.opts.isRunning(project, task) || this.runs.size >= this.opts.config.limits.concurrentRuns) throw new AppError('conflict');
-    const entry: { stop?: (() => void) | undefined; done?: Promise<VerifyResult> } = {};
+    if (!command || /[\0\r\n]/u.test(command) || args.length > 150 || args.some(arg => typeof arg !== 'string' || arg.length > 16000 || /[\0\r\n]/u.test(arg))) throw new AppError('bad_request');
+    const entry: { stop?: (() => void) | undefined; done?: Promise<VerifyResult>; cancelled?: boolean } = {};
     this.runs.set(key, entry);
     entry.done = (async () => {
       await this.opts.beforeRun?.(project);
       const { cwd } = await this.context(project, task, false);
-      if (!Array.isArray(files) || !files.length || files.length > 100 || files.some(file => typeof file !== 'string' || !file.startsWith('./') || file.length > 4096 || /[\0\r\n]/u.test(file)) || (pattern !== undefined && (typeof pattern !== 'string' || pattern.length > 12000))) throw new AppError('bad_request');
-      for (const file of files) {
-        const real = await fs.realpath(path.resolve(cwd, file));
-        if (!isInside(cwd, real) || !(await fs.stat(real)).isFile()) throw new AppError('bad_request');
-      }
       if (this.closed || this.opts.isRunning(project, task)) throw new AppError('conflict');
-      const args = ['--test', '--test-reporter=tap', ...(pattern ? [`--test-name-pattern=${pattern}`] : []), ...files];
-      return this.executeCommand(cwd, process.execPath, entry, this.opts.config.limits.verifySeconds * 1000, args);
+      return this.executeCommand(cwd, command, entry, this.opts.config.limits.verifySeconds * 1000, args);
     })().finally(() => this.runs.delete(key));
     return entry.done;
+  }
+
+  cancel(project: string, task: string): void {
+    const run = this.runs.get(JSON.stringify([project, task]));
+    if (!run) throw new AppError('conflict');
+    run.cancelled = true;
+    run.stop?.();
   }
 
   private async context(projectId: string, taskId: string, requireChecks = true) {
@@ -157,7 +160,7 @@ export class VerifyService {
     return { cwd, checks, model, configuration: JSON.stringify([project.verify, checks, project.requireVerification, model]) };
   }
 
-  private async execute(projectId: string, taskId: string, entry: { stop?: (() => void) | undefined }): Promise<VerifyResult> {
+  private async execute(projectId: string, taskId: string, entry: { stop?: (() => void) | undefined; cancelled?: boolean }): Promise<VerifyResult> {
     const key = JSON.stringify([projectId, taskId]);
     await Promise.all(this.revocations);
     await this.opts.beforeRun?.(projectId);
@@ -171,7 +174,7 @@ export class VerifyService {
       if (this.closed || this.opts.isRunning(projectId, taskId)) throw new AppError('conflict');
       const steps = [];
       for (const check of context.checks) {
-        if (this.closed || Date.now() >= deadline) break;
+        if (this.closed || entry.cancelled || Date.now() >= deadline) break;
         const result = await this.executeCommand(context.cwd, check.command, entry, Math.max(1, deadline - Date.now()));
         steps.push({ name: check.name, command: check.command, ...result });
         if (result.timedOut || this.closed) break;
@@ -187,9 +190,9 @@ export class VerifyService {
       let start = 0;
       while (start < tail.length && (tail[start]! & 0xc0) === 0x80) start++;
       const result: VerifyResult = {
-        ok: steps.length === context.checks.length && !failed && !drifted && !this.closed,
+        ok: steps.length === context.checks.length && !failed && !drifted && !this.closed && !entry.cancelled,
         exitCode: failed ? failed.exitCode : steps.length === context.checks.length ? 0 : null,
-        timedOut: steps.some(step => step.timedOut) || (steps.length < context.checks.length && !this.closed),
+        timedOut: steps.some(step => step.timedOut) || (steps.length < context.checks.length && !this.closed && !entry.cancelled),
         ms: Date.now() - started, output: tail.subarray(start).toString('utf8'),
         truncated: bytes.length > limit || steps.some(step => step.truncated), steps, drifted,
       };
@@ -201,7 +204,8 @@ export class VerifyService {
     } finally { entry.stop = undefined; }
   }
 
-  private async executeCommand(cwd: string, command: string, entry: { stop?: (() => void) | undefined }, timeoutMs: number, args?: string[]): Promise<VerifyResult> {
+  private async executeCommand(cwd: string, command: string, entry: { stop?: (() => void) | undefined; cancelled?: boolean }, timeoutMs: number, args?: string[]): Promise<VerifyResult> {
+    if (entry.cancelled) return { ok: false, exitCode: null, timedOut: false, ms: 0, output: '', truncated: false };
     const { config } = this.opts;
     const started = Date.now();
     const env = minimalEnv(config.cli.envPassthrough);
@@ -214,7 +218,7 @@ export class VerifyService {
     let settled = false;
     let timer: NodeJS.Timeout | undefined;
     let bound: NodeJS.Timeout | undefined;
-    const { promise, resolve } = Promise.withResolvers<VerifyResult>();
+    const { promise, resolve, reject } = Promise.withResolvers<VerifyResult>();
     const finish = (exitCode: number | null) => {
       if (settled) return;
       settled = true;
@@ -255,7 +259,11 @@ export class VerifyService {
     timer = setTimeout(() => { timedOut = true; stop(); }, timeoutMs);
     child.stdout!.on('data', capture);
     child.stderr!.on('data', capture);
-    child.on('error', () => finish(null));
+    child.on('error', error => {
+      if (args && (error as NodeJS.ErrnoException).code === 'ENOENT') {
+        settled = true; clearTimeout(timer); clearTimeout(bound); reject(new AppError('unavailable', 'cli_unavailable', { field: command }));
+      } else finish(null);
+    });
     child.on('close', code => finish(code));
     return promise;
   }
