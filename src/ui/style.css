@@ -442,6 +442,11 @@ body { height: 100dvh; display: grid; grid-template-rows: 64px minmax(0, 1fr) au
 @media (max-width: 1000px) {
   .git-panel { position: absolute; top: 0; right: 0; bottom: 0; z-index: 20; width: min(340px, 92vw); box-shadow: -8px 0 24px color-mix(in srgb, #000 35%, transparent); }
 }
+/* A docked workbench narrows the task page without narrowing the viewport; overlay the panel there too so the chat keeps its width. */
+.task-page { container-type: inline-size; }
+@container (max-width: 760px) {
+  .git-panel { position: absolute; top: 0; right: 0; bottom: 0; z-index: 20; width: min(340px, 92%); box-shadow: -8px 0 24px color-mix(in srgb, #000 35%, transparent); }
+}
 .diff-line.reviewable { cursor: pointer; }
 .diff-line.reviewable:hover, .diff-line.reviewable:focus-visible { outline: 1px solid var(--accent); outline-offset: -1px; }
 .diff-line.reviewed { box-shadow: inset 3px 0 0 var(--accent); }
