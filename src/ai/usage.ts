@@ -39,7 +39,8 @@ export class UsageBoard {
     return { ais: [...this.items.values()].sort((a, b) => a.ai.localeCompare(b.ai)), tokensPerSecond: this.rate, ...(this.codexReset ? { codexReset: this.codexReset } : {}) };
   }
 
-  record(ai: string, ev: UsageEvent, account = 'default'): void {
+  /** `snapshot`: a complete account query, whose missing extras mean unknown now; a turn's quota event keeps the last known extras instead. */
+  record(ai: string, ev: UsageEvent, account = 'default', snapshot = false): void {
     if (this.closed) return;
     if (ev.type === 'tokens') {
       if (!ev.runId || !Number.isFinite(ev.count) || ev.count < 0 ||
@@ -58,9 +59,10 @@ export class UsageBoard {
     const current = this.items.get(key);
     // 並行回合可能比帳號查詢的資料舊，不能倒退。
     if (current?.quotaAt && Date.parse(ev.at) < Date.parse(current.quotaAt)) return;
-    const resetCredits = ev.resetCredits ?? current?.resetCredits;
-    const extraUsage = ev.extraUsage ?? current?.extraUsage;
-    const cloudCredits = ev.cloudCredits ?? current?.cloudCredits;
+    const previous = snapshot ? undefined : current;
+    const resetCredits = ev.resetCredits ?? previous?.resetCredits;
+    const extraUsage = ev.extraUsage ?? previous?.extraUsage;
+    const cloudCredits = ev.cloudCredits ?? previous?.cloudCredits;
     this.items.set(key, { ai, account, status: 'ready', windows: ev.windows, limited: ev.limited, quotaAt: ev.at, ...(ev.prepaidCents !== undefined ? { prepaidCents: ev.prepaidCents } : {}), ...(resetCredits ? { resetCredits } : {}), ...(extraUsage ? { extraUsage } : {}), ...(cloudCredits ? { cloudCredits } : {}) });
     this.onChange(this.snapshot());
   }
@@ -138,7 +140,7 @@ export class UsageBoard {
       const query = (async () => {
         try {
           const quota = await provider.quota!(configDir);
-          if (quota) { this.record(ai, quota, id); return; }
+          if (quota) { this.record(ai, quota, id, true); return; }
         } catch {
           // 憑證錯誤與遠端回應可能含敏感資料，不記錄例外內容。
           log.warn('查詢帳戶額度失敗', { ai, account: id });

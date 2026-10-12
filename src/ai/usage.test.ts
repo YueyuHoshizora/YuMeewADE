@@ -218,6 +218,22 @@ test('啟動載入只問有額度介面的 CLI，單一 CLI 查詢失敗不影�
   board.close();
 });
 
+test('a successful account query without cloud credits or extras clears the old ones instead of re-dating them', async () => {
+  const board = new UsageBoard(() => {});
+  const base = { dangerous: false, available: async () => true, send: () => { throw new Error('unused'); } };
+  const cloudCredits = { balance: 1000, expiresAt: '2026-10-13T12:00:00.000Z' };
+  let next: Extract<CliEvent, { type: 'quota' }> = { ...quota('2026-10-13T00:00:00Z', 10), cloudCredits, extraUsage: { unlimited: false, currency: 'USD', balance: 5 } };
+  const providers = { claude: { ...base, name: 'claude', quota: async () => next } } satisfies Record<string, CliProvider>;
+  try {
+    await board.load(providers);
+    assert.deepEqual(board.snapshot().ais[0]?.cloudCredits, cloudCredits);
+    next = quota('2026-10-13T00:01:00Z', 20);
+    await board.load(providers);
+    const entry = board.snapshot().ais[0]!;
+    assert.deepEqual([entry.quotaAt, entry.cloudCredits, entry.extraUsage], ['2026-10-13T00:01:00Z', undefined, undefined]);
+  } finally { board.close(); }
+});
+
 test('poll：啟動查一次並定期重查，額度隨 CLI 回報更新、關閉後不再查', async () => {
   const pushed: UsageState[] = [];
   const board = new UsageBoard(usage => pushed.push(usage));
