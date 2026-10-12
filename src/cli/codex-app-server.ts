@@ -10,6 +10,8 @@ function object(value: unknown): Record<string, unknown> {
   if (!value || typeof value !== 'object' || Array.isArray(value)) throw new Error('Invalid app-server message');
   return value as Record<string, unknown>;
 }
+/** Approval request fields that identify the request rather than describe what would be allowed. */
+const APPROVAL_BOOKKEEPING = new Set(['threadId', 'turnId', 'itemId', 'startedAtMs', 'approvalId', 'environmentId']);
 export function codexAppServerRun(cfg: CliCommandConfig, opts: SendOptions, env: NodeJS.ProcessEnv, onEvent: (event: CliEvent) => void): CliRun {
   if (opts.slashCommand || opts.readonly) throw new Error('Unsupported app-server operation');
   if (opts.effort && (opts.effort.length > 100 || /[\0\r\n]/u.test(opts.effort))) throw new Error('Invalid reasoning effort');
@@ -22,6 +24,8 @@ export function codexAppServerRun(cfg: CliCommandConfig, opts: SendOptions, env:
   const pending = new Map<number, { resolve: (value: unknown) => void; reject: (error: Error) => void; timer: ReturnType<typeof setTimeout> }>();
   const approvals = new Map<string | number, { deny: () => void }>();
   const streamedItems = new Set<string>();
+  // File-change approvals only carry the item id; the files and diff arrive earlier in that item's `item/started`.
+  const fileChanges = new Map<string, { files: string; diff: string }>();
   const send = (value: unknown) => { if (!child || child.stdin.destroyed) throw new Error('App-server disconnected'); child.stdin.write(JSON.stringify(value) + '\n'); };
   const denyAll = () => { for (const approval of approvals.values()) approval.deny(); approvals.clear(); };
   const finish = (outcome: RunOutcome) => {
@@ -72,7 +76,10 @@ export function codexAppServerRun(cfg: CliCommandConfig, opts: SendOptions, env:
       const deny = () => { try { send({ id, result: { decision: 'decline' } }); } catch { /* transport already closed */ } };
       // TurnPermissions owns the configured deadline and resolves expiration through respond.
       approvals.set(id, { deny });
-      onEvent({ type: 'permission', id: `codex:${String(id)}`, tool: method === 'item/fileChange/requestApproval' ? 'fileChange' : 'commandExecution', input: params, respond: answer }); return;
+      // Protocol bookkeeping is not what the user approves; the card shows the action and, for edits, the announced changes.
+      const shown = Object.fromEntries(Object.entries(params).filter(([key]) => !APPROVAL_BOOKKEEPING.has(key)));
+      const changes = method === 'item/fileChange/requestApproval' ? fileChanges.get(String(params['itemId'])) : undefined;
+      onEvent({ type: 'permission', id: `codex:${String(id)}`, tool: method === 'item/fileChange/requestApproval' ? 'fileChange' : 'commandExecution', input: { ...shown, ...changes }, respond: answer }); return;
     }
     if (params['threadId'] !== undefined && thread && params['threadId'] !== thread) throw new Error('Notification scope mismatch');
     if (params['turnId'] !== undefined && turn && params['turnId'] !== turn) throw new Error('Notification turn mismatch');
@@ -85,6 +92,12 @@ export function codexAppServerRun(cfg: CliCommandConfig, opts: SendOptions, env:
     }
     if (method === 'item/started' || method === 'item/completed') {
       const item = object(params['item']);
+      if (item['type'] === 'fileChange' && typeof item['id'] === 'string' && Array.isArray(item['changes'])) {
+        const changes = item['changes'].slice(0, 500).map(object);
+        const kind = (change: Record<string, unknown>) => { const value = object(change['kind']); return `${String(value['type'] ?? 'update')}${typeof value['move_path'] === 'string' ? ` → ${value['move_path']}` : ''}`; };
+        if (fileChanges.size >= 64) fileChanges.delete(fileChanges.keys().next().value!);
+        fileChanges.set(item['id'], { files: changes.map(change => `${kind(change)} ${String(change['path'] ?? '')}`).join('\n'), diff: changes.map(change => String(change['diff'] ?? '')).join('\n').slice(0, 200_000) });
+      }
       if (item['type'] === 'agentMessage' && method === 'item/completed' && !streamedItems.has(String(item['id']))) {
         if (typeof item['text'] !== 'string') throw new Error('Invalid message'); text += item['text'];
         if (text.length > 2_000_000) throw new Error('Output too large'); onEvent({ type: 'delta', text: item['text'] });
