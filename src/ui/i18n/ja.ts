@@ -376,6 +376,7 @@ export const ja: Record<MessageKey, string> = {
   "tests.configFile": "明示的な設定ファイル（任意）",
   "tests.editConfig": "設定を編集",
   "tests.cancel": "テストを中止",
+  "tests.running": "実行中：{name}（{seconds} 秒）",
   "tests.frameworkHint": "探索は信頼されたテストをインストール済みツールで実行します。自動実行はありません。Go はパッケージディレクトリ、他はファイルまたはテストディレクトリを指定します。",
   "tests.framework.node": "Node.js",
   "tests.framework.vitest": "Vitest",

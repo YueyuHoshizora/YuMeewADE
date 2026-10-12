@@ -376,6 +376,7 @@ export const en: Record<MessageKey, string> = {
   "tests.configFile": "Explicit configuration file (optional)",
   "tests.editConfig": "Edit configuration",
   "tests.cancel": "Cancel test run",
+  "tests.running": "Running: {name} ({seconds}s)",
   "tests.frameworkHint": "Discovery explicitly runs trusted tests using installed tools; nothing runs automatically. Go uses package directories; other runners use files or test directories.",
   "tests.framework.node": "Node.js",
   "tests.framework.vitest": "Vitest",

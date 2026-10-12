@@ -376,6 +376,7 @@ export const de: Record<MessageKey, string> = {
   "tests.configFile": "Explizite Konfigurationsdatei (optional)",
   "tests.editConfig": "Konfiguration bearbeiten",
   "tests.cancel": "Testlauf abbrechen",
+  "tests.running": "Läuft: {name} ({seconds} s)",
   "tests.frameworkHint": "Die Erkennung führt vertrauenswürdige Tests mit installierten Werkzeugen aus, niemals automatisch. Go nutzt Paketverzeichnisse, andere Runner Dateien oder Testverzeichnisse.",
   "tests.framework.node": "Node.js",
   "tests.framework.vitest": "Vitest",

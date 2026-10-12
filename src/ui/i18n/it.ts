@@ -376,6 +376,7 @@ export const it: Record<MessageKey, string> = {
   "tests.configFile": "File di configurazione esplicito (facoltativo)",
   "tests.editConfig": "Modifica configurazione",
   "tests.cancel": "Annulla test",
+  "tests.running": "In esecuzione: {name} ({seconds} s)",
   "tests.frameworkHint": "La ricerca esegue esplicitamente test attendibili con strumenti installati, mai automaticamente. Go usa directory di pacchetti; gli altri file o directory di test.",
   "tests.framework.node": "Node.js",
   "tests.framework.vitest": "Vitest",

@@ -376,6 +376,7 @@ export const zhCN: Record<MessageKey, string> = {
   "tests.configFile": "明确配置文件（可选）",
   "tests.editConfig": "编辑配置",
   "tests.cancel": "取消测试",
+  "tests.running": "运行中：{name}（{seconds} 秒）",
   "tests.frameworkHint": "探索会明确执行可信测试与已安装工具；不会自动执行。Go 使用包目录，其他框架使用文件或测试目录。",
   "tests.framework.node": "Node.js",
   "tests.framework.vitest": "Vitest",

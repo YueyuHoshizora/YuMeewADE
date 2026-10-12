@@ -220,6 +220,7 @@ export const zhTW = {
   "tests.configFile": "明示設定檔（選填）",
   "tests.editConfig": "編輯設定",
   "tests.cancel": "取消測試",
+  "tests.running": "執行中：{name}（{seconds} 秒）",
   "tests.frameworkHint": "探索會明確執行受信任測試與已安裝工具；不會自動執行。Go 使用套件目錄，其他框架使用檔案或測試目錄。",
   "tests.framework.node": "Node.js",
   "tests.framework.vitest": "Vitest",

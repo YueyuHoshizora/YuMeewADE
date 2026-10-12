@@ -12,12 +12,22 @@ export function testExplorerButton(project: string, task: string): HTMLElement {
     const framework = select((['node', 'vitest', 'jest', 'pytest', 'go'] as const).map(value => ({ value, label: t(`tests.framework.${value}`) })), 'node');
     const configFile = input(); configFile.maxLength = 4096;
     let revision = '';
+    // The run request only resolves when the runner exits; show that it is alive and how long it has been going.
+    const status = el('p', 'muted'); status.setAttribute('role', 'status');
+    let active = false;
     const render = async () => {
       const state = await request<TestExplorerState>(query('/api/task/tests', scope));
       revision = state.revision;
       list.replaceChildren();
       const run = async (runner: string, selection?: string) => {
-        await request<TestExplorerRun>('/api/task/tests/run', { ...scope, runner, ...(selection ? { selection } : {}) });
+        if (active) return;
+        active = true;
+        const started = Date.now();
+        const tick = () => { status.textContent = t('tests.running', { name: selection ? `${runner} · ${selection}` : runner, seconds: String(Math.floor((Date.now() - started) / 1000)) }); };
+        tick();
+        const timer = window.setInterval(tick, 1000);
+        try { await request<TestExplorerRun>('/api/task/tests/run', { ...scope, runner, ...(selection ? { selection } : {}) }); }
+        finally { window.clearInterval(timer); status.textContent = ''; active = false; }
         await render();
       };
       for (const config of state.configurations) list.append(row(el('code', '', `${config.name} · ${t(`tests.framework.${config.framework ?? 'node'}`)}`), button(t('tests.discover'), () => run(config.name)), button(t('tests.editConfig'), () => { configuration.value = config.name; framework.value = config.framework ?? 'node'; configFile.value = config.config ?? ''; files.value = config.files.join(', '); })));
@@ -52,7 +62,7 @@ export function testExplorerButton(project: string, task: string): HTMLElement {
     await render();
     modal(t('tests.title'), el('p', 'muted', t('tests.frameworkHint')), field(t('tests.name'), configuration), field(t('tests.framework'), framework), field(t('tests.configFile'), configFile), field(t('tests.files'), files), button(t('common.save'), async () => {
       await request('/api/task/tests/configure', { ...scope, revision, configuration: { name: configuration.value, framework: framework.value, ...(configFile.value.trim() ? { config: configFile.value.trim() } : {}), files: files.value.split(',').map(file => file.trim()).filter(Boolean) } }); await render();
-    }), button(t('tests.cancel'), () => request('/api/task/tests/cancel', scope)), list);
+    }), button(t('tests.cancel'), () => request('/api/task/tests/cancel', scope)), status, list);
   });
 }
 
