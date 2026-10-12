@@ -132,7 +132,12 @@ export function parseFrameworkReport(framework: string, report: string, root: st
       }
     }
     for (const node of tests.values()) {
-      const slash = node.fullName.lastIndexOf('/'); const parent = slash > node.fullName.indexOf('::') ? tests.get(node.fullName.slice(0, slash)) : undefined;
+      // `t.Run("a/b", …)` reports `TestParent/a/b` with no `TestParent/a` event: the parent is the longest listed prefix,
+      // and the name keeps everything after it (slashes included).
+      const start = node.fullName.indexOf('::') + 2;
+      let parent: TestCaseNode | undefined;
+      for (let slash = node.fullName.lastIndexOf('/'); slash > start && !parent; slash = node.fullName.lastIndexOf('/', slash - 1)) parent = tests.get(node.fullName.slice(0, slash));
+      node.name = node.fullName.slice(parent ? parent.fullName.length + 1 : start);
       (parent?.children ?? nodes).push(node); if (node.status !== 'failed') delete node.error;
     }
   } else throw new AppError('bad_request');

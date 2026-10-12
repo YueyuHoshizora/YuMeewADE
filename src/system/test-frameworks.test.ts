@@ -44,6 +44,15 @@ test('Go JSON events retain package-qualified subtests and skips', () => {
   assert.equal(tree[1]!.status, 'skipped');
 });
 
+test('a Go subtest whose own name contains a slash stays under its real parent with its full name', () => {
+  // `t.Run("a/b with space", …)`: Go reports TestParent/a/b_with_space and never a TestParent/a event.
+  const report = ['TestParent', 'TestParent/a/b_with_space', 'TestParent/ordinary'].flatMap(name => [{ Action: 'run', Package: 'example.local/mod', Test: name }, { Action: 'pass', Package: 'example.local/mod', Test: name }])
+    .map(event => JSON.stringify(event)).join('\n');
+  const { tree } = parseFrameworkReport('go', report, '/repo');
+  assert.equal(tree.length, 1);
+  assert.deepEqual(tree[0]!.children.map(node => [node.name, node.selector]), [['a/b_with_space', 'example.local/mod::TestParent/a/b_with_space'], ['ordinary', 'example.local/mod::TestParent/ordinary']]);
+});
+
 test('framework reports beyond 2000 cases keep the first ones and say so', () => {
   const vitest = JSON.stringify({ testResults: [{ name: '/repo/a.test.ts', assertionResults: Array.from({ length: 2001 }, (_, i) => ({ title: `t${i}`, fullName: `t${i}`, ancestorTitles: [], status: 'passed' })) }] });
   const v = parseFrameworkReport('vitest', vitest, '/repo');
