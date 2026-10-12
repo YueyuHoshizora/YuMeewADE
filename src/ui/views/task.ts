@@ -874,7 +874,7 @@ export function taskView(
   }
   const footer = el('div', 'task-footer');
   // Text inputs live across footer redraws: the AI checking a step or another tab saving must not wipe what the user is typing.
-  const addStep = input('', t('task.addStep'));
+  const addStep = input('', t('task.addStep')); addStep.maxLength = 2000;
   const addStepButton = button(t('common.add'), async () => {
     if (!addStep.value.trim()) return;
     await request('/api/task/step', { project: project.id, task: task.id, add: addStep.value.trim() });

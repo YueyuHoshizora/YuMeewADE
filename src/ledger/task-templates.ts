@@ -5,7 +5,7 @@ import { parseFrontmatter, patchHeaderLines, serializeFrontmatter } from '../sha
 import { atomicWrite, isInside, withFileLocks } from '../shared/fsx.ts';
 import type { TaskTemplate } from '../shared/types.ts';
 import type { Workspace } from './workspace.ts';
-import { parseSteps, TaskLedger } from './tasks.ts';
+import { parseSteps, STEP_TEXT_MAX, TaskLedger, TITLE_MAX } from './tasks.ts';
 
 export class TaskTemplates {
   private readonly ws: Workspace;
@@ -31,7 +31,7 @@ export class TaskTemplates {
   }
   async get(project: string, scope: 'project' | 'workspace', name: string): Promise<TaskTemplate> {
     const { data, body } = parseFrontmatter(await fs.readFile(await this.file(project, scope, name), 'utf8'));
-    if (typeof data['title'] !== 'string' || !data['title'].trim() || data['title'].length > 200 || (data['instruction'] !== undefined && (typeof data['instruction'] !== 'string' || data['instruction'].length > 10000))) throw new AppError('bad_request', 'field_type');
+    if (typeof data['title'] !== 'string' || !data['title'].trim() || data['title'].length > TITLE_MAX || (data['instruction'] !== undefined && (typeof data['instruction'] !== 'string' || data['instruction'].length > 10000))) throw new AppError('bad_request', 'field_type');
     return { name, scope, title: data['title'], instruction: typeof data['instruction'] === 'string' ? data['instruction'] : '', steps: parseSteps(body).map(step => step.text) };
   }
   async list(project: string): Promise<TaskTemplate[]> {
@@ -50,7 +50,7 @@ export class TaskTemplates {
     const file = await this.file(project, scope, name, true);
     return withFileLocks([this.ws.projectFile(project), file], async () => {
       const source = await new TaskLedger(this.ws).get(project, task);
-      if (source.steps.some(step => step.text.length > 2000) || source.title.length > 200) throw new AppError('bad_request', 'field_type');
+      if (source.steps.some(step => step.text.length > STEP_TEXT_MAX) || source.title.length > TITLE_MAX) throw new AppError('bad_request', 'field_type');
       try { await fs.lstat(file); throw new AppError('conflict'); } catch (err) { if ((err as NodeJS.ErrnoException).code !== 'ENOENT') throw err; }
       const text = serializeFrontmatter(patchHeaderLines([], { title: source.title, instruction }), `## 步驟\n${source.steps.map(step => `- [ ] ${step.text}`).join('\n')}\n`);
       if (Buffer.byteLength(text, 'utf8') > 65536) throw new AppError('bad_request', 'field_type');

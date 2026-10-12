@@ -19,6 +19,8 @@ const STR_FIELDS = ['title', 'phase', 'role', 'parent', 'cli', 'model', 'effort'
 // Same per-step bound as task templates, which create tasks through here; the count keeps one request from writing a huge ledger file.
 export const STEP_TEXT_MAX = 2000;
 export const STEPS_MAX = 500;
+/** One title bound for creating, renaming and saving as a template; GitHub-prefilled titles fit within it. */
+export const TITLE_MAX = 300;
 const STEP_ROW = /^\s*[-*]\s*\[[ xX]\]\s*(.+)$/;
 /** The caller names the step it saw; if the list changed meanwhile (another window, the AI), no other step is touched. */
 function stepRow(rows: string[], indices: number[], index: number, expected: string): number {
@@ -103,6 +105,7 @@ export class TaskLedger {
 
   async create(project: string, input: NewTaskInput): Promise<Task> {
     if (typeof input.title !== 'string' || !input.title.trim()) throw new AppError('bad_request', 'title_required');
+    if (input.title.length > TITLE_MAX) throw new AppError('bad_request', 'field_too_long', { field: 'title' });
     if (input.kind !== undefined && !TASK_KINDS.includes(input.kind) || input.workspace !== undefined && !WORKSPACE_MODES.includes(input.workspace)) throw new AppError('bad_request', 'field_type');
     if (input.steps !== undefined && (!Array.isArray(input.steps) || input.steps.length > STEPS_MAX || input.steps.some(s => typeof s !== 'string' || s.length > STEP_TEXT_MAX))) throw new AppError('bad_request', 'field_type', { field: 'steps' });
     const metadata = taskMetadata(input);
@@ -151,6 +154,7 @@ export class TaskLedger {
       if (patch.state !== undefined) { if (!TASK_STATES.includes(patch.state)) throw new AppError('bad_request', 'invalid_state'); values['state'] = patch.state; }
       if (patch.mergeExcluded !== undefined) { if (typeof patch.mergeExcluded !== 'boolean') throw new AppError('bad_request', 'field_type'); values['mergeExcluded'] = patch.mergeExcluded; }
       if (patch.title !== undefined && !patch.title.trim()) throw new AppError('bad_request', 'title_required');
+      if (patch.title !== undefined && patch.title.length > TITLE_MAX) throw new AppError('bad_request', 'field_too_long', { field: 'title' });
       if (patch.parent) { if (patch.parent === id) throw new AppError('bad_request', 'field_type', { field: 'parent' }); await this.get(project, patch.parent); }
       if (!Object.keys(values).length) throw new AppError('bad_request', 'no_updatable_fields');
       values['updated'] = nowMinute();

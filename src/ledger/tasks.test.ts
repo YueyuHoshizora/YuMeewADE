@@ -108,3 +108,12 @@ test('備註超過上限時保留最新的 500 行', () => withTmpWorkspace(asyn
   const { memo } = await ledger.sections('P', task.id);
   assert.equal(memo.length, 500); assert.equal(memo[0], '- m20'); assert.equal(memo.at(-1), '- m519');
 }));
+
+test('作業標題在建立與改名時同樣以 300 字為上限', () => withTmpWorkspace(async ws => {
+  await new ProjectLedger(ws).create({ name: 'P' });
+  const ledger = new TaskLedger(ws);
+  await assert.rejects(ledger.create('P', { title: 'x'.repeat(301) }), /title|field_too_long|字/);
+  const task = await ledger.create('P', { title: 'x'.repeat(300) });
+  await assert.rejects(ledger.update('P', task.id, { title: 'y'.repeat(301) }));
+  assert.equal((await ledger.update('P', task.id, { title: 'y'.repeat(300) })).title.length, 300);
+}));

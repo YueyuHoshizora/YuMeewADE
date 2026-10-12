@@ -7,7 +7,7 @@ import { phaseKey, stepsHash } from '../../ledger/completion.ts';
 import { phaseTasks } from '../../state/state.ts';
 import { Router, reqString } from '../router.ts';
 import { TaskTemplates } from '../../ledger/task-templates.ts';
-import { STEP_TEXT_MAX } from '../../ledger/tasks.ts';
+import { STEP_TEXT_MAX, TITLE_MAX } from '../../ledger/tasks.ts';
 import { PHASES_MAX, TASK_STATES, type BulkTaskAction, type BulkTaskResult } from '../../shared/types.ts';
 import { validDue, validTag } from '../../shared/task-metadata.ts';
 import { isValidTaskId } from '../../shared/names.ts';
@@ -174,7 +174,7 @@ export function registerLedgerRoutes(router: Router, app: App): void {
   });
   router.post('/api/task/new', async ({ body }) => {
     const project = reqString(body, 'project', 120);
-    reqString(body, 'title', 200);
+    reqString(body, 'title', TITLE_MAX);
     if (body.role && !(await app.roles()).roles[String(body.role)]) throw new AppError('bad_request', 'role_missing');
     const { project: _project, ...input } = body;
     const result = await app.tasks.create(project, input as unknown as NewTaskInput);
@@ -246,7 +246,7 @@ export function registerLedgerRoutes(router: Router, app: App): void {
     // With `index`, exactly one change applies: check (`done`), rename, or move (-1/1).
     const indexed = Number(body.done !== undefined) + Number(body.rename !== undefined) + Number(body.move !== undefined);
     if (count !== 1 || indexed !== (body.index !== undefined ? 1 : 0)) throw new AppError('bad_request');
-    const result = body.add !== undefined ? await app.tasks.addStep(project, task, reqString(body, 'add', 300))
+    const result = body.add !== undefined ? await app.tasks.addStep(project, task, reqString(body, 'add', STEP_TEXT_MAX))
       : body.remove !== undefined ? await app.tasks.removeStep(project, task, index(body.remove), reqString(body, 'text', STEP_TEXT_MAX))
       : body.rename !== undefined ? await app.tasks.editStep(project, task, index(body.index), reqString(body, 'text', STEP_TEXT_MAX), reqString(body, 'rename', STEP_TEXT_MAX))
       : body.move !== undefined ? await app.tasks.moveStep(project, task, index(body.index), reqString(body, 'text', STEP_TEXT_MAX), body.move as number)

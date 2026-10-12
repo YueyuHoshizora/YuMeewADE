@@ -124,6 +124,9 @@ test('steps can be renamed and reordered only with the text shown and one change
     assert.equal((await step({ index: 0, text: 'Implement', rename: 'Build $& it' })).status, 200);
     assert.equal((await step({ index: 1, text: 'Review', move: -1 })).status, 200);
     assert.deepEqual(await texts(), ['Review', 'Build $& it']);
+    // Adding has the same per-step bound as renaming and templates.
+    assert.equal((await step({ add: 'z'.repeat(2000) })).status, 200);
+    assert.equal((await step({ add: 'z'.repeat(2001) })).status, 400);
   } finally { await s.close(); }
 });
 
