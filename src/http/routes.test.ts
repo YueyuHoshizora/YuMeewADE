@@ -450,6 +450,26 @@ test('restricted projects block Git reads that can execute repository clean filt
   } finally { await s.close(); }
 });
 
+test('running tests can still be stopped after their project is restricted', async () => {
+  const s = await startTestServer();
+  try {
+    await s.api('POST', '/api/project/new', { name: 'P' });
+    const task = (await s.api('POST', '/api/task/new', { project: 'P', title: 'Tests', workspace: 'direct' })).json as Task;
+    const ids = { project: 'P', task: task.id };
+    const root = await s.app.worktree.bodyPath('P');
+    const marker = path.join(root, 'started.txt');
+    await fs.writeFile(path.join(root, 'slow.test.mjs'), `import { test } from 'node:test'; import { writeFileSync } from 'node:fs'; test('slow', async () => { writeFileSync(${JSON.stringify(marker)}, 'running'); await new Promise(r => setTimeout(r, 30000)); });`);
+    await s.app.testExplorer.save('P', task.id, { name: 'node', files: ['slow.test.mjs'] }, (await s.app.testExplorer.state('P', task.id)).revision);
+    const run = s.api('POST', '/api/task/tests/run', { ...ids, runner: 'node' });
+    while (!await fs.access(marker).then(() => true, () => false)) await new Promise(r => setTimeout(r, 10));
+    const trust = await s.app.trust.view('P');
+    await s.app.trust.update('P', { state: 'restricted', overrides: {}, revision: trust.revision, confirmed: true });
+    assert.equal((await s.api('POST', '/api/task/tests/cancel', ids)).status, 200);
+    await run;
+    assert.equal(s.app.testExplorer.isRunning('P', task.id), false);
+  } finally { await s.close(); }
+});
+
 test('archive restoration checks current and archived trust before checkout and rolls denied moves back', async () => {
   const { server: s, project: p, task: t } = await setup();
   try {
