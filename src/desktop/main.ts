@@ -89,7 +89,8 @@ async function startCore(host: string, port: number): Promise<void> {
   core.stderr?.on('data', (c: Buffer) => process.stderr.write(c));
   core.on('exit', (code) => {
     core = null;
-    if (code !== 0 && !quitting) {
+    // Code 0 too: the core only exits cleanly on SIGTERM/SIGINT, and an outside kill would otherwise strand every window on a dead core.
+    if (!quitting) {
       dialog.showErrorBox('YuMeewADE', desktopText().coreExited.replace('{code}', String(code)));
       app.quit();
     }
