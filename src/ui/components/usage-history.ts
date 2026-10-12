@@ -1,7 +1,7 @@
 import type { BudgetCheck, BudgetRule, BudgetSettings, BudgetWarning, UsageHistoryView, UsageScope } from '../../shared/types.ts';
 import { request } from '../api.ts';
 import { t } from '../i18n/index.ts';
-import { button, card, confirmModal, el, field, input, row, run, select, toast } from './dom.ts';
+import { button, card, confirmModal, el, field, input, row, run, select, toast, UserError } from './dom.ts';
 import { localDateTime } from './display.ts';
 
 export function budgetWarningText(warning: BudgetWarning): string {
@@ -11,6 +11,8 @@ export function budgetWarningText(warning: BudgetWarning): string {
 }
 /** Explicit acknowledgment is single-use and cannot silently restart a failed send. */
 export async function confirmUsageRound(scope: UsageScope): Promise<boolean> {
+  // An empty picker means no CLI is installed and signed in; the server would only answer a generic 400.
+  if (!scope.ai) throw new UserError(t('onboarding.banner'));
   const check = await request<BudgetCheck>('/api/usage/check', scope);
   if (!check.acknowledgment) return true;
   if (!await confirmModal(t('budget.risk'), `${check.warnings.map(budgetWarningText).join('\n')}\n${t('budget.provenance')}`, t('budget.proceed'))) return false;

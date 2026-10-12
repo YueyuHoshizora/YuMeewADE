@@ -4,7 +4,7 @@ import { t } from '../i18n/index.ts';
 import { attachments } from '../components/attachments.ts';
 import { aiPicker } from '../components/picker.ts';
 import { markdown } from '../components/markdown.ts';
-import { archiveFlow, area, button, card, confirmModal, disclosure, el, field, input, lines, link, projectHash, readLocal, row, run, select, storeLocal, taskHash, toast, type View, type ViewContext } from '../components/dom.ts';
+import { archiveFlow, area, button, card, confirmModal, disclosure, el, field, input, lines, link, projectHash, readLocal, row, run, select, storeLocal, taskHash, toast, UserError, type View, type ViewContext } from '../components/dom.ts';
 import { localDateTime, localTime } from '../components/display.ts';
 import { shouldSend } from '../components/composer.ts';
 import { attachSlashCommands } from '../components/slash-menu.ts';
@@ -24,6 +24,8 @@ import { TASK_STATES, type BulkTaskAction, type BulkTaskResult } from '../../sha
 import type { MessageKey } from '../i18n/zh-TW.ts';
 
 async function startWithBudget(context: ViewContext, input: StartInput): Promise<void> {
+  // Checked before prepare so a missing AI never leaves an empty task behind.
+  if (!input.ai) throw new UserError(t('onboarding.banner'));
   const { task } = await request<{ task: Task }>('/api/start/prepare', input);
   const draftKey = `yumeewade.draft.${input.project}/${task.id}`;
   storeLocal(draftKey, input.text);
