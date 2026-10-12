@@ -1,0 +1,86 @@
+/** Activity-log labels for actions recorded by the core; `git.stash` etc. also label their `git.stash.<operation>` entries. */
+export const featureZhTW = {
+  'log.archive.restore': '還原封存', 'log.chatrollback': '還原到指示之前', 'log.verify': '執行驗證', 'log.abandon': '保存並移除工作副本',
+  'log.project.memory.save': '儲存專案記憶', 'log.project.memory.delete': '刪除專案記憶', 'log.project.trust': '變更專案信任',
+  'log.task.template.save': '儲存作業範本', 'log.task.template.delete': '刪除作業範本',
+  'log.worktree.prune': '清理失效副本紀錄', 'log.worktree.remove-stale': '移除失效副本',
+  'log.git.stage': 'Git 暫存檔案', 'log.git.unstage': 'Git 取消暫存', 'log.git.stage-lines': 'Git 暫存選取行', 'log.git.resolve': '標記衝突已解決',
+  'log.git.commit': 'Git 提交', 'log.git.fetch': 'Git 擷取', 'log.git.branch': 'Git 切換或建立分支', 'log.git.push': 'Git 推送', 'log.git.pr': '建立 Pull Request',
+  'log.git.stash': 'Git Stash', 'log.git.rewrite': '改寫 Git 歷史', 'log.git.remote': '管理 Git 遠端', 'log.git.manage-branch': '管理 Git 分支',
+  'log.github.issue-task': '由 GitHub Issue 建立作業', 'log.github.feedback-task': '由 GitHub 審查意見建立作業',
+  'log.github.feedback-draft': '儲存 GitHub 回覆草稿', 'log.github.feedback-refresh': '重新整理 GitHub 回饋', 'log.github.feedback-reply': '回覆 GitHub',
+  'log.github.feedback-resolve': '標記 GitHub 討論已解決', 'log.github.feedback-unresolve': '取消 GitHub 討論已解決', 'log.github.feedback-update': '更新 GitHub Issue', 'log.github.feedback-close': '關閉 GitHub Issue',
+};
+type Keys = keyof typeof featureZhTW;
+export const featureZhCN: Record<Keys, string> = {
+  'log.archive.restore': '还原归档', 'log.chatrollback': '还原到指示之前', 'log.verify': '运行验证', 'log.abandon': '保存并移除工作副本',
+  'log.project.memory.save': '保存项目记忆', 'log.project.memory.delete': '删除项目记忆', 'log.project.trust': '更改项目信任',
+  'log.task.template.save': '保存作业模板', 'log.task.template.delete': '删除作业模板',
+  'log.worktree.prune': '清理失效副本记录', 'log.worktree.remove-stale': '移除失效副本',
+  'log.git.stage': 'Git 暂存文件', 'log.git.unstage': 'Git 取消暂存', 'log.git.stage-lines': 'Git 暂存选中行', 'log.git.resolve': '标记冲突已解决',
+  'log.git.commit': 'Git 提交', 'log.git.fetch': 'Git 获取', 'log.git.branch': 'Git 切换或创建分支', 'log.git.push': 'Git 推送', 'log.git.pr': '创建 Pull Request',
+  'log.git.stash': 'Git Stash', 'log.git.rewrite': '改写 Git 历史', 'log.git.remote': '管理 Git 远程', 'log.git.manage-branch': '管理 Git 分支',
+  'log.github.issue-task': '由 GitHub Issue 创建作业', 'log.github.feedback-task': '由 GitHub 审查意见创建作业',
+  'log.github.feedback-draft': '保存 GitHub 回复草稿', 'log.github.feedback-refresh': '刷新 GitHub 反馈', 'log.github.feedback-reply': '回复 GitHub',
+  'log.github.feedback-resolve': '标记 GitHub 讨论已解决', 'log.github.feedback-unresolve': '取消 GitHub 讨论已解决', 'log.github.feedback-update': '更新 GitHub Issue', 'log.github.feedback-close': '关闭 GitHub Issue',
+};
+export const featureEn: Record<Keys, string> = {
+  'log.archive.restore': 'Archive restored', 'log.chatrollback': 'Restored to before an instruction', 'log.verify': 'Verification run', 'log.abandon': 'Working copy preserved and removed',
+  'log.project.memory.save': 'Project memory saved', 'log.project.memory.delete': 'Project memory deleted', 'log.project.trust': 'Project trust changed',
+  'log.task.template.save': 'Task template saved', 'log.task.template.delete': 'Task template deleted',
+  'log.worktree.prune': 'Stale copy records pruned', 'log.worktree.remove-stale': 'Stale copy removed',
+  'log.git.stage': 'Git staged files', 'log.git.unstage': 'Git unstaged files', 'log.git.stage-lines': 'Git staged selected lines', 'log.git.resolve': 'Conflict marked resolved',
+  'log.git.commit': 'Git commit', 'log.git.fetch': 'Git fetch', 'log.git.branch': 'Git branch switched or created', 'log.git.push': 'Git push', 'log.git.pr': 'Pull request created',
+  'log.git.stash': 'Git stash', 'log.git.rewrite': 'Git history rewritten', 'log.git.remote': 'Git remote managed', 'log.git.manage-branch': 'Git branch managed',
+  'log.github.issue-task': 'Task created from a GitHub issue', 'log.github.feedback-task': 'Task created from GitHub review feedback',
+  'log.github.feedback-draft': 'GitHub reply draft saved', 'log.github.feedback-refresh': 'GitHub feedback refreshed', 'log.github.feedback-reply': 'Replied on GitHub',
+  'log.github.feedback-resolve': 'GitHub thread resolved', 'log.github.feedback-unresolve': 'GitHub thread unresolved', 'log.github.feedback-update': 'GitHub issue updated', 'log.github.feedback-close': 'GitHub issue closed',
+};
+export const featureJa: Record<Keys, string> = {
+  'log.archive.restore': 'アーカイブを復元', 'log.chatrollback': '指示の前に戻す', 'log.verify': '検証を実行', 'log.abandon': '作業コピーを保存して削除',
+  'log.project.memory.save': 'プロジェクトメモリを保存', 'log.project.memory.delete': 'プロジェクトメモリを削除', 'log.project.trust': 'プロジェクトの信頼を変更',
+  'log.task.template.save': '作業テンプレートを保存', 'log.task.template.delete': '作業テンプレートを削除',
+  'log.worktree.prune': '無効なコピー記録を整理', 'log.worktree.remove-stale': '無効なコピーを削除',
+  'log.git.stage': 'Git ステージ', 'log.git.unstage': 'Git ステージ解除', 'log.git.stage-lines': 'Git 選択行をステージ', 'log.git.resolve': '競合を解決済みにする',
+  'log.git.commit': 'Git コミット', 'log.git.fetch': 'Git フェッチ', 'log.git.branch': 'Git ブランチの切り替え・作成', 'log.git.push': 'Git プッシュ', 'log.git.pr': 'プルリクエストを作成',
+  'log.git.stash': 'Git スタッシュ', 'log.git.rewrite': 'Git 履歴を書き換え', 'log.git.remote': 'Git リモートを管理', 'log.git.manage-branch': 'Git ブランチを管理',
+  'log.github.issue-task': 'GitHub Issue から作業を作成', 'log.github.feedback-task': 'GitHub のレビュー指摘から作業を作成',
+  'log.github.feedback-draft': 'GitHub 返信の下書きを保存', 'log.github.feedback-refresh': 'GitHub フィードバックを更新', 'log.github.feedback-reply': 'GitHub に返信',
+  'log.github.feedback-resolve': 'GitHub スレッドを解決済みにする', 'log.github.feedback-unresolve': 'GitHub スレッドの解決を取り消す', 'log.github.feedback-update': 'GitHub Issue を更新', 'log.github.feedback-close': 'GitHub Issue をクローズ',
+};
+export const featureDe: Record<Keys, string> = {
+  'log.archive.restore': 'Archiv wiederhergestellt', 'log.chatrollback': 'Auf Stand vor Anweisung zurückgesetzt', 'log.verify': 'Prüfung ausgeführt', 'log.abandon': 'Arbeitskopie gesichert und entfernt',
+  'log.project.memory.save': 'Projektgedächtnis gespeichert', 'log.project.memory.delete': 'Projektgedächtnis gelöscht', 'log.project.trust': 'Projektvertrauen geändert',
+  'log.task.template.save': 'Aufgabenvorlage gespeichert', 'log.task.template.delete': 'Aufgabenvorlage gelöscht',
+  'log.worktree.prune': 'Verwaiste Kopie-Einträge bereinigt', 'log.worktree.remove-stale': 'Verwaiste Kopie entfernt',
+  'log.git.stage': 'Git: Dateien vorgemerkt', 'log.git.unstage': 'Git: Vormerkung aufgehoben', 'log.git.stage-lines': 'Git: Zeilen vorgemerkt', 'log.git.resolve': 'Konflikt als gelöst markiert',
+  'log.git.commit': 'Git-Commit', 'log.git.fetch': 'Git-Fetch', 'log.git.branch': 'Git-Branch gewechselt oder erstellt', 'log.git.push': 'Git-Push', 'log.git.pr': 'Pull Request erstellt',
+  'log.git.stash': 'Git-Stash', 'log.git.rewrite': 'Git-Verlauf umgeschrieben', 'log.git.remote': 'Git-Remote verwaltet', 'log.git.manage-branch': 'Git-Branch verwaltet',
+  'log.github.issue-task': 'Aufgabe aus GitHub-Issue erstellt', 'log.github.feedback-task': 'Aufgabe aus GitHub-Review erstellt',
+  'log.github.feedback-draft': 'GitHub-Antwortentwurf gespeichert', 'log.github.feedback-refresh': 'GitHub-Feedback aktualisiert', 'log.github.feedback-reply': 'Auf GitHub geantwortet',
+  'log.github.feedback-resolve': 'GitHub-Thread gelöst', 'log.github.feedback-unresolve': 'GitHub-Thread wieder geöffnet', 'log.github.feedback-update': 'GitHub-Issue aktualisiert', 'log.github.feedback-close': 'GitHub-Issue geschlossen',
+};
+export const featureFr: Record<Keys, string> = {
+  'log.archive.restore': 'Archive restaurée', 'log.chatrollback': 'Restauré avant une instruction', 'log.verify': 'Vérification lancée', 'log.abandon': 'Copie de travail conservée puis retirée',
+  'log.project.memory.save': 'Mémoire du projet enregistrée', 'log.project.memory.delete': 'Mémoire du projet supprimée', 'log.project.trust': 'Confiance du projet modifiée',
+  'log.task.template.save': 'Modèle de tâche enregistré', 'log.task.template.delete': 'Modèle de tâche supprimé',
+  'log.worktree.prune': 'Enregistrements de copies obsolètes nettoyés', 'log.worktree.remove-stale': 'Copie obsolète retirée',
+  'log.git.stage': 'Git : fichiers indexés', 'log.git.unstage': 'Git : fichiers désindexés', 'log.git.stage-lines': 'Git : lignes indexées', 'log.git.resolve': 'Conflit marqué comme résolu',
+  'log.git.commit': 'Commit Git', 'log.git.fetch': 'Fetch Git', 'log.git.branch': 'Branche Git changée ou créée', 'log.git.push': 'Push Git', 'log.git.pr': 'Pull request créée',
+  'log.git.stash': 'Stash Git', 'log.git.rewrite': 'Historique Git réécrit', 'log.git.remote': 'Dépôt distant Git géré', 'log.git.manage-branch': 'Branche Git gérée',
+  'log.github.issue-task': 'Tâche créée depuis une issue GitHub', 'log.github.feedback-task': 'Tâche créée depuis une revue GitHub',
+  'log.github.feedback-draft': 'Brouillon de réponse GitHub enregistré', 'log.github.feedback-refresh': 'Retours GitHub actualisés', 'log.github.feedback-reply': 'Réponse publiée sur GitHub',
+  'log.github.feedback-resolve': 'Fil GitHub résolu', 'log.github.feedback-unresolve': 'Fil GitHub rouvert', 'log.github.feedback-update': 'Issue GitHub mise à jour', 'log.github.feedback-close': 'Issue GitHub fermée',
+};
+export const featureIt: Record<Keys, string> = {
+  'log.archive.restore': 'Archivio ripristinato', 'log.chatrollback': 'Ripristinato a prima di un’istruzione', 'log.verify': 'Verifica eseguita', 'log.abandon': 'Copia di lavoro conservata e rimossa',
+  'log.project.memory.save': 'Memoria del progetto salvata', 'log.project.memory.delete': 'Memoria del progetto eliminata', 'log.project.trust': 'Attendibilità del progetto modificata',
+  'log.task.template.save': 'Modello di attività salvato', 'log.task.template.delete': 'Modello di attività eliminato',
+  'log.worktree.prune': 'Record di copie obsolete puliti', 'log.worktree.remove-stale': 'Copia obsoleta rimossa',
+  'log.git.stage': 'Git: file preparati', 'log.git.unstage': 'Git: preparazione annullata', 'log.git.stage-lines': 'Git: righe preparate', 'log.git.resolve': 'Conflitto segnato come risolto',
+  'log.git.commit': 'Commit Git', 'log.git.fetch': 'Fetch Git', 'log.git.branch': 'Branch Git cambiato o creato', 'log.git.push': 'Push Git', 'log.git.pr': 'Pull request creata',
+  'log.git.stash': 'Stash Git', 'log.git.rewrite': 'Cronologia Git riscritta', 'log.git.remote': 'Remoto Git gestito', 'log.git.manage-branch': 'Branch Git gestito',
+  'log.github.issue-task': 'Attività creata da una issue GitHub', 'log.github.feedback-task': 'Attività creata da una revisione GitHub',
+  'log.github.feedback-draft': 'Bozza di risposta GitHub salvata', 'log.github.feedback-refresh': 'Feedback GitHub aggiornato', 'log.github.feedback-reply': 'Risposta pubblicata su GitHub',
+  'log.github.feedback-resolve': 'Thread GitHub risolto', 'log.github.feedback-unresolve': 'Thread GitHub riaperto', 'log.github.feedback-update': 'Issue GitHub aggiornata', 'log.github.feedback-close': 'Issue GitHub chiusa',
+};

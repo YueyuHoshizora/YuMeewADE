@@ -45,6 +45,7 @@ import * as providerCapabilities from './provider-capabilities.ts';
 import * as editorProposals from './editor-proposals.ts';
 import * as ideWorkbench from './ide-workbench.ts';
 import * as codemirror from './codemirror.ts';
+import * as oplog from './oplog.ts';
 
 export const featureZhTW = {
   ...archive.featureZhTW,
@@ -95,6 +96,7 @@ export const featureZhTW = {
   ...editorProposals.featureZhTW,
   ...ideWorkbench.featureZhTW,
   ...codemirror.featureZhTW,
+  ...oplog.featureZhTW,
 };
 export const featureZhCN = {
   ...archive.featureZhCN,
@@ -145,6 +147,7 @@ export const featureZhCN = {
   ...editorProposals.featureZhCN,
   ...ideWorkbench.featureZhCN,
   ...codemirror.featureZhCN,
+  ...oplog.featureZhCN,
 };
 export const featureEn = {
   ...archive.featureEn,
@@ -195,6 +198,7 @@ export const featureEn = {
   ...editorProposals.featureEn,
   ...ideWorkbench.featureEn,
   ...codemirror.featureEn,
+  ...oplog.featureEn,
 };
 export const featureJa = {
   ...archive.featureJa,
@@ -245,6 +249,7 @@ export const featureJa = {
   ...editorProposals.featureJa,
   ...ideWorkbench.featureJa,
   ...codemirror.featureJa,
+  ...oplog.featureJa,
 };
 export const featureDe = {
   ...archive.featureDe,
@@ -295,6 +300,7 @@ export const featureDe = {
   ...editorProposals.featureDe,
   ...ideWorkbench.featureDe,
   ...codemirror.featureDe,
+  ...oplog.featureDe,
 };
 export const featureFr = {
   ...archive.featureFr,
@@ -345,6 +351,7 @@ export const featureFr = {
   ...editorProposals.featureFr,
   ...ideWorkbench.featureFr,
   ...codemirror.featureFr,
+  ...oplog.featureFr,
 };
 export const featureIt = {
   ...archive.featureIt,
@@ -395,4 +402,5 @@ export const featureIt = {
   ...editorProposals.featureIt,
   ...ideWorkbench.featureIt,
   ...codemirror.featureIt,
+  ...oplog.featureIt,
 };

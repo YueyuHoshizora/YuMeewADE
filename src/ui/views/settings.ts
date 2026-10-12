@@ -96,7 +96,12 @@ export function settingsView(context: ViewContext, redraw: () => void): View {
   for (const [name, role] of Object.entries(state.roles.roles)) addRole({ name, ...role });
   roles.append(roleList, row(button(t('settings.addRole'), () => addRole({ name: '', job: '', main: { cli: state.settings.initial.ai, model: state.settings.initial.model, effort: state.settings.initial.effort } })), button(t('common.save'), async () => { await api.roles(drafts.map(d => d.value())); await context.refresh(); toast(t('common.saved')); }, 'primary'))); node.append(roles);
   const logs = el('div', 'op-log'); let alive = true;
-  const actionLabel = (action: string) => { const key = `log.${action}`; return hasMessage(key) ? t(key) : action; };
+  const actionLabel = (action: string) => {
+    const key = `log.${action}`; if (hasMessage(key)) return t(key);
+    // Families such as git.stash.<operation> share one label; the operation word stays visible.
+    const cut = action.lastIndexOf('.'); const family = `log.${action.slice(0, cut)}`;
+    return cut > 0 && hasMessage(family) ? `${t(family)}（${action.slice(cut + 1)}）` : action;
+  };
   void run(async () => { const entries = await api.log(); if (!alive) return; for (const entry of entries) { const line = el('div', 'log-entry'); line.append(el('time', 'muted', localTime(entry.at)), el('strong', '', actionLabel(entry.action)), el('span', '', [entry.project, entry.task].filter(Boolean).join(' / '))); logs.append(line); } if (!entries.length) logs.append(el('p', 'muted', t('common.empty'))); }); node.append(card(t('settings.log'), logs));
   return { node, dispose: () => { alive = false; }, update: state => { context.state = state; } };
 }
