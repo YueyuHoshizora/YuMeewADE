@@ -60,11 +60,11 @@ export class ChatStore {
       const rows = offset && cached ? [...cached.rows] : [];
       for (const line of content.toString('utf8').split('\n')) {
         if (line.trim() === '') continue;
-        try {
-          rows.push(JSON.parse(line) as ChatRow);
-        } catch {
-          log.warn('略過壞掉的對話行', { project, task });
-        }
+        let row: unknown;
+        try { row = JSON.parse(line); } catch { row = undefined; }
+        // Valid JSON is not necessarily a row (`null`, a number, a stray object); every reader dereferences role/text.
+        if (row && typeof row === 'object' && !Array.isArray(row) && ['user', 'assistant', 'event'].includes((row as ChatRow).role) && typeof (row as ChatRow).text === 'string') rows.push(row as ChatRow);
+        else log.warn('略過壞掉的對話行', { project, task });
       }
       const entry = {
         size: offset + length, mtimeMs: stat.mtimeMs, ino: stat.ino,

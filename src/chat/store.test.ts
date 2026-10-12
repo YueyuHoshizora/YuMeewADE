@@ -47,6 +47,19 @@ test('回覆已落盤但 marker 未清除時重啟不會重複補寫', () => wit
   assert.equal((await store.readMeta('P', task.id)).running, undefined);
 }));
 
+test('valid JSON that is not a chat row is skipped and does not break interrupted-turn recovery', () => withTmpWorkspace(async ws => {
+  await new ProjectLedger(ws).create({ name: 'P' });
+  const task = await new TaskLedger(ws).create('P', { title: 'T', workspace: 'direct' });
+  const store = new ChatStore(ws);
+  const user: ChatRow = { role: 'user', to: 'codex', at: 'now', request: 'r', text: 'hello' };
+  await fs.writeFile(ws.chatFile('P', task.id, 'jsonl'), ['null', '42', '[]', '{"role":"user"}', '{"role":"other","text":"x"}', JSON.stringify(user)].join('\n') + '\n');
+  assert.deepEqual(await store.readLog('P', task.id), [user]);
+  await store.writeMeta('P', task.id, { sessions: {}, models: {}, seen: {}, running: { request: 'r', ai: 'codex', startedAt: 'now' } });
+  await new ChatStore(ws).recoverInterrupted();
+  const rows = await store.readLog('P', task.id);
+  assert.equal(rows.length, 2); assert.ok(rows[1]?.role === 'assistant'); assert.equal(rows[1].error, 'interrupted');
+}));
+
 test('JSONL 快取讀追加尾端、跳過壞行且回傳深層副本', () => withTmpWorkspace(async ws => {
   await new ProjectLedger(ws).create({ name: 'P' });
   const task = await new TaskLedger(ws).create('P', { title: 'T', workspace: 'direct' });
