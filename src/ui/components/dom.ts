@@ -174,5 +174,18 @@ export function checksModal(title: string, options: { value: string; label: stri
 export function lines(value: string): string[] { return value.split('\n').map(s => s.trim()).filter(Boolean); }
 export function readLocal<T>(key: string, fallback: T): T { try { const value = localStorage.getItem(key); return value ? JSON.parse(value) as T : fallback; } catch { return fallback; } }
 export function storeLocal(key: string, value: unknown): void { try { localStorage.setItem(key, JSON.stringify(value)); } catch { /* 儲存空間不足不阻止送出。 */ } }
+/**
+ * Key for browser-kept state of one project or task (drafts, AI picks). Task IDs are dates and project names repeat
+ * across workspaces, so the key carries the workspace root; a key from before that scoping is adopted once, then dropped.
+ */
+export function workspaceLocalKey(state: AppState, kind: 'draft' | 'pick' | 'quick', scope: string): string {
+  const key = `yumeewade.${kind}@${state.root}.${scope}`;
+  const legacy = `yumeewade.${kind}.${scope}`;
+  try {
+    const old = localStorage.getItem(legacy);
+    if (old !== null) { if (localStorage.getItem(key) === null) localStorage.setItem(key, old); localStorage.removeItem(legacy); }
+  } catch { /* storage unavailable */ }
+  return key;
+}
 export interface ViewContext { state: AppState; refresh: () => Promise<void>; }
 export interface View { node: HTMLElement; dispose?: () => void; update?: (state: AppState) => void; }

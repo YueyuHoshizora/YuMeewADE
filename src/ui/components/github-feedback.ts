@@ -1,7 +1,7 @@
 import type { LinkedFeedback } from '../../shared/types.ts';
 import { query, request } from '../api.ts';
 import { t } from '../i18n/index.ts';
-import { area, button, confirmModal, el, field, input, link, row, storeLocal, type ViewContext } from './dom.ts';
+import { area, button, confirmModal, el, field, input, link, row, storeLocal, workspaceLocalKey, type ViewContext } from './dom.ts';
 
 export function githubLinkedFeedbackPanel(context: ViewContext, project: string, task: string, useDraft: (draft: string) => void): HTMLElement {
   const panel = el('section', 'form'); const content = el('div', 'form');
@@ -20,7 +20,7 @@ export function githubLinkedFeedbackPanel(context: ViewContext, project: string,
     content.append(el('h3', '', t('feedback.linked')), anchor, el('p', '', current.kind === 'thread' ? `${current.resolved ? t('feedback.resolved') : t('feedback.unresolved')} · ${current.path}:${current.line ?? ''}` : current.state), el('p', '', `${current.threadId} ${current.commentId}`), el('pre', '', current.source), el('p', '', t('feedback.noAi')), field(t('github.instruction'), draft), row(button(t('feedback.save'), async () => {
       if (!current) return;
       current = await request<LinkedFeedback>('/api/git/feedback-draft', { ...ids, revision: current.revision, draft: draft.value }); render();
-    }), button(t('feedback.use'), () => { storeLocal(`yumeewade.draft.${project}/${task}`, draft.value); useDraft(draft.value); })));
+    }), button(t('feedback.use'), () => { storeLocal(workspaceLocalKey(context.state, 'draft', `${project}/${task}`), draft.value); useDraft(draft.value); })));
     content.append(button(t('feedback.refresh'), async () => {
       if (!current) return;
       current = await request<LinkedFeedback>('/api/git/feedback-refresh', { ...ids, revision: current.revision }); render();

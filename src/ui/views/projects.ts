@@ -4,7 +4,7 @@ import { labelValue, t } from '../i18n/index.ts';
 import { attachments } from '../components/attachments.ts';
 import { aiPicker } from '../components/picker.ts';
 import { markdown } from '../components/markdown.ts';
-import { archiveFlow, area, button, card, checksModal, confirmModal, disclosure, el, field, input, lines, link, projectHash, readLocal, row, run, select, storeLocal, taskHash, textModal, toast, UserError, type View, type ViewContext } from '../components/dom.ts';
+import { archiveFlow, area, button, card, checksModal, confirmModal, disclosure, el, field, input, lines, link, projectHash, readLocal, row, run, select, storeLocal, taskHash, textModal, toast, UserError, workspaceLocalKey, type View, type ViewContext } from '../components/dom.ts';
 import { localDateTime, localTime } from '../components/display.ts';
 import { shouldSend } from '../components/composer.ts';
 import { attachSlashCommands } from '../components/slash-menu.ts';
@@ -28,9 +28,9 @@ async function startWithBudget(context: ViewContext, input: StartInput): Promise
   // The server only rejects an empty AI as a missing field; say why nothing can start instead.
   if (!input.ai) throw new UserError(t('onboarding.banner'));
   const { task } = await request<{ task: Task }>('/api/start/prepare', input);
-  const draftKey = `yumeewade.draft.${input.project}/${task.id}`;
+  const draftKey = workspaceLocalKey(context.state, 'draft', `${input.project}/${task.id}`);
   storeLocal(draftKey, input.text);
-  storeLocal(`yumeewade.quick.${input.project}`, '');
+  storeLocal(workspaceLocalKey(context.state, 'quick', input.project), '');
   try {
     if (!await confirmUsageRound({ project: input.project, task: task.id, ai: input.ai, account: context.state.settings.activeAccounts[input.ai] ?? 'default' })) return;
     await api.send({ ...input, task: task.id });
@@ -379,7 +379,7 @@ export function projectView(context: ViewContext, project: ProjectView, params: 
     }
   }
   renderOverview(); node.append(overview);
-  const draftKey = `yumeewade.quick.${project.id}`; const draft = area(readLocal<string>(draftKey, ''), `${t('project.quickPlaceholder')} · ${t(readLocal('yumeewade.enterToSend', false) ? 'chat.hintEnter' : 'chat.hintModifier')}`); draft.maxLength = context.state.limits.promptChars;
+  const draftKey = workspaceLocalKey(context.state, 'quick', project.id); const draft = area(readLocal<string>(draftKey, ''), `${t('project.quickPlaceholder')} · ${t(readLocal('yumeewade.enterToSend', false) ? 'chat.hintEnter' : 'chat.hintModifier')}`); draft.maxLength = context.state.limits.promptChars;
   draft.oninput = () => storeLocal(draftKey, draft.value);
   const disposeComposeInsert = attachComposeInsert(draft, project.id, '');
   const pick = aiPicker(context.state, project.startPick ?? context.state.settings.initial, () => slashCommands.refresh()); const upload = attachments(project.id, context.state.limits, draft);

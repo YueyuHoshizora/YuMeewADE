@@ -188,6 +188,7 @@
 - 工具核准卡也會遮蔽沒有標籤的常見憑證（GitHub `ghp_`／`github_pat_`、OpenAI／Anthropic `sk-`、GitLab `glpat-`、Slack `xox?-`、AWS `AKIA…`、Google `AIza…`、JWT）與網址裡的 `帳號:密碼@`；先前只認得 `token=`、`password:` 這類有標籤的寫法與 `Bearer`，像 `git push https://x-access-token:ghp_…@github.com/…` 會原樣顯示。
 - 桌面版只讓 IDE 自己的頁面取得它用到的權限（系統通知、複製按鈕寫入剪貼簿），其他一律拒絕。先前沿用 Electron 預設的全部允許：實測內嵌網頁預覽（專案自己的開發伺服器，從另一個 loopback origin 嵌入）呼叫 `Notification.requestPermission()` 會得到 `granted`，可以冒充 App 跳出系統通知。
 - Windows 終端輸出裡的檔案路徑也能點開：`C:\repo\src\main.ts:12`、`src\util.ts(4,2)` 這類反斜線與磁碟機代號的寫法會對應到終端根目錄下的檔案（磁碟機與資料夾名稱不分大小寫）；先前只認得 `/` 分隔的路徑。
+- 作業草稿、快速開始草稿與 AI 選擇改為依工作區分開保存；先前只以專案名稱與作業 ID 區分，而作業 ID 是日期流水號、專案名稱也常重複，切換工作區後，另一個工作區同名專案、同 ID 作業會出現原本那份草稿，甚至被送出。舊的草稿會由第一個開啟它的工作區接手。
 
 ### 驗證、審查與工作流程
 

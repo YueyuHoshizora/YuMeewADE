@@ -1,7 +1,7 @@
 import type { GithubIssue, Task } from '../../shared/types.ts';
 import { query, request } from '../api.ts';
 import { t } from '../i18n/index.ts';
-import { area, button, el, field, input, link, modal, row, storeLocal, taskHash, type ViewContext } from './dom.ts';
+import { area, button, el, field, input, link, modal, row, storeLocal, taskHash, workspaceLocalKey, type ViewContext } from './dom.ts';
 
 export function githubIssuesButton(context: ViewContext, project: string): HTMLElement {
   return button(t('github.issues'), () => {
@@ -18,7 +18,7 @@ export function githubIssuesButton(context: ViewContext, project: string): HTMLE
         content.append(anchor, el('pre', '', detail.body), field(t('common.title'), title), field(t('github.instruction'), instruction));
         modal(`#${detail.number}`, content, button(t('github.createTask'), async () => {
           const result = await request<{ task: Task }>('/api/git/issue-task', { project, number: detail.number, title: title.value, draft: instruction.value });
-          storeLocal(`yumeewade.draft.${project}/${result.task.id}`, instruction.value);
+          storeLocal(workspaceLocalKey(context.state, 'draft', `${project}/${result.task.id}`), instruction.value);
           content.closest('dialog')?.close(); results.closest('dialog')?.close();
           await context.refresh(); location.hash = taskHash(project, result.task.id);
         }));

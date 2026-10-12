@@ -1,7 +1,7 @@
 import type { ProjectView, Task, TaskTemplate } from '../../shared/types.ts';
 import { query, request } from '../api.ts';
 import { t } from '../i18n/index.ts';
-import { area, button, confirmModal, disclosure, el, field, input, row, run, select, storeLocal, taskHash, type ViewContext } from './dom.ts';
+import { area, button, confirmModal, disclosure, el, field, input, row, run, select, storeLocal, taskHash, workspaceLocalKey, type ViewContext } from './dom.ts';
 
 export function taskTemplates(context: ViewContext, project: ProjectView): HTMLElement {
   const list = el('div'); const name = input(); name.maxLength = 60;
@@ -14,7 +14,7 @@ export function taskTemplates(context: ViewContext, project: ProjectView): HTMLE
       el('span', '', `${template.name} · ${template.title} · ${t(template.scope === 'project' ? 'tasks.projectTemplate' : 'tasks.workspaceTemplate')}`),
       button(t('tasks.fromTemplate'), async () => {
         const result = await request<{ task: Task; instruction: string }>('/api/task/template/create', { project: project.id, name: template.name, scope: template.scope });
-        storeLocal(`yumeewade.draft.${project.id}/${result.task.id}`, result.instruction);
+        storeLocal(workspaceLocalKey(context.state, 'draft', `${project.id}/${result.task.id}`), result.instruction);
         await context.refresh(); location.hash = taskHash(project.id, result.task.id);
       }),
       button(t('common.remove'), async () => {

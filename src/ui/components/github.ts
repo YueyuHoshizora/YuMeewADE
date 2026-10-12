@@ -1,7 +1,7 @@
 import type { GithubReviewStatus, Task } from '../../shared/types.ts';
 import { query, request } from '../api.ts';
 import { t } from '../i18n/index.ts';
-import { area, button, confirmModal, el, field, input, link, modal, row, storeLocal, taskHash, type ViewContext } from './dom.ts';
+import { area, button, confirmModal, el, field, input, link, modal, row, storeLocal, taskHash, workspaceLocalKey, type ViewContext } from './dom.ts';
 
 export function githubPullRequestPanel(project: string, task: string | undefined, branch: string, context: ViewContext): HTMLElement {
   const ids = { project, ...(task ? { task } : {}) };
@@ -33,7 +33,7 @@ export function githubPullRequestPanel(project: string, task: string | undefined
             const content = el('div', 'form'); content.append(field(t('common.title'), title), field(t('github.instruction'), draft), el('p', '', t('feedback.noAi')));
             modal(t('feedback.create'), content, button(t('feedback.create'), async () => {
               const created = await request<{ task: Task }>('/api/git/feedback-task', { project, repository: status.repository, number: pr.number, threadId: thread.id, commentId: comment.id, title: title.value, draft: draft.value });
-              storeLocal(`yumeewade.draft.${project}/${created.task.id}`, draft.value);
+              storeLocal(workspaceLocalKey(context.state, 'draft', `${project}/${created.task.id}`), draft.value);
               content.closest('dialog')?.close(); panel.closest('dialog')?.close();
               await context.refresh(); location.hash = taskHash(project, created.task.id);
             }));

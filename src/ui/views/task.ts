@@ -14,7 +14,7 @@ import { HistoryWindow } from '../components/history.ts';
 import { TranscriptWindow, type WindowRow } from '../components/windowing.ts';
 import {
   area, button, confirmModal, disclosure, el, field, iconButton, input, link, modal,
-  projectHash, readLocal, row, run, select, statusRegion, storeLocal, taskHash, textModal, toast,
+  projectHash, readLocal, row, run, select, statusRegion, storeLocal, taskHash, textModal, toast, workspaceLocalKey,
   type View, type ViewContext,
 } from '../components/dom.ts';
 import { aiLabel, effortLabel, localTime, modelLabel } from '../components/display.ts';
@@ -235,8 +235,8 @@ export function taskView(
   const queueNode = el('div', 'queue-strip');
   const composer = el('div', 'composer');
   transcript.append(earlier, transcriptRows, question);
-  const draftKey = `yumeewade.draft.${project.id}/${task.id}`;
-  const pickKey = `yumeewade.pick.${project.id}/${task.id}`;
+  const draftKey = workspaceLocalKey(context.state, 'draft', `${project.id}/${task.id}`);
+  const pickKey = workspaceLocalKey(context.state, 'pick', `${project.id}/${task.id}`);
   const draft = area(
     readLocal<string>(draftKey, ''),
     t(readLocal('yumeewade.enterToSend', false) ? 'chat.placeholderEnter' : 'chat.placeholder'));
