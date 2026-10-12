@@ -7,6 +7,7 @@ import { test } from 'node:test';
 import { startTestServer } from '../testing/server.ts';
 import type { AppState, Project, ProjectTrustView, Settings, Task } from '../shared/types.ts';
 import { MockCliProvider } from '../cli/mock.ts';
+import type { CliProvider } from '../cli/provider.ts';
 import { gitOk } from '../git/git.ts';
 
 async function setup() {
@@ -563,5 +564,35 @@ test('a task cannot be confirmed done while its AI turn is still running', async
     await s.app.runner.stop(p.id, t.id); await s.app.runner.whenIdle();
     assert.equal((await s.api('POST', '/api/task/completion', { ...ids, action: 'approve' })).status, 200);
     assert.equal(await s.app.completion.isApproved(p.id, t.id), true);
+  } finally { await s.close(); }
+});
+
+test('a running review blocks confirming its task done and writing project memory', async () => {
+  const started = Promise.withResolvers<void>(); const finish = Promise.withResolvers<{ ok: boolean; stopped: boolean }>();
+  const reviewer: CliProvider = { name: 'reviewer', dangerous: false, supportsReadonly: true, readonlyEnforcement: 'tool-allowlist', available: async () => true,
+    send: () => { started.resolve(); return { stop: () => finish.resolve({ ok: false, stopped: true }), done: finish.promise }; } };
+  const s = await startTestServer('', { providers: { mock: new MockCliProvider(5), reviewer } });
+  try {
+    const p = (await s.api('POST', '/api/project/new', { name: 'Demo' })).json as Project;
+    const t = (await s.api('POST', '/api/task/new', { project: p.id, title: 'First', cli: 'mock' })).json as Task;
+    const ids = { project: p.id, task: t.id };
+    const review = s.api('POST', '/api/review/run', { ...ids, ai: 'reviewer', text: 'review it' });
+    await started.promise;
+    for (const [route, body] of [
+      ['/api/task/completion', { ...ids, action: 'approve' }],
+      ['/api/task/update', { ...ids, patch: { state: '完成' } }],
+      ['/api/task/bulk', { project: p.id, tasks: [t.id], action: { kind: 'state', value: '完成' } }],
+    ] as const) {
+      const response = await s.api('POST', route, body);
+      const detail = route === '/api/task/bulk' ? (response.json as { results: { detail?: string }[] }).results[0]?.detail : (response.json as { detail?: string }).detail;
+      assert.equal(detail, 'complete_while_running', route);
+    }
+    assert.equal(await s.app.completion.isApproved(p.id, t.id), false);
+    const memory = await s.api('POST', '/api/project/memory', { project: p.id, name: 'note.md', text: 'x', revision: null });
+    assert.equal((memory.json as { detail?: string }).detail, 'editor_running');
+    assert.equal((await s.api('POST', '/api/project/memory/delete', { project: p.id, name: 'INDEX.md', revision: 'x', confirm: true })).status, 409);
+    await s.api('POST', '/api/review/stop', ids); await review;
+    assert.equal((await s.api('POST', '/api/project/memory', { project: p.id, name: 'note.md', text: 'x', revision: null })).status, 200);
+    assert.equal((await s.api('POST', '/api/task/completion', { ...ids, action: 'approve' })).status, 200);
   } finally { await s.close(); }
 });

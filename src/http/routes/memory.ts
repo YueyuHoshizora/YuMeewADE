@@ -11,7 +11,7 @@ export function registerMemoryRoutes(router: Router, app: App): void {
   });
   router.post('/api/project/memory', async ({ body }) => {
     const project = reqString(body, 'project', 120); const name = reqString(body, 'name', 120);
-    if (app.runner.isBusy(project)) throw new AppError('conflict', 'editor_running');
+    if (app.aiBusy(project)) throw new AppError('conflict', 'editor_running');
     if (body.revision !== null && typeof body.revision !== 'string') throw new AppError('bad_request');
     if (typeof body.text !== 'string') throw new AppError('bad_request', 'field_type', { field: 'text' });
     if (body.text.length > MEMORY_MAX_BYTES) throw new AppError('bad_request', 'field_too_long', { field: 'text' });
@@ -22,7 +22,7 @@ export function registerMemoryRoutes(router: Router, app: App): void {
   router.post('/api/project/memory/delete', async ({ body }) => {
     if (body.confirm !== true) throw new AppError('bad_request');
     const project = reqString(body, 'project', 120);
-    if (app.runner.isBusy(project)) throw new AppError('conflict', 'editor_running');
+    if (app.aiBusy(project)) throw new AppError('conflict', 'editor_running');
     await app.memory.remove(project, reqString(body, 'name', 120), reqString(body, 'revision', 64));
     await app.oplog.record({ action: 'project.memory.delete', project }); app.changed(project);
     return { ok: true };
