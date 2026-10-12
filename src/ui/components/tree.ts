@@ -161,7 +161,12 @@ export function tree(context: ViewContext): HTMLElement {
       void run(async () => { await request('/api/order', { parent: p.parent, order: siblings.map(other => other.id) }); await refresh(); });
     };
     if (location.hash === title.hash) line.classList.add('selected');
-    line.append(toggle(key, true, attention), el('span', `dot ${projectTone}`), title, menu([
+    const missing: HTMLElement[] = [];
+    if (p.bodyMissing) {
+      const mark = el('span', 'tree-warning', '⚠'); const label = t('project.bodyMissing', { path: p.bodyPath });
+      mark.title = label; mark.setAttribute('role', 'img'); mark.setAttribute('aria-label', label); missing.push(mark);
+    }
+    line.append(toggle(key, true, attention), el('span', `dot ${projectTone}`), title, ...missing, menu([
       { label: t('common.rename'), action: async () => { const name = await renameModal(p.name); if (name) { await request('/api/project/update', { project: p.id, patch: { name } }); await refresh(); } } },
       { label: t(p.pinned ? 'tree.unpin' : 'tree.pin'), action: async () => { await request('/api/pin', { project: p.id, pinned: !p.pinned }); await refresh(); } },
       { label: t('tree.up'), action: () => move(p, -1) }, { label: t('tree.down'), action: () => move(p, 1) },

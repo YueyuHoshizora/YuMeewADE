@@ -261,6 +261,7 @@
 .lazy-view{display:contents}
 .skip-link{position:fixed;left:8px;top:-60px;z-index:200}.skip-link:focus{top:8px}#main:focus{outline:none}
 .tree-title .task-meta:not(:empty){margin-left:.5em}
+.tree-warning{flex:0 0 auto;color:var(--yellow);font-size:12px;cursor:help}
 .tree-unreadable{margin:12px 5px 0;line-height:1.5}.tree-unreadable ul{margin:4px 0 0;padding-left:16px}.tree-unreadable code{overflow-wrap:anywhere}
 .diff-file>.form{max-width:none}
 .range-label{display:inline-flex;align-items:center;gap:6px;font-size:12px}.range-label[hidden]{display:none}
