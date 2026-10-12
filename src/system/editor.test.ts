@@ -121,6 +121,23 @@ test('file-name search finds binary and large files without spending the content
   } finally { editor.dispose(); }
 }));
 
+test('content search charges binary files to its byte budget and skips files too large to open without reading them', () => withTmpWorkspace(async ws => {
+  const projects = new ProjectLedger(ws); const tasks = new TaskLedger(ws); await projects.create({ name: 'P' });
+  const editor = new EditorService(new WorktreeService({ ws, projects, tasks, diffBytes: 100000 }), tasks, {}, 9 * 1024 * 1024);
+  const root = ws.projectDir('P');
+  try {
+    // Binary files are read to find out they are binary; five 7 MiB ones exceed the 32 MiB budget before z.txt.
+    for (let index = 0; index < 5; index++) await fs.writeFile(path.join(root, `a${index}.bin`), Buffer.alloc(7 * 1024 * 1024));
+    await fs.writeFile(path.join(root, 'z.txt'), 'needle');
+    assert.equal((await editor.search('P', '', 'needle')).truncated, true);
+    for (let index = 0; index < 5; index++) await fs.rm(path.join(root, `a${index}.bin`));
+    // Larger than the editor opens as text: skipped by size, so it neither counts nor hides later matches.
+    await fs.writeFile(path.join(root, 'huge.txt'), 'x'.repeat(10 * 1024 * 1024));
+    const result = await editor.search('P', '', 'needle');
+    assert.deepEqual(result.hits.map(hit => hit.path), ['z.txt']); assert.equal(result.truncated, false);
+  } finally { editor.dispose(); }
+}));
+
 test('renaming only the letter case works on case-insensitive file systems and still refuses other existing files', () => withTmpWorkspace(async ws => {
   const projects = new ProjectLedger(ws); const tasks = new TaskLedger(ws); await projects.create({ name: 'P' });
   const editor = new EditorService(new WorktreeService({ ws, projects, tasks, diffBytes: 100000 }), tasks, {});

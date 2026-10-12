@@ -665,10 +665,21 @@ export class EditorService {
         if (named) { scanned++; if (!named.offsets.length) continue; }
         let document: EditorDocument;
         // The root and the listing are resolved once per search; per-file lookups only re-check the path itself.
-        try { validRelative(relative); document = await this.document(await resolveIn(root, relative, true), relative, readonly); } catch { continue; }
+        try {
+          validRelative(relative);
+          const file = await resolveIn(root, relative, true);
+          if (!named) {
+            // Charge the budget before reading: a file larger than the editor opens as text is never searched, so it is
+            // not read (and hashed) in full either.
+            const { size } = await fs.stat(file);
+            if (size > this.MAX) continue;
+            if (bytes + size > 32 * 1024 * 1024) { truncated = true; break; }
+            bytes += size;
+          }
+          document = await this.document(file, relative, readonly);
+        } catch { continue; }
         if (!named) {
           if (document.binary || document.truncated) continue;
-          bytes += document.size; if (bytes > 32 * 1024 * 1024) { truncated = true; break; }
           scanned++;
         }
         const value = named ? relative : document.text;
