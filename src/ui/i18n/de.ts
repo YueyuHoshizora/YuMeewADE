@@ -390,6 +390,7 @@ export const de: Record<MessageKey, string> = {
   "workflow.native.upstream": "Ausgewählte Vorgängerknoten (kommagetrennt)",
   "workflow.native.resolve": "Konfliktlösung bestätigen und Integration fortsetzen",
   "workflow.native.delivery": "Auslieferungsprüfungen",
+  "workflow.delivery.ready": "bereit", "workflow.delivery.blocked": "noch nicht bereit", "workflow.delivery.pending": "nicht ausgeführt",
   "workflow.native.timeline": "Agentenübergreifende Ereigniszeitleiste",
   "preview.title": "Web-Vorschau",
   "preview.start": "Starten",

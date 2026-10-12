@@ -390,6 +390,7 @@ export const ja: Record<MessageKey, string> = {
   "workflow.native.upstream": "選択する上流ノード（カンマ区切り）",
   "workflow.native.resolve": "競合解決を確認して統合を続行",
   "workflow.native.delivery": "納品ゲート",
+  "workflow.delivery.ready": "納品可能", "workflow.delivery.blocked": "未完了", "workflow.delivery.pending": "未実行",
   "workflow.native.timeline": "エージェント間イベント時系列",
   "preview.title": "Web プレビュー",
   "preview.start": "起動",

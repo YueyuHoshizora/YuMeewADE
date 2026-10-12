@@ -390,6 +390,7 @@ export const fr: Record<MessageKey, string> = {
   "workflow.native.upstream": "Nœuds amont sélectionnés (séparés par virgules)",
   "workflow.native.resolve": "Confirmer la résolution et poursuivre l’intégration",
   "workflow.native.delivery": "Contrôles de livraison",
+  "workflow.delivery.ready": "prêt", "workflow.delivery.blocked": "pas encore prêt", "workflow.delivery.pending": "non exécuté",
   "workflow.native.timeline": "Chronologie des événements inter-agents",
   "preview.title": "Aperçu Web",
   "preview.start": "Démarrer",

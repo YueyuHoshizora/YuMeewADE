@@ -234,6 +234,7 @@ export const zhTW = {
   "workflow.native.upstream": "選取上游節點（逗號分隔）",
   "workflow.native.resolve": "確認衝突解決並繼續整合",
   "workflow.native.delivery": "交付閘門",
+  "workflow.delivery.ready": "可交付", "workflow.delivery.blocked": "尚未就緒", "workflow.delivery.pending": "尚未執行",
   "workflow.native.timeline": "跨 Agent 事件時間軸",
   "preview.title": "網頁預覽",
   "preview.start": "啟動",

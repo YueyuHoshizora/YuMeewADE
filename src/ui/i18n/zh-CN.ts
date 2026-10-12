@@ -390,6 +390,7 @@ export const zhCN: Record<MessageKey, string> = {
   "workflow.native.upstream": "选择上游节点（逗号分隔）",
   "workflow.native.resolve": "确认冲突解决并继续集成",
   "workflow.native.delivery": "交付门禁",
+  "workflow.delivery.ready": "可交付", "workflow.delivery.blocked": "尚未就绪", "workflow.delivery.pending": "尚未执行",
   "workflow.native.timeline": "跨 Agent 事件时间轴",
   "preview.title": "网页预览",
   "preview.start": "启动",

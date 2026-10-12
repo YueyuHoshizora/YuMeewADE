@@ -390,6 +390,7 @@ export const en: Record<MessageKey, string> = {
   "workflow.native.upstream": "Selected upstream nodes (comma-separated)",
   "workflow.native.resolve": "Confirm conflict resolution and continue integration",
   "workflow.native.delivery": "Delivery gates",
+  "workflow.delivery.ready": "ready", "workflow.delivery.blocked": "not ready", "workflow.delivery.pending": "not run",
   "workflow.native.timeline": "Cross-agent event timeline",
   "preview.title": "Web preview",
   "preview.start": "Start",

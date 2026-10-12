@@ -49,7 +49,8 @@ export function workflowButton(context: ViewContext, project: string, task: stri
     plan.steps.forEach(addStep);
     function renderStatus(): void {
       status.textContent = `${t(`workflow.state.${plan.state}`)} · ${plan.cursor}/${plan.steps.length}${plan.reason ? ` · ${t(`detail.${plan.reason}` as Parameters<typeof t>[0])}` : ''}`;
-      if (plan.delivery) status.textContent += ` · ${t('workflow.native.delivery')}: ${t(plan.delivery.state === 'ready' ? 'verify.pass' : 'verify.fail')} · ${plan.delivery.gates.map(gate => `${gate.node}: ${t(gate.ok ? 'verify.pass' : 'verify.fail')}`).join(' · ')}`;
+      // "Blocked" only means the gates are not all satisfied yet; a gate without a result has not run rather than failed.
+      if (plan.delivery) status.textContent += ` · ${t('workflow.native.delivery')}: ${t(plan.delivery.state === 'ready' ? 'workflow.delivery.ready' : 'workflow.delivery.blocked')}${plan.delivery.gates.map(gate => ` · ${gate.node}: ${t(gate.ok ? 'verify.pass' : gate.at ? 'verify.fail' : 'workflow.delivery.pending')}`).join('')}`;
       timeline.replaceChildren(renderWorkflowTimeline(plan));
       void run(renderRisk);
       save.disabled = plan.state === 'running';
@@ -120,12 +121,13 @@ export function workflowButton(context: ViewContext, project: string, task: stri
     root.append(el('p', 'muted', t('workflow.help')), status, risk, field(t('workflow.dependencies'), dependencies), steps,
       button(t('workflow.add'), () => addStep()), evidence, row(save, start, stop, approve, rerunCurrent), timeline, history);
     root.prepend(el('p', 'muted', t('workflow.graph.help')));
-    const graphStatus = el('pre'); root.append(graphStatus);
+    const graphStatus = el('pre'); graphStatus.hidden = true; root.append(graphStatus);
     modal(t('workflow.title'), root); renderStatus();
     async function refresh(): Promise<void> {
       plan = await request<WorkflowPlan>(query('/api/task/workflow', { project, task }));
       if (root.isConnected) renderStatus();
       graphStatus.textContent = plan.steps.map(step => `${step.id} [${plan.nodeStates?.[step.id!] ?? 'pending'}] ← ${step.dependsOn?.join(', ') ?? ''}${step.condition ? ` (${step.condition.node}:${step.condition.outcome})` : ''}${plan.branchTasks?.[step.id!] ? ` · ${plan.branchTasks[step.id!]}` : ''}`).join('\n');
+      graphStatus.hidden = !plan.steps.length;
     }
     const timer = window.setInterval(() => { if (root.isConnected) void run(refresh); else window.clearInterval(timer); }, 1500);
     root.closest('dialog')?.addEventListener('close', () => window.clearInterval(timer), { once: true });
