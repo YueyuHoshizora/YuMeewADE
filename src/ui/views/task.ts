@@ -873,6 +873,24 @@ export function taskView(
     if (preview.mainDirty) info.append(el('p', 'muted', t('copy.mainDirty')));
   }
   const footer = el('div', 'task-footer');
+  // Text inputs live across footer redraws: the AI checking a step or another tab saving must not wipe what the user is typing.
+  const addStep = input('', t('task.addStep'));
+  const addStepButton = button(t('common.add'), async () => {
+    if (!addStep.value.trim()) return;
+    await request('/api/task/step', { project: project.id, task: task.id, add: addStep.value.trim() });
+    addStep.value = '';
+    await context.refresh();
+  });
+  const memo = input('', t('task.memo'));
+  memo.maxLength = 300;
+  memo.setAttribute('aria-label', t('task.memo'));
+  const leaveMemo = button(t('task.leaveMemo'), async () => {
+    if (!memo.value.trim()) return;
+    await request('/api/task/memo', { project: project.id, task: task.id, text: memo.value.trim() });
+    memo.value = '';
+    await context.refresh();
+  });
+  let metadata: { key: string; node: HTMLElement } | undefined;
   function renderFooter(): void {
     const state = select(TASK_STATES.map(value => ({ value, label: t(`state.${value}`) })), task.state);
     state.onchange = () => {
@@ -911,18 +929,7 @@ export function taskView(
         }),
       ));
     });
-    const add = input('', t('task.addStep'));
-    steps.append(row(
-      add,
-      button(
-        t('common.add'),
-        async () => {
-          if (!add.value.trim()) return;
-          await request('/api/task/step', { project: project.id, task: task.id, add: add.value.trim() });
-          await context.refresh();
-        }
-      )
-    ));
+    steps.append(row(addStep, addStepButton));
     const detail = disclosure(t('task.steps', { done: task.steps.filter(s => s.done).length, total: task.steps.length }), steps);
     detail.open = footer.querySelector<HTMLDetailsElement>('details.steps-detail')?.open ?? false;
     detail.classList.add('steps-detail');
@@ -945,21 +952,16 @@ export function taskView(
     state.title = t('task.state');
     phase.setAttribute('aria-label', t('task.phase'));
     phase.title = t('task.phase');
-    const memo = input('', t('task.memo'));
-    memo.maxLength = 300;
-    memo.setAttribute('aria-label', t('task.memo'));
-    const leaveMemo = button(
-      t('task.leaveMemo'),
-      async () => {
-        if (!memo.value.trim()) return;
-        await request('/api/task/memo', { project: project.id, task: task.id, text: memo.value.trim() });
-        await context.refresh();
-      });
+    // Due date and tags are only rebuilt when they changed, so an unsaved edit survives unrelated redraws.
+    const metadataKey = JSON.stringify([task.due, task.tags]);
+    if (metadata?.key !== metadataKey) metadata = { key: metadataKey, node: metadataEditor(project.id, task, () => context.refresh()) };
+    const focused = footer.contains(document.activeElement) ? document.activeElement as HTMLElement : null;
     // The ledger keeps the AI's "next" section and the memo log; show the first next step and the newest memo instead of hiding them in a tooltip.
     // Both sections hold raw markdown lines; drop the list marker the ledger writes in front of each entry.
     const plain = (line: string) => line.replace(/^\s*[-*+]\s+/, '');
     const notes = [task.next && labelValue(t('tasks.next'), plain(task.next)), task.memo && labelValue(t('tasks.latestMemo'), plain(task.memo))].filter(Boolean) as string[];
-    footer.replaceChildren(...notes.map(text => { const line = el('p', 'muted task-notes', text); line.title = text; return line; }), row(state, phase, detail, memo, leaveMemo), record, metadataEditor(project.id, task, () => context.refresh()));
+    footer.replaceChildren(...notes.map(text => { const line = el('p', 'muted task-notes', text); line.title = text; return line; }), row(state, phase, detail, memo, leaveMemo), record, metadata.node);
+    if (focused?.isConnected) focused.focus();
   }
   const composerControls = row(pick.node, upload.node, snippetsButton(draft), contextButton(project.id, task.id, () => pick.value()));
   void run(async () => {
@@ -1097,9 +1099,9 @@ export function taskView(
         nextProject.verify, nextProject.checks, nextProject.requireVerification,
       ]);
       const footerChanged = JSON.stringify([
-        task.state, task.phase, task.steps, task.memo,
+        task.state, task.phase, task.steps, task.memo, task.next, task.due, task.tags,
       ]) !== JSON.stringify([
-        nextTask.state, nextTask.phase, nextTask.steps, nextTask.memo,
+        nextTask.state, nextTask.phase, nextTask.steps, nextTask.memo, nextTask.next, nextTask.due, nextTask.tags,
       ]);
       project = nextProject;
       task = nextTask;
