@@ -74,6 +74,22 @@ test('project-scope files use the external main folder and retain file and trust
   } finally { await s.close(); }
 });
 
+test('a differently cased alias of a project name is refused like a missing project, so it cannot slip past name-keyed locks', async () => {
+  const s = await startTestServer();
+  try {
+    const p = (await s.api('POST', '/api/project/new', { name: 'Alias' })).json as { id: string };
+    const insensitive = await fs.stat(path.join(s.app.ws.projectsDir, 'alias')).then(() => true, () => false);
+    const trust = await s.app.trust.view(p.id);
+    await s.app.trust.update(p.id, { state: 'restricted', overrides: {}, revision: trust.revision, confirmed: true });
+    assert.equal((await s.api('GET', '/api/git/status?project=Alias')).status, 403);
+    const alias = await s.api('GET', '/api/git/status?project=alias');
+    // On a case-sensitive file system `alias` simply does not exist.
+    assert.equal(alias.status, 404, insensitive ? 'alias of a restricted project' : 'missing project');
+    assert.equal((await s.api('POST', '/api/project/update', { project: 'alias', description: 'x' })).status, 404);
+    assert.equal((await s.app.projects.get(p.id)).description, '');
+  } finally { await s.close(); }
+});
+
 test('state, completion approval and step hash continuation', async () => {
   const { server: s, project: p, task: t } = await setup();
   const ids = { project: p.id, task: t.id };

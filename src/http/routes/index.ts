@@ -1,6 +1,9 @@
 // API 路由註冊入口。各模組只做輸入驗證與轉呼叫，業務邏輯在服務層。
-
+import { promises as fs } from 'node:fs';
+import { join } from 'node:path';
 import type { App } from '../../server/app.ts';
+import { AppError } from '../../shared/errors.ts';
+import { isValidProjectName } from '../../shared/names.ts';
 import type { Router } from '../router.ts';
 import { registerAiRoutes } from './ai.ts';
 import { registerChatRoutes } from './chat.ts';
@@ -39,6 +42,10 @@ export function registerRoutes(router: Router, app: App): void {
       // lookups are task diffs and Git reads too, which restricted projects forbid as a whole.
       : path.startsWith('/api/git/') || ['/api/task/preview', '/api/task/diff', '/api/task/merged', '/api/chat/turn-diff', '/api/archive/preview', '/api/chat/commands', '/api/editor/problems'].includes(path);
     const project = post ? ctx.body.project : ctx.query.get('project');
+    // On case-insensitive (or normalization-folding) file systems `p` opens project `P`'s folder, but every lock, trust
+    // record, running-task map and order entry is keyed by the exact name: an alias would bypass them all.
+    if (typeof project === 'string' && isValidProjectName(project) && !(await fs.readdir(app.ws.projectsDir).catch(() => [] as string[])).includes(project)
+      && await fs.lstat(join(app.ws.projectsDir, project)).then(() => true, () => false)) throw new AppError('not_found', 'project_missing');
     if (executable && typeof project === 'string') await app.trust.assertExecutable(project);
   });
   registerStateRoutes(router, app);
