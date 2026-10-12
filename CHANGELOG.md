@@ -12,6 +12,16 @@
 - 編輯器 action 嚴格檢查字串型別，不將陣列轉為字串後當成合法語言請求；錯誤型別回 400，不啟動 LSP 或改檔。
 - 持久化具名執行設定、有限輸出與行程樹停止；真正內嵌 `node-pty` 終端提供 ANSI、輸入／resize／stop、POST body owner capability 與失聯回收。內嵌有界 Node Inspector 提供 breakpoint／stack／variables／pause／resume／step，僅連 App 自己啟動的 loopback debug 行程，不是任意 DAP／evaluate；保留 loopback 預覽及系統終端／外部 IDE／瀏覽器整合。
 - Git 工作台支援 staged diff、綁定實際 index／worktree 的逐檔／hunk／選取行 stage／unstage、base／ours／theirs 三方與人工文字解衝突。手動 commit 預設執行 hooks，bypass 須明確確認；push 僅確認後非 force，PR 須確認與已登入 `gh`，不自動發布。
+- 跨檔 rename／format 以每個 dirty 草稿為基底計算並審閱後只改草稿，不再要求先儲存；全部緩衝區原子保留，磁碟仍以 revision CAS 保護。
+- 檔案搜尋改為分頁的內容／檔名搜尋，支援大小寫、整字、逐行錨點 regex（worker 300ms 期限）與包含／排除目錄；修正 UI 送出空的 include／exclude 被後端拒絕而沒有結果的問題，搜尋範圍下拉改用正確標籤。
+- 本機歷史：儲存／套用／檔案操作前保存有界快照，可比較並以 CAS 還原（含已刪除檔）；記錄編碼與區段範圍。
+- 窗格獨立釘選／預覽分頁、關閉其他／右側（尊重 dirty 確認）、前進／返回導覽；復原格式 v4，舊 v3 陣列復原的所有分頁都會顯示。
+- LSP 新增函式簽名、實作位置、呼叫階層（可點擊導覽）與 CodeMirror 行內 inlay 提示，依 server 能力 fail closed。
+- 多檔 AI 編輯提案：一次審閱多個已開啟檔案的提案，逐段或全部接受／拒絕，原子套用到草稿。
+- 文字編碼 UTF-8／UTF-8 BOM／UTF-16LE／UTF-16BE 偵測、保留與明確轉換（含只改編碼）；最高 128 MiB 大檔以全檔串流 revision、位元組區段（每段 256 KiB）原子修補，嚴格檢查字元／BOM 邊界與外部修改。
+- 本機 stdio DAP 除錯：以使用者已安裝 adapter 的明確 argv 啟動（例如 debugpy、lldb-dap），支援條件斷點、stack／scopes／variables、evaluate、step；拒絕遠端附加與反向啟動。修正 LLDB 在不同 frame 重用 scope 參照導致讀到錯誤 frame 變數。
+- 內嵌網頁預覽：信任專案可在隔離 proxy origin 的 `allow-scripts` iframe 中執行 SPA、模組與 WebSocket 即時重載，剝除 Cookie／認證並拒絕重新導向；IDE CSP 與 Electron 主程序只允許核心回報的精確預覽 origin。
+- 終端 VT 相容性：捲動區、origin mode、替代畫面、插入／刪除行字、寬字元、DEC 圖形、bracketed paste 與鍵盤回報；heavy route／編輯器模組延後載入。
 
 ### 驗證、審查與工作流程
 
@@ -20,6 +30,11 @@
 - 結構化 schema=1 JSON 審查保存內容／HEAD 快照與 findings 生命週期；人工 resolved／dismissed 需證據且不製造 AI 核准。可選合併門檻要求目前內容明確核准且無未解重大發現。
 - 角色明確 backup 只在開始前且角色選取的主 CLI 不可用時使用，手動選擇／執行失敗不換 AI。持久化 workflow 支援相依、角色／審查及人工關卡，人工證據為非空字串；逐步重跑保留歷次結果並使該步／下游失效。新增兩個實際作業工作樹的有界比較；依賴完成且人工核准才啟動，重啟不自動續跑。
 - 固定決策、釘選來源行段與交接預覽呈現 provenance／截斷，背景不視為本輪授權。圖片及逐行評論草稿持久化，評論以 diff hash 判斷過期，差異變動不能悄悄送出舊稿。
+- 多 Agent 整合候選節點：以不可變快照合併多個上游（含未提交／未追蹤，排除本機機密）到隔離候選作業，衝突人工解決後確認，不動主資料夾與上游。
+- 原生驗證／審查交付閘門：交付狀態依同一產物目前有效的驗證與核准重新計算；開始／續跑與每波排程前拒絕過期驗證並不啟動下游。修正驗證在啟動前被取消時仍可能執行命令的問題。
+- 跨 Agent 事件時間軸：記錄啟動、節點開始／結束／略過、失效、人工核准與整合解決（最多 500 筆、序號單調），UI 依實際狀態顯示結果。
+- 驗證輸入模型 `verificationInputs`：宣告輸入 glob 與明示輸出，輸入優先於輸出，指紋串流讀取內容並以 realpath 根比對（修正 macOS `/var`→`/private/var` 符號連結根造成誤判越界）。
+- 測試探索支援 Vitest、Jest、pytest、Go：只用已安裝工具，以框架原生 selector 精確重跑單案例；Vitest 5 以 ` > ` 對應案例名稱、巢狀案例 ID 不再重複。
 
 ### 恢復、帳號與維護
 
@@ -44,6 +59,7 @@
 - 更新 SHA256 僅證明完整性；macOS／Windows 明確啟動安裝須獨立固定公鑰 Ed25519 manifest 簽章及原生 Team ID／certificate thumbprint 驗證，Linux／portable 僅揭示檔案。CI 可選簽名／公證憑證；目前未提供，維持 ad-hoc／unsigned，不聲稱官方簽名或新增三平台通過。
 - 使用者批准 `node-pty@1.1.0` 作為唯一額外執行期相依；`prepare:pty` 安裝／建置時準備 Darwin helper 權限，不在 runtime chmod 已簽章 App。局部 `sprintf-js@1.1.3` precision guard 以精確 SHA256、原子冪等修補、漂移 fail closed 重現，上游 advisory 仍未解，不宣稱 audit 清零。
 - 三語 README 補齊安全界線、恢復範圍、設定、驗證／編輯器 API 及新功能分組路由；保留 loopback 無認證、AI 預設完整權限與費用風險警告。
+- CI 改為 macOS／Windows／Linux 三平台矩陣，artifact smoke 增加舊版台帳升級後資料保留驗證；簽章設定改由 `signing-plan.ts` 統一判斷，提供任一平台簽章變數即必須完整，否則拒絕建置，不悄悄產出未簽產物。CI 定義不是本次三平台實際通過的證明。
 
 ## [1.0.2] - 2026-10-11
 

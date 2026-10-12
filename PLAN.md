@@ -38,7 +38,7 @@
 - 對外部署、網域、HTTPS、遠端存取（僅監聽 127.0.0.1；網頁版＝本機瀏覽器介面，見假設 3）。
 - 帳號系統、多使用者、權限管理。
 - 套件發布（npm／JSR）：只開原始碼倉庫，不發套件。
-- 任意遠端 DAP adapter／無限制 evaluate；內嵌 PTY 與 App 自有 Node Inspector 已依 B.12 納入。
+- 任意遠端 DAP adapter、反向啟動／遠端附加與無限制 evaluate；內嵌 PTY、App 自有 Node Inspector 及使用者已安裝、明確 argv 的本機 stdio DAP adapter 已依 B.12／B.14 納入。
 - ~~AI 帳號切換與用量監控~~ → **改為範圍內**（使用者裁示 2026-10-11，見 B.6／B.10／B.12）：隔離 CLI OAuth 登入、App 私有加密憑證庫、帳號切換、額度通知、已知單位用量歷史與 scope 預算警告；不修改服務方案或額度上限。
 - 各平台商店上架；更新完整性下載、可選發布者簽章驗證與簽名／公證 CI 已依 B.12 納入，未提供官方憑證不得聲稱正式簽名。
 - ~~多語系（第一版僅繁體中文）~~ → **改為範圍內**（使用者裁示 2026-10-10，見附錄 A.8）：UI 支援繁體中文／簡體中文／英文／日文／德文／法文／義大利文。
@@ -585,3 +585,16 @@ electron 44.7.0、vite 8.3.4、electron-builder 26.15.3、typescript 7.0.2、@ty
 - 角色流程支援有界 DAG、條件分支、真正並行的獨立節點與匯總；不同寫者不得共用同一 worktree，分支工作使用獨立作業／副本且不自動合併。人工證據、下游失效、停止與重啟暫停語義保留，不因流程圖自動擴大授權。
 - Workflow `.ai/workflows/{作業ID}.json` 延伸 `{dependencies,steps,cursor,state,results,reason?,revision,nodeStates,branchTasks}`；step 增加 `id,dependsOn,condition:{node,outcome},kind:'expert'|'join'`，result 增加 `node,task`。舊線性步驟移轉為 `step-N` 串接；cursor 是成功／略過節點數，不是下一步索引。所有可執行節點（含舊線性流程）均建立真實隔離衍生作業，人工節點不自動執行。
 - 節點因 AI 提問而暫停時，在該衍生作業回答，再明確 `start` 消耗新的成功 assistant 結果；仍等待回答、執行中、停止、錯誤或再次提問都不可當作完成，且不重送原指示。人工／review 節點保留獨立證據與核准流程；已完成流程只可明確重跑後修改。
+
+### B.14 IDE 深度分析缺口補齊（使用者裁示 2026-10-12：「全部補齊，依功能提交」）
+- 多 Agent 整合：`kind:'integration'` 節點以 `upstream` 指定上游節點；`plan.candidates[node]` 存 `{task,base,head,sources:[{task,head,fingerprint,snapshot}],conflicts,state:'ready'|'conflict',diff,truncated}`。候選是一般隔離衍生作業；上游 tracked／staged 以 stash-create 物件快照，未追蹤一般檔以 O_NOFOLLOW 讀取並排除本機機密，主資料夾與上游 index 不變。衝突需人工在候選工作樹解決並明確 `resolveIntegration`，不自動合併主線。
+- 交付閘門：`kind:'verify'|'review'` 只接受單一上游；`plan.delivery={state,gates:[{node,kind,task?,ok,at?}]}` 於讀取時以目前驗證狀態與審查快照重新計算。開始／續跑及每一波排程前檢查已成功閘門仍新鮮，過期驗證回 `verification_required` 且不啟動下游。流程 `completed` 不等於可交付。
+- 事件時間軸：`plan.events` 最多 500 筆 `{sequence,at,run,type,node?,task?,source?,outcome?,request?,snapshot?}`，`eventSequence` 跨淘汰與重啟單調遞增，`runId` 每次明確啟動新產生。記錄啟動／中斷／結束、節點開始／結束／略過、失效、人工核准與整合解決；只記錄實際觀察到的轉移。
+- 驗證輸入模型：PROJECT.md frontmatter `verificationInputs:{inputs?:string[],outputs?:string[]}`，相對 glob（`*`／`**`），拒絕絕對路徑、`..` 與 `.git`。有 inputs 時只指紋符合者；outputs 排除但不得遮蔽同時被 inputs 命中的檔案；未設定維持完整保守掃描。指紋串流讀取內容並以 realpath 根比對，symlink 必須仍在工作根內。
+- 測試框架：測試探索設定元素擴充 `{name,files,framework?:'node'|'vitest'|'jest'|'pytest'|'go',config?}`。Vitest／Jest 只使用專案本地 `node_modules` 的已安裝工具（不 npx 下載）；pytest 用 `python3 -m pytest` 與暫存 legacy JUnit；Go 用 `go test -json -count=1`，files 為套件目錄。單案例選取使用框架原生 selector，Vitest 5 以 ` > ` 精確對應。缺工具回 `cli_unavailable`；報告缺失／截斷不視為成功。
+- 本機 DAP：`POST /api/debugger/dap/launch` 接受 `{project,task,launch:{adapter:string[],type,program,args?,breakpoints?:[{path,line,condition?}],stopOnEntry?}}`；具名啟動設定只存 renderer `localStorage` 的 `yumeewade.dap.{專案}.{作業}`，不入台帳、無效內容丟棄不啟動。只 spawn 使用者已安裝 adapter 的明確 argv（拒絕 host／port／listen／connect／attach 類旗標）、最小環境、信任檢查後啟動；拒絕 attach、`runInTerminal` 反向請求與遠端連線。依 adapter 能力 fail closed；變數參照綁定所屬 frame。條件／監看以 adapter 語言在目標行程執行，可能有副作用。
+- 內嵌網頁預覽：僅信任專案；IDE 自行配置 loopback port，經固定 gateway 的 wrapper 與獨立 per-run proxy origin 載入 `sandbox="allow-scripts"` iframe（無 same-origin）。剝除 Cookie／Authorization／Set-Cookie、拒絕重新導向、精確 Host／Origin 檢查並支援 WebSocket；IDE 靜態 CSP 的 `frame-src` 只列 gateway，Electron 主程序由核心 `/api/embedded-preview/origins` 取得精確允許清單，其他子框架一律取消。
+- 文字編碼：`EditorDocument.encoding` 為 `UTF8|UTF8-BOM|UTF16LE|UTF16BE`，以 BOM 偵測、fatal 解碼；儲存未指定時保留原編碼，可明確轉換（含只改編碼）。多檔套用各自保留編碼並受總 body 上限。revision 為最多 128 MiB 全檔串流 SHA256。
+- 大檔區段：`GET /api/editor/segment?path&offset&length(4..262144)&encoding?` 回 `{text,revision,offset,end,size,encoding}`；`POST` 以 `{revision,offset,end,text,encoding}` 原子替換精確位元組範圍，檢查字元／BOM 邊界、檔案鎖與 target 重驗 CAS，保留 mode，外部任何位元組變動回 409。本機歷史記錄 encoding 與 range metadata，區段歷史只還原該範圍，不覆寫整檔。
+- 編輯器搜尋 regex 以行為錨點（`^`／`$` 多行），於 worker 300ms 期限內執行；空的 include／exclude 視為不篩選（UI 不送空值）。
+- 簽章：`scripts/signing-plan.ts` 依平台檢查憑證組；只要提供任一該平台簽章變數就必須完整，否則拒絕建置而非悄悄產生未簽產物；macOS 強制簽章＋公證，Windows 強制簽章。錯誤訊息不含憑證值。CI 三平台矩陣與升級資料保留 smoke 為定義，非本次已在所有平台執行的證明。
