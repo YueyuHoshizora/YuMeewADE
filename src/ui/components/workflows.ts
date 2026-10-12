@@ -4,7 +4,7 @@ import { labelValue, t } from '../i18n/index.ts';
 import { area, button, confirmModal, el, field, modal, row, run, select, setLocked, taskHash, UserError, type ViewContext } from './dom.ts';
 import { confirmUsageRound, workflowBudgetRisk } from './usage-history.ts';
 import { readonlyDiffView, verificationStatusView } from './verification-view.ts';
-import { renderWorkflowTimeline } from './workflow-timeline.ts';
+import { renderWorkflowTimeline, workflowOutcome } from './workflow-timeline.ts';
 
 export function workflowButton(context: ViewContext, project: string, task: string): HTMLElement {
   return button(t('workflow.title'), async () => {
@@ -134,7 +134,8 @@ export function workflowButton(context: ViewContext, project: string, task: stri
       const previous = JSON.stringify(plan);
       plan = await request<WorkflowPlan>(query('/api/task/workflow', { project, task }));
       if (root.isConnected && JSON.stringify(plan) !== previous) renderStatus();
-      graphStatus.textContent = plan.steps.map(step => `${step.id} [${plan.nodeStates?.[step.id!] ?? 'pending'}] ← ${step.dependsOn?.join(', ') ?? ''}${step.condition ? ` (${step.condition.node}:${step.condition.outcome})` : ''}${plan.branchTasks?.[step.id!] ? ` · ${plan.branchTasks[step.id!]}` : ''}`).join('\n');
+      // Node states are translated for display; the condition keeps the `node:outcome` syntax typed in the step editor.
+      graphStatus.textContent = plan.steps.map(step => `${step.id} [${workflowOutcome(plan.nodeStates?.[step.id!] ?? 'pending')}] ← ${step.dependsOn?.join(', ') ?? ''}${step.condition ? ` (${step.condition.node}:${step.condition.outcome})` : ''}${plan.branchTasks?.[step.id!] ? ` · ${plan.branchTasks[step.id!]}` : ''}`).join('\n');
       graphStatus.hidden = !plan.steps.length;
     }
     const timer = window.setInterval(() => { if (root.isConnected) void run(refresh); else window.clearInterval(timer); }, 1500);
