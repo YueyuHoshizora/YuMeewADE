@@ -31,7 +31,7 @@ export const zhCN: Record<MessageKey, string> = {
 'project.verify': '验证指令',
 'project.verifyHint': '在作业的工作副本执行（例如 npm test）；指令保存在 PROJECT.md。',
 'project.autoFix': '验证失败自动修复', 'project.autoFixHint': 'AI 做完一条指示后自动运行上面的验证命令；失败就把输出交回同一个 AI，最多重试设定的次数。需要先填验证命令；你下新指示会重新计数。', 'project.autoFixOff': '关闭', 'project.autoFixTimes': '最多 {n} 次',
-'running.review': '只读审查', 'running.chip': '运行中 {n}', 'running.title': '运行中的 AI', 'running.stopAll': '全部停止', 'running.stopAllConfirm': '要停止当前 {n} 个运行中的 AI 吗？已做的文件变更会保留，这些作业排队中的指示会一并清除。', 'running.stopping': '停止中…',
+'running.review': '只读审查', 'running.proposal': 'AI 编辑提案', 'running.chip': '运行中 {n}', 'running.title': '运行中的 AI', 'running.stopAll': '全部停止', 'running.stopAllConfirm': '要停止当前 {n} 个运行中的 AI 吗？已做的文件变更会保留，这些作业排队中的指示会一并清除。', 'running.stopping': '停止中…',
 'project.rules': 'AI 规则', 'project.rulesHint': '每次运行时 AI 都会先读这份规则（.ai/rules.md）。修改后下一条指示就会生效。', 'project.rulesPlaceholder': '写下这个项目的约定、禁止事项、测试方式…', 'log.project.rules': '更新 AI 规则',
 'verify.run': '执行验证', 'verify.running': '验证中…', 'verify.pass': '通过', 'verify.fail': '失败',
 'verify.result': '退出码 {code} · {seconds} 秒', 'verify.timedOut': '验证超时，已停止。',

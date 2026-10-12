@@ -71,7 +71,11 @@ test('real exec multifile proposal is isolated, preserves dirty drafts and atomi
     stopping = true;
     const pending = service.generate('P','', input);
     const rejectedStop = assert.rejects(pending);
-    await started.promise; assert.equal(service.stop('P',''), true); continueRun.resolve(); await rejectedStop;
+    await started.promise;
+    // The running panel lists the generation (project scope, no task) until it settles.
+    assert.deepEqual(service.active().map(info => [info.kind, info.project, info.task, info.ai]), [['proposal', 'P', '', 'codex']]);
+    assert.equal(service.stop('P',''), true); continueRun.resolve(); await rejectedStop;
+    assert.deepEqual(service.active(), []);
     assert.equal(JSON.stringify(await service.history('P','')), history);
     await service.close();
   } finally { await fs.rm(root, { recursive: true, force: true }); }

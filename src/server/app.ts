@@ -211,7 +211,7 @@ export class App {
       providers: this.providers, editor: this.editor, ws: this.ws, settings: this.settings,
       assertExecutable: p => this.trust.assertExecutable(p),
       isBusy: (p, t) => this.runner.isBusy(p, t || undefined) || this.verify.isRunning(p, t || undefined) || this.execution.isRunning(p, t || undefined) || this.terminal.isRunning(p, t || undefined) || this.debugger.isRunning(p, t || undefined) || this.embeddedPreview.isRunning(p, t || undefined) || this.review.isBusy(p, t || undefined) || this.workflows.isBusy(p, t || undefined) || this.testExplorer.isRunning(p, t || undefined),
-      concurrentRuns: config.limits.concurrentRuns, runSeconds: config.limits.runSeconds,
+      concurrentRuns: config.limits.concurrentRuns, runSeconds: config.limits.runSeconds, onChanged: (p, t) => this.changed(p, t),
       beforeRun: (project, task, ai, account) => this.usageHistory.assertProceed({ project, task, ai, account }, this.usage.snapshot()),
       onCompleted: input => this.usageHistory.record({ ...input, ...(input.usage?.claudeUsd !== undefined ? { claudeUsd: input.usage.claudeUsd } : {}), ...(input.usage?.codexCredits !== undefined ? { codexCredits: input.usage.codexCredits } : {}) }),
     });
@@ -291,7 +291,7 @@ export class App {
       counts: async () => {
         const projects = await this.projects.list();
         const tasks = await Promise.all(projects.map(project => this.tasks.list(project.id)));
-        return { projects: projects.length, tasks: tasks.reduce((n, list) => n + list.length, 0), running: this.runner.running().length + this.review.active().length };
+        return { projects: projects.length, tasks: tasks.reduce((n, list) => n + list.length, 0), running: this.runner.running().length + this.review.active().length + this.editorProposals.active().length };
       },
     });
     // AI 一開始動手，之前的驗證結果就不再代表目前的檔案。
@@ -394,7 +394,7 @@ export class App {
       }
     }
     const update = this.update.snapshot();
-    return { ...value, running: [...this.runner.running(), ...this.review.active()], unread: this.runner.unread(), usage: this.usage.snapshot(), ...(update ? { update } : {}) };
+    return { ...value, running: [...this.runner.running(), ...this.review.active(), ...this.editorProposals.active()], unread: this.runner.unread(), usage: this.usage.snapshot(), ...(update ? { update } : {}) };
   }
 
   /** 通知所有客戶端重抓 /api/state；100ms 內的多次變更合併成一次。 */

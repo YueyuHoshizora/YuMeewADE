@@ -8,7 +8,7 @@ import type { EditorService } from '../system/editor.ts';
 import type { Workspace } from '../ledger/workspace.ts';
 import type { SettingsStore } from '../ledger/settings.ts';
 import type { EditorProposal, EditorProposalInput, ProposalDecision, ProposalDecisionInput, ProposalEdit, ProposalFile, ProposalFileInput, ProposalSnapshot } from '../shared/editor-proposals.ts';
-import type { EditorDocument, TurnUsage } from '../shared/types.ts';
+import type { EditorDocument, RunningInfo, TurnUsage } from '../shared/types.ts';
 import { AppError } from '../shared/errors.ts';
 import { isMissing, writeJson, withFileLocks } from '../shared/fsx.ts';
 
@@ -52,6 +52,8 @@ interface Dependencies {
   beforeRun?: (project: string, task: string, ai: string, account: string) => Promise<void>;
   onCompleted?: (input: { requestId: string; sessionId?: string; project: string; task: string; ai: string; account: string; usage: TurnUsage | null }) => Promise<void>;
   concurrentRuns: number; runSeconds: number;
+  /** Lets the running panel see a proposal start and finish. */
+  onChanged?: (project: string, task: string) => void;
 }
 /** Strict offsets are relative to the submitted dirty buffer, never generated paths. */
 export function parseProposalEdits(output: string, text: string, selection: { from: number; to: number }): ProposalEdit[] {
@@ -73,11 +75,13 @@ export function parseProposalEdits(output: string, text: string, selection: { fr
 }
 export class EditorProposalService {
   private readonly deps: Dependencies;
-  private readonly runs = new Map<string, { run?: CliRun; stopped: boolean; done: Promise<void> }>();
+  private readonly runs = new Map<string, { run?: CliRun; stopped: boolean; done: Promise<void>; info: RunningInfo }>();
   private closed = false;
   constructor(deps: Dependencies) { this.deps = deps; }
   capabilities() { return providerCapabilities(this.deps.providers); }
   isBusy(project?: string, task?: string): boolean { return [...this.runs.keys()].some(key => { const scope = JSON.parse(key) as string[]; return (project === undefined || scope[0] === project) && (task === undefined || scope[1] === task); }); }
+  /** Proposal generations in progress, listed with chat runs so they can be seen and stopped from the running panel. */
+  active(): RunningInfo[] { return [...this.runs.values()].map(entry => ({ ...entry.info })); }
   private file(project: string): string { return path.join(this.deps.ws.projectDir(project), '.ai', 'editor-proposals.json'); }
   private async safeFile(project: string): Promise<string> {
     const root = await fs.realpath(this.deps.ws.root);
@@ -163,7 +167,9 @@ export class EditorProposalService {
     validateFiles(input.files);
     if (typeof input.instruction !== 'string' || !input.instruction.trim() || input.instruction.length > 100_000) throw new AppError('bad_request');
     const settled = Promise.withResolvers<void>();
-    const entry: { run?: CliRun; stopped: boolean; done: Promise<void> } = { stopped: false, done: settled.promise }; this.runs.set(key, entry);
+    const entry: { run?: CliRun; stopped: boolean; done: Promise<void>; info: RunningInfo } = { stopped: false, done: settled.promise,
+      info: { kind: 'proposal', project, task, request: randomUUID(), ai: input.ai, startedAt: new Date().toISOString(), ...(input.model ? { model: input.model } : {}), ...(input.effort ? { effort: input.effort } : {}) } };
+    this.runs.set(key, entry); this.deps.onChanged?.(project, task);
     let directory: string | undefined; let timer: ReturnType<typeof setTimeout> | undefined;
     try {
       const documents: EditorDocument[] = [];
@@ -212,7 +218,7 @@ export class EditorProposalService {
     } finally {
       clearTimeout(timer);
       try { if (directory) await fs.rm(directory, { recursive: true, force: true }); }
-      finally { this.runs.delete(key); settled.resolve(); }
+      finally { this.runs.delete(key); settled.resolve(); this.deps.onChanged?.(project, task); }
     }
   }
   async decide(project: string, task: string, id: string, input: ProposalDecisionInput): Promise<ProposalDecision> {

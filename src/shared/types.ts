@@ -483,8 +483,8 @@ export interface Busy {
 export interface RunningInfo extends Busy {
   project: string;
   task: string;
-  /** A read-only review rather than a chat turn; it is stopped through the review API. */
-  kind?: 'review';
+  /** A read-only review or an editor proposal rather than a chat turn; each is stopped through its own API. */
+  kind?: 'review' | 'proposal';
 }
 
 export interface SendInput {
