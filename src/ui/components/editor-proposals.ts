@@ -3,7 +3,10 @@ import type { ProviderCapability } from '../../shared/types.ts';
 import type { WorkbenchPanelContext } from './files.ts';
 import { request, query } from '../api.ts';
 import { t } from '../i18n/index.ts';
-import { el, button, area, confirmModal } from './dom.ts';
+import { el, button, area, confirmModal, errorMessage } from './dom.ts';
+/** Raised when the open buffers no longer match the proposal; server and network failures keep their own message. */
+class ProposalConflict extends Error {}
+const failureText = (error: unknown) => error instanceof ProposalConflict ? t('proposal.conflict') : errorMessage(error);
 export function mountEditorProposals(context: WorkbenchPanelContext): HTMLElement {
   const { project, task, editor } = context;
   const node = el('section'); const instruction = area('', t('proposal.instruction'));
@@ -34,21 +37,21 @@ export function mountEditorProposals(context: WorkbenchPanelContext): HTMLElemen
         const snapshots = editor.snapshots();
         const expected = affected.map(file => {
           const snapshot = snapshots.find(snapshot => snapshot.path === file.path);
-          if (!snapshot || snapshot.revision !== file.revision || snapshot.text !== file.current) throw new Error(t('proposal.conflict'));
+          if (!snapshot || snapshot.revision !== file.revision || snapshot.text !== file.current) throw new ProposalConflict();
           return { path: snapshot.path, revision: snapshot.revision, text: snapshot.text };
         });
-        release = editor.reserveAll(expected); if (!release) throw new Error(t('proposal.conflict'));
+        release = editor.reserveAll(expected); if (!release) throw new ProposalConflict();
         remoteStarted = true;
         const result = await request<ProposalDecision>('/api/editor/proposals/decide', { project, task, id: proposal.id, version: proposal.version, accept, snapshots: expected, ...(target ? { target } : {}) });
         Object.assign(proposal, result.proposal);
-        if (accept && !editor.applyEditsAll(result.changes)) throw new Error(t('proposal.conflict'));
+        if (accept && !editor.applyEditsAll(result.changes)) throw new ProposalConflict();
         section.replaceWith(render(proposal)); announce(proposal); status.textContent = t('proposal.note');
-      } catch {
+      } catch (error) {
         if (remoteStarted) {
           const latest = await request<{ proposals: EditorProposal[] }>(query('/api/editor/proposals', { project, task })).catch(() => null);
           const saved = latest?.proposals.find(value => value.id === proposal.id); if (saved) Object.assign(proposal, saved);
         }
-        section.replaceWith(render(proposal)); status.textContent = t('proposal.conflict');
+        section.replaceWith(render(proposal)); status.textContent = failureText(error);
       } finally { release?.(); busy = false; }
     };
     if (proposal.files.some(file => file.edits.some(edit => edit.state === 'pending'))) section.append(button(t('proposalMulti.acceptAll'), () => decide(true)), button(t('proposalMulti.rejectAll'), () => decide(false), 'subtle'));
@@ -68,7 +71,7 @@ export function mountEditorProposals(context: WorkbenchPanelContext): HTMLElemen
       try {
         const result = await request<ProposalDecision>('/api/editor/proposals/recover', { project, task, id: proposal.id, version: proposal.version, snapshots: changes.map(change => change.expected) });
         status.textContent = editor.applyEditsAll(result.changes) ? t('proposal.note') : t('proposal.conflict');
-      } catch { status.textContent = t('proposal.conflict'); }
+      } catch (error) { status.textContent = failureText(error); }
       finally { release(); busy = false; }
     }, 'subtle'));
     for (const file of proposal.files) section.append(renderFile(file, decide));
@@ -90,13 +93,13 @@ export function mountEditorProposals(context: WorkbenchPanelContext): HTMLElemen
   const generate = button(t('proposal.generate'), async () => {
     if (busy) return;
     const snapshots = editor.snapshots().filter(snapshot => selected.has(snapshot.path));
-    if (!snapshots.length) { status.textContent = t('proposal.conflict'); return; }
+    if (!snapshots.length) { status.textContent = t('proposal.noFiles'); return; }
     busy = true; generate.disabled = true;
     try {
       const files = snapshots.map(snapshot => ({ path: snapshot.path, revision: snapshot.revision, text: snapshot.text, selection: snapshot.selection.from === snapshot.selection.to ? { from: 0, to: snapshot.text.length } : snapshot.selection }));
       const proposal = await request<EditorProposal>('/api/editor/proposals/generate', { project, task, files, instruction: instruction.value, ai: provider.value, ...(model.value.trim() ? { model: model.value.trim() } : {}), ...(effort.value.trim() ? { effort: effort.value.trim() } : {}) });
       results.prepend(render(proposal)); announce(proposal); status.textContent = t('proposal.note');
-    } catch { status.textContent = t('proposal.conflict'); }
+    } catch (error) { status.textContent = failureText(error); }
     finally { busy = false; generate.disabled = !provider.options.length; }
   });
   generate.disabled = true; refreshFiles();
@@ -107,6 +110,6 @@ export function mountEditorProposals(context: WorkbenchPanelContext): HTMLElemen
   }).catch(() => { status.textContent = t('cap.no'); });
   void request<{ proposals: EditorProposal[] }>(query('/api/editor/proposals', { project, task })).then(({ proposals }) => {
     for (const proposal of proposals.reverse()) { results.append(render(proposal)); announce(proposal); }
-  }).catch(() => { status.textContent = t('proposal.conflict'); });
+  }).catch(error => { status.textContent = failureText(error); });
   return node;
 }

@@ -43,12 +43,14 @@ export function link(label: string, hash: string, className = ''): HTMLAnchorEle
 export const projectHash = (p: string) => `#/p/${encodeURIComponent(p)}`;
 export const taskHash = (p: string, task: string) => `#/t/${encodeURIComponent(p)}/${encodeURIComponent(task)}`;
 export function toast(message: string): void { const node = document.getElementById('toast')!; node.textContent = message; node.hidden = false; window.setTimeout(() => { node.hidden = true; }, 5000); }
+export function errorMessage(error: unknown): string {
+  if (!(error instanceof ApiFailure)) return t('err.network');
+  const key = (error.body.detail ? `detail.${error.body.detail}` : `err.${error.body.error}`) as MessageKey;
+  return `${error.status} · ${t(key, { field: error.body.field ?? '' })}`;
+}
 export function showError(error: unknown): void {
-  if (error instanceof ApiFailure) {
-    const key = (error.body.detail ? `detail.${error.body.detail}` : `err.${error.body.error}`) as MessageKey;
-    toast(`${error.status} · ${t(key, { field: error.body.field ?? '' })}`);
-    if (error.body.conflicts?.length) modal(t('copy.conflict'), el('pre', '', error.body.conflicts.join('\n')));
-  } else toast(t('err.network'));
+  toast(errorMessage(error));
+  if (error instanceof ApiFailure && error.body.conflicts?.length) modal(t('copy.conflict'), el('pre', '', error.body.conflicts.join('\n')));
 }
 export async function run(action: () => Promise<unknown>): Promise<void> { try { await action(); } catch (error) { showError(error); } }
 export function modal(title: string, ...content: Node[]): void {
