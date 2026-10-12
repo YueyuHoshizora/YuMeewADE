@@ -66,7 +66,7 @@ test('context manifests reject symlinked stores and oversized payloads while ret
 }));
 
 test('pinned sources cannot select local secrets at any directory depth', () => {
-  for (const name of ['.npmrc', '.dev.vars', '.dev.vars.local', '.env.local', 'credentials.json', 'secret.txt', 'id_ed25519']) {
+  for (const name of ['.npmrc', '.dev.vars', '.dev.vars.local', '.env.local', 'credentials.json', 'secret.txt', 'id_ed25519', '.ENV.local', '.NPMRC', '.DEV.VARS']) {
     assert.throws(() => validateContext({ decisions: '', sources: [{ path: `nested/${name}`, start: 1, end: 1 }] }, 1000), { code: 'bad_request' });
   }
 });

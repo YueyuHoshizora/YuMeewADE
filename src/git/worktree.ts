@@ -304,7 +304,8 @@ export class WorktreeService {
       const reachable = await git(dir, ['merge-base', '--is-ancestor', sha, 'HEAD']);
       if (reachable.code !== 0) throw new AppError('not_found', 'checkpoint_missing');
       await gitOk(dir, ['reset', '-q', '--hard', sha]);
-      await gitOk(dir, ['clean', '-fdq', '-e', '.env*', '-e', '.npmrc', '-e', '.dev.vars*']);
+      // Exclude patterns are case-sensitive on Linux; local secrets match in any case (see isLocalSecret).
+      await gitOk(dir, ['clean', '-fdq', '-e', '.[eE][nN][vV]*', '-e', '.[nN][pP][mM][rR][cC]', '-e', '.[dD][eE][vV].[vV][aA][rR][sS]*']);
     });
   }
   /** 一輪結束：把副本現況存成檢查點，並統計這輪（輪前 start → 現在）改了多少；沒有副本回 undefined。 */

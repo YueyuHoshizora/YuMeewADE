@@ -102,11 +102,13 @@ export async function commitAll(dir: string, message: string, options: { conclud
   if (!options.concludeMerge && await operationInProgress(dir)) throw new AppError('conflict', 'git_operation_in_progress');
   await gitOk(dir, ['add', '-A']);
   // Only newly staged secrets are excluded; previously tracked configuration keeps its normal history.
-  const added = (await gitOk(dir, ['diff', '--cached', '--name-only', '--diff-filter=A', '-z'])).split('\0').filter(Boolean);
+  // Without --no-renames a secret that inherits a removed file's content is a rename (R), not an addition (A).
+  const added = (await gitOk(dir, ['diff', '--cached', '--no-renames', '--name-only', '--diff-filter=A', '-z'])).split('\0').filter(Boolean);
   const secrets = added.filter(isLocalSecret);
   if (secrets.length > 0) {
-    if (await hasCommits(dir)) await gitOk(dir, ['reset', '-q', 'HEAD', '--', ...secrets]);
-    else await gitOk(dir, ['rm', '-q', '--cached', '--', ...secrets]);
+    // Literal pathspecs: a secret named `.env*` must not be read as a glob over other files.
+    if (await hasCommits(dir)) await gitOk(dir, ['--literal-pathspecs', 'reset', '-q', 'HEAD', '--', ...secrets]);
+    else await gitOk(dir, ['--literal-pathspecs', 'rm', '-q', '--cached', '--', ...secrets]);
   }
   const staged = await git(dir, ['diff', '--cached', '--quiet']);
   if (staged.code !== 0 && staged.code !== 1) throw new AppError('internal', 'git_failed');
@@ -131,7 +133,8 @@ export async function branchExists(dir: string, branch: string): Promise<boolean
   return result.code === 0;
 }
 
+/** Local secret files by convention; case-insensitive, as `.ENV` is `.env` on the default macOS and Windows file systems. */
 export function isLocalSecret(file: string): boolean {
-  const name = file.split(/[\\/]/).at(-1) ?? '';
+  const name = (file.split(/[\\/]/).at(-1) ?? '').toLowerCase();
   return name.startsWith('.env') || name === '.npmrc' || name.startsWith('.dev.vars');
 }

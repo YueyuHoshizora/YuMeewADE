@@ -140,6 +140,21 @@ test('direct saves tracked edits, preserves tracked secrets and excludes new sec
   assert.equal((await tasks.get('P', task.id)).workdir, '');
 }));
 
+test('autosave never commits a new secret that differs only in case or arrives by renaming a tracked file', () => withTmpWorkspace(async ws => {
+  const repo = path.join(ws.root, 'repo'); await fs.mkdir(path.join(repo, 'nested'), { recursive: true });
+  await gitOk(repo, ['init', '-q', '-b', 'main']);
+  await fs.writeFile(path.join(repo, 'config.txt'), 'TOKEN=example\n'); await fs.writeFile(path.join(repo, 'file*.txt'), 'glob-looking\n');
+  assert.equal(await commitAll(repo, 'base'), true);
+  // Same bytes under a secret name: Git's rename detection would otherwise report the secret as R, not A.
+  await fs.rename(path.join(repo, 'config.txt'), path.join(repo, '.env.local'));
+  for (const name of ['nested/.ENV.local', 'nested/.NPMRC', 'nested/.DEV.VARS.prod']) await fs.writeFile(path.join(repo, name), 'TOKEN=secret\n');
+  await fs.writeFile(path.join(repo, 'file*.txt'), 'changed\n');
+  assert.equal(await commitAll(repo, 'autosave'), true);
+  assert.deepEqual((await gitOk(repo, ['ls-files'])).trim().split('\n'), ['file*.txt']);
+  assert.equal(await gitOk(repo, ['show', 'HEAD:file*.txt']), 'changed\n');
+  for (const name of ['.env.local', 'nested/.ENV.local', 'nested/.NPMRC', 'nested/.DEV.VARS.prod']) assert.equal(await fs.readFile(path.join(repo, name), 'utf8'), name === '.env.local' ? 'TOKEN=example\n' : 'TOKEN=secret\n');
+}));
+
 test('exclusion, stale copyclear, missing merge and bounded diff', () => withTmpWorkspace(async ws => {
   const projects = new ProjectLedger(ws);
   const tasks = new TaskLedger(ws);
