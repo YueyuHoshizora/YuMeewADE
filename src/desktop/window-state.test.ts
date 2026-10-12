@@ -13,6 +13,10 @@ test('valid bounds restore, missing/offscreen/invalid bounds center', () => {
     assert.ok(restored.bounds.x >= 0 && restored.bounds.x + restored.bounds.width <= display.width);
   }
   assert.deepEqual(restoreState({ ...state, bounds: { ...state.bounds, x: -1800 } }, [{ ...display, x: -1920 }]).bounds.x, -1800);
+  // A window across two side-by-side monitors is fully visible and keeps its place; one hanging past both is recentered.
+  const pair = [display, { ...display, x: 1920 }];
+  assert.deepEqual(restoreState({ ...state, bounds: { ...state.bounds, x: 1500 } }, pair).bounds, { ...state.bounds, x: 1500 });
+  assert.notEqual(restoreState({ ...state, bounds: { ...state.bounds, x: 1500, y: 600 } }, pair).bounds.y, 600);
 });
 test('state is atomically persisted independently per slot', () => {
   const dir = mkdtempSync(path.join(os.tmpdir(), 'desktop-state-'));
