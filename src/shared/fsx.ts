@@ -46,9 +46,9 @@ export async function pathExists(p: string): Promise<boolean> {
   }
 }
 
-/** True for the errors a path that does not exist (or whose parent is not a folder) produces. */
+/** True for the errors a path that does not exist (or whose parent is not a folder, or whose name is too long to exist) produces. */
 export function isMissing(error: unknown): boolean {
-  return ['ENOENT', 'ENOTDIR'].includes((error as NodeJS.ErrnoException)?.code ?? '');
+  return ['ENOENT', 'ENOTDIR', 'ENAMETOOLONG'].includes((error as NodeJS.ErrnoException)?.code ?? '');
 }
 /**
  * For `.catch(missingAs(...))`: a path removed outside the app is an ordinary request outcome, so it becomes the given

@@ -10,7 +10,7 @@ import type { ProjectLedger } from '../ledger/projects.ts';
 import type { TaskLedger } from '../ledger/tasks.ts';
 import type { GitWorkbenchStatus, GitWorkbenchFile, GitPullRequestStatus, GitRemote } from '../shared/types.ts';
 import { AppError } from '../shared/errors.ts';
-import { missingAs, withFileLocks } from '../shared/fsx.ts';
+import { isMissing, missingAs, withFileLocks } from '../shared/fsx.ts';
 import { git, hasCommits, isLocalSecret, operationInProgress, type GitResult } from './git.ts';
 import { github } from '../cli/github.ts';
 import type { GithubFeedbackInput } from '../shared/github.ts';
@@ -135,7 +135,7 @@ export class GitWorkbench {
     let full = root;
     for (const part of relative.split('/')) {
       full = path.join(full, part);
-      const stat = await fs.lstat(full).catch((error: NodeJS.ErrnoException) => { if (error.code === 'ENOENT') return null; throw error; });
+      const stat = await fs.lstat(full).catch((error: unknown) => { if (isMissing(error)) return null; throw error; });
       if (stat?.isSymbolicLink()) throw new AppError('forbidden', 'git_workbench_path');
     }
   }
@@ -237,7 +237,7 @@ export class GitWorkbench {
     const hash = createHash('sha256');
     hash.update(await fs.readFile(index).catch((error: NodeJS.ErrnoException) => { if (error.code === 'ENOENT') return Buffer.alloc(0); throw error; }));
     const full = path.join(root, relative);
-    const stat = await fs.stat(full).catch((error: NodeJS.ErrnoException) => { if (error.code === 'ENOENT') return null; throw error; });
+    const stat = await fs.stat(full).catch((error: unknown) => { if (isMissing(error)) return null; throw error; });
     if (stat && (!stat.isFile() || stat.size > 1024 * 1024)) throw new AppError('too_large');
     hash.update(stat ? await fs.readFile(full) : 'absent');
     hash.update(await this.command(root, ['rev-parse', '--verify', 'HEAD']).catch(() => 'unborn'));

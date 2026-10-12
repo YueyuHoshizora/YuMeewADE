@@ -11,7 +11,7 @@ import { isWindowsDeviceName } from '../shared/names.ts';
 import type { TaskLedger } from '../ledger/tasks.ts';
 import type { EditorDocument, EditorLocation, EditorDiagnostic } from '../shared/types.ts';
 import { AppError } from '../shared/errors.ts';
-import { isInside, missingAs, pathExists, withFileLocks } from '../shared/fsx.ts';
+import { isInside, isMissing, missingAs, pathExists, withFileLocks } from '../shared/fsx.ts';
 import { LanguageClient } from './editor-lsp.ts';
 import type { EditorBufferSnapshot, EditorAction, EditorActionResult, EditorChange, EditorMutation, EditorSearchResult, EditorProblem, EditorRevisionResult, EditorMergeResult } from '../shared/editor-workbench.ts';
 import type { EditorSettings, EditorSettingsPatch, EditorResolvedFormatPreferences } from '../shared/editor-preferences.ts';
@@ -45,13 +45,18 @@ async function writable(file: string): Promise<boolean> {
 async function assertWritable(file: string): Promise<void> {
   if (!(await writable(file))) throw new AppError('forbidden', 'editor_not_writable');
 }
-/** Folder operations the OS refuses for lack of permission are the user's situation to fix, not an internal error. */
-function deniedAsNotWritable(error: unknown): never {
-  if (['EACCES', 'EPERM', 'EROFS'].includes((error as NodeJS.ErrnoException)?.code ?? '')) throw new AppError('forbidden', 'editor_not_writable');
+/**
+ * File and folder operations the OS refuses are the user's situation to fix, not internal errors: missing permission,
+ * or a new name longer than the file system allows (the limit differs per file system, so the OS decides).
+ */
+function mutationRefused(error: unknown): never {
+  const code = (error as NodeJS.ErrnoException)?.code ?? '';
+  if (['EACCES', 'EPERM', 'EROFS'].includes(code)) throw new AppError('forbidden', 'editor_not_writable');
+  if (code === 'ENAMETOOLONG') throw new AppError('bad_request');
   throw error;
 }
 function validRelative(relative: string): void {
-  if (!relative || relative.length > 1000 || relative.includes('\\') || relative.split('/').some(part => !part || part === '..' || part === '.' || part === '.git' || part === '.ai' || isLocalSecret(part)) || path.isAbsolute(relative)) throw new AppError('not_found', 'file_missing');
+  if (!relative || relative.length > 1000 || relative.includes('\\') || relative.includes('\0') || relative.split('/').some(part => !part || part === '..' || part === '.' || part === '.git' || part === '.ai' || isLocalSecret(part)) || path.isAbsolute(relative)) throw new AppError('not_found', 'file_missing');
 }
 /** Resolves a validated relative path under `root`, refusing symlinks on the way and anything whose real path leaves the root. */
 async function resolveIn(root: string, relative: string, listed: boolean): Promise<string> {
@@ -331,7 +336,7 @@ export class EditorService {
     } finally { await handle.close(); }
   }
   async history(project: string, task: string, relative: string): Promise<{ entries: HistoryEntry[] }> {
-    try { await this.target(project, task, relative, false); } catch (error) { if ((error as NodeJS.ErrnoException).code !== 'ENOENT') throw error; }
+    try { await this.target(project, task, relative, false); } catch (error) { if (!isMissing(error)) throw error; }
     const { root } = await this.root(project, task);
     return { entries: await historyEntries(root, relative) };
   }
@@ -703,7 +708,7 @@ export class EditorService {
       // `renaming` is the source of a rename: on case-insensitive file systems (macOS default) a case-only rename finds the
       // source itself at the destination, which is not another file to protect.
       const validateNew = async (relative: string, renaming?: { relative: string; file: string }): Promise<string> => {
-        if (!relative || relative.length > 1000 || path.isAbsolute(relative) || relative.includes('\\') || relative.split('/').some(part => !part || part === '.' || part === '..' || part === '.git' || part === '.ai' || isLocalSecret(part) || process.platform === 'win32' && !windowsFileName(part))) throw new AppError('bad_request');
+        if (!relative || relative.length > 1000 || path.isAbsolute(relative) || relative.includes('\\') || relative.includes('\0') || relative.split('/').some(part => !part || part === '.' || part === '..' || part === '.git' || part === '.ai' || isLocalSecret(part) || process.platform === 'win32' && !windowsFileName(part))) throw new AppError('bad_request');
         const parent = path.posix.dirname(relative);
         if (parent !== '.') await this.existing(project, task, parent);
         const file = path.join(root, relative);
@@ -751,7 +756,7 @@ export class EditorService {
         } else await fs.unlink(target.file);
       }
       else throw new AppError('bad_request');
-    }).catch(deniedAsNotWritable);
+    }).catch(mutationRefused);
   }
   /** Stops at 1000 problems or 32 MiB of source and says so (`truncated`); files the editor cannot open as text are skipped. */
   async problems(project: string, task: string): Promise<{ problems: EditorProblem[]; truncated: boolean }> {

@@ -490,3 +490,17 @@ test('folder lookups and new files under a folder that does not exist are not fo
   await assert.rejects(editor.mutate('P', '', { action: 'delete', path: 'gone', confirmation: 'gone', revision: 'x' }), missing);
   editor.dispose();
 }));
+
+test('NUL characters and names longer than the file system allows are client errors, not internal errors', () => withTmpWorkspace(async ws => {
+  const projects = new ProjectLedger(ws); const tasks = new TaskLedger(ws);
+  await projects.create({ name: 'P' });
+  const editor = new EditorService(new WorktreeService({ ws, projects, tasks, diffBytes: 100000 }), tasks, {});
+  const long = 'x'.repeat(300);
+  for (const path of ['a\0b', long]) {
+    for (const action of ['createFile', 'createFolder'] as const) await assert.rejects(editor.mutate('P', '', { action, path }), { status: 400 });
+    await assert.rejects(editor.folderRevision('P', '', path), { status: 404 });
+  }
+  // History of a name that cannot exist is simply empty, like any file never saved.
+  assert.deepEqual((await editor.history('P', '', long)).entries, []);
+  editor.dispose();
+}));
