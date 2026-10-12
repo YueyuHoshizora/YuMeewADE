@@ -30,7 +30,9 @@ export function verificationConfigButton(context: ViewContext, projectId: string
         if (controls.some(control => !control.name.reportValidity() || !control.command.reportValidity())) return;
         const checks = controls.map(control => ({ name: control.name.value.trim(), command: control.command.value.trim() }));
         const patterns = (value: string) => value.split(',').map(pattern => pattern.trim()).filter(Boolean);
-        await request('/api/project/update', { project: projectId, patch: { checks, requireVerification: requireVerification.checked, autoFix: Number(autoFix.value), verificationInputs: { ...(inputs.value.trim() ? { inputs: patterns(inputs.value) } : {}), outputs: patterns(outputs.value) } } });
+        // Sent back as `expected`: a newer setting saved from another window is a conflict, not silently replaced.
+        const expected = { checks: project.checks, verify: project.verify, requireVerification: project.requireVerification, autoFix: project.autoFix, verificationInputs: project.verificationInputs ?? null };
+        await request('/api/project/update', { project: projectId, patch: { checks, requireVerification: requireVerification.checked, autoFix: Number(autoFix.value), verificationInputs: { ...(inputs.value.trim() ? { inputs: patterns(inputs.value) } : {}), outputs: patterns(outputs.value) } }, expected });
         await context.refresh(); toast(t('common.saved'));
       }));
   });

@@ -80,3 +80,17 @@ test('project notes replace only the body, keep the frontmatter and refuse a bod
   await assert.rejects(projects.writeNotes('P', 'x'.repeat(NOTES_MAX + 1), await projects.readNotes('P')), /過長/);
   assert.equal((await projects.get('P')).notes, '第一行\n- 第二行');
 }));
+
+test('project update with expected fields refuses a value changed since the editor read it', () => withTmpWorkspace(async ws => {
+  const projects = new ProjectLedger(ws);
+  await projects.create({ name: 'P', description: 'old', checks: [{ name: 'unit', command: 'npm test' }] });
+  const seen = await projects.get('P');
+  // Window A saves new checks; window B still shows the old ones.
+  await projects.update('P', { checks: [{ name: 'unit', command: 'npm run test:all' }] }, { checks: seen.checks, verify: seen.verify, verificationInputs: seen.verificationInputs ?? null });
+  await assert.rejects(projects.update('P', { checks: [{ name: 'lint', command: 'npm run lint' }] }, { checks: seen.checks, verify: seen.verify }), { detail: 'project_changed' });
+  assert.deepEqual((await projects.get('P')).checks, [{ name: 'unit', command: 'npm run test:all' }]);
+  // Fields not listed in expected may change freely; a matching expectation saves.
+  await projects.update('P', { description: 'new' }, { description: 'old' });
+  await assert.rejects(projects.update('P', { description: 'stale' }, { description: 'old' }), { detail: 'project_changed' });
+  assert.equal((await projects.get('P')).description, 'new');
+}));

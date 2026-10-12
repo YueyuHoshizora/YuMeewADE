@@ -126,6 +126,9 @@ export interface NewProjectInput {
 }
 
 export type ProjectPatch = Partial<Pick<Project, 'name' | 'status' | 'description' | 'parent' | 'body' | 'related' | 'verify' | 'autoFix' | 'checks' | 'requireVerification' | 'verificationInputs'>> & { phases?: Phase[] };
+/** Patchable fields that `/api/project/update` can check (`expected`) before writing, so a stale editor cannot overwrite a newer value. */
+export const PROJECT_EXPECTATION_KEYS = ['name', 'status', 'description', 'parent', 'body', 'related', 'verify', 'autoFix', 'checks', 'requireVerification', 'verificationInputs'] as const;
+export type ProjectExpectation = Partial<Record<(typeof PROJECT_EXPECTATION_KEYS)[number], unknown>>;
 
 // ---- 作業 ----
 

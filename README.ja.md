@@ -202,7 +202,7 @@ HTTP JSON と SSE を使い、デスクトップ版と Web 版で完全に共通
 | `GET /api/chat/history?project=&task=&before=` | `before` より前の 200 行を読み込む |
 | `GET /api/chat/export?project=&task=&tools=` | 会話を Markdown としてダウンロード（先頭に作業記録：手順のチェックリストと、やったこと／次にやること／注意点／メモのうち内容のあるセクション。`tools=1` でツール呼び出しを含む。ワークスペースの絶対パスは含まない） |
 | `GET /api/search?q=&project=&task=` | タスク名、作業記録（やったこと／次にやること／注意点／メモ。タスクごとに最大 1 件の `kind: record`）と会話内容を検索（最大 50 件）。`project`（と `task`）を指定するとそのプロジェクト／タスクのみ。不正な名前は 400、存在しない場合は 404、`task` には `project` が必要 |
-| `POST /api/project/new`、`/api/project/update`、`/api/project/archive` | プロジェクト |
+| `POST /api/project/new`、`/api/project/update`、`/api/project/archive` | プロジェクト。`/api/project/update` は `expected`（編集前に見た項目の値）を受け付け、いずれかが別の場所で変更済みなら 409 `project_changed` |
 | `POST /api/phase/next`、`/api/phase/continue` | フェーズ：`{project, phase}`、`phase` は画面上の現在のフェーズ。すでに進んでいれば 409 `phase_changed` |
 | `POST /api/project/phases` | フェーズ編集 `{project, previous: string[], phases: [{name, from?}]}`（最大 12、名前は重複不可）：`from` は引き継ぐ既存フェーズで、名前を変えるとそのタスクも一緒に変わる。`previous` が現在と違えば 409 `phase_changed`。フェーズはこのルートでのみ変更でき、`/api/project/update` に `phases` を含めると 400 |
 | `POST /api/order`、`/api/pin` | プロジェクトの順序とピン留め |

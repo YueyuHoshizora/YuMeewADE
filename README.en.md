@@ -202,7 +202,7 @@ HTTP JSON plus SSE, identical in desktop and web versions. Types are defined in 
 | `GET /api/chat/history?project=&task=&before=` | Load the 200 chat rows before `before` |
 | `GET /api/chat/export?project=&task=&tools=` | Download the conversation as Markdown, preceded by the task record: the step checklist and the non-empty done/next/cautions/notes sections (`tools=1` includes tool calls; no absolute workspace paths) |
 | `GET /api/search?q=&project=&task=` | Search task titles, task records (done/next/cautions/notes; at most one `kind: record` hit per task) and chat text (up to 50 hits); optional `project` (and `task`) limits it to that project or task. Invalid names return 400, unknown ones 404, and `task` requires `project` |
-| `POST /api/project/new`、`/api/project/update`、`/api/project/archive` | Projects |
+| `POST /api/project/new`、`/api/project/update`、`/api/project/archive` | Projects; `/api/project/update` accepts `expected` (field values seen before editing) and returns 409 `project_changed` if any of them changed elsewhere |
 | `POST /api/phase/next`、`/api/phase/continue` | Phases: `{project, phase}` where `phase` is the current phase shown; 409 `phase_changed` if it already moved on |
 | `POST /api/project/phases` | Edit phases `{project, previous: string[], phases: [{name, from?}]}` (up to 12, unique names): `from` names the existing phase an entry continues, and a rename moves its tasks along; 409 `phase_changed` if `previous` no longer matches. Phases change only here; `/api/project/update` with `phases` returns 400 |
 | `POST /api/order`、`/api/pin` | Project ordering and pinning |

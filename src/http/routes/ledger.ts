@@ -8,7 +8,7 @@ import { phaseTasks } from '../../state/state.ts';
 import { Router, reqString } from '../router.ts';
 import { TaskTemplates } from '../../ledger/task-templates.ts';
 import { STEP_TEXT_MAX, TITLE_MAX } from '../../ledger/tasks.ts';
-import { PHASES_MAX, TASK_STATES, type BulkTaskAction, type BulkTaskResult } from '../../shared/types.ts';
+import { PHASES_MAX, PROJECT_EXPECTATION_KEYS, TASK_STATES, type BulkTaskAction, type BulkTaskResult, type ProjectExpectation } from '../../shared/types.ts';
 import { validDue, validTag } from '../../shared/task-metadata.ts';
 import { isValidTaskId } from '../../shared/names.ts';
 import { log } from '../../shared/log.ts';
@@ -85,7 +85,9 @@ export function registerLedgerRoutes(router: Router, app: App): void {
     }
     // Running work holds the current folder (worktrees, terminals, AI); it must stop before the project points elsewhere.
     if (patch.body !== undefined && app.taskBusy(project)) throw new AppError('conflict', 'git_workbench_running');
-    const result = await app.projects.update(project, patch as ProjectPatch);
+    const expected = body.expected === undefined ? undefined : object(body.expected);
+    if (expected && Object.keys(expected).some(key => !(PROJECT_EXPECTATION_KEYS as readonly string[]).includes(key))) throw new AppError('bad_request', 'field_type', { field: 'expected' });
+    const result = await app.projects.update(project, patch as ProjectPatch, expected as ProjectExpectation | undefined);
     await changed('project.update', project);
     return result;
   });

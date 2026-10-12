@@ -6,7 +6,7 @@ import { parseFrontmatter, patchHeaderLines, serializeFrontmatter } from '../sha
 import { atomicWrite, isInside, pathExists, withFileLocks } from '../shared/fsx.ts';
 import { log } from '../shared/log.ts';
 import { isValidProjectName } from '../shared/names.ts';
-import { AUTO_FIX_MAX, PHASE_STATES, PHASES_MAX, PROJECT_STATUSES, type NewProjectInput, type Phase, type PhaseState, type Project, type ProjectPatch, type ProjectStatus } from '../shared/types.ts';
+import { AUTO_FIX_MAX, PHASE_STATES, PHASES_MAX, PROJECT_STATUSES, type NewProjectInput, type Phase, type PhaseState, type Project, type ProjectExpectation, type ProjectPatch, type ProjectStatus } from '../shared/types.ts';
 import { type YamlValue } from '../shared/yaml.ts';
 import { ensureRepo } from '../git/git.ts';
 import { parseVerificationChecks, parseVerificationInputModel } from '../shared/verification.ts';
@@ -145,12 +145,14 @@ export class ProjectLedger {
     });
   }
 
-  async update(id: string, patch: ProjectPatch): Promise<Project> {
-    return withFileLocks([this.ws.projectFile(id)], () => this.updateLocked(id, patch));
+  /** `expected` holds fields as the caller saw them; any changed since (another window, a hand or AI edit of PROJECT.md) make this a conflict instead of an overwrite. */
+  async update(id: string, patch: ProjectPatch, expected?: ProjectExpectation): Promise<Project> {
+    return withFileLocks([this.ws.projectFile(id)], () => this.updateLocked(id, patch, expected));
   }
 
-  private async updateLocked(id: string, patch: ProjectPatch): Promise<Project> {
-    await this.get(id);
+  private async updateLocked(id: string, patch: ProjectPatch, expected?: ProjectExpectation): Promise<Project> {
+    const current = await this.get(id);
+    if (expected) for (const [key, value] of Object.entries(expected)) if (JSON.stringify(current[key as keyof ProjectExpectation] ?? null) !== JSON.stringify(value ?? null)) throw new AppError('conflict', 'project_changed');
     await this.validate(patch, id);
     const fm = parseFrontmatter(await fs.readFile(this.ws.projectFile(id), 'utf8'));
     const values: Record<string, YamlValue> = {};

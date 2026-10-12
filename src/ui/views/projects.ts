@@ -316,20 +316,20 @@ export function projectView(context: ViewContext, project: ProjectView, params: 
     const editDescription = button(t('project.editDescription'), async () => {
       const description = await textModal(t('project.editDescription'), project.description, 400);
       if (description === null || description === project.description) return;
-      await request('/api/project/update', { project: project.id, patch: { description } }); await context.refresh();
+      await request('/api/project/update', { project: project.id, patch: { description }, expected: { description: project.description } }); await context.refresh();
     });
     const editRelated = button(t('project.editRelated'), async () => {
       const options = context.state.projects.filter(other => other.id !== project.id).map(other => ({ value: other.id, label: other.name }));
       const related = await checksModal(t('project.editRelated'), options, project.related);
       // Ids of archived projects are not offered, so a save drops them, the same as unchecking.
       if (related === null || JSON.stringify(related) === JSON.stringify(project.related)) return;
-      await request('/api/project/update', { project: project.id, patch: { related } }); await context.refresh();
+      await request('/api/project/update', { project: project.id, patch: { related }, expected: { related: project.related } }); await context.refresh();
     });
     // Pointing the project at a moved main folder; the desktop app offers its folder picker instead of a typed path.
     const editBody = () => button(t('project.editBody'), async () => {
       const body = window.yumeewade?.pickFolder ? await window.yumeewade.pickFolder() : await textModal(`${t('project.editBody')} — ${t('project.bodyHint')}`, project.body || project.bodyPath, 4096, 2);
       if (!body || body.trim() === project.body) return;
-      await request('/api/project/update', { project: project.id, patch: { body: body.trim() } }); await context.refresh();
+      await request('/api/project/update', { project: project.id, patch: { body: body.trim() }, expected: { body: project.body } }); await context.refresh();
     });
     const editNotes = button(t('project.editNotes'), async () => {
       const original = (await request<{ text: string }>(query('/api/project/notes', { project: project.id }))).text;
