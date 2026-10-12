@@ -116,7 +116,7 @@ export class EmbeddedPreviewService {
       await this.init();
       const cwd = await this.options.cwd(project, task);
       const env = minimalEnv([]);
-      const command = await findExecutable(/[/\\]/u.test(input.command) ? path.resolve(cwd, input.command) : input.command, env);
+      const command = await findExecutable(/[/\\]/u.test(input.command) ? path.resolve(cwd, input.command) : input.command, env, cwd);
       if (!command) throw new AppError('unavailable', 'cli_unavailable', { field: 'preview' });
       const reservation = createNetServer();
       const port = await listen(reservation);

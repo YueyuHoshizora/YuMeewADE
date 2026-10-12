@@ -177,7 +177,7 @@ const CONTROLS: Record<string, (context: ControlContext) => Promise<string>> = {
 
 /** One request on a short-lived app-server, for discovery outside any run (no thread, no turn). */
 export async function codexAppServerRequest(cfg: CliCommandConfig, env: NodeJS.ProcessEnv, cwd: string, method: string, params: unknown, timeoutMs = 15_000): Promise<unknown> {
-  const executable = await findExecutable(cfg.command, env);
+  const executable = await findExecutable(cfg.command, env, cwd);
   if (!executable) throw new Error('CLI not found');
   const child = spawnCli(executable, cfg.appServerArgs ?? ['app-server', '--stdio'], { cwd, env, stdio: ['pipe', 'pipe', 'ignore'], windowsHide: true, detached: process.platform !== 'win32' }) as ChildProcessWithoutNullStreams;
   const answer = Promise.withResolvers<unknown>();
@@ -353,7 +353,7 @@ export function codexAppServerRun(cfg: CliCommandConfig, opts: SendOptions, env:
     }
   };
   void (async () => {
-    const executable = await findExecutable(cfg.command, env); if (!executable) throw new Error('CLI not found');
+    const executable = await findExecutable(cfg.command, env, opts.cwd); if (!executable) throw new Error('CLI not found');
     if (command !== null && THREAD_COMMANDS.has(command) && !opts.resumeId) throw new Error('No Codex thread for this command');
     if (stopped) { finish({ ok: false, stopped: true }); return; }
     child = spawnCli(executable, cfg.appServerArgs ?? ['app-server', '--stdio'], { cwd: opts.cwd, env, stdio: ['pipe', 'pipe', 'pipe'], windowsHide: true, detached: process.platform !== 'win32' }) as ChildProcessWithoutNullStreams;

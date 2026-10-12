@@ -34,21 +34,22 @@ export function minimalEnv(passthrough: string[], source: NodeJS.ProcessEnv = pr
 const cache = new Map<string, { at: number; found: string | null }>();
 
 /** 在 PATH 上找得到執行檔即視為可用；結果快取 5 秒。 */
-export async function findExecutable(command: string, env: NodeJS.ProcessEnv = process.env): Promise<string | null> {
-  const key = JSON.stringify([command, env['PATH'], env['PATHEXT']]);
+export async function findExecutable(command: string, env: NodeJS.ProcessEnv = process.env, cwd = process.cwd()): Promise<string | null> {
+  cwd = path.resolve(cwd);
+  const key = JSON.stringify([command, env['PATH'], env['PATHEXT'], cwd]);
   const hit = cache.get(key);
   if (hit && Date.now() - hit.at < 5_000) return hit.found;
-  const found = await locate(command, env);
+  const found = await locate(command, env, cwd);
   cache.set(key, { at: Date.now(), found });
   return found;
 }
 
-async function locate(command: string, env: NodeJS.ProcessEnv): Promise<string | null> {
+async function locate(command: string, env: NodeJS.ProcessEnv, cwd: string): Promise<string | null> {
   const exts = process.platform === 'win32' ? ['', ...(env['PATHEXT'] ?? '.EXE;.CMD;.BAT').split(';')] : [''];
   const dirs = path.isAbsolute(command) || command.includes(path.sep) ? [''] : (env['PATH'] ?? '').split(path.delimiter);
   for (const dir of dirs) {
     for (const ext of exts) {
-      const candidate = dir ? path.join(dir, command + ext) : command + ext;
+      const candidate = path.resolve(cwd, dir, command + ext);
       try {
         await fs.access(candidate, fs.constants.X_OK);
         return path.resolve(candidate);
@@ -127,7 +128,7 @@ export function spawnCli(command: string, args: string[], options: Parameters<ty
 export function runLineProcess(opts: { command: string; args: string[]; cwd: string; env: NodeJS.ProcessEnv; prompt: string; label: string; keepInput?: boolean }, onLine: (obj: Record<string, unknown>) => void): LineProcess {
   let run: LineProcess | undefined;
   let stopped = false;
-  const done = findExecutable(opts.command, opts.env).then((command) => {
+  const done = findExecutable(opts.command, opts.env, opts.cwd).then((command) => {
     if (stopped) return { ok: false, stopped: true };
     if (!command) return { ok: false, stopped: false, reason: 'CLI executable not found' };
     run = runResolvedLineProcess({ ...opts, command }, onLine);
@@ -247,7 +248,7 @@ export interface CommandCapture {
 /** 非推論指令（版本、模型目錄、更新）；不使用 shell，不記錄輸出。 */
 export async function captureCommand(opts: { command: string; args: string[]; cwd?: string; env?: NodeJS.ProcessEnv; timeoutMs: number; maxOutputBytes?: number; maxStderrBytes?: number }): Promise<CommandCapture> {
   const env = opts.env ?? minimalEnv([]);
-  const command = await findExecutable(opts.command, env);
+  const command = await findExecutable(opts.command, env, opts.cwd);
   if (!command) return { ok: false, stdout: '', stderr: '', reason: 'CLI executable not found' };
   const { promise, resolve } = Promise.withResolvers<CommandCapture>();
   let stdout = '';

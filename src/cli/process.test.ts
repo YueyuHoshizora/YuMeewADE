@@ -3,6 +3,9 @@ import assert from 'node:assert/strict';
 import { spawn } from 'node:child_process';
 import { runLineProcess, captureCommand, windowsCommandLine, findExecutable, minimalEnv, terminateTree } from './process.ts';
 import { setTimeout as delay } from 'node:timers/promises';
+import { promises as fs } from 'node:fs';
+import os from 'node:os';
+import path from 'node:path';
 
 test('Windows 的環境變數名稱不分大小寫：Path／SystemRoot 依白名單寫法放行，其他平台仍逐字比對', () => {
   const source = { Path: 'C:\\Windows', SystemRoot: 'C:\\Windows', ComSpec: 'cmd.exe', Codex_Home: 'C:\\c', My_Var: 'x', lc_all: 'C', OPENAI_API_KEY: 'secret' };
@@ -66,4 +69,20 @@ test('Windows 命令列正確處理空白、引號、反斜線及 cmd 特殊字�
 test('執行檔查找回傳完整路徑而不是布林值', async () => {
   assert.equal(await findExecutable(process.execPath), process.execPath);
   assert.equal(await findExecutable('yumeewade-missing-executable', { PATH: '' }), null);
+});
+
+test('relative and empty PATH entries use effective cwd with separate cache entries', async () => {
+  const dir = await fs.mkdtemp(path.join(os.tmpdir(), 'executable-cwd-'));
+  try {
+    for (const folder of ['a', 'b']) {
+      await fs.mkdir(path.join(dir, folder, 'bin'), { recursive: true });
+      await fs.copyFile(process.execPath, path.join(dir, folder, 'bin', path.basename(process.execPath)));
+      await fs.copyFile(process.execPath, path.join(dir, folder, path.basename(process.execPath)));
+    }
+    for (const folder of ['a', 'b']) {
+      const cwd = path.join(dir, folder);
+      assert.equal(await findExecutable(path.basename(process.execPath), { PATH: 'bin' }, cwd), path.join(cwd, 'bin', path.basename(process.execPath)));
+      assert.equal(await findExecutable(path.basename(process.execPath), { PATH: '' }, cwd), path.join(cwd, path.basename(process.execPath)));
+    }
+  } finally { await fs.rm(dir, { recursive: true, force: true }); }
 });

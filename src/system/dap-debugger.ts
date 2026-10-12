@@ -50,7 +50,7 @@ export class DapDebugger {
       if (!(await fs.stat(program)).isFile()) throw new AppError('bad_request');
       for (const point of input.breakpoints ?? []) await debugFile(root, point.path);
       const env = minimalEnv([]); delete env['NODE_OPTIONS']; delete env['NODE_PATH']; delete env['PYTHONPATH'];
-      const command = await findExecutable(/[/\\]/u.test(argv[0]!) ? path.resolve(root, argv[0]!) : argv[0]!, env);
+      const command = await findExecutable(/[/\\]/u.test(argv[0]!) ? path.resolve(root, argv[0]!) : argv[0]!, env, root);
       if (!command) throw new AppError('unavailable', 'cli_unavailable', { field: 'adapter' });
       await this.options.beforeMutate?.(project, task);
       if (this.closed) throw new AppError('unavailable');

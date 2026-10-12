@@ -65,7 +65,7 @@ export class ExecutionService {
       if (request.kind === 'debug') { delete env['NODE_OPTIONS']; delete env['NODE_PATH']; }
       // Inspector is deliberately bound to loopback; no request can choose a public bind address.
       const requested = /[/\\]/u.test(request.command) ? path.resolve(cwd, request.command) : request.command;
-      const command = request.kind === 'debug' ? process.execPath : await findExecutable(requested, env);
+      const command = request.kind === 'debug' ? process.execPath : await findExecutable(requested, env, cwd);
       if (!command) throw new AppError('unavailable', 'cli_unavailable', { field: 'command' });
       if (this.closed || this.options.isRunning?.(project, task)) throw new AppError('conflict');
       this.prune();

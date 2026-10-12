@@ -14,7 +14,7 @@ export function github(root: string, input: Extract<GithubInput, { action: 'crea
 export function github(root: string, input: GithubFeedbackInput, command?: string): Promise<GithubFeedbackRemote>;
 export async function github(root: string, input: GithubInput, command = 'gh'): Promise<GitPullRequestStatus | GithubReviewStatus | GithubIssue | GithubIssue[] | { url: string } | GithubFeedbackRemote> {
   const env = { ...minimalEnv([]), GH_PROMPT_DISABLED: '1', GH_NO_UPDATE_NOTIFIER: '1' };
-  const executable = await findExecutable(command, env);
+  const executable = await findExecutable(command, env, root);
   if (!executable) {
     if (input.action === 'review') return { available: false, authenticated: false, repository: null, pr: null };
     if (input.action === 'status') return { available: false, authenticated: false, repository: null };

@@ -10,7 +10,7 @@ export function slashName(text: string): string | null {
 
 /** SDK initialize only: no user message, inference, credential output, or command execution. */
 export async function claudeCommands(command: string, args: string[], cwd: string, env: NodeJS.ProcessEnv, timeoutMs = 15_000): Promise<SlashCommand[]> {
-  const executable = await findExecutable(command, env);
+  const executable = await findExecutable(command, env, cwd);
   if (!executable) throw new AppError('bad_request', 'cli_unavailable');
   const child = spawnCli(executable, args, { cwd, env, stdio: ['pipe', 'pipe', 'ignore'], windowsHide: true, detached: process.platform !== 'win32' });
   const { promise, resolve, reject } = Promise.withResolvers<SlashCommand[]>();

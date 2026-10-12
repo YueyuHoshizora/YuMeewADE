@@ -23,7 +23,7 @@ export class IntegrationService {
     const args = tool.args.map(arg => arg.replace(/\{(cwd|url|command)\}/gu, (match, key: string) => replacements[key] ?? match));
     if (detached) {
       const env = minimalEnv(this.options.envPassthrough ?? []);
-      const command = await findExecutable(tool.command, env);
+      const command = await findExecutable(tool.command, env, cwd);
       if (!command) throw new AppError('unavailable', 'cli_unavailable', { field: 'terminal' });
       const child = spawn(command, args, { cwd, env, detached: true, stdio: 'ignore' });
       const { promise, resolve, reject } = Promise.withResolvers<void>();
@@ -82,7 +82,7 @@ export class IntegrationService {
       await this.launch({ command: 'wt.exe', args: windowsTerminalArgs(cwd, command) }, cwd, {});
     } else {
       const env = minimalEnv(this.options.envPassthrough ?? []);
-      const terminal = await findExecutable('x-terminal-emulator', env);
+      const terminal = await findExecutable('x-terminal-emulator', env, cwd);
       if (!terminal) throw new AppError('unavailable', 'cli_unavailable', { field: 'terminal' });
       const script = `cd -- ${quotePosix(cwd)} && ${command ? command + '; ' : ''}exec "\${SHELL:-/bin/sh}"`;
       await this.launch({ command: terminal, args: ['-e', 'sh', '-c', script] }, cwd, {}, true);
