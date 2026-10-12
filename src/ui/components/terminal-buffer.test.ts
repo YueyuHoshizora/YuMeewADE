@@ -69,6 +69,13 @@ test('reports, modifier keys, interrupt and safe bracketed paste use PTY wire fo
   assert.equal(terminalKey({ ...key, shiftKey: true }, false), undefined);
   assert.equal(terminalPaste('a\n\x1b[201~b', true), '\x1b[200~a\r[201~b\x1b[201~');
 });
+test('AltGr characters reach the shell as text; a real Ctrl+Alt chord still sends ESC plus the control code', () => {
+  const chord = { key: '@', ctrlKey: true, altKey: true, shiftKey: false, metaKey: false, isComposing: false };
+  // Windows reports AltGr+Q (German) as Ctrl+Alt with AltGraph set: the input event must deliver "@".
+  assert.equal(terminalKey({ ...chord, getModifierState: key => key === 'AltGraph' }, false), undefined);
+  assert.equal(terminalKey({ ...chord, getModifierState: () => false }, false), '\x1b\0');
+  assert.equal(terminalKey({ ...chord, key: 'ArrowLeft', getModifierState: key => key === 'AltGraph' }, false), '\x1b[1;7D');
+});
 test('late emoji presentation wraps a complete grapheme at the right edge', () => {
   const screen = new TerminalBuffer(4, 2); screen.write('abc❤'); screen.write('\uFE0F');
   assert.equal(text(screen)[0], 'abc '); assert.equal(screen.grid[1]![0]!.char, '❤️');
