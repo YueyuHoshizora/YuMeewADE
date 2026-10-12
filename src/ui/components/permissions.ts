@@ -20,7 +20,7 @@ export function renderPermissions(host: HTMLElement, busy: Busy | null, project:
       try { await request('/api/chat/approve', { project, task, id: card.id, allow, turn: allow && remember.checked }); }
       catch (err) { for (const b of item.querySelectorAll('button')) b.disabled = false; throw err; }
     });
-    item.append(el('strong', '', `${t('permission.waiting')} · ${card.tool}`), el('pre', '', card.summary), el('p', 'muted', `${t('permission.expires')} ${localTime(card.expiresAt)}`), label,
+    item.append(el('strong', '', `${t('permission.waiting')} · ${card.tool}`), el('pre', 'permission-summary', card.summary), ...(card.truncated ? [el('p', 'warning', t('permission.truncated', { allow: t('permission.allow') }))] : []), el('p', 'muted', `${t('permission.expires')} ${localTime(card.expiresAt)}`), label,
       button(t('permission.allow'), () => answer(true), 'primary'), button(t('permission.deny'), () => answer(false), 'danger'));
     host.append(item);
   }

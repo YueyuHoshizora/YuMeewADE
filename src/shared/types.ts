@@ -461,6 +461,8 @@ export interface ToolApproval {
   id: string;
   tool: string;
   summary: string;
+  /** The summary was cut to fit; Allow still approves the full input. */
+  truncated?: boolean;
   expiresAt: string;
 }
 

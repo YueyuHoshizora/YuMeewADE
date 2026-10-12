@@ -897,7 +897,7 @@ for (const decision of ['approve', 'deny', 'timeout', 'stop', 'unsupported', 'tu
       return;
     }
     const id = await waiting;
-    assert.equal(s.runner.running()[0]?.approvals?.[0]?.summary, 'echo hello');
+    assert.equal(s.runner.running()[0]?.approvals?.[0]?.summary, 'command: echo hello\npassword: [redacted]');
     const snapshot = await s.runner.snapshot('P', s.task.id);
     assert.equal(snapshot.busy?.approvals?.[0]?.id, id);
     if (decision === 'stop') await s.runner.stop('P', s.task.id);
