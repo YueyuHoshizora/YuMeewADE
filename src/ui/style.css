@@ -259,6 +259,10 @@
 .title-input{flex:1 1 220px;min-width:0}
 .onboarding-banner{margin-bottom:16px}
 .lazy-view{display:contents}
+/* In a narrow column (side panels or docked workbench open) the wrapped controls must not push the transcript out. */
+.task-header{max-height:30%;overflow:auto}
+.task-column{container-type:inline-size}
+@container (max-width:480px){.task-column .task-header{max-height:20%}.task-column .composer{max-height:30%;overflow:auto}.task-column .task-footer{max-height:15%;overflow:auto}.task-column .task-footer .disclosure[open]>.step-list{position:static}}
 .workbench-group>summary{list-style:none;cursor:pointer;padding:7px 12px;border:1px solid var(--border);border-radius:9px;background:var(--c-23283a)}
 .workbench-group>summary::-webkit-details-marker{display:none}
 .workbench-group>summary::after{content:" ▾";color:var(--muted)}
