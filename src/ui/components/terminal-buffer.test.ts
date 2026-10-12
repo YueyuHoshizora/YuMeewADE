@@ -89,6 +89,14 @@ test('DECRC restores autowrap and the saved character set designation', () => {
   const charset = new TerminalBuffer(4, 2); charset.write('\x1b(0\x1b7\x1b(B\x1b8q');
   assert.equal(text(charset)[0], '─   ');
 });
+test('designating G0 or G1 does not change which register SO/SI selected', () => {
+  // SO selects G1 (DEC graphics); redesignating G0 must leave G1 in use.
+  const keep = new TerminalBuffer(8, 2); keep.write('\x1b)0\x0eq\x1b(Bq');
+  assert.equal(text(keep)[0], '──      ');
+  // While G1 is selected, redesignating G1 itself takes effect at once; SI then returns to plain G0.
+  const change = new TerminalBuffer(8, 2); change.write('\x1b)B\x0eq\x1b)0q\x0fq');
+  assert.equal(text(change)[0], 'q─q     ');
+});
 test('late emoji presentation wraps a complete grapheme at the right edge', () => {
   const screen = new TerminalBuffer(4, 2); screen.write('abc❤'); screen.write('\uFE0F');
   assert.equal(text(screen)[0], 'abc '); assert.equal(screen.grid[1]![0]!.char, '❤️');

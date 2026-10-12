@@ -25,6 +25,8 @@ export class TerminalBuffer {
   private saved: Position | undefined;
   private top = 0; private bottom: number; private origin = false; private autowrap = true; private insert = false;
   private fg = ''; private bg = ''; private bold = false; private inverse = false; private underline = false;
+  // `charset` is the shift state (SO selects G1, SI selects G0); `g0`/`g1` say whether each register holds DEC graphics.
+  // Designating a register never changes which one is selected.
   private wrap = false; private charset = false; private charsetTarget = '('; private g0 = false; private g1 = false;
   private tabs = new Set<number>();
   private state: 'text' | 'escape' | 'csi' | 'discardCsi' | 'string' | 'stringEscape' | 'charset' = 'text';
@@ -65,7 +67,7 @@ export class TerminalBuffer {
       if (this.state === 'string') { if (char === '\x07' && this.osc || char === '\u009c') this.state = 'text'; else if (char === '\x1b') this.state = 'stringEscape'; continue; }
       if (this.state === 'stringEscape') { this.state = char === '\\' || char === '\u009c' || char === '\x07' && this.osc ? 'text' : char === '\x1b' ? 'stringEscape' : 'string'; continue; }
       if (char === '\x1b') { this.state = 'escape'; this.last = undefined; continue; }
-      if (this.state === 'charset') { if (this.charsetTarget === '(') this.g0 = char === '0'; else this.g1 = char === '0'; this.charset = this.g0; this.state = 'text'; continue; }
+      if (this.state === 'charset') { if (this.charsetTarget === '(') this.g0 = char === '0'; else this.g1 = char === '0'; this.state = 'text'; continue; }
       if (this.state === 'escape') {
         this.state = 'text';
         if (char === '[') { this.state = 'csi'; this.sequence = ''; }
@@ -88,9 +90,9 @@ export class TerminalBuffer {
       if (char === '\n' || char === '\v' || char === '\f') { this.linefeed(); this.last = undefined; continue; }
       if (char === '\b') { this.x = Math.max(0, this.x - 1); this.wrap = false; this.last = undefined; continue; }
       if (char === '\t') { this.tab(1); this.last = undefined; continue; }
-      if (char === '\x0e' || char === '\x0f') { this.charset = char === '\x0e' ? this.g1 : this.g0; continue; }
+      if (char === '\x0e' || char === '\x0f') { this.charset = char === '\x0e'; continue; }
       if (char < ' ' || char >= '\x7f' && char <= '\x9f') continue;
-      this.put(this.charset && char >= '`' && char <= '~' ? DEC[char.charCodeAt(0) - 96]! : char);
+      this.put((this.charset ? this.g1 : this.g0) && char >= '`' && char <= '~' ? DEC[char.charCodeAt(0) - 96]! : char);
     }
   }
   private put(char: string): void {
