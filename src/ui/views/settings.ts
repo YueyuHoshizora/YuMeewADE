@@ -2,7 +2,7 @@ import type { AiPick, RoleInput, RoleSlot } from '../../shared/types.ts';
 import { api } from '../api.ts';
 import { getLocale, hasMessage, LOCALES, localeName, setLocale, t, type Locale } from '../i18n/index.ts';
 import { aiPicker } from '../components/picker.ts';
-import { button, card, confirmModal, el, field, input, readLocal, row, run, select, storeLocal, toast, type View, type ViewContext } from '../components/dom.ts';
+import { button, card, confirmModal, el, field, input, readLocal, row, run, select, setLocked, storeLocal, toast, type View, type ViewContext } from '../components/dom.ts';
 import { aiLabel, localTime, sourceLabel } from '../components/display.ts';
 import { getTheme, setTheme, type Theme } from '../theme.ts';
 import { carePanel } from '../components/care.ts';
@@ -41,7 +41,11 @@ export function settingsView(context: ViewContext, redraw: () => void): View {
   node.append(editorPreferencesPanel());
   node.append(editorLspPanel(context));
   node.append(mountProviderCapabilities());
-  const initial = aiPicker(state, state.settings.initial); node.append(card(t('settings.initial'), initial.node, button(t('common.save'), async () => { await api.settings({ initial: initial.value() }); await context.refresh(); toast(t('common.saved')); }, 'primary')));
+  const initial = aiPicker(state, state.settings.initial);
+  const saveInitial = button(t('common.save'), async () => { await api.settings({ initial: initial.value() }); await context.refresh(); toast(t('common.saved')); }, 'primary');
+  // With no usable AI the picker is empty; saving would only send an invalid choice.
+  setLocked(saveInitial, !initial.value().ai);
+  node.append(card(t('settings.initial'), initial.node, saveInitial));
   const aiSection = card(t('settings.ais'));
   for (const info of state.ais.filter(ai => ai.name !== 'mock')) {
     const access = input(); access.type = 'checkbox'; access.checked = state.settings.fullAccess[info.name] ?? info.fullAccess;
