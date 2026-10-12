@@ -275,7 +275,7 @@
 /* In a narrow column (side panels or docked workbench open) the wrapped controls must not push the transcript out. */
 .task-header{max-height:30%;overflow:auto}
 .task-column{container-type:inline-size}
-@container (max-width:480px){.task-column .task-header{max-height:20%}.task-column .composer{max-height:30%;overflow:auto}.task-column .task-footer{max-height:15%;overflow:auto}.task-column .task-footer .disclosure[open]>.step-list{position:static}.task-column .composer-controls{flex-wrap:wrap}.task-column .composer-controls .compact-picker{min-width:0;flex-basis:100%;flex-wrap:wrap}}
+@container (max-width:480px){.task-column .task-header{max-height:20%}.task-column .composer{max-height:30%;overflow:auto}.task-column .task-footer{max-height:15%;overflow:auto}.task-column .task-footer .disclosure[open]>.step-list{position:static}.task-column .task-footer .task-notes{display:none}.task-column .composer-controls{flex-wrap:wrap}.task-column .composer-controls .compact-picker{min-width:0;flex-basis:100%;flex-wrap:wrap}}
 .workbench-group>summary{list-style:none;cursor:pointer;padding:7px 12px;border:1px solid var(--border);border-radius:9px;background:var(--c-23283a)}
 .workbench-group>summary::-webkit-details-marker{display:none}
 .workbench-group>summary::after{content:" ▾";color:var(--muted)}
@@ -387,7 +387,7 @@ body { height: 100dvh; display: grid; grid-template-rows: 64px minmax(0, 1fr) au
   /* Header, composer and footer caps must leave the transcript a usable share of a phone screen. */
   .task-header{padding:8px 12px;max-height:18dvh;overflow:auto}.back-link{margin-bottom:4px}.task-header>.row{gap:6px}.work-info{margin-top:6px;gap:6px}
   .composer{max-height:32dvh;overflow:auto}.composer textarea{max-height:100px}.composer-controls{flex-wrap:wrap}.composer-controls .compact-picker{min-width:0;flex-basis:100%}
-  .task-footer{max-height:14dvh;overflow:auto}.task-footer>.row{flex-wrap:wrap}.task-footer .disclosure[open]>.step-list{position:static;max-height:25dvh;margin-top:6px;padding:8px}
+  .task-footer{max-height:14dvh;overflow:auto}.task-footer>.row{flex-wrap:wrap}.task-footer .disclosure[open]>.step-list{position:static;max-height:25dvh;margin-top:6px;padding:8px}.task-footer .task-notes{display:none}
   .transcript{padding:10px 12px;min-height:40px}.chat-card{padding:10px 12px;margin-bottom:10px}.chat-meta{gap:6px;margin-bottom:6px}.queue-item{flex-wrap:wrap}.queue-text{min-width:120px}.running-line{overflow-wrap:anywhere}
   .page-header h1,.task-list a,.turn-title,.log-entry,.settings-page code{overflow-wrap:anywhere}.form,.field,.card,.picker{min-width:0;max-width:100%}.code-block pre{white-space:pre;overflow-x:auto}
 }
