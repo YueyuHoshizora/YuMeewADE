@@ -41,6 +41,7 @@ export const DETAIL_MESSAGES = {
   phase_duplicate: '階段名稱不能重複',
   step_changed: '步驟清單已經變更，請確認後再操作',
   notes_changed: '備註已在別處修改，請重新開啟後再編輯',
+  rules_changed: 'AI 規則已在別處修改；請先複製你的修改，再重新整理頁面取得最新內容',
   project_missing: '專案不存在',
   project_body_missing: '找不到專案的主資料夾，可能已被移動或刪除',
   task_missing: '作業不存在',

@@ -262,8 +262,12 @@ export function projectView(context: ViewContext, project: ProjectView, params: 
   rules.rows = 12;
   rules.maxLength = 20000;
   rules.disabled = true;
+  // The text as last read or saved; the core refuses the save if the file changed since (another window, hand or AI edit).
+  let rulesLoaded = '';
   const rulesBox = disclosure(t('project.rules'), el('p', 'muted', t('project.rulesHint')), rules, button(t('common.save'), async () => {
-    await request('/api/project/rules', { project: project.id, text: rules.value });
+    const text = rules.value;
+    await request('/api/project/rules', { project: project.id, text, previous: rulesLoaded });
+    rulesLoaded = text;
     toast(t('common.saved'));
   }));
   let rulesLoading = false;
@@ -272,7 +276,7 @@ export function projectView(context: ViewContext, project: ProjectView, params: 
     rulesLoading = true;
     void run(async () => {
       try {
-        rules.value = (await request<{ text: string }>(query('/api/project/rules', { project: project.id }))).text;
+        rules.value = rulesLoaded = (await request<{ text: string }>(query('/api/project/rules', { project: project.id }))).text;
         rules.disabled = false;
       } finally { rulesLoading = false; }
     });

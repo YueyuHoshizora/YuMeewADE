@@ -45,18 +45,25 @@ test('autoFix persists as a bounded integer and defaults to 0', () => withTmpWor
   assert.equal((await projects.update('P', { autoFix: 0 })).autoFix, 0);
 }));
 
-test('project rules round-trip, can be cleared, and are bounded', () => withTmpWorkspace(async ws => {
+test('project rules round-trip, can be cleared, are bounded and refuse rules changed since they were read', () => withTmpWorkspace(async ws => {
   const projects = new ProjectLedger(ws);
   await projects.create({ name: 'P' });
-  assert.match(await projects.readRules('P'), /^# 共用規則/, 'new projects start with the template rules');
-  await projects.writeRules('P', '# 規則\n- 先寫測試\n');
+  const template = await projects.readRules('P');
+  assert.match(template, /^# 共用規則/, 'new projects start with the template rules');
+  await projects.writeRules('P', '# 規則\n- 先寫測試\n', template);
   assert.equal(await projects.readRules('P'), '# 規則\n- 先寫測試\n');
   assert.equal(await fs.readFile(ws.rulesFile('P'), 'utf8'), '# 規則\n- 先寫測試\n');
-  await projects.writeRules('P', '');
+  // Another window (or a hand/AI edit) changed the file after this editor read it: keep that change.
+  await assert.rejects(projects.writeRules('P', 'stale editor', template), { detail: 'rules_changed' });
+  assert.equal(await projects.readRules('P'), '# 規則\n- 先寫測試\n');
+  await projects.writeRules('P', '', '# 規則\n- 先寫測試\n');
   assert.equal(await projects.readRules('P'), '');
-  await assert.rejects(projects.writeRules('P', 'x'.repeat(RULES_MAX + 1)), /過長/);
+  await fs.rm(ws.rulesFile('P'));
+  await projects.writeRules('P', 'from scratch', '');
+  assert.equal(await projects.readRules('P'), 'from scratch');
+  await assert.rejects(projects.writeRules('P', 'x'.repeat(RULES_MAX + 1), 'from scratch'), /過長/);
   await assert.rejects(projects.readRules('Missing'), /不存在/);
-  await assert.rejects(projects.writeRules('Missing', 'x'), /不存在/);
+  await assert.rejects(projects.writeRules('Missing', 'x', ''), /不存在/);
   await assert.rejects(fs.access(path.join(ws.projectsDir, 'Missing')));
 }));
 

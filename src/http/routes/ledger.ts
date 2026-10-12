@@ -93,7 +93,8 @@ export function registerLedgerRoutes(router: Router, app: App): void {
   router.post('/api/project/rules', async ({ body }) => {
     const project = reqString(body, 'project', 120);
     if (typeof body.text !== 'string') throw new AppError('bad_request', 'field_type', { field: 'text' });
-    await app.projects.writeRules(project, body.text);
+    if (typeof body.previous !== 'string') throw new AppError('bad_request', 'field_type', { field: 'previous' });
+    await app.projects.writeRules(project, body.text, body.previous);
     await app.oplog.record({ action: 'project.rules', project });
     return { ok: true };
   });

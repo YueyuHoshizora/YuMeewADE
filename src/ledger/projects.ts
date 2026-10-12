@@ -222,10 +222,11 @@ export class ProjectLedger {
     return fs.readFile(this.ws.rulesFile(id), 'utf8').catch((err: NodeJS.ErrnoException) => { if (err.code === 'ENOENT') return ''; throw err; });
   }
 
-  async writeRules(id: string, text: string): Promise<void> {
+  /** Replaces the rules the caller read (`previous`); rules changed meanwhile (another window, a hand or AI edit) are a conflict, not overwritten. */
+  async writeRules(id: string, text: string, previous: string): Promise<void> {
     if (text.length > RULES_MAX) throw new AppError('bad_request', 'field_too_long', { field: 'text' });
     await withFileLocks([this.ws.rulesFile(id)], async () => {
-      await this.get(id);
+      if (await this.readRules(id) !== previous) throw new AppError('conflict', 'rules_changed');
       await atomicWrite(this.ws.rulesFile(id), text);
     });
   }

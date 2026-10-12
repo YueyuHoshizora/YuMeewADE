@@ -217,7 +217,7 @@ HTTP JSON と SSE を使い、デスクトップ版と Web 版で完全に共通
 | `POST /api/chat/rollback` | `{project, task, request}`：作業コピーをその指示の開始前に戻す（各ターン前にチェックポイントを自動保存）。実行中は 409、チェックポイントなしは 404 |
 | `POST /api/chat/fork` | `{project, task, request}`：その指示の開始前から新しい（派生）タスクを分岐。作業コピーは当時のチェックポイントから作られ、それ以前の会話（添付なし）を引き継ぐ。新しいタスクを返す。実行中は 409、チェックポイントなしは 404 |
 | `GET /api/chat/turn-diff?project=&task=&request=` | 1ターン分の差分（ターン前のチェックポイント → ターン終了時）。チェックポイントなしは 404 |
-| `GET /api/project/rules?project=`、`POST /api/project/rules` | プロジェクトの AI ルール（`.ai/rules.md`、20,000 文字まで）の読み書き。書き込みは `{project, text}` |
+| `GET /api/project/rules?project=`、`POST /api/project/rules` | プロジェクトの AI ルール（`.ai/rules.md`、20,000 文字まで）の読み書き。書き込みは `{project, text, previous}` で、`previous` は読み取った内容。別の場所で変更済みなら 409 `rules_changed` |
 | `GET /api/project/notes?project=`、`POST /api/project/notes` | PROJECT.md の frontmatter 以下の本文（プロジェクトページのメモ、20,000 文字まで）の読み書き。書き込みは `{project, text, previous}` で、`previous` は読み取った本文。別の場所で変更されていれば 409 `notes_changed`、frontmatter は変更しない |
 | `GET /api/project/memory?project=&name=`, `POST /api/project/memory`, `POST /api/project/memory/delete` | name なしで一覧、読取は `{name,text,revision}`。保存 `{project,name,text,revision}`（追加は null）、削除には revision と confirm=true が必要 |
 | `GET /api/mcp/list?ai=`, `POST /api/mcp/add`, `POST /api/mcp/remove` | 現在のアカウントの一覧／追加 `{ai,server}`／削除 `{ai,name,confirmed:true}`；秘密の値は返しません |
