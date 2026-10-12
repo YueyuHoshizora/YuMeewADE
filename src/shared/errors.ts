@@ -126,7 +126,7 @@ export const DETAIL_MESSAGES = {
   editor_running: '作業執行中，請先停止再儲存',
   git_workbench_running: '請先停止此專案所有執行中的作業',
   git_workbench_path: '此檔案不允許操作或不在目前變更清單',
-  git_workbench_secret: '已暫存機密檔案，拒絕提交',
+  git_workbench_secret: '已暫存機密檔案，拒絕提交或暫存（stash）',
   git_conflict_markers: '請先移除所有衝突標記',
   git_commit_message: '請輸入有效的提交訊息',
   git_nothing_staged: '沒有已暫存的變更',

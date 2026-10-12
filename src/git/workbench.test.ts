@@ -262,6 +262,11 @@ test('stash with untracked files leaves local secrets in the folder and out of G
   assert.equal(await fs.readFile(path.join(root, '.env'), 'utf8'), 'TOKEN=fake\n');
   assert.equal(await fs.readFile(path.join(root, 'file.txt'), 'utf8'), 'base\n');
   await assert.rejects(fs.access(path.join(root, 'fresh.txt')));
+  // A secret staged by hand would land in the stash's saved index, so the stash is refused and nothing moves.
+  await fs.writeFile(path.join(root, '.env.private'), 'TOKEN=staged\n'); await gitOk(root, ['add', '-f', '.env.private']); await fs.writeFile(path.join(root, 'file.txt'), 'again\n');
+  await assert.rejects(workbench.stash('P', undefined, 'push', { message: 'secret' }), { detail: 'git_workbench_secret' });
+  assert.equal((await gitOk(root, ['stash', 'list'])).trim().split('\n').length, 1);
+  assert.equal(await fs.readFile(path.join(root, 'file.txt'), 'utf8'), 'again\n');
 }));
 
 test('a merge resolved entirely in favour of this side can still be committed; with no merge, nothing staged is refused', () => withTmpWorkspace(async ws => {

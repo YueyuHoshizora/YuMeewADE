@@ -186,7 +186,10 @@ export class GitWorkbench {
         const message = options.message ?? '';
         if (!message.trim() || message.length > 10_000 || message.includes('\0')) throw new AppError('bad_request', 'git_commit_message');
         // Like staging, a stash never stores local secrets (`.env*`, `.npmrc`…) in Git objects; they stay in the folder.
-        const secrets = (await this.files(root)).filter(file => file.secret).map(file => `:(exclude,literal)${file.path}`);
+        const files = await this.files(root);
+        // A pathspec only limits the working-tree part: git stash still saves the whole index, so a staged secret is refused as for commit.
+        if (files.some(file => file.staged && file.secret)) throw new AppError('forbidden', 'git_workbench_secret');
+        const secrets = files.filter(file => file.secret).map(file => `:(exclude,literal)${file.path}`);
         await this.command(root, ['stash', 'push', ...(options.includeUntracked ? ['--include-untracked'] : []), '-m', message, ...(secrets.length ? ['--', ':/', ...secrets] : [])]);
       } else {
         const entry = (await this.stashEntries(root)).find(item => item.sha === options.sha);
