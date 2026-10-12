@@ -356,9 +356,13 @@ export function projectView(context: ViewContext, project: ProjectView, params: 
       return sections;
     }));
     for (const detail of overview.querySelectorAll('details')) detail.open = opened.has(detail.querySelector('summary')?.textContent);
-    // Rebuilt controls (the bulk value field) are found again by their label.
+    // Rebuilt controls (bulk value, board search) are found again by their label, keeping the caret where it was.
     const label = focused?.getAttribute('aria-label');
-    (focused?.isConnected ? focused : label ? overview.querySelector<HTMLElement>(`[aria-label="${CSS.escape(label)}"]`) : null)?.focus();
+    const target = focused?.isConnected ? focused : label ? overview.querySelector<HTMLElement>(`[aria-label="${CSS.escape(label)}"]`) : null;
+    target?.focus();
+    if (target !== focused && target instanceof HTMLInputElement && focused instanceof HTMLInputElement && focused.selectionStart !== null) {
+      try { target.setSelectionRange(focused.selectionStart, focused.selectionEnd); } catch { /* date and other inputs have no caret */ }
+    }
   }
   renderOverview(); node.append(overview);
   const draftKey = `yumeewade.quick.${project.id}`; const draft = area(readLocal<string>(draftKey, ''), `${t('project.quickPlaceholder')} · ${t(readLocal('yumeewade.enterToSend', false) ? 'chat.hintEnter' : 'chat.hintModifier')}`); draft.maxLength = context.state.limits.promptChars;

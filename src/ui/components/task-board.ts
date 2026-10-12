@@ -16,7 +16,7 @@ export function taskBoard(context: ViewContext, project: ProjectView, list: (tas
   const states = select([{ value: '', label: t('board.all') }, ...TASK_STATES.map(value => ({ value, label: t(`state.${value}`) }))], selection.state);
   const ais = select([{ value: '', label: t('board.all') }, ...[...new Set([...project.tasks.map(task => task.cli).filter(Boolean), ...(selection.ai ? [selection.ai] : [])])].sort().map(value => ({ value, label: value }))], selection.ai);
   const late = input(); late.type = 'checkbox'; late.checked = selection.overdue;
-  const text = input(selection.text); text.type = 'search'; text.maxLength = 200;
+  const text = input(selection.text); text.type = 'search'; text.maxLength = 200; text.setAttribute('aria-label', t('board.search'));
   let moving = false;
   async function move(task: TaskView, state: TaskState): Promise<void> {
     if (moving || (task.state === state && !task.confirm)) return;
