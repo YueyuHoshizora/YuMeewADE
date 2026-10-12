@@ -28,6 +28,8 @@ export function createHttpServer(app: App): HttpCore {
   let router = routerFor(app);
   let mounted = app;
   const server = http.createServer((req, res) => {
+    // Any site can point a frame at the loopback port; the app's own controls must never be clickable inside someone else's page.
+    res.setHeader('X-Frame-Options', 'DENY');
     router
       .handle(req, res)
       .then((handled) => (handled ? undefined : serveStatic(UI_DIR, req, res, mounted.embeddedPreview.gatewayOrigin())))

@@ -42,7 +42,7 @@ export async function serveStatic(dir: string, req: IncomingMessage, res: Server
     'Content-Length': data.length,
     'Cache-Control': 'no-store',
     'X-Content-Type-Options': 'nosniff',
-    'Content-Security-Policy': `default-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; connect-src 'self'; frame-src ${frame?.origin ?? "'none'"}`,
+    'Content-Security-Policy': `default-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; connect-src 'self'; frame-src ${frame?.origin ?? "'none'"}; frame-ancestors 'none'`,
   });
   res.end(req.method === 'HEAD' ? undefined : data);
 }

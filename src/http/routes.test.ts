@@ -465,3 +465,17 @@ test('archive restoration checks current and archived trust before checkout and 
     assert.equal((await s.app.archive.list())[0]?.key, projectEntry.key);
   } finally { await s.close(); }
 });
+
+test('neither the app page nor the API can be framed by another site', async () => {
+  const s = await startTestServer();
+  try {
+    const dir = await fs.mkdtemp(path.join(s.dir, 'ui-'));
+    await fs.writeFile(path.join(dir, 'index.html'), '<!doctype html>');
+    for (const pathname of ['/', '/api/state']) assert.equal((await fetch(s.base + pathname)).headers.get('x-frame-options'), 'DENY');
+    // The page's own CSP also forbids ancestors, since some embedders ignore X-Frame-Options.
+    const { serveStatic } = await import('./static.ts');
+    const headers: Record<string, unknown> = {};
+    await serveStatic(dir, { url: '/', method: 'GET' } as never, { writeHead: (_: number, values: Record<string, unknown>) => { Object.assign(headers, values); }, end: () => undefined } as never);
+    assert.match(String(headers['Content-Security-Policy']), /frame-ancestors 'none'/);
+  } finally { await s.close(); }
+});
