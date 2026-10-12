@@ -57,6 +57,58 @@ test('app-server disconnect and invalid JSON fail closed',async()=>{
   assert.equal(result.ok,false);assert.ok(events.some(e=>e.type==='error'));
  }}finally{await fs.rm(dir,{recursive:true,force:true});}
 });
+// Mirrors codex-cli 0.162.1: review/start returns the root turn; the work runs in a child turn whose rootTurnId points back.
+const commandFixture = `import {createInterface} from 'node:readline';
+const send = x => console.log(JSON.stringify(x));
+createInterface({input:process.stdin}).on('line', line => {
+ const m=JSON.parse(line);
+ if(m.method==='initialize') send({id:m.id,result:{}});
+ else if(m.method==='thread/start'||m.method==='thread/resume') send({id:m.id,result:{thread:{id:'thread'}}});
+ else if(m.method==='turn/start') process.exit(6);
+ else if(m.method==='thread/compact/start') {
+  if(m.params.threadId!=='thread')process.exit(5);
+  send({id:m.id,result:{}});
+  send({method:'turn/started',params:{threadId:'thread',turn:{id:'compact',rootTurnId:'compact'}}});
+  send({method:'item/completed',params:{threadId:'thread',turnId:'compact',item:{type:'contextCompaction',id:'c'}}});
+  send({method:'turn/completed',params:{threadId:'thread',turn:{id:'compact',status:'completed',error:null}}});
+ } else if(m.method==='review/start') {
+  const target=JSON.stringify(m.params.target);
+  if(m.params.delivery!=='inline'||target!==process.env.FIXTURE_TARGET)process.exit(4);
+  send({id:m.id,result:{turn:{id:'root'},reviewThreadId:'thread'}});
+  send({method:'turn/started',params:{threadId:'thread',turn:{id:'child',rootTurnId:'root'}}});
+  send({method:'item/agentMessage/delta',params:{threadId:'thread',turnId:'root',itemId:'raw',delta:'{"findings":[]}'}});
+  send({method:'item/completed',params:{threadId:'thread',turnId:'root',item:{type:'exitedReviewMode',id:'r',review:'No issues.'}}});
+  send({method:'item/completed',params:{threadId:'thread',turnId:'root',item:{type:'agentMessage',id:'m',text:'No issues.'}}});
+  send({method:'turn/completed',params:{threadId:'thread',turn:{id:'root',status:'completed',error:null}}});
+ }
+}).on('close',()=>process.exit(0));`;
+test('app-server runs /compact and /review as thread operations, answering with the review summary only', async () => {
+ const dir = await fs.mkdtemp(path.join(os.tmpdir(), 'codex-commands-'));
+ try {
+  const file = path.join(dir, 'fixture.ts'); await fs.writeFile(file, commandFixture);
+  for (const [slashCommand, resumeId, target, ok, answer] of [
+   ['/compact', 'thread', '', true, ''],
+   ['/compact', undefined, '', false, ''],
+   ['/review', undefined, '{"type":"uncommittedChanges"}', true, 'No issues.'],
+   ['/review  focus on auth ', 'thread', '{"type":"custom","instructions":"focus on auth"}', true, 'No issues.'],
+  ] as const) {
+   const provider = new CodexCliProvider({ ...DEFAULT_CONFIG.cli.codex, command: process.execPath, appServerArgs: [file] }, [], { PATH: process.env.PATH, FIXTURE_TARGET: target });
+   const events: CliEvent[] = [];
+   const result = await provider.send({ prompt: 'preamble', cwd: dir, slashCommand, ...(resumeId ? { resumeId } : {}) }, e => events.push(e)).done;
+   assert.equal(result.ok, ok, slashCommand);
+   if (ok) assert.deepEqual(events.find(e => e.type === 'result'), { type: 'result', text: answer });
+   else assert.ok(events.some(e => e.type === 'error'));
+  }
+  const provider = new CodexCliProvider({ ...DEFAULT_CONFIG.cli.codex, command: process.execPath, appServerArgs: [file] }, [], { PATH: process.env.PATH, CODEX_HOME: dir });
+  assert.deepEqual((await provider.commands(dir)).map(c => c.name), ['compact', 'review']);
+  assert.deepEqual(await provider.resolveCommand('/review focus', dir), { text: '/review focus', native: true });
+  await assert.rejects(provider.resolveCommand('/compact now', dir), { detail: 'slash_unsupported' });
+  await assert.rejects(provider.resolveCommand('/model', dir), { detail: 'slash_unsupported' });
+  const exec = new CodexCliProvider({ ...DEFAULT_CONFIG.cli.codex, mode: 'exec' }, [], { PATH: process.env.PATH, CODEX_HOME: dir });
+  assert.deepEqual(await exec.commands(dir), []);
+  await assert.rejects(exec.resolveCommand('/compact', dir), { detail: 'slash_unsupported' });
+ } finally { await fs.rm(dir, { recursive: true, force: true }); }
+});
 test('native approval remains answerable throughout the configured core approval window', async context => {
  const dir = await fs.mkdtemp(path.join(os.tmpdir(), 'codex-approval-window-'));
  const permissions = new TurnPermissions(300, () => {});

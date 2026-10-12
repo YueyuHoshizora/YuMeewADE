@@ -44,7 +44,8 @@ test('Codex custom discovery is profile isolated, bounded, top-level and ignores
     await fs.symlink(path.join(b, 'prompts', 'other.md'), path.join(a, 'prompts', 'linked.md'));
     assert.deepEqual(await codexPrompts(a), [{ name: 'prompts:review', description: 'Review selected file', argumentHint: 'FILE=<path>', body: 'Review $FILE and $1.' }]);
     assert.deepEqual(await codexPrompts(path.join(root, 'missing')), []);
-    const provider = new CodexCliProvider(DEFAULT_CONFIG.cli.codex, []);
+    // exec mode has no app-server built-ins, so discovery is exactly the profile's prompts.
+    const provider = new CodexCliProvider({ ...DEFAULT_CONFIG.cli.codex, mode: 'exec' }, []);
     assert.deepEqual((await provider.commands(root, a)).map(c => c.name), ['prompts:review']);
     assert.deepEqual(await provider.resolveCommand('/prompts:review "first argument" FILE="src/a b.ts"', root, a), { text: 'Review src/a b.ts and first argument.', native: false });
     await assert.rejects(provider.resolveCommand('/prompts:review FILE=x', root, b), AppError);

@@ -6,7 +6,7 @@ import os from 'node:os';
 import path from 'node:path';
 import type { CliCommandConfig } from '../shared/config.ts';
 import { CREDITS_UNIT } from '../shared/types.ts';
-import type { ExtraUsage, QuotaWindow, ResetCredit, ResetCredits } from '../shared/types.ts';
+import type { ExtraUsage, QuotaWindow, ResetCredit, ResetCredits, SlashCommand } from '../shared/types.ts';
 import { findExecutable, minimalEnv, runLineProcess, terminateTree } from './process.ts';
 import { quotaTime, type CliEvent, type CliProvider, type CliRun, type SendOptions } from './provider.ts';
 import { codexPrompts, expandCodexPrompt, slashName } from './commands.ts';
@@ -314,6 +314,12 @@ export function createCodexParser(onEvent: (ev: CliEvent) => void, now: () => nu
   };
 }
 
+/** Codex TUI controls the app-server exposes as thread operations (codex-cli 0.162.1 `thread/compact/start`, `review/start`). */
+const CODEX_APP_COMMANDS: SlashCommand[] = [
+  { name: 'compact', description: 'Summarize the conversation to free up context' },
+  { name: 'review', description: 'Review uncommitted changes, or the given review instructions', argumentHint: '[instructions]' },
+];
+
 export class CodexCliProvider implements CliProvider {
   readonly name = 'codex';
   readonly dangerous: boolean;
@@ -341,11 +347,17 @@ export class CodexCliProvider implements CliProvider {
   }
 
   async commands(_cwd: string, configDir?: string) {
-    return (await codexPrompts(configDir ?? this.home)).map(({ body: _body, ...command }) => command);
+    const prompts = (await codexPrompts(configDir ?? this.home)).map(({ body: _body, ...command }) => command);
+    return this.supportsApprovals ? [...CODEX_APP_COMMANDS, ...prompts] : prompts;
   }
 
   async resolveCommand(text: string, _cwd: string, configDir?: string) {
     const name = slashName(text);
+    if (this.supportsApprovals && CODEX_APP_COMMANDS.some(command => command.name === name)) {
+      // /compact acts on the whole thread; arguments would be silently dropped.
+      if (name === 'compact' && text.trim() !== '/compact') throw new AppError('bad_request', 'slash_unsupported');
+      return { text: text.trim(), native: true };
+    }
     const prompt = (await codexPrompts(configDir ?? this.home)).find(command => command.name === name);
     if (!prompt) throw new AppError('bad_request', 'slash_unsupported');
     return { text: expandCodexPrompt(prompt.body, text.trimStart().slice(name!.length + 1).trim()), native: false };

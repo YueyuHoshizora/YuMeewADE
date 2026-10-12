@@ -7,7 +7,7 @@ export function providerCapabilities(providers: Record<string, CliProvider>): Pr
       approvals: !fixture && provider.supportsApprovals === true,
       readonly: !fixture && provider.supportsReadonly === true && !!provider.readonlyEnforcement,
       enforcement: !fixture && provider.supportsReadonly ? provider.readonlyEnforcement ?? 'unsupported' : 'unsupported',
-      slash: fixture || !provider.resolveCommand ? 'none' : ai === 'codex' ? 'prompts' : ai === 'gemini' ? 'native-reports' : ai === 'claude' ? 'native-and-prompts' : 'none',
+      slash: fixture || !provider.resolveCommand ? 'none' : ai === 'codex' ? provider.supportsApprovals ? 'native-and-prompts' : 'prompts' : ai === 'gemini' ? 'native-reports' : ai === 'claude' ? 'native-and-prompts' : 'none',
       resume: !fixture, usage: !fixture,
       limitation: fixture ? 'fixture' : ai === 'codex' ? provider.supportsApprovals ? 'codex-app' : 'codex-exec' : ai as 'claude' | 'grok' | 'gemini' };
   });
