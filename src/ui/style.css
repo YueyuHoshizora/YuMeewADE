@@ -270,6 +270,7 @@
 .card>button:not(:last-child){margin-bottom:10px}
 .task-notes{margin:0 0 4px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .record-detail{margin-top:6px}.task-record{max-height:40vh;overflow:auto}.task-record h4{margin:8px 0 2px}
+.task-list-title{display:inline-flex;align-items:center;gap:6px;min-width:0}
 .sidebar-actions{position:sticky;bottom:0;margin-top:auto;display:flex;flex-direction:column;background:var(--c-141722);border-top:1px solid var(--border)}.sidebar-actions .new-project{position:static;border-top:0;padding-block:12px}.sidebar-actions button.new-project{border:0;border-radius:0;text-align:left}
 .side-diff-labels{display:grid;grid-template-columns:1fr 1fr;min-width:600px;margin-bottom:4px}
 /* In a narrow column (side panels or docked workbench open) the wrapped controls must not push the transcript out. */

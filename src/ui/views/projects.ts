@@ -19,7 +19,7 @@ import { githubIssuesButton } from '../components/github-issues.ts';
 import { metadataBadge, metadataFields } from '../components/task-metadata.ts';
 import { taskTemplates } from '../components/task-templates.ts';
 import { memoryPanel } from '../components/memory.ts';
-import { taskBoard } from '../components/task-board.ts';
+import { activityDots, taskBoard } from '../components/task-board.ts';
 import { phaseEditor } from '../components/phase-editor.ts';
 import { PHASES_MAX, TASK_STATES, type BulkTaskAction, type BulkTaskResult } from '../../shared/types.ts';
 import type { MessageKey } from '../i18n/zh-TW.ts';
@@ -247,7 +247,8 @@ export function projectView(context: ViewContext, project: ProjectView, params: 
       renderOverview();
     }));
     for (const task of tasks) {
-      const item = row(link(task.title, taskHash(project.id, task.id)), el('span', 'state-chip', t(`state.${task.state}`)), metadataBadge(task));
+      const heading = el('span', 'task-list-title'); heading.append(link(task.title, taskHash(project.id, task.id)), ...activityDots(context, project.id, task.id));
+      const item = row(heading, el('span', 'state-chip', t(`state.${task.state}`)), metadataBadge(task), ...(task.confirm ? [el('span', 'warning', t('board.approval'))] : []));
       if (selecting) {
         const check = input(); check.type = 'checkbox'; check.checked = selected.has(task.id); check.disabled = bulkBusy;
         check.setAttribute('aria-label', t('bulk.task', { title: task.title }));

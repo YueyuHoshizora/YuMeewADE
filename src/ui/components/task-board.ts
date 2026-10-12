@@ -5,6 +5,13 @@ import { disclosure, el, field, input, link, readLocal, row, run, select, storeL
 import { metadataBadge } from './task-metadata.ts';
 import { selectTasks, taskSelection } from './task-board-model.ts';
 
+/** Running and unread markers for a task, shared by the board cards and the project page list. */
+export function activityDots(context: ViewContext, project: string, task: string): HTMLElement[] {
+  return ([
+    [context.state.running.some(item => item.project === project && item.task === task), 'running', 'board.running'],
+    [context.state.unread.some(item => item.project === project && item.task === task), 'unread', 'board.unread'],
+  ] as const).filter(([active]) => active).map(([, kind, label]) => { const dot = el('span', `dot ${kind}`); dot.title = t(label); dot.setAttribute('aria-label', t(label)); dot.setAttribute('role', 'img'); return dot; });
+}
 export function taskBoard(context: ViewContext, project: ProjectView, list: (tasks: TaskView[]) => HTMLElement): HTMLElement {
   const key = `yumeewade.task-board.${project.id}`;
   const selection = taskSelection(readLocal<unknown>(key, null));
@@ -45,10 +52,7 @@ export function taskBoard(context: ViewContext, project: ProjectView, list: (tas
         const card = el('article', 'task-board-card'); card.draggable = true;
         card.ondragstart = event => { if (event.dataTransfer) { event.dataTransfer.setData('application/x-yumeewade-task', task.id); event.dataTransfer.effectAllowed = 'move'; } };
         const heading = row(link(task.title, taskHash(project.id, task.id)));
-        for (const [active, kind, label] of [
-          [context.state.running.some(item => item.project === project.id && item.task === task.id), 'running', 'board.running'],
-          [context.state.unread.some(item => item.project === project.id && item.task === task.id), 'unread', 'board.unread'],
-        ] as const) if (active) { const dot = el('span', `dot ${kind}`); dot.title = t(label); dot.setAttribute('aria-label', t(label)); dot.setAttribute('role', 'img'); heading.append(dot); }
+        heading.append(...activityDots(context, project.id, task.id));
         const target = select(TASK_STATES.map(value => ({ value, label: t(`state.${value}`) })), task.state);
         target.setAttribute('aria-label', t('board.move'));
         target.onchange = () => { const state = target.value as TaskState; target.value = task.state; void run(() => move(task, state)); };
