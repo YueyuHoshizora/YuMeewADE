@@ -16,6 +16,7 @@ import { WindowStateStore } from './window-state.ts';
 import { installMenu } from './menu.ts';
 import { createTray } from './tray.ts';
 import { monitorRenderer } from './renderer-health.ts';
+import { desktopText } from './messages.ts';
 
 const HERE = path.dirname(fileURLToPath(import.meta.url));
 const APP_ROOT = path.join(HERE, '..', '..');
@@ -89,13 +90,13 @@ async function startCore(host: string, port: number): Promise<void> {
   core.on('exit', (code) => {
     core = null;
     if (code !== 0 && !quitting) {
-      dialog.showErrorBox('YuMeewADE', `核心程序結束（代碼 ${code}）。請檢查設定檔與日誌。`);
+      dialog.showErrorBox('YuMeewADE', desktopText().coreExited.replace('{code}', String(code)));
       app.quit();
     }
   });
   const result = await waitForCore(host, port, { timeoutMs: 15_000, intervalMs: 250, alive: () => core !== null });
-  if (result === 'dead') throw new Error('核心啟動失敗');
-  if (result === 'timeout') throw new Error('核心啟動逾時');
+  if (result === 'dead') throw new Error(desktopText().coreFailed);
+  if (result === 'timeout') throw new Error(desktopText().coreTimeout);
 }
 
 function createWindow(url: string): BrowserWindow {
@@ -167,7 +168,8 @@ function createWindow(url: string): BrowserWindow {
   });
   // The editor's beforeunload guard makes Electron cancel close/reload/quit silently; ask instead of trapping the window.
   win.webContents.on('will-prevent-unload', (event) => {
-    const choice = dialog.showMessageBoxSync(win, { type: 'warning', title: 'YuMeewADE', message: '還有尚未儲存的編輯內容，確定要離開？', detail: '離開後，尚未寫入檔案的變更不會被儲存。', buttons: ['離開', '留下'], defaultId: 1, cancelId: 1 });
+    const m = desktopText();
+    const choice = dialog.showMessageBoxSync(win, { type: 'warning', title: 'YuMeewADE', message: m.unsaved, detail: m.unsavedDetail, buttons: [m.leave, m.stay], defaultId: 1, cancelId: 1 });
     if (choice === 0) event.preventDefault();
   });
   win.webContents.setWindowOpenHandler(({ url: target }) => {
@@ -234,6 +236,6 @@ if (primaryInstance) app
   })
   .catch((err: unknown) => {
     if (quitting) return;
-    dialog.showErrorBox('YuMeewADE 無法啟動', err instanceof Error ? err.message : String(err));
+    dialog.showErrorBox(desktopText().startFailed, err instanceof Error ? err.message : String(err));
     app.quit();
   });

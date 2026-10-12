@@ -1,4 +1,5 @@
 import { app, BrowserWindow, Menu, shell, type MenuItemConstructorOptions } from 'electron';
+import { localeTable } from './messages.ts';
 
 export type MenuCommand = 'new-project' | 'open-project' | 'settings' | 'palette' | 'search' | 'find';
 const labels: Record<string, readonly string[]> = {
@@ -10,7 +11,7 @@ const labels: Record<string, readonly string[]> = {
   fr: ['Fichier', 'Nouveau projet', 'Ouvrir un projet', 'Nouvelle fenêtre', 'Réglages', 'Édition', 'Affichage', 'Palette de commandes', 'Rechercher', 'Fenêtre', 'Aide', 'Guide', 'Afficher', 'En cours', 'Quitter', 'Rechercher dans la page'],
   it: ['File', 'Nuovo progetto', 'Apri progetto', 'Nuova finestra', 'Impostazioni', 'Modifica', 'Vista', 'Tavolozza comandi', 'Cerca', 'Finestra', 'Aiuto', 'Guida', 'Mostra', 'In esecuzione', 'Esci', 'Trova'],
 };
-export function desktopLabels(): readonly string[] { const locale = app.getLocale(); return labels[locale] ?? labels[locale.split('-')[0]!] ?? labels['en']!; }
+export function desktopLabels(): readonly string[] { return localeTable(labels); }
 export function installMenu(newWindow: () => void): void {
   const l = desktopLabels();
   const command = (label: string, name: MenuCommand, accelerator?: string): MenuItemConstructorOptions => ({ label, ...(accelerator ? { accelerator } : {}), click: () => BrowserWindow.getFocusedWindow()?.webContents.send('menu-command', name) });
