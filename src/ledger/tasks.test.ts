@@ -54,3 +54,16 @@ test('建立作業時步驟數與每步長度有上限，邊界值可建立', ()
   await assert.rejects(ledger.addStep('P', atLimit.id, 'one more'));
   assert.equal((await ledger.get('P', atLimit.id)).steps.length, STEPS_MAX);
 }));
+
+test('作業紀錄區段依別名讀取、略過空行與註解，行數與行長有上限', () => withTmpWorkspace(async ws => {
+  await new ProjectLedger(ws).create({ name: 'P' });
+  const ledger = new TaskLedger(ws); const task = await ledger.create('P', { title: 'T' });
+  const long = 'x'.repeat(2500);
+  await fs.writeFile(ws.taskFile('P', task.id), `---\ntitle: T\n---\n## Done\n- built it\n\n<!-- hint -->\n## 注意\n- ${long}\n## Next\n${Array.from({ length: 600 }, (_, i) => `- n${i}`).join('\n')}\n## 備註\n`);
+  const sections = await ledger.sections('P', task.id);
+  assert.deepEqual(sections.done, ['- built it']);
+  assert.equal(sections.cautions[0]!.length, 2000);
+  assert.equal(sections.next.length, 500); assert.equal(sections.next.at(-1), '- n499');
+  assert.deepEqual(sections.memo, []);
+  await assert.rejects(ledger.sections('P', '20990101-001'), /task_missing|not_found|作業/);
+}));

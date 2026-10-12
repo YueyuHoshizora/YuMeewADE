@@ -207,6 +207,7 @@ HTTP JSON 加 SSE，桌面版與網頁版完全相同。型別定義在 [`src/sh
 | `POST /api/order`、`/api/pin` | 專案排序與釘選 |
 | `POST /api/task/new`、`/api/task/update`、`/api/task/step`、`/api/task/memo`、`/api/task/completion`、`/api/task/archive`、`/api/task/read` | 作業 |
 | `POST /api/task/step` | `{project, task}` 加上三擇一：`add`（新增）、`index`＋`done`（勾選）、`remove`（索引，移除）；勾選與移除須帶畫面上的步驟文字 `text`，清單已變更而不符時回 409 `step_changed`，不會改到別的步驟 |
+| `GET /api/task/sections?project=&task=` | 作業檔的自由文字區段 `{done, next, cautions, memo}`（做了什麼／下一步／注意／備註，各為原始 markdown 行；略過空行與註解，每段最多 500 行、每行 2,000 字） |
 | `POST /api/task/bulk` | `{project, tasks: string[] (1–200、不重複), action: {kind: state/phase/due/addTag/removeTag, value} 或 {kind: archive, confirm: true}}`；回傳 `results: [{task, ok, error?, detail?}]`，封存不強制刪副本 |
 | `POST /api/start` | 快速開始（建作業＋送出） |
 | `POST /api/chat/send` | 送出 `{project, task, text, ai?, model?, effort?, mode?, answer?, images?, fromQueue?}`；執行中必須帶 `mode`：`redo`／`amend`／`queue` |

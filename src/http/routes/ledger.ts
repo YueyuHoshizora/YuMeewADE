@@ -250,6 +250,7 @@ export function registerLedgerRoutes(router: Router, app: App): void {
     await changed('task.step', project, task);
     return result;
   });
+  router.get('/api/task/sections', async ({ query }) => app.tasks.sections(reqString(query, 'project', 120), reqString(query, 'task', 120)));
   router.post('/api/task/memo', async ({ body }) => {
     const { project, task } = ids(body);
     const result = await app.tasks.appendMemo(project, task, reqString(body, 'text', 300));

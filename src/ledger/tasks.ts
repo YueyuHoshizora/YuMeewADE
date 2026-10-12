@@ -6,7 +6,7 @@ import { parseFrontmatter, patchHeaderLines, serializeFrontmatter } from '../sha
 import { atomicWrite, isInside, pathExists, withFileLocks } from '../shared/fsx.ts';
 import { log } from '../shared/log.ts';
 import { nextTaskId } from '../shared/names.ts';
-import { TASK_STATES, TASK_KINDS, WORKSPACE_MODES, type NewTaskInput, type Step, type Task, type TaskPatch, type TaskState } from '../shared/types.ts';
+import { TASK_STATES, TASK_KINDS, WORKSPACE_MODES, type NewTaskInput, type Step, type Task, type TaskPatch, type TaskSections, type TaskState } from '../shared/types.ts';
 import type { YamlValue } from '../shared/yaml.ts';
 import { validDue, validTag, taskMetadata } from '../shared/task-metadata.ts';
 import { TEMPLATES_DIR, type Workspace } from './workspace.ts';
@@ -26,7 +26,13 @@ function stepRow(rows: string[], indices: number[], index: number, expected: str
   if (row === undefined || STEP_ROW.exec(rows[row]!)?.[1] !== expected) throw new AppError('conflict', 'step_changed');
   return row;
 }
-const HEADINGS = { steps: /^(步驟|手順|Steps)$/i, memo: /^(備註|メモ|Memo)$/i, next: /^(下一步|次にやること|Next)$/i };
+const HEADINGS = {
+  steps: /^(步驟|手順|Steps)$/i, memo: /^(備註|メモ|Memo)$/i, next: /^(下一步|次にやること|Next)$/i,
+  done: /^(做了什麼|做了什么|やったこと|Done)$/i, cautions: /^(注意|注意事項|注意点|Cautions?)$/i,
+};
+// The AI writes these sections directly, so reading them is bounded rather than trusting the file size.
+const SECTION_LINES_MAX = 500;
+const SECTION_LINE_CHARS = 2000;
 
 interface BodySection { rows: string[]; start: number; end: number }
 function section(body: string, kind: keyof typeof HEADINGS): BodySection {
@@ -75,6 +81,14 @@ export class TaskLedger {
   async readRaw(project: string, id: string): Promise<string> {
     try { return await fs.readFile(this.ws.taskFile(project, id), 'utf8'); }
     catch (err) { if ((err as NodeJS.ErrnoException).code === 'ENOENT') throw new AppError('not_found', 'task_missing'); throw err; }
+  }
+  async sections(project: string, id: string): Promise<TaskSections> {
+    const body = parseFrontmatter(await this.readRaw(project, id)).body;
+    const lines = (kind: keyof typeof HEADINGS) => {
+      const part = section(body, kind);
+      return part.start < 0 ? [] : part.rows.slice(part.start + 1, part.end).filter(row => row.trim() && !/^\s*<!--/.test(row)).slice(0, SECTION_LINES_MAX).map(row => row.slice(0, SECTION_LINE_CHARS));
+    };
+    return { done: lines('done'), next: lines('next'), cautions: lines('cautions'), memo: lines('memo') };
   }
 
   async create(project: string, input: NewTaskInput): Promise<Task> {

@@ -1,7 +1,7 @@
 import { metadataEditor } from '../components/task-metadata.ts';
 import type {
   AppState, Busy, ChatEvent, ChatHistory, ChatRow, ProjectView,
-  QueueItem, SendMode, SlashCommand, Task, TaskView, VerifyResult, VerifyStatus,
+  QueueItem, SendMode, SlashCommand, Task, TaskSections, TaskView, VerifyResult, VerifyStatus,
 } from '../../shared/types.ts';
 import { TASK_STATES } from '../../shared/types.ts';
 import { api, query, request } from '../api.ts';
@@ -924,7 +924,23 @@ export function taskView(
       )
     ));
     const detail = disclosure(t('task.steps', { done: task.steps.filter(s => s.done).length, total: task.steps.length }), steps);
-    detail.open = footer.querySelector('details')?.open ?? false;
+    detail.open = footer.querySelector<HTMLDetailsElement>('details.steps-detail')?.open ?? false;
+    detail.classList.add('steps-detail');
+    // The free-text sections the AI maintains are loaded only when opened; they can be long and are not part of /api/state.
+    const recordBody = el('div', 'task-record');
+    const record = disclosure(t('tasks.record'), recordBody);
+    record.classList.add('record-detail');
+    record.ontoggle = () => {
+      if (!record.open) return;
+      void run(async () => {
+        const sections = await request<TaskSections>(query('/api/task/sections', { project: project.id, task: task.id }));
+        const parts = ([['tasks.doneSection', sections.done], ['tasks.next', sections.next], ['tasks.cautions', sections.cautions], ['tasks.memos', sections.memo]] as const)
+          .filter(([, lines]) => lines.length)
+          .map(([key, lines]) => { const part = el('section', ''); part.append(el('h4', '', t(key)), markdown(lines.join('\n'))); return part; });
+        recordBody.replaceChildren(...(parts.length ? parts : [el('p', 'empty', t('common.empty'))]));
+      });
+    };
+    record.open = footer.querySelector<HTMLDetailsElement>('details.record-detail')?.open ?? false;
     state.setAttribute('aria-label', t('task.state'));
     state.title = t('task.state');
     phase.setAttribute('aria-label', t('task.phase'));
@@ -943,7 +959,7 @@ export function taskView(
     // Both sections hold raw markdown lines; drop the list marker the ledger writes in front of each entry.
     const plain = (line: string) => line.replace(/^\s*[-*+]\s+/, '');
     const notes = [task.next && labelValue(t('tasks.next'), plain(task.next)), task.memo && labelValue(t('tasks.latestMemo'), plain(task.memo))].filter(Boolean) as string[];
-    footer.replaceChildren(...notes.map(text => { const line = el('p', 'muted task-notes', text); line.title = text; return line; }), row(state, phase, detail, memo, leaveMemo), metadataEditor(project.id, task, () => context.refresh()));
+    footer.replaceChildren(...notes.map(text => { const line = el('p', 'muted task-notes', text); line.title = text; return line; }), row(state, phase, detail, memo, leaveMemo), record, metadataEditor(project.id, task, () => context.refresh()));
   }
   const composerControls = row(pick.node, upload.node, snippetsButton(draft), contextButton(project.id, task.id, () => pick.value()));
   void run(async () => {

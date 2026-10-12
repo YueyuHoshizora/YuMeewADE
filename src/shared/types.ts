@@ -131,6 +131,8 @@ export interface Step {
   text: string;
   done: boolean;
 }
+/** Free-text sections of a task file as raw markdown lines (blank lines and comments dropped). */
+export interface TaskSections { done: string[]; next: string[]; cautions: string[]; memo: string[] }
 
 /** .ai/tasks/{id}.md。 */
 export interface Task {
