@@ -225,3 +225,28 @@ test('a rejected selection switches no credentials, and removing an account unde
   assert.ok('codex' in slot);
   assert.equal((await store.get()).activeAccounts.codex, 'default');
 }));
+
+test('removing an account while switching to it leaves the slot and the selection on the same remaining account', () => withTmpWorkspace(async (ws, dir) => {
+  const slot: Record<string, string | undefined> = {};
+  let pause: Promise<void> | undefined; let entered!: () => void; const activating = new Promise<void>(resolve => { entered = resolve; });
+  const store = new SettingsStore(ws, DEFAULT_CONFIG, undefined, undefined, undefined, async (ai, directory) => {
+    slot[ai] = directory;
+    if (pause) { const wait = pause; pause = undefined; entered(); await wait; }
+  });
+  const [a, b] = [path.join(dir, 'a'), path.join(dir, 'b')];
+  await fs.mkdir(a); await fs.mkdir(b);
+  await store.addAccount('codex', 'B', b);
+  await store.addAccount('codex', 'A', a);
+  const target = (await store.get()).accounts.codex!.find(account => account.name === 'A')!;
+  let release!: () => void; pause = new Promise<void>(resolve => { release = resolve; });
+  const switching = store.update({ activeAccounts: { codex: target.id } });
+  await activating;
+  const removing = store.removeAccount('codex', target.id);
+  await new Promise(resolve => setTimeout(resolve, 20));
+  release();
+  await switching; await removing;
+  const settings = await store.get();
+  assert.deepEqual(settings.accounts.codex!.map(account => account.name), ['B']);
+  assert.equal(settings.activeAccounts.codex, settings.accounts.codex![0]!.id);
+  assert.equal(slot.codex, b, 'the slot holds the selected account, never the removed one');
+}));

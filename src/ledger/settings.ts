@@ -4,7 +4,7 @@ import os from 'node:os';
 import path from 'node:path';
 import type { Config } from '../shared/config.ts';
 import { AppError } from '../shared/errors.ts';
-import { readJson, updateJson, withFileLocks, writeJson } from '../shared/fsx.ts';
+import { readJson, withFileLocks, writeJson } from '../shared/fsx.ts';
 import { validEffort, validModelName } from '../shared/ai-pick.ts';
 import type { Settings, SettingsPatch } from '../shared/types.ts';
 import type { Workspace } from './workspace.ts';
@@ -59,24 +59,25 @@ export class SettingsStore {
     }
     // Switching copies the account's credentials into the App's default slot before the selection is saved. Every selected
     // id is checked first: a patch rejected for one service must not have already switched another service's credentials.
-    const current = await this.get();
-    const selected = Object.entries(patch.activeAccounts ?? {}).map(([ai, id]) => {
-      const account = current.accounts[ai]?.find(entry => entry.id === id);
-      if (id !== 'default' && !account) throw new AppError('not_found');
-      return [ai, account] as const;
-    });
-    for (const [ai, account] of selected) {
-      if (account && this.activateCredentials) await this.activateCredentials(ai, account.configDir);
-    }
-    const saved = await updateJson<SettingsPatch>(this.file, {}, saved => {
-      for (const [ai, id] of Object.entries(patch.activeAccounts ?? {})) {
-        if (id !== 'default' && !saved.accounts?.[ai]?.some(account => account.id === id)) throw new AppError('not_found');
+    // Validation, activation and saving share the settings lock (as add/remove do), so an account removed meanwhile cannot
+    // leave its credentials in the slot after this switch is rejected.
+    const saved = await withFileLocks([this.file], async () => {
+      const saved = await readJson<SettingsPatch>(this.file, {});
+      const selected = Object.entries(patch.activeAccounts ?? {}).map(([ai, id]) => {
+        const account = saved.accounts?.[ai]?.find(entry => entry.id === id);
+        if (id !== 'default' && !account) throw new AppError('not_found');
+        return [ai, account] as const;
+      });
+      for (const [ai, account] of selected) {
+        if (account && this.activateCredentials) await this.activateCredentials(ai, account.configDir);
       }
       if (patch.initial !== undefined) saved.initial = { ...patch.initial };
       if (patch.hiddenModels !== undefined) saved.hiddenModels = { ...saved.hiddenModels, ...patch.hiddenModels };
       if (patch.modelOrder !== undefined) saved.modelOrder = { ...saved.modelOrder, ...patch.modelOrder };
       if (patch.fullAccess !== undefined) saved.fullAccess = { ...saved.fullAccess, ...patch.fullAccess };
       if (patch.activeAccounts !== undefined) saved.activeAccounts = { ...saved.activeAccounts, ...patch.activeAccounts };
+      await writeJson(this.file, saved);
+      return saved;
     });
     return this.merge(saved);
   }
