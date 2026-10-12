@@ -117,6 +117,19 @@ export function renameModal(value: string): Promise<string | null> {
   document.body.append(dialog); dialog.showModal(); name.focus(); name.select();
   return promise;
 }
+/** Multi-line counterpart of renameModal; resolves null on cancel. */
+export function textModal(title: string, value: string, maxLength: number): Promise<string | null> {
+  const { promise, resolve } = Promise.withResolvers<string | null>();
+  const dialog = el('dialog', 'modal decision-modal'); const text = area(value); text.maxLength = maxLength; text.rows = 6;
+  const form = el('form', 'form'); const save = el('button', 'primary', t('common.save')); save.type = 'submit';
+  let result: string | null = null;
+  form.append(text, row(button(t('common.cancel'), () => dialog.close()), save));
+  form.onsubmit = event => { event.preventDefault(); result = text.value.trim(); dialog.close(); };
+  dialog.append(el('h2', '', title), form);
+  dialog.addEventListener('close', () => { dialog.remove(); resolve(result); }, { once: true });
+  document.body.append(dialog); dialog.showModal(); text.focus();
+  return promise;
+}
 export function lines(value: string): string[] { return value.split('\n').map(s => s.trim()).filter(Boolean); }
 export function readLocal<T>(key: string, fallback: T): T { try { const value = localStorage.getItem(key); return value ? JSON.parse(value) as T : fallback; } catch { return fallback; } }
 export function storeLocal(key: string, value: unknown): void { try { localStorage.setItem(key, JSON.stringify(value)); } catch { /* 儲存空間不足不阻止送出。 */ } }

@@ -14,6 +14,7 @@ import { TEMPLATES_DIR, type Workspace } from './workspace.ts';
 
 export const RULES_MAX = 20_000;
 export const PHASE_NAME_MAX = 200;
+export const DESCRIPTION_MAX = 2000;
 
 /** Checked where phases are named (create, edit) rather than in `validate`, so hand-edited ledgers with odd names still advance. */
 function checkPhaseNames(names: string[]): void {
@@ -90,6 +91,7 @@ export class ProjectLedger {
   private async validate(patch: ProjectPatch, id?: string): Promise<void> {
     if (patch.name !== undefined && !isValidProjectName(patch.name)) throw new AppError('bad_request', 'invalid_project_name');
     for (const key of ['description', 'parent', 'body'] as const) if (patch[key] !== undefined && typeof patch[key] !== 'string') throw new AppError('bad_request', 'field_type', { field: key });
+    if (patch.description !== undefined && patch.description.length > DESCRIPTION_MAX) throw new AppError('bad_request', 'field_too_long', { field: 'description' });
     if (patch.verify !== undefined) {
       if (typeof patch.verify !== 'string' || /[\r\n\0]/u.test(patch.verify)) throw new AppError('bad_request', 'field_type', { field: 'verify' });
       if (patch.verify.trim().length > 500) throw new AppError('bad_request', 'field_too_long', { field: 'verify' });

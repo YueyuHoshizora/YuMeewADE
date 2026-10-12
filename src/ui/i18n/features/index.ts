@@ -47,6 +47,7 @@ import * as ideWorkbench from './ide-workbench.ts';
 import * as codemirror from './codemirror.ts';
 import * as oplog from './oplog.ts';
 import * as phases from './phases.ts';
+import * as projectDetails from './project-details.ts';
 
 export const featureZhTW = {
   ...archive.featureZhTW,
@@ -99,6 +100,7 @@ export const featureZhTW = {
   ...codemirror.featureZhTW,
   ...oplog.featureZhTW,
   ...phases.featureZhTW,
+  ...projectDetails.featureZhTW,
 };
 export const featureZhCN = {
   ...archive.featureZhCN,
@@ -151,6 +153,7 @@ export const featureZhCN = {
   ...codemirror.featureZhCN,
   ...oplog.featureZhCN,
   ...phases.featureZhCN,
+  ...projectDetails.featureZhCN,
 };
 export const featureEn = {
   ...archive.featureEn,
@@ -203,6 +206,7 @@ export const featureEn = {
   ...codemirror.featureEn,
   ...oplog.featureEn,
   ...phases.featureEn,
+  ...projectDetails.featureEn,
 };
 export const featureJa = {
   ...archive.featureJa,
@@ -255,6 +259,7 @@ export const featureJa = {
   ...codemirror.featureJa,
   ...oplog.featureJa,
   ...phases.featureJa,
+  ...projectDetails.featureJa,
 };
 export const featureDe = {
   ...archive.featureDe,
@@ -307,6 +312,7 @@ export const featureDe = {
   ...codemirror.featureDe,
   ...oplog.featureDe,
   ...phases.featureDe,
+  ...projectDetails.featureDe,
 };
 export const featureFr = {
   ...archive.featureFr,
@@ -359,6 +365,7 @@ export const featureFr = {
   ...codemirror.featureFr,
   ...oplog.featureFr,
   ...phases.featureFr,
+  ...projectDetails.featureFr,
 };
 export const featureIt = {
   ...archive.featureIt,
@@ -411,4 +418,5 @@ export const featureIt = {
   ...codemirror.featureIt,
   ...oplog.featureIt,
   ...phases.featureIt,
+  ...projectDetails.featureIt,
 };

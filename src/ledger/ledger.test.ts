@@ -3,6 +3,7 @@ import { promises as fs } from 'node:fs';
 import path from 'node:path';
 import { test } from 'node:test';
 import { parseConfig } from '../shared/config.ts';
+import type { AppError } from '../shared/errors.ts';
 import { withTmpWorkspace } from '../testing/tmp.ts';
 import { ProjectLedger } from './projects.ts';
 import { parseSteps, TaskLedger } from './tasks.ts';
@@ -19,6 +20,8 @@ test('專案預設、階段推進、改名不搬目錄、階層與外部本體�
   assert.equal(projects.bodyPath(p), ws.projectDir('P'));
   const renamed = await projects.update('P', { name: '新名字' });
   assert.equal(renamed.id, 'P'); assert.equal(renamed.name, '新名字');
+  assert.equal((await projects.update('P', { description: '說'.repeat(2000) })).description.length, 2000);
+  await assert.rejects(projects.update('P', { description: '說'.repeat(2001) }), (error: AppError) => error.detail === 'field_too_long' && error.field === 'description');
   await projects.create({ name: 'Child', parent: 'P', body: dir, phases: ['一'] });
   await assert.rejects(projects.update('P', { parent: 'Child' }));
   await assert.rejects(projects.create({ name: 'Invalid', body: path.join(dir, 'absent') }));
