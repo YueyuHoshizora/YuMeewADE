@@ -13,6 +13,7 @@ import { mountEditorProposals } from './editor-proposals.ts';
 import { renderAdvancedLanguage } from './editor-language-results.ts';
 import { encodingPicker, segmentPanel } from './editor-segments.ts';
 import { embeddedPreviewWorkbench } from './embedded-preview.ts';
+import { mergeRecovery } from './editor-recovery.ts';
 
 export interface WorkbenchEditorHost {
   reserveSegment(path: string): (() => void) | null;
@@ -36,6 +37,16 @@ registerWorkbenchPanel('segments', segmentPanel);
 registerWorkbenchPanel('preview', embeddedPreviewWorkbench);
 let workbenchMount: HTMLElement | undefined;
 let activeWorkspace = '';
+/** A window's recovery record counts as live while its heartbeat (refreshed by the 5 s sync and every edit) is this recent. */
+const RECOVERY_LIVE_MS = 30_000;
+/** Stable for this browser tab across reloads (sessionStorage), different for every other tab or window. */
+function editorWindowId(): string {
+  try {
+    const existing = sessionStorage.getItem('yumeewade.editorWindow');
+    if (existing && /^[0-9a-f-]{36}$/.test(existing)) return existing;
+    const id = crypto.randomUUID(); sessionStorage.setItem('yumeewade.editorWindow', id); return id;
+  } catch { return crypto.randomUUID(); }
+}
 export function mountEditorWorkbench(main: HTMLElement): void {
   workbenchMount = el('section', 'editor-workbench-host');
   main.after(workbenchMount);
@@ -70,7 +81,7 @@ export function openFileBrowser(project: string, task: string, workspace = activ
     if (idle) { idle[1].dispose(); browsers.delete(idle[0]); }
   }
   if (browsers.size >= 12) throw new UserError(t('ew.recoveryLimit'));
-  const ids: Record<string, string> = { project, ...(task ? { task } : {}) }; let storageKey = ''; let persistenceEnabled = false;
+  const ids: Record<string, string> = { project, ...(task ? { task } : {}) }; let storageKey = ''; let storageBase = ''; let persistenceEnabled = false;
   const buffers = new Map<string, EditorRecovery>(); const views: { path: string | undefined; content: EditorContent; preview: FilePreview; tabs: HTMLDivElement; node: HTMLDivElement }[] = [];
   // Created with the layout controls further down; the split ratio only matters once a second pane exists.
   let splitLabel: HTMLElement | undefined;
@@ -228,7 +239,8 @@ export function openFileBrowser(project: string, task: string, workspace = activ
         document: { ...buffer.document, text: '' }, text: '', clean: true,
         start: buffer.start, end: buffer.end, top: buffer.top, left: buffer.left
       });
-      const state = { version: 4, buffers: recovery, unresolved: [...unresolved], split: Number(views[0]?.node.style.flex) || 50, panes: views.map((view, index) => ({ tabs: paneTabs[index], navigation: navigation[index], path: view.path ?? null, start: view.content.selectionStart, end: view.content.selectionEnd, top: view.content.scrollTop, left: view.content.scrollLeft })), focused };
+      // `at` is this window's heartbeat: other windows only adopt drafts from records that stopped updating.
+      const state = { version: 4, at: Date.now(), buffers: recovery, unresolved: [...unresolved], split: Number(views[0]?.node.style.flex) || 50, panes: views.map((view, index) => ({ tabs: paneTabs[index], navigation: navigation[index], path: view.path ?? null, start: view.content.selectionStart, end: view.content.selectionEnd, top: view.content.scrollTop, left: view.content.scrollLeft })), focused };
       let data = JSON.stringify(state); let omitted = false;
       while (new TextEncoder().encode(data).byteLength > 4 * 1024 * 1024 && recovery.length && 'clean' in recovery.at(-1)!) {
         recovery.pop(); omitted = true; data = JSON.stringify(state);
@@ -377,9 +389,12 @@ export function openFileBrowser(project: string, task: string, workspace = activ
       const selectedEncoding = buffer.encoding ?? buffer.document.encoding ?? 'UTF8';
       if (!dirty(buffer) && selectedEncoding === (buffer.document.encoding ?? 'UTF8')) return;
       if (conflicts.has(buffer.document.path) || unresolved.has(buffer.document.path)) throw new UserError(t('editorUI.unresolved'));
-      const local = buffer.text; const format = await request<EditorResolvedFormatPreferences>(query('/api/editor/preferences', { ...ids, path: buffer.document.path }));
-      const text = serializeEol(local, format.source === 'default' ? readPreferences().eol : format.eol, buffer.document.text);
-      buffer.document = await request<EditorDocument>('/api/editor/save', { ...ids, path: buffer.document.path, text, revision: buffer.document.revision, encoding: selectedEncoding });
+      // The base revision is taken with the text: an overlapping save may finish while preferences load, and reading the
+      // revision afterwards would let this older text overwrite it without a conflict.
+      const local = buffer.text; const base = buffer.document;
+      const format = await request<EditorResolvedFormatPreferences>(query('/api/editor/preferences', { ...ids, path: base.path }));
+      const text = serializeEol(local, format.source === 'default' ? readPreferences().eol : format.eol, base.text);
+      buffer.document = await request<EditorDocument>('/api/editor/save', { ...ids, path: base.path, text, revision: base.revision, encoding: selectedEncoding });
       if (buffer.encoding === selectedEncoding) delete buffer.encoding;
       views.forEach((_, index) => capture(index));
       if (buffer.text === local) { buffer.text = text; for (const view of views) if (view.path === buffer.document.path) view.content.value = text; }
@@ -530,28 +545,49 @@ export function openFileBrowser(project: string, task: string, workspace = activ
       catch { mutation.revision = (await request<{ revision: string }>(query('/api/editor/folder', { ...ids, path }))).revision; }
       if (!(await confirmModal(`${t('ew.confirm')} ${path}`, path, t(`ew.${action}`)))) return;
     }
-    if (action === 'delete' || action === 'rename') for (const key of buffers.keys()) if (key === path || key.startsWith(`${path}/`)) await closeDiagnostics(key);
+    const affected = (key: string) => key === path || key.startsWith(`${path}/`);
+    if (action === 'delete' || action === 'rename') for (const key of buffers.keys()) if (affected(key)) await closeDiagnostics(key);
     if (editReserved) throw new UserError(t('detail.editor_conflict'));
+    // Open editable buffers of the target stay read-only, and must still be clean, until the mutation finishes: text typed
+    // during the confirmation or the request would otherwise be discarded with the buffer.
+    let release: (() => void) | null = null;
+    if (action === 'delete' || action === 'rename') {
+      const expected = [...buffers.values()].filter(buffer => affected(buffer.document.path) && !buffer.document.readonly && !buffer.document.binary && !buffer.document.truncated)
+        .map(buffer => ({ path: buffer.document.path, revision: buffer.document.revision, text: buffer.document.text }));
+      if (expected.length && !(release = editor.reserveAll(expected))) throw new UserError(t('ew.saveFirst'));
+    }
     pendingWrites++;
     try {
       await request('/api/editor/mutate', { ...ids, ...mutation });
+      // Release before clearing: releasing restores each view's previous read-only flag.
+      release?.(); release = null;
       if (action === 'delete' || action === 'rename') {
-        for (const key of buffers.keys()) if (key === path || key.startsWith(`${path}/`)) { buffers.delete(key); views.forEach(view => view.content.forget(key)); }
-        for (const view of views) if (view.path && (view.path === path || view.path.startsWith(`${path}/`))) { view.path = undefined; view.content.value = ''; view.content.readOnly = true; view.preview.clear(); }
+        for (const key of buffers.keys()) if (affected(key)) { buffers.delete(key); views.forEach(view => view.content.forget(key)); }
+        for (const view of views) if (view.path && affected(view.path)) { view.path = undefined; view.content.value = ''; view.content.readOnly = true; view.preview.clear(); }
         persist(); refreshTabs();
       }
-      await load();
-    } finally { pendingWrites--; }
+    } finally { pendingWrites--; release?.(); }
+    await load();
   }
-  async function recover(): Promise<void> {
-    let raw: string | null;
-    try { raw = localStorage.getItem(storageKey); }
-    catch { output.append(el('p', 'warning', t('ew.recoveryLimit'))); return; }
-    if (!raw) return;
-    let parsed: unknown; try { parsed = JSON.parse(raw); } catch { output.append(el('p', 'warning', t('ew.recoveryLimit'))); return; }
+  /** Each window persists under its own key, so a clean window never overwrites another window's drafts (see mergeRecovery). */
+  function recoverySnapshot(): { raw: string | null; adopted: string[] } {
+    const others: { key: string; raw: string }[] = [];
+    for (let index = 0; index < localStorage.length; index++) {
+      const key = localStorage.key(index);
+      if (!key || key === storageKey || !(key === storageBase || key.startsWith(`${storageBase}:w:`))) continue;
+      const raw = localStorage.getItem(key); if (raw !== null) others.push({ key, raw });
+    }
+    return mergeRecovery(localStorage.getItem(storageKey), others, Date.now(), RECOVERY_LIVE_MS);
+  }
+  async function recover(): Promise<string[]> {
+    let raw: string | null; let adopted: string[];
+    try { ({ raw, adopted } = recoverySnapshot()); }
+    catch { output.append(el('p', 'warning', t('ew.recoveryLimit'))); return []; }
+    if (!raw) return [];
+    let parsed: unknown; try { parsed = JSON.parse(raw); } catch { output.append(el('p', 'warning', t('ew.recoveryLimit'))); return []; }
     const session = parsed && typeof parsed === 'object' && !Array.isArray(parsed) ? parsed as { version?: unknown; buffers?: unknown; panes?: unknown; focused?: unknown; unresolved?: unknown; split?: unknown } : undefined;
     const values = Array.isArray(parsed) ? parsed : session?.version === 3 || session?.version === 4 ? session.buffers : undefined;
-    if (!Array.isArray(values) || values.length > 50 || new TextEncoder().encode(raw).byteLength > 4 * 1024 * 1024) { output.append(el('p', 'warning', t('ew.recoveryLimit'))); return; }
+    if (!Array.isArray(values) || values.length > 50 || new TextEncoder().encode(raw).byteLength > 4 * 1024 * 1024) { output.append(el('p', 'warning', t('ew.recoveryLimit'))); return []; }
     if (values.some(value => value && typeof value === 'object' && !('clean' in value && value.clean === true)) && !(await confirmModal(t('ew.recover'), t('ew.recover'), t('ew.recover')))) throw new UserError(t('ew.recover'));
     for (const value of values) { if (!value || typeof value !== 'object') continue; const candidate = value as Partial<EditorRecovery> & { clean?: boolean }; if (!candidate.document || typeof candidate.document.path !== 'string' || typeof candidate.document.revision !== 'string' || typeof candidate.text !== 'string' || candidate.text.length > 4 * 1024 * 1024) continue;
       const original = candidate.document;
@@ -596,6 +632,14 @@ export function openFileBrowser(project: string, task: string, workspace = activ
       focused = typeof session?.focused === 'number' && Number.isSafeInteger(session.focused) && session.focused >= 0 && session.focused < views.length ? session.focused : 0;
       views[focused]!.content.focus();
     } else { paneTabs[0] = [...buffers.keys()].map(path => ({ path, pinned: false, preview: false })); const first = buffers.keys().next().value; if (first) activate(first); }
+    // Drafts merged from another window's record are not in this window's saved tabs; show them instead of hiding them.
+    const shown = new Set(paneTabs.flat().map(tab => tab.path));
+    const extra = [...buffers.values()].filter(buffer => dirty(buffer) && !shown.has(buffer.document.path));
+    if (extra.length) {
+      paneTabs[focused] = [...paneTabs[focused] ?? [], ...extra.map(buffer => ({ path: buffer.document.path, pinned: false, preview: false }))];
+      if (!views[focused]!.path) activate(extra[0]!.document.path, focused); else refreshTabs();
+    }
+    return adopted;
   }
   pane();
   const send = button(t('editorEvents.send'), sendSelection);
@@ -734,7 +778,7 @@ export function openFileBrowser(project: string, task: string, workspace = activ
     document.body.classList.toggle('workbench-bottom', layout.dock === 'bottom');
     results.style.width = `${layout.tree}%`; treeResize.value = String(layout.tree); resize.value = String(layout.width);
     if (views.length === 2) splitResize.value = views[0]!.node.style.flex || '50';
-    try { if (storageKey) localStorage.setItem(`${storageKey}:layout`, JSON.stringify(layout)); } catch { output.append(el('p', 'warning', t('ew.recoveryLimit'))); }
+    try { if (storageBase) localStorage.setItem(`${storageBase}:layout`, JSON.stringify(layout)); } catch { output.append(el('p', 'warning', t('ew.recoveryLimit'))); }
   }
   dialog.append(row(el('h2', '', t('files.title')), dock, resizeLabel), actions, filter);
   dialog.prepend(row(treeLabel, splitLabel));
@@ -744,11 +788,14 @@ export function openFileBrowser(project: string, task: string, workspace = activ
   const ready = (async () => {
     const { scope } = await request<{ scope: string }>(query('/api/editor/scope', ids));
     if (!dialog.isConnected) return;
-    storageKey = `editor-recovery:v2:${scope}`;
-    try { layout = normalizeLayout(JSON.parse(localStorage.getItem(`${storageKey}:layout`) ?? 'null')); } catch { layout = normalizeLayout(undefined); }
-    resize.value = String(layout.width); applyLayout(); await recover();
+    storageBase = `editor-recovery:v2:${scope}`; storageKey = `${storageBase}:w:${editorWindowId()}`;
+    try { layout = normalizeLayout(JSON.parse(localStorage.getItem(`${storageBase}:layout`) ?? 'null')); } catch { layout = normalizeLayout(undefined); }
+    resize.value = String(layout.width); applyLayout(); const adopted = await recover();
     if (!dialog.isConnected) return;
     persistenceEnabled = true;
+    // Write the merged state under this window's key before dropping the records it replaced.
+    views.forEach((_, index) => capture(index)); persist();
+    try { if (localStorage.getItem(storageKey)) for (const key of adopted) localStorage.removeItem(key); } catch { /* Keeping an extra record only means it is offered again. */ }
   })().catch(error => { dispose(); browsers.delete(key); throw error; });
   const flush = () => { views.forEach((_, index) => capture(index)); persist(); };
   const dispose = () => {
