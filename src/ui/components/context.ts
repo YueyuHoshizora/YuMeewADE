@@ -2,6 +2,7 @@ import type { TaskContext, ContextPreview, ContextManifest } from '../../shared/
 import { request, query } from '../api.ts';
 import { t } from '../i18n/index.ts';
 import { el, button, area, modal, UserError } from './dom.ts';
+import { localDateTime } from './display.ts';
 
 export function contextButton(project: string, task: string, pick: () => { ai: string; model?: string }): HTMLButtonElement {
   return button(t('context.title'), async () => {
@@ -40,7 +41,7 @@ export function contextManifestButton(project: string, task: string, requestId: 
     const node = el('div');
     if (!manifest) node.append(el('p', '', t('context.status.unavailable')));
     else {
-      node.append(el('p', '', `${manifest.request} · ${manifest.ai} · ${manifest.at}`), el('pre', '', manifest.context.text), el('pre', '', manifest.handoff.text));
+      node.append(el('p', '', `${manifest.request} · ${manifest.ai} · ${localDateTime(manifest.at)}`), el('pre', '', manifest.context.text), el('pre', '', manifest.handoff.text));
       for (const allocation of manifest.context.allocations) node.append(el('p', '', `${allocation.id} · ${t(`context.status.${allocation.status}`)} · ${allocation.sentChars}/${allocation.allocatedChars} ${t('context.characters')}`));
       node.append(el('pre', '', JSON.stringify({ allocations: manifest.context.allocations, providerTokens: manifest.providerTokens }, null, 2)));
     }
