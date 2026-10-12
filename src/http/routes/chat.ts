@@ -3,13 +3,13 @@ import os from 'node:os';
 import path from 'node:path';
 import type { App } from '../../server/app.ts';
 import { AppError } from '../../shared/errors.ts';
-import { readJson, withFileLocks, writeJson } from '../../shared/fsx.ts';
+import { withFileLocks, writeJson } from '../../shared/fsx.ts';
 import { SEND_MODES, type StartInput, type SendInput, type StartResult, type Task } from '../../shared/types.ts';
 import { isRepo } from '../../git/git.ts';
 import { IMAGE_TYPES, saveUpload, uploadPath } from '../../chat/attachments.ts';
 import { formatTranscript } from '../../chat/export.ts';
 import { taskKey } from '../sse.ts';
-import { addDraftImage, draftFile, draftScope, EMPTY_DRAFT, type Drafts } from '../../chat/drafts.ts';
+import { addDraftImage, draftFile, draftScope, EMPTY_DRAFT, readDrafts } from '../../chat/drafts.ts';
 import { optEffort, optModel, optString, reqString, type Router } from '../router.ts';
 function images(body: Record<string, unknown>, max: number): string[] | undefined {
   if (body['images'] === undefined) return undefined;
@@ -92,7 +92,7 @@ export function registerChatRoutes(router: Router, app: App): void {
     if (pics?.length) {
       const file = draftFile(app.ws, p);
       await withFileLocks([file], async () => {
-        const drafts = await readJson<Drafts>(file, {});
+        const drafts = await readDrafts(file);
         const quick = drafts.quickstart ?? EMPTY_DRAFT();
         const moved = quick.images.filter(image => pics.includes(image.id));
         drafts[task.id] = { images: moved, reviews: [] };

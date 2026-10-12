@@ -6,8 +6,8 @@ import { AppError } from '../shared/errors.ts';
 import type { UploadResult } from '../shared/types.ts';
 import { isValidProjectName, isValidTaskId } from '../shared/names.ts';
 import type { ChatStore } from './store.ts';
-import { draftFile, type Drafts } from './drafts.ts';
-import { pathExists, readJson, withFileLocks, writeJson } from '../shared/fsx.ts';
+import { draftFile, readDrafts, type Drafts } from './drafts.ts';
+import { pathExists, withFileLocks, writeJson } from '../shared/fsx.ts';
 export const UPLOAD_TTL_MS = 24 * 60 * 60 * 1000;
 const ID = /^[0-9a-f-]{36}\.(png|jpe?g|webp|gif)$/u;
 export const IMAGE_TYPES: Record<string, string> = { png: 'image/png', jpg: 'image/jpeg', jpeg: 'image/jpeg', webp: 'image/webp', gif: 'image/gif' };
@@ -62,7 +62,10 @@ export async function cleanupUploads(ws: Workspace, store: ChatStore, now = Date
     }))?.isDirectory()) continue;
     await withFileLocks([draftFile(ws, project.name)], async () => {
     const referenced = new Set<string>();
-    const drafts = await readJson<Drafts>(draftFile(ws, project.name), {});
+    // Unknown references make every upload potentially live: leave this project alone until its drafts file is repaired.
+    let drafts: Drafts;
+    try { drafts = await readDrafts(draftFile(ws, project.name)); }
+    catch (error) { if (error instanceof AppError && error.detail === 'file_corrupt') return; throw error; }
     // An archived task's draft can no longer be opened or cleared, so its staged images expire like any unsent upload
     // instead of being kept forever; the draft drops them below so a restored task does not offer missing images.
     const archived: string[] = [];

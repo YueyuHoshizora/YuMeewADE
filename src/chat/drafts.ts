@@ -15,13 +15,22 @@ export function draftScope(scope: string): string {
   if (scope !== 'quickstart' && !isValidTaskId(scope)) throw new AppError('bad_request');
   return scope;
 }
+/** Valid JSON of the wrong shape (a hand edit, a bad merge) names the file instead of failing later as an anonymous TypeError. */
+export async function readDrafts(file: string): Promise<Drafts> {
+  const drafts = await readJson<Drafts>(file, {});
+  const list = (value: unknown, item: (entry: Record<string, unknown>) => boolean) => Array.isArray(value) && value.every(entry => !!entry && typeof entry === 'object' && !Array.isArray(entry) && item(entry as Record<string, unknown>));
+  for (const draft of Object.values(drafts as Record<string, unknown>)) {
+    if (!draft || typeof draft !== 'object' || Array.isArray(draft) || !list((draft as Record<string, unknown>)['images'], image => typeof image['id'] === 'string') || !list((draft as Record<string, unknown>)['reviews'], () => true)) throw new AppError('internal', 'file_corrupt', { field: path.basename(file) });
+  }
+  return drafts;
+}
 export async function readDraft(ws: Workspace, project: string, scope: string): Promise<Draft> {
-  return (await readJson<Drafts>(draftFile(ws, project), {}))[draftScope(scope)] ?? EMPTY_DRAFT();
+  return (await readDrafts(draftFile(ws, project)))[draftScope(scope)] ?? EMPTY_DRAFT();
 }
 export async function updateDraft(ws: Workspace, project: string, scope: string, change: (draft: Draft) => void): Promise<Draft> {
   const file = draftFile(ws, project); draftScope(scope);
   return withFileLocks([file], async () => {
-    const drafts = await readJson<Drafts>(file, {});
+    const drafts = await readDrafts(file);
     const draft = drafts[scope] ?? EMPTY_DRAFT(); change(draft);
     if (draft.images.length || draft.reviews.length) drafts[scope] = draft;
     else delete drafts[scope];

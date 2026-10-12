@@ -46,6 +46,22 @@ test('an archived task draft no longer keeps its staged images forever; the draf
   assert.deepEqual(drafts[task.id]?.images, []);
 }));
 
+test('a drafts file of the wrong shape is reported by name and keeps cleanup away from that project', () => withTmpWorkspace(async ws => {
+  await new ProjectLedger(ws).create({ name: 'P' });
+  const task = await new TaskLedger(ws).create('P', { title: 'T' });
+  const image = await saveUpload(ws, 'P', 'draft.png', Buffer.from('89504e470d0a1a0a', 'hex'));
+  await addDraftImage(ws, 'P', task.id, image, 10);
+  const expired = new Date(Date.now() - UPLOAD_TTL_MS - 1000);
+  await fs.utimes(uploadPath(ws, 'P', image.id), expired, expired);
+  const file = path.join(ws.projectDir('P'), '.ai', 'drafts.json');
+  // Valid JSON, wrong shape: the image reference can no longer be read, so the image might still be wanted.
+  await fs.writeFile(file, JSON.stringify({ [task.id]: { images: image.id, reviews: [] } }));
+  await assert.rejects(readDraft(ws, 'P', task.id), { detail: 'file_corrupt', field: 'drafts.json' });
+  await assert.rejects(updateDraft(ws, 'P', task.id, () => {}), { detail: 'file_corrupt' });
+  await cleanupUploads(ws, new ChatStore(ws));
+  await fs.access(uploadPath(ws, 'P', image.id));
+}));
+
 test('source paths are read-only bounded and reject escape and symlink paths', () => withTmpWorkspace(async ws => {
   await new ProjectLedger(ws).create({ name: 'P' });
   const task = await new TaskLedger(ws).create('P', { title: 'T' });
