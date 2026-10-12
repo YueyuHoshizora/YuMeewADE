@@ -6,6 +6,14 @@ test('preferences reject CSS injection, bounds and colliding shortcuts', () => {
   for (const patch of [{fontFamily:'monospace; color:red'}, {fontSize:41}, {tabSize:0}, {keys:{save:'Mod-c',selection:'Mod-Shift-l'}}, {keys:{save:'Mod-s',selection:'Mod-s'}}]) assert.throws(() => validatePreferences({...defaultPreferences,...patch}));
   assert.deepEqual(validatePreferences(defaultPreferences),defaultPreferences);
 });
+test('preferences saved before format-on-save keep every other choice and default it off', () => {
+  const stored = { fontFamily: 'Menlo', fontSize: 16, tabSize: 4, insertSpaces: false, wrap: true, eol: 'lf', keys: { save: 'Mod-s', selection: 'Mod-Shift-l' } };
+  assert.deepEqual(validatePreferences(stored), { ...stored, formatOnSave: false });
+  assert.equal(validatePreferences({ ...stored, formatOnSave: true }).formatOnSave, true);
+  assert.throws(() => validatePreferences({ ...stored, formatOnSave: 'yes' }));
+  // Ctrl/⌘+P is the global go-to-file picker and cannot be rebound to an editor command.
+  assert.throws(() => validatePreferences({ ...stored, keys: { save: 'Mod-p', selection: 'Mod-Shift-l' } }));
+});
 test('IME and plain typing never invoke editor commands', () => {
   const event = {isComposing:false,keyCode:83,key:'s',ctrlKey:true,metaKey:false,shiftKey:false,altKey:false};
   assert.equal(preferenceCommand(event,defaultPreferences),'save');

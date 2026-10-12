@@ -2,7 +2,7 @@ import type { EditorDiagnostic, EditorDocument, EditorAction, EditorActionResult
 import { query, request } from '../api.ts';
 import { isolateHistory } from '@codemirror/commands';
 import { t } from '../i18n/index.ts';
-import { el, input, area, button, row, confirmModal, run, toast, UserError } from './dom.ts';
+import { el, input, area, button, row, confirmModal, errorMessage, run, toast, UserError } from './dom.ts';
 import { EditorContent } from './editor-engine.ts';
 import { FilePreview, isImage } from './file-preview.ts';
 import { selectionMention } from './editor-mention.ts';
@@ -367,6 +367,7 @@ export function openFileBrowser(project: string, task: string, workspace = activ
   function current(): EditorRecovery | undefined { capture(focused); const path = views[focused]!.path; return path ? buffers.get(path) : undefined; }
   async function save(): Promise<void> {
     if (editReserved) throw new UserError(t('detail.editor_conflict'));
+    if (readPreferences().formatOnSave) await formatBeforeSave();
     pendingWrites++;
     try {
       const buffer = current(); if (!buffer || buffer.document.readonly || buffer.document.binary || buffer.document.truncated) return;
@@ -381,6 +382,21 @@ export function openFileBrowser(project: string, task: string, workspace = activ
       if (buffer.text === local) { buffer.text = text; for (const view of views) if (view.path === buffer.document.path) view.content.value = text; }
       persist(); refreshTabs();
     } finally { pendingWrites--; }
+  }
+  /** Formats the focused dirty draft through the LSP; any failure only warns and the draft is saved as typed. */
+  async function formatBeforeSave(): Promise<void> {
+    const buffer = current();
+    if (!buffer || !dirty(buffer) || !buffer.document.languageAvailable || buffer.document.readonly || buffer.document.binary || buffer.document.truncated) return;
+    const { path, revision } = buffer.document; const text = buffer.text;
+    try {
+      const result = await request<EditorActionResult>('/api/editor/language', { ...ids, path, revision, text, buffers: editor.snapshots().map(snapshot => ({ path: snapshot.path, revision: snapshot.revision, text: snapshot.text })), line: 0, character: 0, action: 'format', newName: '' });
+      const formatted = result.changes?.find(change => change.path === path)?.text;
+      if (formatted === undefined || formatted === text) return;
+      const expected = { path, revision, text };
+      // If the draft changed while the server formatted, keep what the user typed.
+      const release = editor.reserveAll([expected]); if (!release) return;
+      try { editor.applyEditsAll([{ expected, edits: [{ from: 0, to: text.length, text: formatted }] }]); } finally { release(); }
+    } catch (error) { toast(t('editorUI.formatFailed', { reason: errorMessage(error) })); }
   }
   function sendSelection(): void {
     if (!task) return;

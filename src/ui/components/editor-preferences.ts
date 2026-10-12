@@ -1,14 +1,15 @@
-export interface EditorPreferences { fontFamily: string; fontSize: number; tabSize: number; insertSpaces: boolean; wrap: boolean; eol: 'preserve' | 'lf' | 'crlf'; keys: { save: string; selection: string }; }
-export const defaultPreferences: EditorPreferences = { fontFamily: 'ui-monospace, monospace', fontSize: 14, tabSize: 2, insertSpaces: true, wrap: false, eol: 'preserve', keys: { save: 'Mod-s', selection: 'Mod-Shift-l' } };
+export interface EditorPreferences { fontFamily: string; fontSize: number; tabSize: number; insertSpaces: boolean; wrap: boolean; eol: 'preserve' | 'lf' | 'crlf'; formatOnSave: boolean; keys: { save: string; selection: string }; }
+export const defaultPreferences: EditorPreferences = { fontFamily: 'ui-monospace, monospace', fontSize: 14, tabSize: 2, insertSpaces: true, wrap: false, eol: 'preserve', formatOnSave: false, keys: { save: 'Mod-s', selection: 'Mod-Shift-l' } };
 export function validatePreferences(value: unknown): EditorPreferences {
   if (!value || typeof value !== 'object') throw new Error('Invalid preferences');
   const v = value as EditorPreferences;
-  if (typeof v.fontFamily !== 'string' || !/^[a-zA-Z0-9 ,_\-]{1,120}$/.test(v.fontFamily) || !Number.isInteger(v.fontSize) || v.fontSize < 8 || v.fontSize > 40 || !Number.isInteger(v.tabSize) || v.tabSize < 1 || v.tabSize > 8 || typeof v.insertSpaces !== 'boolean' || typeof v.wrap !== 'boolean' || !['preserve','lf','crlf'].includes(v.eol)) throw new Error('Invalid preferences');
+  // formatOnSave is newer than stored preferences; a missing value means off rather than resetting everything.
+  if (typeof v.fontFamily !== 'string' || !/^[a-zA-Z0-9 ,_\-]{1,120}$/.test(v.fontFamily) || !Number.isInteger(v.fontSize) || v.fontSize < 8 || v.fontSize > 40 || !Number.isInteger(v.tabSize) || v.tabSize < 1 || v.tabSize > 8 || typeof v.insertSpaces !== 'boolean' || typeof v.wrap !== 'boolean' || !['preserve','lf','crlf'].includes(v.eol) || (v.formatOnSave !== undefined && typeof v.formatOnSave !== 'boolean')) throw new Error('Invalid preferences');
   if (!v.keys || typeof v.keys.save !== 'string' || typeof v.keys.selection !== 'string') throw new Error('Invalid keybindings');
   const reserved = ['Mod-k', 'Mod-p', 'Mod-Shift-p', 'Mod-Shift-f', 'Mod-c', 'Mod-v', 'Mod-x', 'Mod-z', 'Mod-a', 'Mod-f', 'Mod-Shift-z', 'Mod-y', 'Mod-r', 'Mod-w', 'Mod-t', 'Mod-n', 'Mod-q'];
   for (const key of Object.values(v.keys)) if (!/^Mod-(Shift-)?[a-z]$/.test(key) || reserved.includes(key)) throw new Error('Invalid keybindings');
   if (v.keys.save === v.keys.selection) throw new Error('Conflicting keybindings');
-  return { fontFamily: v.fontFamily, fontSize: v.fontSize, tabSize: v.tabSize, insertSpaces: v.insertSpaces, wrap: v.wrap, eol: v.eol, keys: { ...v.keys } };
+  return { fontFamily: v.fontFamily, fontSize: v.fontSize, tabSize: v.tabSize, insertSpaces: v.insertSpaces, wrap: v.wrap, eol: v.eol, formatOnSave: v.formatOnSave ?? false, keys: { ...v.keys } };
 }
 export function readPreferences(): EditorPreferences {
   try { return validatePreferences(JSON.parse(localStorage.getItem('yumeewade.editor.preferences') ?? 'null')); } catch { return { ...defaultPreferences, keys: { ...defaultPreferences.keys } }; }
