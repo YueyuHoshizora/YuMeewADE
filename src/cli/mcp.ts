@@ -111,6 +111,13 @@ async function invoke(config: CliCommandConfig, args: string[], env: NodeJS.Proc
 export async function mcpCapabilities(ai: McpAi, config: CliCommandConfig, env: NodeJS.ProcessEnv): Promise<McpList> {
   const home = mcpHome(ai, env);
   if (!config.mcpListArgs?.length || !config.mcpAddArgs?.length || !config.mcpRemoveArgs?.length) return { supported: false, transports: [], servers: [] };
+  if (ai === 'claude') {
+    // Even native read commands can migrate a malformed config and destroy its contents.
+    try {
+      const document: unknown = JSON.parse(await readCredentialFile(path.join(home, '.claude.json')));
+      if (!object(document) || (document['mcpServers'] !== undefined && !object(document['mcpServers']))) throw new Error();
+    } catch (error) { if ((error as NodeJS.ErrnoException).code !== 'ENOENT') throw new AppError('unavailable'); }
+  }
   const help = await captureCommand({ command: config.command, args: ['--help'], env, cwd: home, timeoutMs: 15000, maxOutputBytes: 65536, maxStderrBytes: 65536 });
   if (!help.ok || !/\bmcp\b/u.test(help.stdout + help.stderr)) return { supported: false, transports: [], servers: [] };
   return { supported: true, transports: ai === 'codex' || ai === 'gemini' ? ['stdio', 'http'] : ['stdio', 'http', 'sse'], servers: [] };

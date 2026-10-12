@@ -85,3 +85,39 @@ doc.mcpServers[positional[0]]={target:positional[1],args:positional.slice(2),env
     assert.deepEqual(servers.local, { target: 'node', args: ['server.js'], env: ['KEY=v'], headers: [] });
   } finally { await fs.rm(root, { recursive: true, force: true }); }
 });
+
+test('Claude MCP list/add/remove preserve malformed config bytes before launching the native CLI', async t => {
+  const root = await fs.realpath(await fs.mkdtemp(path.join(os.tmpdir(), 'ym-mcp-claude-malformed-')));
+  try {
+    const home = path.join(root, 'home'); const bin = path.join(root, 'bin');
+    await fs.mkdir(home); await fs.mkdir(bin);
+    await fs.writeFile(path.join(bin, 'claude'), `#!${process.execPath}
+const fs=require('node:fs'),path=require('node:path');
+fs.writeFileSync(path.join(process.env.CLAUDE_CONFIG_DIR,'.claude.json'),'{"migration":"clobbered","mcpServers":{}}');
+console.log(process.argv[2]==='--help'?'Commands: mcp':'');
+`, { mode: 0o755 });
+    const config = { ...DEFAULT_CONFIG.cli.claude, command: 'claude' };
+    const env = { PATH: `${bin}${path.delimiter}${process.env['PATH'] ?? ''}`, HOME: home, CLAUDE_CONFIG_DIR: home };
+    const file = path.join(home, '.claude.json');
+    const operations = {
+      list: () => listMcp('claude', config, env),
+      add: () => addMcp('claude', config, env, { name: 'one', transport: 'stdio', command: 'node' }),
+      remove: () => removeMcp('claude', config, env, 'one'),
+    };
+    for (const [label, original] of Object.entries({
+      truncated: '{"mcpServers":{"private-server":{"command":"node"}}',
+      array: '[]',
+      null: 'null',
+      string: '"private-config"',
+      invalidServers: '{"mcpServers":[]}',
+      oversized: `{"padding":"${'x'.repeat(1048576)}"}`,
+    })) {
+      for (const [operation, run] of Object.entries(operations)) await t.test(`${operation} refuses ${label} without clobbering config`, async () => {
+        await fs.writeFile(file, original);
+        const error = await run().then(() => undefined, error => error);
+        assert.ok((await fs.readFile(file)).equals(Buffer.from(original)), 'native CLI must not replace malformed config');
+        assert.equal(error?.code, 'unavailable');
+      });
+    }
+  } finally { await fs.rm(root, { recursive: true, force: true }); }
+});
