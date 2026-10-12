@@ -471,11 +471,12 @@ export class EditorService {
       const result = await client.request(action === 'documentSymbols' ? 'textDocument/documentSymbol' : 'workspace/symbol', action === 'documentSymbols' ? { textDocument: { uri } } : { query: newName ?? '' });
       if (result !== null && !Array.isArray(result)) throw new AppError('bad_request');
       const symbols: NonNullable<EditorActionResult['symbols']> = [];
-      let count = 0; const lookup = await this.listedLookup(project, task);
+      // Large files and workspace queries routinely exceed the cap: keep the first 500 and say so instead of refusing the request.
+      let count = 0; let truncated = false; const lookup = await this.listedLookup(project, task);
       const visit = async (values: unknown[], container?: string, depth = 0): Promise<void> => {
         if (depth > 32) throw new AppError('too_large');
         for (const value of values) {
-          if (++count > 500) throw new AppError('too_large');
+          if (++count > 500) { truncated = true; return; }
           if (!value || typeof value !== 'object') continue;
           const item = value as { name?: string; kind?: number; containerName?: string; selectionRange?: { start?: { line: number; character: number } }; range?: { start?: { line: number; character: number } }; location?: { uri?: string; range?: { start?: { line: number; character: number } } }; children?: unknown[] };
           const start = (item.location?.range ?? item.selectionRange ?? item.range)?.start;
@@ -487,7 +488,7 @@ export class EditorService {
         }
       };
       await visit(result as unknown[] ?? []);
-      return { locations, diagnostics, symbols };
+      return { locations, diagnostics, symbols, ...(truncated ? { truncated } : {}) };
     }
     if (action === 'completion' || action === 'hover' || action === 'rename' || action === 'format' || action === 'codeActions') {
       const method = action === 'format' ? 'formatting' : action === 'codeActions' ? 'codeAction' : action;
