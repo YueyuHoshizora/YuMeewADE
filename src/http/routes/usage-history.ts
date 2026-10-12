@@ -12,7 +12,7 @@ export function registerUsageHistoryRoutes(router: Router, history: UsageHistory
     return history.view(filter, optString(ctx.query, 'before', 300));
   });
   router.get('/api/usage/budgets', async () => history.settings());
-  router.post('/api/usage/budgets', async ctx => history.saveSettings(ctx.body));
+  router.post('/api/usage/budgets', async ctx => history.saveSettings(ctx.body, ctx.body['previous']));
   router.post('/api/usage/check', async ctx => history.check(usageScope(ctx.body), live()));
   router.post('/api/usage/ack', async ctx => { await history.acknowledge(usageScope(ctx.body), live(), reqString(ctx.body, 'acknowledgment', 64)); return { ok: true }; });
 }

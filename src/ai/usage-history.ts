@@ -47,7 +47,15 @@ export class UsageHistory {
   private readonly now: () => number;
   constructor(root: string, now: () => number = Date.now) { this.file = path.join(root, '.yumeewade', 'usage.jsonl'); this.settingsFile = path.join(root, '.yumeewade', 'budgets.json'); this.now = now; }
   async settings(): Promise<BudgetSettings> { return budgetSettings(await readJson<unknown>(this.settingsFile, DEFAULTS)); }
-  async saveSettings(value: unknown): Promise<BudgetSettings> { const next = budgetSettings(value); await withFileLocks([this.settingsFile], () => writeJson(this.settingsFile, next)); this.grants.clear(); return next; }
+  /** `previous` is the settings as the editor loaded them; settings saved meanwhile (another window) are a conflict, not overwritten. */
+  async saveSettings(value: unknown, previous?: unknown): Promise<BudgetSettings> {
+    const next = budgetSettings(value); const expected = previous === undefined ? undefined : JSON.stringify(budgetSettings(previous));
+    await withFileLocks([this.settingsFile], async () => {
+      if (expected !== undefined && JSON.stringify(await this.settings()) !== expected) throw new AppError('conflict', 'budget_changed');
+      await writeJson(this.settingsFile, next);
+    });
+    this.grants.clear(); return next;
+  }
   async record(value: Omit<ReportedUsageRecord, 'at' | 'provenance'> & { at?: string }): Promise<void> {
     const next = record({ ...value, at: value.at ?? new Date(this.now()).toISOString(), provenance: 'provider-reported' });
     await withFileLocks([this.file], async () => {

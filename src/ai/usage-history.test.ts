@@ -51,6 +51,18 @@ test('project-level work without a task is budget-checked and recorded under the
   await assert.rejects(history.assertProceed(projectScope, empty), { detail: 'usage_ack_required' });
   await assert.rejects(history.assertProceed(scope, empty), { detail: 'usage_ack_required' });
 });
+test('budget settings saved from a stale editor are refused instead of overwriting newer budgets', async t => {
+  const root = await fs.mkdtemp(path.join(os.tmpdir(), 'usage-budget-stale-')); t.after(() => fs.rm(root, { recursive: true, force: true }));
+  const history = new UsageHistory(root);
+  const loaded = await history.settings();
+  const mine = { rules: [{ id: 'a', unit: 'tokens', threshold: 10, since: '2026-01-01T00:00:00.000Z' }], quotaRemainingPercent: null, cloudExpiryHours: null };
+  const saved = await history.saveSettings(mine, loaded);
+  // Another window still holds the original settings.
+  await assert.rejects(history.saveSettings({ ...loaded, quotaRemainingPercent: 5 }, loaded), { detail: 'budget_changed' });
+  assert.deepEqual(await history.settings(), saved);
+  await history.saveSettings({ ...saved, quotaRemainingPercent: 5 }, saved);
+  assert.equal((await history.settings()).quotaRemainingPercent, 5);
+});
 test('quota warnings respect unavailable provenance and cloud expiry does not convert balances into spend', async t => {
   const root = await fs.mkdtemp(path.join(os.tmpdir(), 'usage-quota-')); t.after(() => fs.rm(root, { recursive: true, force: true }));
   const history = new UsageHistory(root, () => Date.parse('2026-10-11T00:00:00Z'));

@@ -68,7 +68,8 @@ export function usageHistoryPanel(): HTMLElement {
 export function budgetSettingsPanel(): HTMLElement {
   const panel = card(t('budget.settings')); const content = el('div'); panel.append(el('p', 'muted', t('budget.provenance')), content);
   void run(async () => {
-    const current = await request<BudgetSettings>('/api/usage/budgets'); const rules = current.rules.map(rule => ({ ...rule }));
+    // `loaded` goes back as `previous`, so a stale panel cannot overwrite budgets saved from another window.
+    let loaded = await request<BudgetSettings>('/api/usage/budgets'); const current = loaded; const rules = current.rules.map(rule => ({ ...rule }));
     const remaining = input(current.quotaRemainingPercent === null ? '' : String(current.quotaRemainingPercent)); remaining.type = 'number'; remaining.min = '0'; remaining.max = '100';
     const expiry = input(current.cloudExpiryHours === null ? '' : String(current.cloudExpiryHours)); expiry.type = 'number'; expiry.min = '0'; expiry.max = '8760';
     const list = el('div');
@@ -84,6 +85,6 @@ export function budgetSettingsPanel(): HTMLElement {
       }
     }
     draw();
-    content.append(field(t('budget.remaining'), remaining), field(t('budget.expiry'), expiry), el('p', 'muted', t('budget.optional')), list, row(button(t('budget.add'), () => { if (rules.length >= 100) return; rules.push({ id: crypto.randomUUID(), unit: 'tokens', threshold: 100000, since: new Date().toISOString() }); draw(); }), button(t('common.save'), async () => { await request<BudgetSettings>('/api/usage/budgets', { rules, quotaRemainingPercent: remaining.value === '' ? null : Number(remaining.value), cloudExpiryHours: expiry.value === '' ? null : Number(expiry.value) }); toast(t('common.saved')); }, 'primary')));
+    content.append(field(t('budget.remaining'), remaining), field(t('budget.expiry'), expiry), el('p', 'muted', t('budget.optional')), list, row(button(t('budget.add'), () => { if (rules.length >= 100) return; rules.push({ id: crypto.randomUUID(), unit: 'tokens', threshold: 100000, since: new Date().toISOString() }); draw(); }), button(t('common.save'), async () => { loaded = await request<BudgetSettings>('/api/usage/budgets', { rules, quotaRemainingPercent: remaining.value === '' ? null : Number(remaining.value), cloudExpiryHours: expiry.value === '' ? null : Number(expiry.value), previous: loaded }); toast(t('common.saved')); }, 'primary')));
   }); return panel;
 }

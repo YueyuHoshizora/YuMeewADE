@@ -43,6 +43,7 @@ export const DETAIL_MESSAGES = {
   notes_changed: '備註已在別處修改，請重新開啟後再編輯',
   rules_changed: 'AI 規則已在別處修改；請先複製你的修改，再重新整理頁面取得最新內容',
   project_changed: '專案設定已在別處修改，請重新開啟後再編輯',
+  budget_changed: '用量預算已在別處修改，請重新整理頁面後再編輯',
   project_missing: '專案不存在',
   project_body_missing: '找不到專案的主資料夾，可能已被移動或刪除',
   task_missing: '作業不存在',
