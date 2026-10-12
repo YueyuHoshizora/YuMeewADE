@@ -11,8 +11,12 @@ import { preferenceCommand, readPreferences, serializeEol } from './editor-prefe
 import { debuggerWorkbench } from './debugger.ts';
 import { mountEditorProposals } from './editor-proposals.ts';
 import { renderAdvancedLanguage } from './editor-language-results.ts';
+import { encodingPicker, segmentPanel } from './editor-segments.ts';
+import { embeddedPreviewWorkbench } from './embedded-preview.ts';
 
 export interface WorkbenchEditorHost {
+  reserveSegment(path: string): (() => void) | null;
+  refresh(path: string): Promise<void>;
   snapshot(): { path: string; revision: string; text: string; selection: { from: number; to: number } } | null;
   reserve(expected: { path: string; revision: string; text: string }): (() => void) | null;
   applyEdits(expected: { path: string; revision: string; text: string }, edits: { from: number; to: number; text: string }[]): boolean;
@@ -28,6 +32,8 @@ export function registerWorkbenchPanel(id: string, factory: (context: WorkbenchP
 }
 registerWorkbenchPanel('debugger', debuggerWorkbench);
 registerWorkbenchPanel('proposals', mountEditorProposals);
+registerWorkbenchPanel('segments', segmentPanel);
+registerWorkbenchPanel('preview', embeddedPreviewWorkbench);
 let workbenchMount: HTMLElement | undefined;
 let activeWorkspace = '';
 export function mountEditorWorkbench(main: HTMLElement): void {
@@ -78,6 +84,7 @@ export function openFileBrowser(project: string, task: string, workspace = activ
   for (const [control, key] of [[caseSensitive, 'editorFront.case'], [wholeWord, 'editorFront.word'], [regex, 'editorFront.regex']] as const) { const label = el('label', '', t(key)); label.prepend(control); searchOptions.append(label); }
   searchOptions.append(include, exclude, mode);
   let searchPage = 1; let searchSerial = 0;
+  const encoding = encodingPicker();
   const conflicts = new Map<string, EditorDocument>();
   const unresolved = new Set<string>();
   let editReserved = false;
@@ -144,7 +151,7 @@ export function openFileBrowser(project: string, task: string, workspace = activ
   }
   const syncTimer = window.setInterval(() => { void run(synchronize); }, 5000);
   const syncFocus = () => { void run(synchronize); }; window.addEventListener('focus', syncFocus);
-  const dirty = (buffer: EditorRecovery) => buffer.text.replace(/\r\n/g, '\n') !== buffer.document.text.replace(/\r\n/g, '\n');
+  const dirty = (buffer: EditorRecovery) => buffer.text.replace(/\r\n/g, '\n') !== buffer.document.text.replace(/\r\n/g, '\n') || (buffer.encoding ?? buffer.document.encoding ?? 'UTF8') !== (buffer.document.encoding ?? 'UTF8');
   let persistenceTimer: number | undefined;
   const live = new Map<string, { timer?: number; flight?: Promise<void>; disabled: boolean; text?: string; diagnostics: EditorDiagnostic[] }>();
   let disposed = false;
@@ -293,6 +300,8 @@ export function openFileBrowser(project: string, task: string, workspace = activ
       view.content.setSelectionRange(buffer.start, buffer.end); view.content.scrollTop = buffer.top; view.content.scrollLeft = buffer.left;
     } else view.content.revealLine(line + 1, character);
     if (!isImage(path)) view.content.focus(); focused = index; refreshTabs();
+    encoding.value = buffer.encoding ?? buffer.document.encoding ?? 'UTF8';
+    encoding.disabled = view.content.readOnly;
     capture(index); schedulePersist();
     replaying = wasReplaying;
     recordPosition(index);
@@ -334,7 +343,7 @@ export function openFileBrowser(project: string, task: string, workspace = activ
         return { from: word?.from ?? context.pos, options: (result.suggestions ?? []).map(item => ({ label: item.label, ...(item.detail ? { detail: item.detail } : {}), apply: (view, _completion, from, to) => view.dispatch({ changes: { from: item.start ?? from, to: item.end ?? to, insert: item.insertText } }) })) };
       } catch { return null; }
     };
-    content.onfocus = () => { focused = index; schedulePersist(); };
+    content.onfocus = () => { focused = index; const buffer = views[index]!.path ? buffers.get(views[index]!.path!) : undefined; encoding.value = buffer?.encoding ?? buffer?.document.encoding ?? 'UTF8'; encoding.disabled = content.readOnly; schedulePersist(); };
     content.oninput = () => {
       capture(index); const path = views[index]!.path;
       if (path) for (const tabs of paneTabs) for (const tab of tabs) if (tab.path === path) tab.preview = false;
@@ -360,11 +369,14 @@ export function openFileBrowser(project: string, task: string, workspace = activ
     if (editReserved) throw new Error(t('detail.editor_conflict'));
     pendingWrites++;
     try {
-      const buffer = current(); if (!buffer || !dirty(buffer)) return;
+      const buffer = current(); if (!buffer || buffer.document.readonly || buffer.document.binary || buffer.document.truncated) return;
+      const selectedEncoding = buffer.encoding ?? buffer.document.encoding ?? 'UTF8';
+      if (!dirty(buffer) && selectedEncoding === (buffer.document.encoding ?? 'UTF8')) return;
       if (conflicts.has(buffer.document.path) || unresolved.has(buffer.document.path)) throw new Error(t('editorUI.unresolved'));
       const local = buffer.text; const format = await request<EditorResolvedFormatPreferences>(query('/api/editor/preferences', { ...ids, path: buffer.document.path }));
       const text = serializeEol(local, format.source === 'default' ? readPreferences().eol : format.eol, buffer.document.text);
-      buffer.document = await request<EditorDocument>('/api/editor/save', { ...ids, path: buffer.document.path, text, revision: buffer.document.revision });
+      buffer.document = await request<EditorDocument>('/api/editor/save', { ...ids, path: buffer.document.path, text, revision: buffer.document.revision, encoding: selectedEncoding });
+      if (buffer.encoding === selectedEncoding) delete buffer.encoding;
       views.forEach((_, index) => capture(index));
       if (buffer.text === local) { buffer.text = text; for (const view of views) if (view.path === buffer.document.path) view.content.value = text; }
       persist(); refreshTabs();
@@ -524,12 +536,12 @@ export function openFileBrowser(project: string, task: string, workspace = activ
     for (const value of values) { if (!value || typeof value !== 'object') continue; const candidate = value as Partial<EditorRecovery> & { clean?: boolean }; if (!candidate.document || typeof candidate.document.path !== 'string' || typeof candidate.document.revision !== 'string' || typeof candidate.text !== 'string' || candidate.text.length > 4 * 1024 * 1024) continue;
       const original = candidate.document;
       if (typeof original.text !== 'string') continue;
-      const recovered: EditorRecovery = { document: original, text: candidate.text, start: Number.isSafeInteger(candidate.start) ? candidate.start! : 0, end: Number.isSafeInteger(candidate.end) ? candidate.end! : 0, top: typeof candidate.top === 'number' ? candidate.top : 0, left: typeof candidate.left === 'number' ? candidate.left : 0 };
+      const recovered: EditorRecovery = { document: original, text: candidate.text, ...(['UTF8', 'UTF8-BOM', 'UTF16LE', 'UTF16BE'].includes(candidate.encoding ?? '') ? { encoding: candidate.encoding } : {}), start: Number.isSafeInteger(candidate.start) ? candidate.start! : 0, end: Number.isSafeInteger(candidate.end) ? candidate.end! : 0, top: typeof candidate.top === 'number' ? candidate.top : 0, left: typeof candidate.left === 'number' ? candidate.left : 0 };
       buffers.set(original.path, recovered);
       try {
         const document = await request<EditorDocument>(query('/api/editor/file', { ...ids, path: original.path }));
         const conflict = !candidate.clean && document.revision !== original.revision;
-        recovered.document = conflict ? { ...document, text: original.text, revision: original.revision } : document;
+        recovered.document = conflict ? { ...document, text: original.text, revision: original.revision, encoding: original.encoding } : document;
         if (candidate.clean) recovered.text = document.text;
         if (conflict) { conflicts.set(document.path, document); refreshConflict(document.path); }
         formats.set(document.path, await request<EditorResolvedFormatPreferences>(query('/api/editor/preferences', { ...ids, path: document.path })));
@@ -578,11 +590,35 @@ export function openFileBrowser(project: string, task: string, workspace = activ
   actions.append(button(t('editorUI.outline'), () => language('documentSymbols')), button(t('editorUI.symbols'), () => language('workspaceSymbols')));
   actions.append(button(t('editorFront.history'), localHistory));
   actions.append(...(['signatureHelp', 'implementation', 'inlayHints', 'callHierarchy'] as const).map(action => button(t(`editorFront.${action}`), () => language(action))));
+  encoding.onchange = () => {
+    const buffer = current(); if (!buffer || views[focused]!.content.readOnly || editReserved) return;
+    buffer.encoding = encoding.value as NonNullable<EditorRecovery['encoding']>;
+    for (const tabs of paneTabs) for (const tab of tabs) if (tab.path === buffer.document.path) tab.preview = false;
+    persist(); refreshTabs();
+  };
+  actions.append(encoding);
   filter.oninput = () => void run(load);
   const unload = (event: BeforeUnloadEvent) => { views.forEach((_, index) => capture(index)); persist(); if (editReserved || [...buffers.values()].some(dirty)) { event.preventDefault(); event.returnValue = ''; } };
   window.addEventListener('beforeunload', unload);
   const panelHost = el('div', 'editor-extension-panels');
   const editor: WorkbenchEditorHost = {
+    reserveSegment: path => {
+      views.forEach((_, index) => capture(index));
+      const buffer = buffers.get(path);
+      if (disposed || editReserved || pendingWrites || syncing || buffer && !buffer.document.readonly && !buffer.document.truncated && dirty(buffer)) return null;
+      editReserved = true; pendingWrites++; dialog.inert = true;
+      let released = false;
+      return () => { if (released) return; released = true; editReserved = false; pendingWrites--; dialog.inert = false; if (disposeDeferred) dispose(); };
+    },
+    refresh: async path => {
+      const buffer = buffers.get(path); if (!buffer) return;
+      const document = await request<EditorDocument>(query('/api/editor/file', { ...ids, path }));
+      views.forEach((_, index) => capture(index));
+      if (disposed || buffers.get(path) !== buffer || dirty(buffer)) return;
+      buffer.document = document; buffer.text = document.text;
+      for (const view of views) if (view.path === path) { view.content.value = document.text; view.preview.update(document.text); view.content.readOnly = document.readonly || document.binary || document.truncated; }
+      persist(); refreshTabs();
+    },
     snapshot: () => { const buffer = current(); if (!buffer) return null; return { path: buffer.document.path, revision: buffer.document.revision, text: buffer.text, selection: { from: buffer.start, to: buffer.end } }; },
     snapshots: () => { views.forEach((_, index) => capture(index)); return [...buffers.values()].filter(buffer => !buffer.document.readonly && !buffer.document.binary && !buffer.document.truncated && !conflicts.has(buffer.document.path) && !unresolved.has(buffer.document.path)).map(buffer => ({ path: buffer.document.path, revision: buffer.document.revision, text: buffer.text, selection: { from: buffer.start, to: buffer.end } })); },
     reserveAll: expected => {
@@ -666,6 +702,7 @@ export function openFileBrowser(project: string, task: string, workspace = activ
   const flush = () => { views.forEach((_, index) => capture(index)); persist(); };
   const dispose = () => {
     if (editReserved) { disposeDeferred = true; dialog.hidden = true; return; }
+    dialog.dispatchEvent(new Event('yumeewade:editor-dispose'));
     flush(); disposed = true; window.clearInterval(syncTimer); window.clearTimeout(persistenceTimer);
     window.removeEventListener('focus', syncFocus); window.removeEventListener('beforeunload', unload);
     window.removeEventListener('yumeewade:workbench-panels', mountPanels); window.removeEventListener('yumeewade:debug-decoration', debugDecoration);
@@ -673,6 +710,6 @@ export function openFileBrowser(project: string, task: string, workspace = activ
     live.clear();
     views.forEach(view => { view.content.destroy(); view.preview.destroy(); }); dialog.remove();
   };
-  browsers.set(key, { dialog, flush, dispose, canDispose: () => !editReserved && !pendingWrites && ![...buffers.values()].some(dirty) && !conflicts.size && !unresolved.size, restoreLayout: applyLayout, open: async (path, line) => { await ready; if (dialog.isConnected) await show(path, line === undefined ? undefined : line - 1); } });
+  browsers.set(key, { dialog, flush, dispose, canDispose: () => !editReserved && !pendingWrites && ![...buffers.values()].some(dirty) && !conflicts.size && !unresolved.size && dialog.dispatchEvent(new Event('yumeewade:editor-can-dispose', { cancelable: true })), restoreLayout: applyLayout, open: async (path, line) => { await ready; if (dialog.isConnected) await show(path, line === undefined ? undefined : line - 1); } });
   void run(async () => { await ready; await load(); });
 }
