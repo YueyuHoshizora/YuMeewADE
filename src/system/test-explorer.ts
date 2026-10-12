@@ -60,7 +60,7 @@ export function parseNodeTap(output: string, root: string): { tree: TestCaseNode
       if (parentEntry?.node === null || count >= TEST_CASE_LIMIT || stack.length > 50 || declaration[2]!.length > 2000) { truncated = true; stack.push({ indent, node: null }); last = undefined; continue; }
       count++;
       const parent = parentEntry?.node;
-      // Node's TAP reporter writes `\` as `\\` and `#` as `\#`; the case's real name (what a selector must match) is unescaped.
+      // Node's TAP reporter writes `\` as `\\` and `#` as `\#`; control escapes remain for selector alternatives.
       const name = declaration[2]!.replace(/\\([\\#])/gu, '$1');
       const node: TestCaseNode = { id: String(count), name, fullName: parent ? `${parent.fullName} ${name}` : name, status: 'unknown', children: [] };
       (parent?.children ?? roots).push(node); stack.push({ indent, node }); last = node;
@@ -79,7 +79,11 @@ export function parseNodeTap(output: string, root: string): { tree: TestCaseNode
     }
     if (!last) continue;
     if (/^\s+(?:error|message|failureType|code|expected|actual|operator|stack):/u.test(row) || /^\s+.*:\d+:\d+\)?\s*$/u.test(row)) last.error = ((last.error ?? '') + row.trim() + '\n').slice(0, 16000);
-    const location = /(?:location:\s*['"]?|\s+at\s+(?:.*?\()?)(file:\/\/[^\s'"()]+|[^\s'"()]+):(\d+):(\d+)/u.exec(row);
+    const scalar = /^\s+location:\s*(.*)$/u.exec(row)?.[1];
+    let source = scalar;
+    if (source?.startsWith("'") && source.endsWith("'")) source = source.slice(1, -1).replace(/''/gu, "'");
+    else if (source?.startsWith('"') && source.endsWith('"')) { try { source = JSON.parse(source) as string; } catch { source = undefined; } }
+    const location = source !== undefined ? /^(.*):(\d+):(\d+)$/u.exec(source) : /(?:\s+at\s+(?:.*?\()?)(file:\/\/[^\s'"()]+|[^\s'"()]+):(\d+):(\d+)/u.exec(row);
     if (location) {
       let file = location[1]!;
       try { if (file.startsWith('file:')) file = fileURLToPath(file); } catch { continue; }
@@ -93,10 +97,16 @@ export function parseNodeTap(output: string, root: string): { tree: TestCaseNode
 interface Options { ws: Workspace; projects: ProjectLedger; tasks: TaskLedger; verify: VerifyService; beforeRun: (project: string) => Promise<void>; isRunning: (project: string, task: string) => boolean; }
 export class TestExplorerService {
   private readonly opts: Options;
-  private readonly pending = new Set<string>();
+  private readonly pending = new Map<string, AbortController>();
   constructor(opts: Options) { this.opts = opts; }
-  isRunning(project: string, task?: string): boolean { return task === undefined ? [...this.pending].some(key => (JSON.parse(key) as string[])[0] === project) : this.pending.has(JSON.stringify([project, task])); }
+  isRunning(project: string, task?: string): boolean { return task === undefined ? [...this.pending.keys()].some(key => (JSON.parse(key) as string[])[0] === project) : this.pending.has(JSON.stringify([project, task])); }
   isBusy(): boolean { return this.pending.size > 0; }
+  cancel(project: string, task: string): void {
+    const pending = this.pending.get(JSON.stringify([project, task]));
+    if (!pending) throw new AppError('conflict');
+    pending.abort();
+    if (this.opts.verify.isRunning(project, task)) this.opts.verify.cancel(project, task);
+  }
   private async cwd(project: string, task: string): Promise<string> {
     this.opts.ws.taskFile(project, task);
     const [p, t] = await Promise.all([this.opts.projects.get(project), this.opts.tasks.get(project, task)]);
@@ -162,19 +172,27 @@ export class TestExplorerService {
   async run(project: string, task: string, runner: string, selection?: string): Promise<TestExplorerRun> {
     const key = JSON.stringify([project, task]);
     if (this.pending.has(key) || this.opts.isRunning(project, task)) throw new AppError('conflict');
-    this.pending.add(key);
+    const controller = new AbortController(); this.pending.set(key, controller);
     try {
       await this.opts.beforeRun(project);
+      if (controller.signal.aborted) throw new AppError('conflict');
       const state = await this.state(project, task); const config = state.configurations.find(c => c.name === runner);
       if (!config) throw new AppError('not_found');
       let selected: TestCaseNode | undefined;
-      const matches: TestCaseNode[] = [];
-      const find = (nodes: TestCaseNode[]): void => { for (const node of nodes) { if (node.fullName === selection) matches.push(node); find(node.children); } };
+      const matches: TestCaseNode[] = []; const counts = new Map<string, number>();
+      const find = (nodes: TestCaseNode[]): void => { for (const node of nodes) { counts.set(node.fullName, (counts.get(node.fullName) ?? 0) + 1); if (node.fullName === selection) matches.push(node); find(node.children); } };
       if (selection) {
-        find([...state.history].reverse().find(run => run.runner === runner && !run.selection)?.tree ?? []);
+        const discovery = [...state.history].reverse().find(run => run.runner === runner && !run.selection);
+        find(discovery?.tree ?? []);
         // Name-filter runners cannot distinguish duplicate full names; never fake a single rerun.
         if (matches.length !== 1) throw new AppError('bad_request');
         selected = matches[0];
+        if ((!config.framework || ['node', 'jest', 'vitest'].includes(config.framework)) && selected?.children.length) {
+          const descendants: TestCaseNode[] = [];
+          const collect = (node: TestCaseNode): void => { descendants.push(node); node.children.forEach(collect); };
+          collect(selected);
+          if (discovery?.treeTruncated || descendants.some(node => counts.get(node.fullName) !== 1)) throw new AppError('bad_request');
+        }
       }
       const root = await this.cwd(project, task);
       const projectModel = parseVerificationInputModel((await this.opts.projects.get(project)).verificationInputs);
@@ -198,6 +216,7 @@ export class TestExplorerService {
         const argv = await frameworkCommand(root, config, report, selected);
         // Node TAP and `go test -json` are read from stdout; the displayed output keeps only its tail.
         const streamed = !config.framework || config.framework === 'node' || config.framework === 'go';
+        if (controller.signal.aborted) throw new AppError('conflict');
         const { stdout = '', stdoutTruncated = false, ...ran } = await this.opts.verify.runFrameworkTests(project, task, argv.command, argv.args, streamed ? REPORT_BYTES : 0);
         result = ran; reportCut = stdoutTruncated;
         if (config.framework === 'pytest' && /No module named pytest/u.test(result.output)) throw new AppError('unavailable', 'cli_unavailable', { field: 'pytest' });

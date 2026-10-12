@@ -22,8 +22,7 @@ export function registerTestExplorerRoutes(router: Router, app: App): void {
   router.post('/api/task/tests/cancel', async ({ body }) => {
     // Stopping stays available after the project is restricted, like every other stop.
     const project = reqString(body, 'project', 120), task = reqString(body, 'task', 120);
-    if (!app.testExplorer.isRunning(project, task)) throw new AppError('conflict');
-    app.verify.cancel(project, task);
+    app.testExplorer.cancel(project, task);
     return { ok: true };
   });
   router.post('/api/task/tests/configure', async ({ body }) => {

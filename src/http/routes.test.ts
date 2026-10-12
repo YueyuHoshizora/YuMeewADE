@@ -619,3 +619,24 @@ test('a running review blocks confirming its task done and writing project memor
     assert.equal((await s.api('POST', '/api/task/completion', { ...ids, action: 'approve' })).status, 200);
   } finally { await s.close(); }
 });
+
+test('test explorer cancellation covers preparation before VerifyService has reserved a run', async () => {
+  const s = await startTestServer();
+  const entered = Promise.withResolvers<void>(), release = Promise.withResolvers<void>();
+  try {
+    const project = await s.app.projects.create({ name: 'CancelTests' });
+    const task = await s.app.tasks.create(project.id, { title: 'Tests', workspace: 'direct' });
+    const root = s.app.projects.bodyPath(project);
+    await fs.writeFile(path.join(root, 'cancel.test.js'), `require('node:test').test('case',()=>require('node:fs').writeFileSync('launched','yes'));`);
+    await s.app.testExplorer.save(project.id, task.id, { name: 'node', files: ['cancel.test.js'] }, (await s.app.testExplorer.state(project.id, task.id)).revision);
+    const state = s.app.testExplorer.state.bind(s.app.testExplorer);
+    s.app.testExplorer.state = async (...args) => { entered.resolve(); await release.promise; return state(...args); };
+    const pending = s.app.testExplorer.run(project.id, task.id, 'node'); const rejected = assert.rejects(pending, { status: 409 });
+    await entered.promise;
+    const response = await s.api('POST', '/api/task/tests/cancel', { project: project.id, task: task.id });
+    release.resolve(); await rejected;
+    assert.equal(response.status, 200); assert.deepEqual(response.json, { ok: true });
+    assert.equal(await fs.stat(path.join(root, 'launched')).catch(() => null), null);
+    assert.equal((await s.api('POST', '/api/task/tests/cancel', { project: project.id, task: task.id })).status, 409);
+  } finally { release.resolve(); await s.close(); }
+});

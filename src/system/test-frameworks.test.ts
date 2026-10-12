@@ -105,10 +105,38 @@ test('Vitest 5 uses exact runner names while older versions retain JSON-name mat
   let command = await frameworkCommand(root, config, '/tmp/report', tree[0]!.children[0]);
   assert(command.args.includes('^suite\\+ > case\\.\\*$'));
   command = await frameworkCommand(root, config, '/tmp/report', tree[0]);
-  assert(command.args.includes('^suite\\+(?: > |$)'));
+  assert(command.args.includes('^(?:suite\\+ > case\\.\\*)$'));
   await fs.writeFile(path.join(installed, 'package.json'), '{"version":"4.1.0"}');
   command = await frameworkCommand(root, config, '/tmp/report', tree[0]!.children[0]);
   assert(command.args.includes('^suite\\+ case\\.\\*$'));
   command = await frameworkCommand(root, config, '/tmp/report', tree[0]);
-  assert(command.args.includes('^suite\\+(?: |$)'));
+  assert(command.args.includes('^(?:suite\\+ case\\.\\*)$'));
+}));
+
+test('Node Jest and Vitest suite selectors match only exact descendant names', () => withTmpWorkspace(async (_ws, dir) => {
+  const root = await fs.realpath(dir);
+  for (const [framework, executable] of [['jest', 'bin/jest.js'], ['vitest', 'vitest.mjs']]) {
+    const installed = path.join(root, 'node_modules', framework!);
+    await fs.mkdir(path.dirname(path.join(installed, executable!)), { recursive: true });
+    await fs.writeFile(path.join(installed, executable!), '');
+  }
+  const report = JSON.stringify({ testResults: [{ name: path.join(root, 'spec.test.ts'), assertionResults: [
+    { title: 'one.*', fullName: 'suite one.*', ancestorTitles: ['suite'], status: 'passed' },
+    { title: 'two', fullName: 'suite nested two', ancestorTitles: ['suite', 'nested'], status: 'passed' },
+    { title: 'suite unrelated', fullName: 'suite unrelated', ancestorTitles: [], status: 'passed' },
+  ] }] });
+  for (const framework of ['node', 'jest', 'vitest'] as const) {
+    const { tree } = parseFrameworkReport(framework === 'node' ? 'jest' : framework, report, root);
+    for (const version of framework === 'vitest' ? ['4.1.0', '5.0.1'] : ['']) {
+      if (version) await fs.writeFile(path.join(root, 'node_modules/vitest/package.json'), JSON.stringify({ version }));
+      const command = await frameworkCommand(root, { name: framework, framework, files: ['spec.test.ts'] }, '/tmp/report', tree[0]);
+      const value = framework === 'node' ? command.args.find(arg => arg.startsWith('--test-name-pattern='))!.slice('--test-name-pattern='.length) : command.args[command.args.indexOf('--testNamePattern') + 1]!;
+      const pattern = new RegExp(value);
+      const separator = version.startsWith('5') ? ' > ' : ' ';
+      assert.equal(pattern.test(['suite', 'one.*'].join(separator)), true);
+      assert.equal(pattern.test(['suite', 'nested', 'two'].join(separator)), true);
+      assert.equal(pattern.test(['suite', 'unrelated'].join(separator)), false);
+      assert.equal(pattern.test(['suite', 'one.*', 'extra'].join(separator)), false);
+    }
+  }
 }));

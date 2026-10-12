@@ -7,8 +7,16 @@ import { isInside } from '../shared/fsx.ts';
 export async function frameworkCommand(root: string, config: TestRunnerConfiguration, report: string, selected?: TestCaseNode): Promise<{ command: string; args: string[] }> {
   const framework = config.framework ?? 'node';
   const files = config.files.map(file => `./${file}`);
-  const escaped = selected?.fullName.replace(/[.*+?^${}()|[\]\\]/gu, '\\$&');
-  if (framework === 'node') return { command: process.execPath, args: ['--test', '--test-reporter=tap', ...(escaped ? [`--test-name-pattern=^${escaped}${selected?.children.length ? '(?: |$)' : '$'}`] : []), ...files] };
+  const escape = (name: string): string => name.replace(/\\[nrt]|[.*+?^${}()|[\]\\]|\n|\r|\t/gu, token => {
+    // Node TAP cannot distinguish a real control character from its literal backslash escape.
+    if (framework === 'node' && /^\\[nrt]$/u.test(token)) return `(?:${token}|\\\\${token.slice(1)})`;
+    if (token === '\n') return '\\n'; if (token === '\r') return '\\r'; if (token === '\t') return '\\t';
+    return token.length === 2 ? `\\\\${token.slice(1)}` : `\\${token}`;
+  });
+  const names = (node: TestCaseNode, selector = false): string[] => node.children.length ? node.children.flatMap(child => names(child, selector)) : [escape(selector ? node.selector ?? node.fullName : node.fullName)];
+  const pattern = (selector = false): string | undefined => selected ? selected.children.length ? `^(?:${names(selected, selector).join('|')})$` : `^${names(selected, selector)[0]}$` : undefined;
+  const escaped = pattern();
+  if (framework === 'node') return { command: process.execPath, args: ['--test', '--test-reporter=tap', ...(escaped ? [`--test-name-pattern=${escaped}`] : []), ...files] };
   if (framework === 'pytest') {
     if (selected && (!selected.selector || !selected.file || !config.files.some(file => file === '.' || selected.file === file || selected.file?.startsWith(`${file}/`)) || !selected.selector.startsWith(`./${selected.file}::`))) throw new AppError('bad_request');
     return { command: 'python3', args: ['-m', 'pytest', ...(config.config ? ['-c', `./${config.config}`] : []), `--junitxml=${report}`, '-o', 'junit_family=legacy', ...(selected?.selector ? [selected.selector] : files)] };
@@ -33,18 +41,16 @@ export async function frameworkCommand(root: string, config: TestRunnerConfigura
   if (!isInside(root, executable) || !(await fs.stat(executable)).isFile()) throw new AppError('bad_request');
   const explicit = config.config ? ['--config', `./${config.config}`] : [];
   let vitestPattern = escaped;
-  let vitestBoundary = '(?: |$)';
   if (framework === 'vitest' && selected?.selector) {
     const metadata = JSON.parse(await fs.readFile(path.join(path.dirname(executable), 'package.json'), 'utf8')) as { version?: string };
     // Vitest 5 matches " > "-joined names, while its JSON reporter still uses spaces.
     if (Number.parseInt(metadata.version ?? '', 10) >= 5) {
-      vitestPattern = selected.selector.replace(/[.*+?^${}()|[\]\\]/gu, '\\$&');
-      vitestBoundary = '(?: > |$)';
+      vitestPattern = pattern(true);
     }
   }
   return framework === 'vitest'
-    ? { command: process.execPath, args: [executable, 'run', ...explicit, '--reporter=json', '--outputFile', report, ...(vitestPattern ? ['--testNamePattern', `^${vitestPattern}${selected?.children.length ? vitestBoundary : '$'}`] : []), ...files] }
-    : { command: process.execPath, args: [executable, ...explicit, '--runInBand', '--testLocationInResults', '--json', '--outputFile', report, ...(escaped ? ['--testNamePattern', `^${escaped}${selected?.children.length ? '(?: |$)' : '$'}`] : []), '--runTestsByPath', ...files] };
+    ? { command: process.execPath, args: [executable, 'run', ...explicit, '--reporter=json', '--outputFile', report, ...(vitestPattern ? ['--testNamePattern', vitestPattern] : []), ...files] }
+    : { command: process.execPath, args: [executable, ...explicit, '--runInBand', '--testLocationInResults', '--json', '--outputFile', report, ...(escaped ? ['--testNamePattern', escaped] : []), '--runTestsByPath', ...files] };
 }
 
 const entities: Record<string, string> = { amp: '&', lt: '<', gt: '>', quot: '"', apos: "'" };
