@@ -381,11 +381,6 @@ export class ChatRunner extends EventEmitter {
       const checkpoint = await this.deps.worktree.checkpoint(p, t);
       const images = await attachImages(this.deps.ws, p, t, chosen.images ?? [], this.deps.limits.imagesPerSend);
       if (this.shuttingDown) throw new AppError('unavailable');
-      if (task.state === '完成') await this.deps.completion.revoke(p, t);
-      await this.deps.tasks.update(p, t, {
-        state: '進行中', cli: pick.cli, model: pick.model, effort: pick.effort,
-        ...(chosen.answer ? { question: '' } : {}),
-      });
       const prior = await this.deps.store.readLog(p, t);
       const meta = await this.deps.store.readMeta(p, t);
       const sameAccount = (meta.accounts?.[item.ai] ?? 'default') === accountId;
@@ -408,6 +403,13 @@ export class ChatRunner extends EventEmitter {
       const currentTokens = new Set(parseMentions(item.text).map(m => m.token));
       const currentMentions = references.mentions.filter(m => currentTokens.has(m.token));
       assertActive();
+      // Only an admitted turn may touch the task: a stop during the startup I/O above must leave an unanswered
+      // question and a completed state exactly as they were.
+      if (task.state === '完成') await this.deps.completion.revoke(p, t);
+      await this.deps.tasks.update(p, t, {
+        state: '進行中', cli: pick.cli, model: pick.model, effort: pick.effort,
+        ...(chosen.answer ? { question: '' } : {}),
+      });
       const user: ChatRow = {
         at: item.at, role: 'user', text: item.text, to: item.ai,
         model: pick.model, effort: pick.effort, request: item.id,

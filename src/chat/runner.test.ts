@@ -646,6 +646,26 @@ test('stop during preparation cancels the pending launch and permits a fresh sen
   assert.equal(s.calls.length, 1);
 }));
 
+test('an answer stopped during startup I/O leaves the open question and waiting state untouched', { timeout: 5000 }, () => withTmpWorkspace(async ws => {
+  const entered = Promise.withResolvers<void>();
+  const release = Promise.withResolvers<undefined>();
+  const s = await setup(ws, {}, 600, { worktree: {
+    prepare: async () => ws.projectDir('P'),
+    checkpoint: async () => { entered.resolve(); return release.promise; },
+  } as unknown as WorktreeService });
+  await s.tasks.update('P', s.task.id, { state: '等待回覆', question: 'Choose A or B' });
+  const rejected = assert.rejects(s.send('A', { answer: true }), { detail: 'chat_stopped' });
+  await entered.promise;
+  const stopping = s.runner.stop('P', s.task.id);
+  release.resolve(undefined);
+  await rejected;
+  await stopping;
+  assert.equal(s.calls.length, 0);
+  const task = await s.tasks.get('P', s.task.id);
+  assert.equal(task.state, '等待回覆');
+  assert.equal(task.question, 'Choose A or B');
+}));
+
 test('task idle waits through queued followups without waiting for unrelated runs', { timeout: 5000 }, () => withTmpWorkspace(async ws => {
   const s = await setup(ws, { chunkMs: 1 });
   const other = await s.tasks.create('P', { title: 'Other', workspace: 'direct' });
