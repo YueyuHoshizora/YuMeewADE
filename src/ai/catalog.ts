@@ -252,7 +252,7 @@ export class AiCatalog {
     const env = this.env();
     if (!(await findExecutable(command, env))) return { available: false, version: '' };
     const result = await captureCommand({ command, args: ['--version'], env, timeoutMs: 10_000 });
-    return { available: true, version: result.ok ? /\b\d+\.\d+\.\d+\b/.exec(result.stdout + '\n' + result.stderr)?.[0] ?? '' : '' };
+    return { available: true, version: result.ok ? /(?<![\w.+-])v?(\d+\.\d+\.\d+(?:-[0-9A-Za-z-]+(?:\.[0-9A-Za-z-]+)*)?(?:\+[0-9A-Za-z-]+(?:\.[0-9A-Za-z-]+)*)?)(?![\w.+-])/.exec(result.stdout + '\n' + result.stderr)?.[1] ?? '' : '' };
   }
   /** The CLI's own model cache; one it cannot read (missing, a folder, no permission) counts as absent so builtins apply. */
   private async localModels(ai: CatalogAi): Promise<ModelInfo[]> {

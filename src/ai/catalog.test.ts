@@ -246,3 +246,17 @@ test('Gemini discovery follows the selected account and scopes persisted models 
   assert.equal(saved.gemini.profile, JSON.stringify(['first', firstHome]));
 });
 
+test('CLI version retains SemVer prerelease and build identifiers with or without a v prefix', async (t) => {
+  const f = await fixture(t);
+  const command = path.join(f.root, 'version-cli');
+  const versionFile = path.join(f.root, 'semver');
+  await fs.writeFile(command, `#!${process.execPath}\nimport fs from 'node:fs';\nconsole.error('cli ' + fs.readFileSync(${JSON.stringify(versionFile)}, 'utf8'));\n`, { mode: 0o755 });
+  f.config.cli.codex.command = command;
+  for (const token of ['v1.2.3-rc.2+build.7', '1.2.3-rc.2+build.7', 'v1.2.3', '1.2.3+build.7']) {
+    await fs.writeFile(versionFile, token);
+    const version = (await f.catalog.get('codex')).version;
+    assert.equal(version, token.replace(/^v/, ''));
+    assert.equal(compareVersions(version, token), 0);
+    if (token.includes('-rc')) assert.ok(compareVersions('1.2.3', version) > 0);
+  }
+});

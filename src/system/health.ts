@@ -45,7 +45,7 @@ export async function healthCheck(options: HealthOptions, network = false): Prom
     }))),
   };
 }
-export function safeVersion(value: string): string { return /^\d+\.\d+\.\d+(?:[.+-][a-zA-Z0-9.-]+)?$/.test(value) ? value : ''; }
+export function safeVersion(value: string): string { return /^\d+\.\d+\.\d+(?:[.-][a-zA-Z0-9.-]+)?(?:\+[a-zA-Z0-9.-]+)?$/.test(value) ? value : ''; }
 async function loopbackCheck(): Promise<boolean> {
   const { promise, resolve } = Promise.withResolvers<boolean>();
   const server = net.createServer(socket => socket.end()); let settled = false;
