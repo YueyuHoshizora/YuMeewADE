@@ -87,10 +87,21 @@ function sectionLines(body: string, kind: keyof typeof HEADINGS): string[] {
   return out;
 }
 
+/** Every steps section in document order: an AI following older rules may add its own `## Steps` after the template's. */
+function stepSections(rows: string[]): { start: number; end: number }[] {
+  const marks = headings(rows), out: { start: number; end: number }[] = [];
+  marks.forEach((mark, start) => {
+    if (mark === undefined || !HEADINGS.steps.test(mark)) return;
+    let end = rows.length;
+    for (let i = start + 1; i < rows.length; i++) if (marks[i] !== undefined) { end = i; break; }
+    out.push({ start, end });
+  });
+  return out;
+}
+
 export function parseSteps(body: string): Step[] {
-  const { rows, start, end } = section(body, 'steps');
-  if (start < 0) return [];
-  return stepIndices(rows, start, end).map(i => { const m = STEP.exec(rows[i]!)!; return { text: m[3]!, done: m[2] !== ' ' }; });
+  const rows = body.split(/\r?\n/);
+  return stepSections(rows).flatMap(({ start, end }) => stepIndices(rows, start, end)).map(i => { const m = STEP.exec(rows[i]!)!; return { text: m[3]!, done: m[2] !== ' ' }; });
 }
 
 export class TaskLedger {
@@ -206,14 +217,15 @@ export class TaskLedger {
     });
   }
 
-  private async editSteps(project: string, id: string, change: (rows: string[], indices: number[], start: number, end: number) => void): Promise<Task> {
+  /** `indices` numbers the steps across every steps section, as `parseSteps` shows them; `end` is where a new step goes (the last section's end), `endOf` the end of the section holding a row. */
+  private async editSteps(project: string, id: string, change: (rows: string[], indices: number[], end: number, endOf: (row: number) => number) => void): Promise<Task> {
     return withFileLocks([this.ws.projectFile(project), this.ws.taskFile(project, id)], async () => {
       const fm = parseFrontmatter(await this.readRaw(project, id));
-      let part = section(fm.body, 'steps');
-      if (part.start < 0) { fm.body += '\n## 步驟\n'; part = section(fm.body, 'steps'); }
-      const indices = stepIndices(part.rows, part.start, part.end);
-      change(part.rows, indices, part.start, part.end);
-      await atomicWrite(this.ws.taskFile(project, id), serializeFrontmatter(patchHeaderLines(fm.headerLines, { updated: nowMinute() }), part.rows.join('\n')));
+      let rows = fm.body.split(/\r?\n/), parts = stepSections(rows);
+      if (parts.length === 0) { rows = (fm.body + '\n## 步驟\n').split(/\r?\n/); parts = stepSections(rows); }
+      const indices = parts.flatMap(({ start, end }) => stepIndices(rows, start, end));
+      change(rows, indices, parts.at(-1)!.end, row => parts.find(part => row > part.start && row < part.end)!.end);
+      await atomicWrite(this.ws.taskFile(project, id), serializeFrontmatter(patchHeaderLines(fm.headerLines, { updated: nowMinute() }), rows.join('\n')));
       return this.get(project, id);
     });
   }
@@ -223,9 +235,11 @@ export class TaskLedger {
   }
   async addStep(project: string, id: string, text: string): Promise<Task> {
     if (typeof text !== 'string' || !text.trim() || text.length > STEP_TEXT_MAX) throw new AppError('bad_request', 'field_type', { field: 'add' });
-    return this.editSteps(project, id, (rows, indices, _start, end) => {
+    return this.editSteps(project, id, (rows, indices, end) => {
       if (indices.length >= STEPS_MAX) throw new AppError('bad_request', 'field_type', { field: 'add' });
-      rows.splice(end, 0, `- [ ] ${text.replace(/[\r\n]+/g, ' ').trim()}`);
+      // Before the section's trailing blank lines, so the new step joins the list instead of following a gap.
+      let at = end; while (at > 0 && !rows[at - 1]!.trim()) at--;
+      rows.splice(at, 0, `- [ ] ${text.replace(/[\r\n]+/g, ' ').trim()}`);
     });
   }
   async removeStep(project: string, id: string, index: number, expected: string): Promise<Task> {
@@ -242,18 +256,20 @@ export class TaskLedger {
   /** Swaps a step with its neighbour at the same nesting depth, carrying its nested steps and indented lines along. */
   async moveStep(project: string, id: string, index: number, expected: string, offset: number): Promise<Task> {
     if (!Number.isInteger(index) || typeof expected !== 'string' || (offset !== -1 && offset !== 1)) throw new AppError('bad_request', 'field_type', { field: 'move' });
-    return this.editSteps(project, id, (rows, indices, _start, end) => {
+    return this.editSteps(project, id, (rows, indices, _end, endOf) => {
       stepRow(rows, indices, index, expected);
       const depth = (k: number) => STEP.exec(rows[indices[k]!]!)![1]!.replace(/\t/g, '    ').length;
       // The sibling is the nearest step at the same depth; reaching a shallower step means leaving the parent list.
       let sibling = index + offset;
       while (sibling >= 0 && sibling < indices.length && depth(sibling) > depth(index)) sibling += offset;
-      if (sibling < 0 || sibling >= indices.length || depth(sibling) !== depth(index)) throw new AppError('bad_request', 'field_type', { field: 'move' });
+      // Steps under another steps heading are not neighbours: swapping across would carry the heading along.
+      if (sibling < 0 || sibling >= indices.length || depth(sibling) !== depth(index) || endOf(indices[sibling]!) !== endOf(indices[index]!)) throw new AppError('bad_request', 'field_type', { field: 'move' });
       const upper = Math.min(index, sibling), lower = Math.max(index, sibling);
       let next = lower + 1;
       while (next < indices.length && depth(next) > depth(lower)) next++;
       const a = indices[upper]!, b = indices[lower]!;
-      let c = indices[next] ?? end;
+      const limit = endOf(b);
+      let c = next < indices.length && indices[next]! < limit ? indices[next]! : limit;
       while (c > b + 1 && !rows[c - 1]!.trim()) c--;
       rows.splice(a, c - a, ...rows.slice(b, c), ...rows.slice(a, b));
     });

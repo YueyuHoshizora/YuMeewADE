@@ -106,6 +106,21 @@ test('步驟編輯與 memo 只變更自己的段落；舊 owner 與段落相容'
   assert.deepEqual(parseSteps(raw), [{ text: '舊步驟', done: true }]);
 }));
 
+test('steps under a repeated steps heading are read and edited as one list', () => withTmpWorkspace(async ws => {
+  await new ProjectLedger(ws).create({ name: 'P' });
+  const tasks = new TaskLedger(ws);
+  const task = await tasks.create('P', { title: 'two headings' });
+  await fs.writeFile(ws.taskFile('P', task.id), '---\ntitle: two headings\nstate: 進行中\n---\n## 步驟\n- [x] first\n- [ ] second\n## 注意\nkeep\n## Steps\n- [ ] third\n');
+  assert.deepEqual((await tasks.get('P', task.id)).steps.map(step => step.text), ['first', 'second', 'third']);
+  await tasks.setStep('P', task.id, 2, true, 'third');
+  await tasks.addStep('P', task.id, 'fourth');
+  assert.deepEqual((await tasks.get('P', task.id)).steps, [{ text: 'first', done: true }, { text: 'second', done: false }, { text: 'third', done: true }, { text: 'fourth', done: false }]);
+  // Moving within a section works; moving across the heading is refused instead of dragging the heading along.
+  await tasks.moveStep('P', task.id, 1, 'second', -1);
+  await assert.rejects(tasks.moveStep('P', task.id, 1, 'first', 1), (error: AppError) => error.detail === 'field_type');
+  assert.match(await tasks.readRaw('P', task.id), /## 步驟\n- \[ \] second\n- \[x\] first\n## 注意\nkeep\n## Steps\n- \[x\] third\n- \[ \] fourth\n$/);
+}));
+
 test('多個作業台帳同時改標題、memo 與步驟，且錯誤不阻擋後續更新', () => withTmpWorkspace(async ws => {
   await new ProjectLedger(ws).create({ name: 'P' });
   const one = new TaskLedger(ws), two = new TaskLedger(ws);
