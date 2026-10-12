@@ -38,10 +38,16 @@ export class TaskLedger {
   // 專案檔的鎖也保護整個目錄封存，避免寫入時重新建立已搬走的目錄。
   constructor(ws: Workspace) { this.ws = ws; }
 
-  async list(project: string): Promise<Task[]> {
+  /** `skipped` collects the file names of task files that exist but could not be read or parsed. */
+  async list(project: string, skipped?: string[]): Promise<Task[]> {
     const names = await fs.readdir(this.ws.tasksDir(project)).catch((err: NodeJS.ErrnoException) => { if (err.code === 'ENOENT') return []; throw err; });
     const rows = await Promise.all(names.filter(n => n.endsWith('.md') && !/^[._]/.test(n)).map(async n => {
-      try { return await this.get(project, n.slice(0, -3)); } catch { log.warn('略過無法解析的作業', { project, id: n }); return null; }
+      try { return await this.get(project, n.slice(0, -3)); } catch (err) {
+        log.warn('略過無法解析的作業', { project, id: n });
+        // Files whose name is not a task id, or that vanished while listing, are not broken tasks.
+        if (!(err instanceof AppError && (err.detail === 'task_missing' || err.detail === 'invalid_task_id'))) skipped?.push(n);
+        return null;
+      }
     }));
     return rows.filter((t): t is Task => t !== null).sort((a, b) => b.id.localeCompare(a.id));
   }

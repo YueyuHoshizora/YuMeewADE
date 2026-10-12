@@ -691,6 +691,8 @@ export interface AppState {
   settings: Settings;
   roles: Roles;
   limits: Limits;
+  /** Ledger files (relative to `root`) skipped because they could not be parsed; they reappear once fixed. */
+  unreadable: string[];
 }
 
 export interface ApiError {

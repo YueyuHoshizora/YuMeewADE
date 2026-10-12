@@ -69,6 +69,7 @@ export const zhCN: Record<MessageKey, string> = {
 'usage.alertTitle': '额度提醒', 'usage.alertFull': '{ai} 额度已用满（{windows}），{reset} 重置', 'usage.alertFullNoReset': '{ai} 额度已用满（{windows}）', 'usage.alertRecovered': '{ai} 额度已恢复，可以继续使用',
 'usage.alertLow': '{ai} 额度剩余低于 {threshold}%（{windows}，剩 {remaining}%）', 'usage.alertSoon': '{ai} 额度将在 {minutes} 分钟内恢复（{reset}）',
 'tree.search': '搜索项目与作业…',
+'tree.unreadable': '有 {n} 个台账文件格式错误，暂时无法显示；修正后会自动出现：',
 'settings.enterToSend': 'Enter 发送，Shift+Enter 换行', 'chat.placeholderEnter': '写下指示…（Enter 发送，Shift+Enter 换行）', 'chat.hintEnter': 'Enter 发送，Shift+Enter 换行', 'chat.hintModifier': '⌘ / Ctrl + Enter 发送',
 'markdown.copy': '复制代码', 'markdown.copied': '已复制', 'markdown.copyFailed': '复制失败',
 'settings.rootApply': '切换工作区', 'settings.rootHint': '工作区存放项目、作业与对话记录。切换后改用新的文件夹（不存在会自动创建），原来的数据留在原处，不会迁移。AI 运行中不能切换。', 'settings.rootConfirmTitle': '切换工作区？', 'settings.rootConfirm': '改用“{root}”作为工作区根目录并写回配置文件。原工作区的文件不会迁移或删除。', 'settings.rootChanged': '已切换工作区', 'log.workspace': '切换工作区', 'detail.root_not_absolute': '工作区路径必须是绝对路径（可用 ~ 开头）', 'detail.root_not_directory': '工作区路径已存在但不是文件夹', 'detail.root_unwritable': '无法在这个位置创建工作区', 'detail.relocate_busy': 'AI 运行中或正在切换，暂时不能切换工作区',

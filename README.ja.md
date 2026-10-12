@@ -190,7 +190,7 @@ HTTP JSON と SSE を使い、デスクトップ版と Web 版で完全に共通
 
 | メソッドとパス | 用途 |
 |---|---|
-| `GET /api/state` | 全体の状態：プロジェクト（タスクと計算フィールドを含む）、順序、実行中、未読、AI とモデル、利用枠と出力速度、設定、役割、上限 |
+| `GET /api/state` | 全体の状態：プロジェクト（タスクと計算フィールドを含む）、順序、実行中、未読、AI とモデル、利用枠と出力速度、設定、役割、上限。`unreadable` は形式エラーで一時的に除外された台帳ファイル（ワークスペースのルートからの相対パス）で、修正すると自動的に戻ります |
 | `GET /api/events` | SSE（全体）：`changed` 時に `/api/state` を再取得、`usage` は最新の利用枠と出力速度 |
 | `GET /api/chat/stream?project=&task=` | SSE（単一タスク）：`snapshot`（最後の 200 行と `start`）／`busy`／`delta`／`row`／`queue`／`idle` |
 | `GET /api/chat/history?project=&task=&before=` | `before` より前の 200 行を読み込む |

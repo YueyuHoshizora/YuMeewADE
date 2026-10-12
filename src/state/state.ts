@@ -23,11 +23,16 @@ export type StateSnapshot = Omit<AppState, 'running' | 'unread' | 'usage'>;
 
 
 export async function buildState(app: App): Promise<StateSnapshot> {
+  const skippedProjects: string[] = []; const unreadable: string[] = [];
   const [projects, savedOrder, settings, roles, ais] = await Promise.all([
-    app.projects.list(), app.order.get(), app.settings.get(), app.roles(), app.ai.list(),
+    app.projects.list(skippedProjects), app.order.get(), app.settings.get(), app.roles(), app.ai.list(),
   ]);
+  // Joined directly: a skipped folder name may not pass the project-name whitelist that ws.projectFile enforces.
+  for (const id of skippedProjects) unreadable.push(path.relative(app.ws.root, path.join(app.ws.projectsDir, id, 'PROJECT.md')));
   const views = await Promise.all(projects.map(async (project) => {
-    const tasks = await app.tasks.list(project.id);
+    const skippedTasks: string[] = [];
+    const tasks = await app.tasks.list(project.id, skippedTasks);
+    for (const name of skippedTasks) unreadable.push(path.relative(app.ws.root, path.join(app.ws.tasksDir(project.id), name)));
     const taskViews: TaskView[] = await Promise.all(tasks.map(async (task) => {
       const [approved, continued, copy, chat] = await Promise.all([
         app.completion.isApproved(project.id, task.id), app.completion.continued(project.id, task.id), app.worktree.copyExists(project.id, task),
@@ -51,5 +56,5 @@ export async function buildState(app: App): Promise<StateSnapshot> {
     order[project.parent] = [...listed, ...ids.filter((id) => !listed.includes(id))];
   }
   const { promptChars, queueLength, concurrentRuns, uploadBytes, imagesPerSend } = app.config.limits;
-  return { version: app.version, root: app.ws.root, projects: views, order, ais, settings, roles, limits: { promptChars, queueLength, concurrentRuns, uploadBytes, imagesPerSend } };
+  return { version: app.version, root: app.ws.root, projects: views, order, ais, settings, roles, limits: { promptChars, queueLength, concurrentRuns, uploadBytes, imagesPerSend }, unreadable: unreadable.sort() };
 }

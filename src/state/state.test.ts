@@ -59,6 +59,30 @@ test('external task edits invalidate the state cache', async () => {
   } finally { await f.close(); }
 });
 
+test('unparseable ledger files are reported instead of silently disappearing, and clear once fixed', async () => {
+  const f = await fixture();
+  try {
+    f.app.close();
+    await f.app.projects.create({ name: 'Broken' });
+    const projectFile = f.app.ws.projectFile('Broken'); const taskFile = path.join(f.app.ws.tasksDir('Project'), `${f.task.id}.md`);
+    const [projectText, taskText] = await Promise.all([fs.readFile(projectFile, 'utf8'), fs.readFile(taskFile, 'utf8')]);
+    await fs.writeFile(projectFile, '---\nname: [unclosed\n---\n');
+    await fs.writeFile(taskFile, '---\nstate: [unclosed\n---\n');
+    // Not ledgers, so never reported: an empty project folder and a file whose name is not a task id.
+    await fs.mkdir(path.join(f.app.ws.projectsDir, 'Empty'));
+    await fs.writeFile(path.join(f.app.ws.tasksDir('Project'), 'my notes.md'), 'scratch');
+    f.app.changed();
+    const broken = await f.app.state();
+    assert.deepEqual(broken.projects.map(project => [project.id, project.tasks.length]), [['Project', 0]]);
+    assert.deepEqual(broken.unreadable, [path.join('Projects', 'Broken', 'PROJECT.md'), path.join('Projects', 'Project', '.ai', 'tasks', `${f.task.id}.md`)]);
+    await Promise.all([fs.writeFile(projectFile, projectText), fs.writeFile(taskFile, taskText)]);
+    f.app.changed();
+    const fixed = await f.app.state();
+    assert.deepEqual(fixed.unreadable, []);
+    assert.deepEqual(fixed.projects.map(project => [project.id, project.tasks.length]), [['Broken', 0], ['Project', 1]]);
+  } finally { await f.close(); }
+});
+
 test('concurrent rebuilds share a snapshot and invalidation during a build cannot cache stale data', async () => {
   const f = await fixture();
   try {

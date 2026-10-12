@@ -69,6 +69,7 @@ export const ja: Record<MessageKey, string> = {
 'usage.alertTitle': '利用枠のお知らせ', 'usage.alertFull': '{ai} の利用枠を使い切りました（{windows}）。{reset} にリセット', 'usage.alertFullNoReset': '{ai} の利用枠を使い切りました（{windows}）', 'usage.alertRecovered': '{ai} の利用枠が回復しました。続行できます',
 'usage.alertLow': '{ai} の利用枠の残りが {threshold}% を下回りました（{windows}、残り {remaining}%）', 'usage.alertSoon': '{ai} の利用枠は {minutes} 分以内に回復します（{reset}）',
 'tree.search': 'プロジェクトと作業を検索…',
+'tree.unreadable': '形式が正しくない台帳ファイルが {n} 件あるため表示できません。修正すると自動的に表示されます：',
 'settings.enterToSend': 'Enter で送信、Shift+Enter で改行', 'chat.placeholderEnter': '指示を入力…（Enter で送信、Shift+Enter で改行）', 'chat.hintEnter': 'Enter で送信、Shift+Enter で改行', 'chat.hintModifier': '⌘ / Ctrl + Enter で送信',
 'markdown.copy': 'コードをコピー', 'markdown.copied': 'コピーしました', 'markdown.copyFailed': 'コピーできませんでした',
 'settings.rootApply': 'ワークスペースを切り替え', 'settings.rootHint': 'ワークスペースにはプロジェクト、作業、会話履歴が保存されます。切り替えると新しいフォルダーを使います（なければ作成）。元のデータはそのまま残り、移動されません。AI の実行中は切り替えできません。', 'settings.rootConfirmTitle': 'ワークスペースを切り替えますか？', 'settings.rootConfirm': '「{root}」をワークスペースのルートにして設定ファイルへ保存します。元のワークスペースのファイルは移動も削除もされません。', 'settings.rootChanged': 'ワークスペースを切り替えました', 'log.workspace': 'ワークスペースの切り替え', 'detail.root_not_absolute': 'ワークスペースのパスは絶対パスにしてください（~ で始めても可）', 'detail.root_not_directory': 'ワークスペースのパスはフォルダーではありません', 'detail.root_unwritable': 'この場所にワークスペースを作成できません', 'detail.relocate_busy': 'AI の実行中または切り替え中のため、いまは切り替えできません',

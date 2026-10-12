@@ -40,10 +40,16 @@ export class ProjectLedger {
   private readonly ws: Workspace;
   constructor(ws: Workspace) { this.ws = ws; }
 
-  async list(): Promise<Project[]> {
+  /** `skipped` collects the ids of project folders whose PROJECT.md exists but could not be read or parsed. */
+  async list(skipped?: string[]): Promise<Project[]> {
     const entries = await fs.readdir(this.ws.projectsDir, { withFileTypes: true }).catch((err: NodeJS.ErrnoException) => { if (err.code === 'ENOENT') return []; throw err; });
     const rows = await Promise.all(entries.filter(e => e.isDirectory() && !e.name.startsWith('.')).map(async e => {
-      try { return await this.get(e.name); } catch { log.warn('略過無法解析的專案', { id: e.name }); return null; }
+      try { return await this.get(e.name); } catch (err) {
+        log.warn('略過無法解析的專案', { id: e.name });
+        // Folders that are not projects (no PROJECT.md, e.g. an interrupted create that create() reuses, or a name outside the whitelist) are not broken ledgers.
+        if (!(err instanceof AppError && (err.detail === 'project_missing' || err.detail === 'invalid_project_name'))) skipped?.push(e.name);
+        return null;
+      }
     }));
     return rows.filter((p): p is Project => p !== null).sort((a, b) => a.name.localeCompare(b.name, 'zh-Hant'));
   }

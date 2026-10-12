@@ -172,6 +172,11 @@ export function tree(context: ViewContext): HTMLElement {
     });
   }
   if (!roots.length) content.append(el('p', 'empty', t('common.empty')));
+  if (state.unreadable.length) {
+    const notice = el('aside', 'warning tree-unreadable', t('tree.unreadable', { n: state.unreadable.length }));
+    const files = el('ul'); for (const file of state.unreadable) { const item = el('li'); item.append(el('code', '', file)); files.append(item); }
+    notice.append(files); content.append(notice);
+  }
   filter();
   return root;
 }

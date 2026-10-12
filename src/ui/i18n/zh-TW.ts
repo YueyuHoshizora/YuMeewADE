@@ -68,6 +68,7 @@ export const zhTW = {
 'usage.alertTitle': '額度提醒', 'usage.alertFull': '{ai} 額度已用滿（{windows}），{reset} 重置', 'usage.alertFullNoReset': '{ai} 額度已用滿（{windows}）', 'usage.alertRecovered': '{ai} 額度已恢復，可以繼續使用',
 'usage.alertLow': '{ai} 額度剩餘低於 {threshold}%（{windows}，剩 {remaining}%）', 'usage.alertSoon': '{ai} 額度將在 {minutes} 分鐘內恢復（{reset}）',
 'tree.search': '搜尋專案與作業…',
+'tree.unreadable': '有 {n} 個台帳檔案格式錯誤，暫時無法顯示；修正後會自動出現：',
 'settings.enterToSend': 'Enter 送出，Shift+Enter 換行', 'chat.placeholderEnter': '寫下指示…（Enter 送出，Shift+Enter 換行）', 'chat.hintEnter': 'Enter 送出，Shift+Enter 換行', 'chat.hintModifier': '⌘ / Ctrl + Enter 送出',
 'markdown.copy': '複製程式碼', 'markdown.copied': '已複製', 'markdown.copyFailed': '複製失敗',
 'settings.rootApply': '切換工作區', 'settings.rootHint': '工作區存放專案、作業與對話紀錄。切換後改用新的資料夾（不存在會自動建立），原本的資料留在原處，不會搬移。AI 執行中不能切換。', 'settings.rootConfirmTitle': '切換工作區？', 'settings.rootConfirm': '改用「{root}」作為工作區根目錄並寫回設定檔。原工作區的檔案不會搬移或刪除。', 'settings.rootChanged': '已切換工作區', 'log.workspace': '切換工作區', 'detail.root_not_absolute': '工作區路徑必須是絕對路徑（可用 ~ 開頭）', 'detail.root_not_directory': '工作區路徑已存在但不是資料夾', 'detail.root_unwritable': '無法在這個位置建立工作區', 'detail.relocate_busy': 'AI 執行中或正在切換，暫時不能切換工作區',
