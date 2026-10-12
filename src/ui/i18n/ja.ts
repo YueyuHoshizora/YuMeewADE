@@ -275,6 +275,7 @@ export const ja: Record<MessageKey, string> = {
 'detail.body_not_object': 'リクエスト本文は JSON オブジェクトである必要があります',
 'detail.bad_json': '無効な JSON',
 'detail.file_corrupt': '{field} の内容が破損していて読み込めません。修正するかバックアップから復元してください',
+'detail.draft_images_full': '入力欄の画像とこの指示の画像を合わせると 1 回に添付できる枚数を超えます。先に一部の画像を削除してください',
 'detail.title_required': 'タイトルは空にできません',
 'detail.role_missing': '役割が見つかりません',
 'detail.invalid_effort': '無効な推論の強度',

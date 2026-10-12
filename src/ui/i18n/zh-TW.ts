@@ -118,6 +118,7 @@ export const zhTW = {
 'detail.body_not_object': '請求體必須是 JSON 物件',
 'detail.bad_json': 'JSON 格式錯誤',
 'detail.file_corrupt': '{field} 的內容已損壞無法讀取，請修正或從備份還原',
+'detail.draft_images_full': '輸入框的圖片加上這則指示的圖片會超過每次可附的張數，請先移除部分圖片',
 'detail.title_required': '標題不得為空',
 'detail.role_missing': '角色不存在',
 'detail.invalid_effort': '思考強度不合法',

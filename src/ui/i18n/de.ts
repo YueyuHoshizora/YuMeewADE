@@ -275,6 +275,7 @@ export const de: Record<MessageKey, string> = {
 'detail.body_not_object': 'Anfrageinhalt muss ein JSON-Objekt sein',
 'detail.bad_json': 'Ungültiges JSON',
 'detail.file_corrupt': '{field} ist beschädigt und kann nicht gelesen werden; reparieren Sie die Datei oder stellen Sie sie aus einer Sicherung wieder her',
+'detail.draft_images_full': 'Die Bilder im Eingabefeld und die Bilder dieser Anweisung überschreiten zusammen das Limit pro Nachricht; entfernen Sie zuerst einige Bilder',
 'detail.title_required': 'Titel darf nicht leer sein',
 'detail.role_missing': 'Rolle nicht gefunden',
 'detail.invalid_effort': 'Ungültiger Denkaufwand',

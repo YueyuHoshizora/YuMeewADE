@@ -275,6 +275,7 @@ export const fr: Record<MessageKey, string> = {
 'detail.body_not_object': 'Le corps de la requête doit être un objet JSON',
 'detail.bad_json': 'JSON invalide',
 'detail.file_corrupt': '{field} est corrompu et illisible ; réparez-le ou restaurez-le depuis une sauvegarde',
+'detail.draft_images_full': 'Les images du champ de saisie et celles de cette instruction dépasseraient la limite par message ; retirez d\'abord quelques images',
 'detail.title_required': 'Le titre ne peut pas être vide',
 'detail.role_missing': 'Rôle introuvable',
 'detail.invalid_effort': 'Effort de raisonnement invalide',

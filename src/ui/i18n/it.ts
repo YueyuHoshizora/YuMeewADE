@@ -275,6 +275,7 @@ export const it: Record<MessageKey, string> = {
 'detail.body_not_object': 'Il corpo della richiesta deve essere un oggetto JSON',
 'detail.bad_json': 'JSON non valido',
 'detail.file_corrupt': '{field} è danneggiato e non può essere letto; correggilo o ripristinalo da un backup',
+'detail.draft_images_full': 'Le immagini nella casella di testo più quelle di questa istruzione supererebbero il limite per messaggio; rimuovi prima alcune immagini',
 'detail.title_required': 'Il titolo non può essere vuoto',
 'detail.role_missing': 'Ruolo non trovato',
 'detail.invalid_effort': 'Intensità di ragionamento non valida',

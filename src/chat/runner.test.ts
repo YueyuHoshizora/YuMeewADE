@@ -26,7 +26,7 @@ import { WorkflowService } from './workflows.ts';
 import { UsageHistory } from '../ai/usage-history.ts';
 import { AppError } from '../shared/errors.ts';
 import { saveContext, readContextManifest } from './context.ts';
-import { readDraft } from './drafts.ts';
+import { readDraft, updateDraft } from './drafts.ts';
 async function setup(ws: Workspace, options: MockOptions = {}, runSeconds = 600, overrides: Partial<RunnerDeps> = {}) {
   const projects = new ProjectLedger(ws); await projects.create({ name: 'P' });
   const tasks = new TaskLedger(ws); const task = await tasks.create('P', { title: 'T', workspace: 'direct' });
@@ -204,6 +204,19 @@ test('unqueue with restore returns queued images to the task draft so the instru
   assert.deepEqual((await readDraft(ws, 'P', s.task.id)).images.map(item => item.id), [image]);
   await s.runner.unqueue('P', s.task.id, dropped.request);
   assert.deepEqual((await readDraft(ws, 'P', s.task.id)).images.map(item => item.id), [image], 'a plain removal does not touch the draft');
+  await s.runner.stop('P', s.task.id); await s.runner.whenIdle();
+}));
+test('unqueue with restore refuses instead of dropping images the full draft cannot take', () => withTmpWorkspace(async ws => {
+  const s = await setup(ws, { chunkMs: 5 }); await s.send('slow [slow]');
+  const id = (n: number) => `${String(n).padStart(8, '0')}-1111-4111-8111-111111111111.png`;
+  const queued = await s.send('two images', { mode: 'queue', images: [id(90), id(91)] });
+  await updateDraft(ws, 'P', s.task.id, draft => { for (let n = 0; n < 9; n++) draft.images.push({ id: id(n), name: id(n), url: '' }); });
+  await assert.rejects(s.runner.unqueue('P', s.task.id, queued.request, true), { status: 409, detail: 'draft_images_full' });
+  assert.deepEqual((await s.store.readQueue('P', s.task.id)).map(item => item.images), [[id(90), id(91)]], 'the queued item and its images stay put');
+  assert.equal((await readDraft(ws, 'P', s.task.id)).images.length, 9);
+  await updateDraft(ws, 'P', s.task.id, draft => { draft.images.pop(); });
+  assert.deepEqual(await s.runner.unqueue('P', s.task.id, queued.request, true), []);
+  assert.deepEqual((await readDraft(ws, 'P', s.task.id)).images.slice(-2).map(item => item.id), [id(90), id(91)]);
   await s.runner.stop('P', s.task.id); await s.runner.whenIdle();
 }));
 test('codex model change starts new session, switching gets unseen handoff, completion approval revoked', () => withTmpWorkspace(async ws => {

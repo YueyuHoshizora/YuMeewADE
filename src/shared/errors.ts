@@ -52,6 +52,7 @@ export const DETAIL_MESSAGES = {
   body_not_object: '請求體必須是 JSON 物件',
   bad_json: 'JSON 格式錯誤',
   file_corrupt: '{field} 的內容已損壞無法讀取，請修正或從備份還原',
+  draft_images_full: '輸入框的圖片加上這則指示的圖片會超過每次可附的張數，請先移除部分圖片',
   title_required: '標題不得為空',
   role_missing: 'role 不存在',
   invalid_effort: 'effort 不合法',

@@ -798,7 +798,10 @@ export class ChatRunner extends EventEmitter {
       if (restore && item.images?.length) {
         const images = item.images;
         await updateDraft(this.deps.ws, p, t, draft => {
-          for (const image of images) if (draft.images.length < this.deps.limits.imagesPerSend && !draft.images.some(x => x.id === image)) draft.images.push({ id: image, name: image, url: '' });
+          const missing = images.filter(image => !draft.images.some(x => x.id === image));
+          // Dropping the overflow would lose those images: the queue item that still references them is removed below.
+          if (draft.images.length + missing.length > this.deps.limits.imagesPerSend) throw new AppError('conflict', 'draft_images_full');
+          for (const image of missing) draft.images.push({ id: image, name: image, url: '' });
         });
       }
       const q = await this.deps.store.updateQueue(p, t, q => {
