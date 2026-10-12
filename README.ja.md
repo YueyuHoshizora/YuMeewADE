@@ -229,7 +229,7 @@ HTTP JSON と SSE を使い、デスクトップ版と Web 版で完全に共通
 | `POST /api/accounts/remove` | App 登録 `{ai,id}` を削除。サーバー側ログイン取消ではない |
 | `POST /api/accounts/refresh` | `{}`：すべての登録アカウントを今すぐ取得。`UsageState` を返す |
 | `POST /api/settings`（アカウント切り替え） | `{activeAccounts:{[ai]:id}}`。App 専用スロットに適用、CLI の既定ログインは借用しない |
-| `POST /api/open` | システムでフォルダーやファイルを開く |
+| `POST /api/open` | フォルダーをシステムのファイルマネージャーで開く。ファイル（および macOS で `.app` など拡張子付きのフォルダー）は既定のアプリに渡さず、所在フォルダーで表示するだけ（スクリプトやプログラムを実行しないため） |
 | `POST /api/workspace` | ワークスペースのルートを切り替え（AI 実行中は拒否。使用中の設定ファイルに保存） |
 | `GET /api/ping` | デスクトップ版の起動確認 |
 

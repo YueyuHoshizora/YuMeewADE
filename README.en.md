@@ -229,7 +229,7 @@ HTTP JSON plus SSE, identical in desktop and web versions. Types are defined in 
 | `POST /api/accounts/remove` | Remove App registration `{ai,id}`; not server-side login revocation |
 | `POST /api/accounts/refresh` | `{}`: query all registered accounts now; returns `UsageState` |
 | `POST /api/settings` (account switch) | `{activeAccounts:{[ai]:id}}`; applies App-private account slot, never borrows a CLI default login |
-| `POST /api/open` | Open a folder or file using the system |
+| `POST /api/open` | Open a folder in the system file manager; files (and, on macOS, folders with an extension such as `.app`) are only revealed in their folder, never handed to a default handler that could run a script or program |
 | `POST /api/workspace` | Switch the workspace root (rejected while an AI is running; saved to the active config file) |
 | `GET /api/ping` | Desktop startup probe |
 

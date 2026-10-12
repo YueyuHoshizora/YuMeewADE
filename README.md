@@ -236,7 +236,7 @@ HTTP JSON 加 SSE，桌面版與網頁版完全相同。型別定義在 [`src/sh
 | `POST /api/accounts/remove` | 移除 App 帳號 `{ai,id}`，不代表服務端撤銷登入 |
 | `POST /api/accounts/refresh` | `{}`：立即重新查詢所有已登錄帳號；回 `UsageState` |
 | `POST /api/settings`（帳號切換） | `{activeAccounts:{[ai]:id}}`；套用 App 私有帳號槽，無 CLI 預設帳號借用 |
-| `POST /api/open` | 用系統開啟資料夾或檔案 |
+| `POST /api/open` | 用系統檔案管理員開啟資料夾；檔案（以及 macOS 上帶副檔名的資料夾，例如 `.app`）只在所在資料夾中顯示，不交給預設程式開啟，以免執行腳本或程式 |
 | `POST /api/workspace` | 切換工作區根目錄（AI 執行中拒絕；寫回目前採用的設定檔） |
 | `GET /api/ping` | 桌面版啟動探測 |
 
