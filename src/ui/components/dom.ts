@@ -7,8 +7,12 @@ export function el<K extends keyof HTMLElementTagNameMap>(tag: K, className = ''
 }
 export function button(label: string, action: () => unknown, className = ''): HTMLButtonElement {
   const node = el('button', className, label); node.type = 'button';
-  node.onclick = () => { void run(async () => { node.disabled = true; try { await action(); } finally { node.disabled = false; } }); }; return node;
+  // Availability owned by the caller (see setLocked) survives the action, e.g. when the action re-renders and disables it.
+  node.onclick = () => { void run(async () => { node.disabled = true; try { await action(); } finally { node.disabled = lockedButtons.has(node); } }); }; return node;
 }
+const lockedButtons = new WeakSet<HTMLButtonElement>();
+/** Sets a button's caller-owned availability; `button()` keeps it after its own action finishes. */
+export function setLocked(node: HTMLButtonElement, locked: boolean): void { node.disabled = locked; if (locked) lockedButtons.add(node); else lockedButtons.delete(node); }
 export function iconButton(icon: string, label: string, action: () => unknown, className = ''): HTMLButtonElement {
   const node = button(icon, action, className);
   node.setAttribute('aria-label', label);

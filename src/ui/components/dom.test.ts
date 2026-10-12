@@ -30,7 +30,7 @@ Object.defineProperty(globalThis, 'navigator', {
   configurable: true,
 });
 // Locale initialization reads browser globals, so import only after installing the fixture.
-const { iconButton, statusRegion, errorMessage, UserError } = await import('./dom.ts');
+const { button: makeButton, iconButton, setLocked, statusRegion, errorMessage, UserError } = await import('./dom.ts');
 const { ApiFailure } = await import('../api.ts');
 const { t } = await import('../i18n/index.ts');
 
@@ -46,6 +46,16 @@ test('icon controls expose a contextual accessible name and disable during their
   await pending.promise;
   assert.equal(button.disabled, false);
   assert.equal(button.attributes['aria-label'], 'Remove image: photo.png');
+});
+
+test('a button locked by its own action stays disabled afterwards until unlocked', async () => {
+  // E.g. "detach" re-renders a closed session and must not come back enabled when its action ends.
+  const control: HTMLButtonElement = makeButton('Stop', async () => { setLocked(control, true); });
+  const node = control as unknown as Element;
+  node.onclick!(); await new Promise(resolve => setImmediate(resolve));
+  assert.equal(node.disabled, true);
+  setLocked(control, false);
+  assert.equal(node.disabled, false);
 });
 
 test('status regions announce atomic polite updates and start empty', () => {
