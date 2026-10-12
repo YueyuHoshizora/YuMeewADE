@@ -21,6 +21,13 @@ test('EditorConfig subset applies scoped globs, order, tab widths and validation
   assert.deepEqual(applyEditorConfig(config, 'src/a.ts', DEFAULT_EDITOR_FORMAT), { tabSize: 3, insertSpaces: false, eol: 'crlf' });
   assert.deepEqual(applyEditorConfig('[src/*.ts]\nindent_size = 7\n', 'lib/a.ts', DEFAULT_EDITOR_FORMAT), DEFAULT_EDITOR_FORMAT);
   assert.equal(applyEditorConfig('[*.ts]\nindent_size = 7\n[*.ts]\nindent_size = unset\n', 'a.ts', DEFAULT_EDITOR_FORMAT).tabSize, 4);
+  // A leading `/` anchors to the .editorconfig folder; `*` (and `src/*`) include dotfiles; literal dot segments match themselves.
+  assert.equal(applyEditorConfig('[/foo.txt]\nindent_size = 2\n', 'nested/foo.txt', DEFAULT_EDITOR_FORMAT).tabSize, 4);
+  assert.equal(applyEditorConfig('[/foo.txt]\nindent_size = 2\n', 'foo.txt', DEFAULT_EDITOR_FORMAT).tabSize, 2);
+  assert.equal(applyEditorConfig('[*]\nindent_size = 2\n', '.hidden', DEFAULT_EDITOR_FORMAT).tabSize, 2);
+  assert.equal(applyEditorConfig('[src/*]\nindent_size = 2\n', 'src/.eslintrc', DEFAULT_EDITOR_FORMAT).tabSize, 2);
+  assert.equal(applyEditorConfig('[.eslintrc]\nindent_size = 2\n', 'deep/.eslintrc', DEFAULT_EDITOR_FORMAT).tabSize, 2);
+  assert.equal(applyEditorConfig('[.eslintrc]\nindent_size = 2\n', 'eslintrc', DEFAULT_EDITOR_FORMAT).tabSize, 4);
   assert.throws(() => applyEditorConfig('[*]\nindent_size = 99\n', 'a.ts', DEFAULT_EDITOR_FORMAT));
   assert.throws(() => validateEditorFormat({ tabSize: 0, insertSpaces: true, eol: 'lf' }));
   assert.throws(() => validateEditorFormat({ tabSize: 4, insertSpaces: true, eol: 'cr' }));

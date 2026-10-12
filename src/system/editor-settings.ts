@@ -32,9 +32,15 @@ export function applyEditorConfig(text: string, relative: string, fallback: Edit
     const line = raw.trim(); if (!line || /^[#;]/u.test(line)) continue;
     if (line.startsWith('[')) {
       if (++sections > 100 || !line.endsWith(']')) throw new AppError('bad_request');
-      const pattern = line.slice(1, -1).replace(/^\//u, '');
+      const section = line.slice(1, -1);
+      // EditorConfig: a pattern containing `/` (including a leading one) is matched against the path relative to this
+      // file; one without matches a file name at any depth.
+      const anchored = section.includes('/'); const pattern = section.replace(/^\//u, '');
       if (!pattern || pattern.length > 500 || pattern.includes('..') || pattern.includes('\\')) throw new AppError('bad_request');
-      matches = path.matchesGlob(pattern.includes('/') ? relative : path.posix.basename(relative), pattern); continue;
+      // `*` matches dotfiles in EditorConfig, but not in Node's glob: a placeholder stands in for each leading dot on
+      // both sides, so literal `.name` segments still match only themselves.
+      const undot = (value: string): string => value.replace(/(^|\/)\./gu, '$1\uE000');
+      matches = path.matchesGlob(undot(anchored ? relative : path.posix.basename(relative)), undot(pattern)); continue;
     }
     const equal = line.indexOf('='); if (equal < 0) continue;
     const key = line.slice(0, equal).trim().toLowerCase(); const value = line.slice(equal + 1).trim().toLowerCase();
