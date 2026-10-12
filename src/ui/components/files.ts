@@ -72,6 +72,8 @@ export function openFileBrowser(project: string, task: string, workspace = activ
   if (browsers.size >= 12) throw new UserError(t('ew.recoveryLimit'));
   const ids: Record<string, string> = { project, ...(task ? { task } : {}) }; let storageKey = ''; let persistenceEnabled = false;
   const buffers = new Map<string, EditorRecovery>(); const views: { path: string | undefined; content: EditorContent; preview: FilePreview; tabs: HTMLDivElement; node: HTMLDivElement }[] = [];
+  // Created with the layout controls further down; the split ratio only matters once a second pane exists.
+  let splitLabel: HTMLElement | undefined;
   const formats = new Map<string, EditorResolvedFormatPreferences>();
   const dialog = el('section', 'editor-workbench'); const results = el('div', 'editor-file-tree'); const output = el('div', 'editor-problems'); const panes = el('div', 'editor-panes'); let focused = 0;
   const filter = input('', t('files.search')); const sourceSearch = input('', t('ew.search')); const replacement = input('', t('ew.replacement'));
@@ -279,6 +281,7 @@ export function openFileBrowser(project: string, task: string, workspace = activ
         button(t('editorFront.closeOthers'), () => closeTabs(index, paneTabs[index]!.filter(other => other.path !== tab.path && !other.pinned).map(other => other.path))),
         button(t('editorFront.closeRight'), () => closeTabs(index, paneTabs[index]!.slice(paneTabs[index]!.indexOf(tab) + 1).filter(other => !other.pinned).map(other => other.path))));
     }));
+    if (splitLabel) splitLabel.hidden = views.length !== 2;
   }
   function activate(path: string, index = focused, line?: number, character = 0): void {
     if (editReserved) return;
@@ -716,14 +719,15 @@ export function openFileBrowser(project: string, task: string, workspace = activ
   window.addEventListener('yumeewade:workbench-panels', mountPanels); mountPanels();
   const dock = button(t('editorUI.dock'), () => { layout.dock = layout.dock === 'right' ? 'bottom' : 'right'; applyLayout(); });
   let layout = normalizeLayout(undefined);
-  const resize = input(); resize.type = 'range'; resize.min = '20'; resize.max = '80'; resize.value = '50'; resize.setAttribute('aria-label', t('editorUI.resize'));
+  const resize = input(); resize.type = 'range'; resize.min = '20'; resize.max = '80'; resize.value = '50';
   resize.oninput = () => { layout.width = Number(resize.value); applyLayout(); };
-  const treeResize = input(); treeResize.type = 'range'; treeResize.min = '20'; treeResize.max = '60'; treeResize.value = String(layout.tree); treeResize.setAttribute('aria-label', `${t('files.title')} · ${t('editorUI.resize')}`);
+  const treeResize = input(); treeResize.type = 'range'; treeResize.min = '20'; treeResize.max = '60'; treeResize.value = String(layout.tree);
   treeResize.oninput = () => { layout.tree = Number(treeResize.value); applyLayout(); };
-  const splitResize = input(); splitResize.type = 'range'; splitResize.min = '20'; splitResize.max = '80'; splitResize.value = '50'; splitResize.setAttribute('aria-label', `${t('ew.split')} · ${t('editorUI.resize')}`);
+  const splitResize = input(); splitResize.type = 'range'; splitResize.min = '20'; splitResize.max = '80'; splitResize.value = '50';
   splitResize.oninput = () => { if (views.length === 2) { views[0]!.node.style.flex = splitResize.value; views[1]!.node.style.flex = String(100 - Number(splitResize.value)); } schedulePersist(); };
-  // The sliders carry no visible label; show the accessible name as a tooltip too.
-  for (const slider of [resize, treeResize, splitResize]) slider.title = slider.getAttribute('aria-label')!;
+  const labeled = (text: string, slider: HTMLInputElement): HTMLLabelElement => { const label = el('label', 'range-label'); label.append(el('span', 'muted', text), slider); return label; };
+  const resizeLabel = labeled(t('editorUI.resize'), resize); const treeLabel = labeled(t('ew.treeWidth'), treeResize);
+  splitLabel = labeled(t('ew.splitRatio'), splitResize); splitLabel.hidden = views.length !== 2;
   function applyLayout(): void {
     if (!workbenchMount) return;
     workbenchMount.style.width = layout.dock === 'right' ? `${layout.width}%` : '100%'; workbenchMount.dataset.dock = layout.dock;
@@ -732,8 +736,8 @@ export function openFileBrowser(project: string, task: string, workspace = activ
     if (views.length === 2) splitResize.value = views[0]!.node.style.flex || '50';
     try { if (storageKey) localStorage.setItem(`${storageKey}:layout`, JSON.stringify(layout)); } catch { output.append(el('p', 'warning', t('ew.recoveryLimit'))); }
   }
-  dialog.append(row(el('h2', '', t('files.title')), dock, resize), actions, filter);
-  dialog.prepend(row(treeResize, splitResize));
+  dialog.append(row(el('h2', '', t('files.title')), dock, resizeLabel), actions, filter);
+  dialog.prepend(row(treeLabel, splitLabel));
   dialog.append(conflictHost);
   const body = el('div', 'editor-workbench-body'); body.append(results, panes); dialog.append(body, output, panelHost);
   (workbenchMount ?? document.body).append(dialog);
