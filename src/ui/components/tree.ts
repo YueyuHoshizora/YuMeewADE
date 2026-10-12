@@ -140,7 +140,8 @@ export function tree(context: ViewContext): HTMLElement {
     return wrap;
   }
   function ordered(parent: string): ProjectView[] {
-    const position = new Map<string, number>(); (state.order[parent] ?? []).forEach((id, index) => { if (!position.has(id)) position.set(id, index); });
+    // A project may be named `constructor`: an inherited Object member must not stand in for its child order.
+    const position = new Map<string, number>(); (Object.hasOwn(state.order, parent) ? state.order[parent]! : []).forEach((id, index) => { if (!position.has(id)) position.set(id, index); });
     const at = (id: string) => position.get(id) ?? Infinity;
     return state.projects.filter(p => p.parent === parent).sort((a, b) => Number(b.pinned) - Number(a.pinned) || at(a.id) - at(b.id));
   }

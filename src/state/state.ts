@@ -58,9 +58,10 @@ export async function buildState(app: App): Promise<StateSnapshot> {
     ]);
     return { ...project, tasks: taskViews, currentPhase, phaseOffer: Boolean(currentPhase) && group.length > 0 && group.every((task) => task.state === '完成') && continued !== phaseKey(group), isGit, bodyPath, bodyMissing: !body?.isDirectory(), dir: app.ws.projectDir(project.id), startPick, pinned: savedOrder.pins.includes(project.id) };
   }));
-  const order: Record<string, string[]> = {};
+  // Keyed by project name, which may be `constructor` or `__proto__`: no inherited keys may stand in for a parent.
+  const order: Record<string, string[]> = Object.create(null);
   for (const project of projects) {
-    if (order[project.parent]) continue;
+    if (Object.hasOwn(order, project.parent)) continue;
     const ids = projects.filter((child) => child.parent === project.parent).map((child) => child.id);
     const listed = (savedOrder.order[project.parent] ?? []).filter((id, index, list) => ids.includes(id) && list.indexOf(id) === index);
     order[project.parent] = [...listed, ...ids.filter((id) => !listed.includes(id))];

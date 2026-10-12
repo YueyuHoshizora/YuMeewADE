@@ -59,6 +59,23 @@ test('external task edits invalidate the state cache', async () => {
   } finally { await f.close(); }
 });
 
+test('projects named like Object members keep their own child order', async () => {
+  const f = await fixture();
+  try {
+    for (const name of ['constructor', '__proto__']) {
+      await f.app.projects.create({ name });
+      for (const child of [`${name}-a`, `${name}-b`]) await f.app.projects.create({ name: child, parent: name });
+      await f.app.order.setOrder(name, [`${name}-b`, `${name}-a`]);
+      assert.deepEqual((await f.app.order.get()).order[name], [`${name}-b`, `${name}-a`], 'saved order survives a reread');
+    }
+    f.app.changed();
+    // Over HTTP the snapshot is parsed again, as the sidebar sees it.
+    const order = JSON.parse(JSON.stringify((await f.app.state()).order)) as Record<string, string[]>;
+    assert.ok(Object.hasOwn(order, 'constructor') && Object.hasOwn(order, '__proto__'));
+    assert.deepEqual([order['constructor'], order['__proto__']], [['constructor-b', 'constructor-a'], ['__proto__-b', '__proto__-a']]);
+  } finally { await f.close(); }
+});
+
 test('unparseable ledger files are reported instead of silently disappearing, and clear once fixed', async () => {
   const f = await fixture();
   try {

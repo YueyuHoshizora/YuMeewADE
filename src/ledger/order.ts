@@ -13,7 +13,8 @@ export class OrderStore {
     const order = value.order ?? {}; const pins = value.pins ?? [];
     const strings = (list: unknown): boolean => Array.isArray(list) && list.every(id => typeof id === 'string');
     if (!order || typeof order !== 'object' || Array.isArray(order) || !Object.values(order).every(strings) || !strings(pins)) throw new AppError('internal', 'file_corrupt', { field: path.basename(this.file) });
-    return { order, pins };
+    // Keys are project names, and `__proto__`／`constructor` are valid ones: without a prototype they stay plain data.
+    return { order: Object.assign(Object.create(null) as Record<string, string[]>, order), pins };
   }
   async get(): Promise<OrderData> {
     return this.checked(await readJson<Partial<OrderData>>(this.file, {}));
