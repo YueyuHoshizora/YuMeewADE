@@ -123,7 +123,10 @@ export function registerLedgerRoutes(router: Router, app: App): void {
   });
   router.post('/api/phase/continue', async ({ body }) => {
     const project = reqString(body, 'project', 120);
+    if (typeof body.phase !== 'string') throw new AppError('bad_request', 'field_type', { field: 'phase' });
     const result = await app.projects.get(project);
+    // A stale page must not silence the completion offer of a phase it never showed.
+    if (app.projects.currentPhase(result) !== body.phase) throw new AppError('conflict', 'phase_changed');
     await app.completion.setPhaseContinued(project, phaseKey(phaseTasks(result, await app.tasks.list(project))));
     await changed('phase.continue', project);
     return result;

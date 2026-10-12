@@ -298,7 +298,7 @@ export function projectView(context: ViewContext, project: ProjectView, params: 
     }
     if (project.phaseOffer) overview.append(card(t('project.phaseComplete'), row(
       button(t('project.nextPhase'), async () => { await request('/api/phase/next', { project: project.id, phase: project.currentPhase }); await context.refresh(); }, 'primary'),
-      button(t('project.continuePhase'), async () => { await request('/api/phase/continue', { project: project.id }); await context.refresh(); }),
+      button(t('project.continuePhase'), async () => { await request('/api/phase/continue', { project: project.id, phase: project.currentPhase }); await context.refresh(); }),
     )));
     for (const id of selected) if (!project.tasks.some(task => task.id === id)) selected.delete(id);
     overview.append(bulkToolbar());

@@ -111,7 +111,9 @@ test('phase offer, continuation key, legacy fallback, order and pins', async () 
   try {
     await s.api('POST', '/api/task/update', { project: p.id, task: t.id, patch: { state: '完成' } });
     assert.equal((await state()).projects[0]!.phaseOffer, true);
-    await s.api('POST', '/api/phase/continue', { project: p.id });
+    assert.equal((await s.api('POST', '/api/phase/continue', { project: p.id, phase: '實作' })).status, 409);
+    assert.equal((await state()).projects[0]!.phaseOffer, true);
+    await s.api('POST', '/api/phase/continue', { project: p.id, phase: '計畫' });
     assert.equal((await state()).projects[0]!.phaseOffer, false);
     const next = (await s.api('POST', '/api/task/new', { project: p.id, title: 'Next', phase: '計畫' })).json as Task;
     await s.api('POST', '/api/task/update', { project: p.id, task: next.id, patch: { state: '完成' } });
