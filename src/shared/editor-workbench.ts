@@ -4,8 +4,9 @@ export interface EditorSegment { text: string; revision: string; offset: number;
 /**
  * `range.sha256` hashes the bytes the edit wrote at `range`: a restore only applies while those exact bytes are still there.
  * `bom: false` marks text taken from a UTF-16 file without a byte order mark, so recreating it keeps it unmarked.
+ * `mode` holds the file's permission bits (e.g. 0o755), so recreating a deleted file keeps it executable.
  */
-export interface EditorHistoryEntry { id: string; path: string; revision: string; text: string; timestamp: number; reason: 'save' | 'apply' | 'mutate' | 'segment'; encoding?: EditorEncoding; bom?: boolean; range?: { offset: number; end: number; sha256?: string } }
+export interface EditorHistoryEntry { id: string; path: string; revision: string; text: string; timestamp: number; reason: 'save' | 'apply' | 'mutate' | 'segment'; encoding?: EditorEncoding; bom?: boolean; mode?: number; range?: { offset: number; end: number; sha256?: string } }
 export type EditorAction = 'definition' | 'references' | 'diagnostics' | 'completion' | 'hover' | 'rename' | 'format' | 'codeActions' | 'documentSymbols' | 'workspaceSymbols' | 'signatureHelp' | 'implementation' | 'callHierarchy' | 'inlayHints';
 export interface EditorBufferSnapshot { path: string; revision: string; text: string }
 export interface EditorChange { path: string; revision: string; text: string; baseText?: string }

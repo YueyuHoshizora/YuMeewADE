@@ -21,3 +21,16 @@ test('persistent history restores with CAS and retains deleted files', () => wit
   const deleted = await reopened.history('P', '', first.path); await reopened.restoreHistory('P', '', first.path, deleted.entries[0]!.id, 'missing'); assert.equal(await fs.readFile(file, 'utf8'), 'before');
   editor.dispose(); reopened.dispose();
 }));
+
+test('a deleted executable recreated from history keeps its permission bits', { skip: process.platform === 'win32' }, () => withTmpWorkspace(async ws => {
+  const projects = new ProjectLedger(ws); const tasks = new TaskLedger(ws); await projects.create({ name: 'P' });
+  const editor = new EditorService(new WorktreeService({ ws, projects, tasks, diffBytes: 100000 }), tasks, {});
+  const file = path.join(ws.projectDir('P'), 'run.sh');
+  try {
+    await fs.writeFile(file, '#!/bin/sh\necho hi\n'); await fs.chmod(file, 0o755);
+    const current = await editor.read('P', '', 'run.sh');
+    await editor.mutate('P', '', { action: 'delete', path: 'run.sh', confirmation: 'run.sh', revision: current.revision });
+    await editor.restoreHistory('P', '', 'run.sh', (await editor.history('P', '', 'run.sh')).entries[0]!.id, 'missing');
+    assert.equal((await fs.stat(file)).mode & 0o777, 0o755);
+  } finally { editor.dispose(); }
+}));
