@@ -40,7 +40,7 @@ export class LanguageClient {
         try { this.receive(JSON.parse(body.toString()) as Record<string, unknown>); } catch { this.dispose(); return; }
       }
     });
-    this.ready = this.request('initialize', { processId: process.pid, rootUri: pathToFileURL(root).href, capabilities: { textDocument: { publishDiagnostics: {}, diagnostic: {}, documentSymbol: { hierarchicalDocumentSymbolSupport: true } }, workspace: { symbol: {} }, general: { positionEncodings: ['utf-16'] } }, workspaceFolders: [{ uri: pathToFileURL(root).href, name: 'workspace' }] }).then(result => {
+    this.ready = this.request('initialize', { processId: process.pid, rootUri: pathToFileURL(root).href, capabilities: { textDocument: { publishDiagnostics: {}, diagnostic: {}, signatureHelp: {}, implementation: {}, callHierarchy: {}, inlayHint: {}, documentSymbol: { hierarchicalDocumentSymbolSupport: true } }, workspace: { symbol: {} }, general: { positionEncodings: ['utf-16'] } }, workspaceFolders: [{ uri: pathToFileURL(root).href, name: 'workspace' }] }).then(result => {
       const capabilities = (result as { capabilities?: Record<string, unknown> } | null)?.capabilities;
       this.capabilities = capabilities && typeof capabilities === 'object' && !Array.isArray(capabilities) ? capabilities : {};
       this.notify('initialized', {}); return result;

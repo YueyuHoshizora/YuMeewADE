@@ -52,7 +52,7 @@ export function registerEditorRoutes(router: Router, app: App): void {
       await app.editor.close(reqString(body, 'project', 120), body.task === undefined ? '' : reqString(body, 'task', 120), reqString(body, 'path', 1000));
       return { ok: true };
     }
-    if (typeof action !== 'string' || !['definition', 'references', 'diagnostics', 'completion', 'hover', 'rename', 'format', 'codeActions', 'documentSymbols', 'workspaceSymbols'].includes(action)) throw new AppError('bad_request');
+    if (typeof action !== 'string' || !['definition', 'references', 'diagnostics', 'completion', 'hover', 'rename', 'format', 'codeActions', 'documentSymbols', 'workspaceSymbols', 'signatureHelp', 'implementation', 'callHierarchy', 'inlayHints'].includes(action)) throw new AppError('bad_request');
     await app.trust.assertExecutable(reqString(body, 'project', 120));
     if (body.newName !== undefined && (typeof body.newName !== 'string' || body.newName.length > 200)) throw new AppError('bad_request');
     if (action === 'rename' && (typeof body.newName !== 'string' || !body.newName || body.newName.length > 200)) throw new AppError('bad_request');
