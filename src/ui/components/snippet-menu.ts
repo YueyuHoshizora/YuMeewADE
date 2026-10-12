@@ -1,5 +1,5 @@
 import { t } from '../i18n/index.ts';
-import { button, el, input, modal, readLocal, row, storeLocal, toast } from './dom.ts';
+import { button, el, iconButton, input, modal, readLocal, row, storeLocal, toast } from './dom.ts';
 import { addSnippet, insertSnippet, removeSnippet, sanitizeSnippets } from './snippets.ts';
 
 /** 常用指示：內建幾則，加上使用者自己存的（只存在這個瀏覽器／桌面 App 的 localStorage）。 */
@@ -20,7 +20,7 @@ export function snippetsButton(draft: HTMLTextAreaElement): HTMLButtonElement {
       const item = (name: string, text: string, onRemove?: () => void) => {
         const line = row(button(name, () => use(text), 'snippet-use'));
         line.title = text;
-        if (onRemove) line.append(button('×', onRemove, 'subtle'));
+        if (onRemove) line.append(iconButton('×', `${t('common.remove')}: ${name}`, onRemove, 'subtle'));
         return line;
       };
       const name = input('', t('snip.name'));
