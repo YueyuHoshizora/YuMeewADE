@@ -15,6 +15,9 @@ export interface WorkbenchEditorHost {
   snapshot(): { path: string; revision: string; text: string; selection: { from: number; to: number } } | null;
   reserve(expected: { path: string; revision: string; text: string }): (() => void) | null;
   applyEdits(expected: { path: string; revision: string; text: string }, edits: { from: number; to: number; text: string }[]): boolean;
+  snapshots(): { path: string; revision: string; text: string; selection: { from: number; to: number } }[];
+  reserveAll(expected: { path: string; revision: string; text: string }[]): (() => void) | null;
+  applyEditsAll(changes: { expected: { path: string; revision: string; text: string }; edits: { from: number; to: number; text: string }[] }[]): boolean;
 }
 export interface WorkbenchPanelContext { project: string; task: string; node: HTMLElement; open(path: string, line?: number): Promise<void>; editor: WorkbenchEditorHost; }
 const panelFactories = new Map<string, (context: WorkbenchPanelContext) => HTMLElement>();
@@ -331,28 +334,34 @@ export function openFileBrowser(project: string, task: string, workspace = activ
     await request('/api/task/context', { ...ids, context });
   }
   async function apply(changes: EditorChange[]): Promise<void> {
-    if (changes.some(change => { const buffer = buffers.get(change.path); return buffer && dirty(buffer); })) throw new Error(t('ew.saveFirst'));
-    const preview = area(changes.map(change => `${change.path}\n${change.text}`).join('\n\n')); preview.readOnly = true;
+    views.forEach((_, index) => capture(index));
+    const expected = [];
+    for (const change of changes) {
+      if (!buffers.has(change.path)) {
+        const document = await request<EditorDocument>(query('/api/editor/file', { ...ids, path: change.path }));
+        buffers.set(change.path, { document, text: document.text, start: 0, end: 0, top: 0, left: 0 });
+      }
+      const buffer = buffers.get(change.path)!;
+      const base = (change as EditorChange & { baseText?: string }).baseText ?? buffer.document.text;
+      if (buffer.document.revision !== change.revision || buffer.text !== base) throw new Error(t('detail.editor_conflict'));
+      expected.push({ path: change.path, revision: change.revision, text: base });
+    }
+    const preview = area(changes.map(change => `${change.path}\n${buffers.get(change.path)!.text}\n→\n${change.text}`).join('\n\n')); preview.readOnly = true;
     output.replaceChildren(preview, button(t('ew.apply'), async () => {
       if (!(await confirmModal(t('ew.apply'), t('ew.confirm'), t('ew.apply')))) return;
-      views.forEach((_, index) => capture(index));
-      if (changes.some(change => { const buffer = buffers.get(change.path); return buffer && dirty(buffer); })) throw new Error(t('ew.saveFirst'));
-      if (editReserved) throw new Error(t('detail.editor_conflict'));
-      pendingWrites++;
+      const release = editor.reserveAll(expected);
+      if (!release) throw new Error(t('detail.editor_conflict'));
       try {
-        const snapshots = new Map(changes.map(change => [change.path, buffers.get(change.path)?.text]));
-        const documents = await request<EditorDocument[]>('/api/editor/apply', { ...ids, changes });
-        views.forEach((_, index) => capture(index));
-        for (const document of documents) { const buffer = buffers.get(document.path); if (buffer) { const unchanged = buffer.text === snapshots.get(document.path); buffer.document = document; if (unchanged) buffer.text = document.text; } }
-        for (let index = 0; index < views.length; index++) { const path = views[index]!.path; if (path) { views[index]!.path = undefined; activate(path, index); } }
-        persist(); output.replaceChildren();
-      } finally { pendingWrites--; }
+        if (!editor.applyEditsAll(changes.map((change, index) => ({ expected: expected[index]!, edits: [{ from: 0, to: expected[index]!.text.length, text: change.text }] })))) throw new Error(t('detail.editor_conflict'));
+        output.replaceChildren(); persist(); refreshTabs();
+      } finally { release(); }
     }));
   }
   const newName = input('', t('ew.newName'));
   async function language(action: EditorAction): Promise<void> {
     const buffer = current(); if (!buffer) return; const snapshot = buffer.text; const start = buffer.start; const end = buffer.end; const before = snapshot.slice(0, start).split('\n');
-    const result = await request<EditorActionResult>('/api/editor/language', { ...ids, path: buffer.document.path, text: buffer.text, line: before.length - 1, character: before.at(-1)!.length, action, newName: newName.value });
+    views.forEach((_, index) => capture(index));
+    const result = await request<EditorActionResult>('/api/editor/language', { ...ids, path: buffer.document.path, revision: buffer.document.revision, text: buffer.text, buffers: editor.snapshots().map(({ path, revision, text }) => ({ path, revision, text })), line: before.length - 1, character: before.at(-1)!.length, action, newName: newName.value });
     output.replaceChildren(...result.locations.map(location => button(`${location.path}:${location.line + 1}`, () => show(location.path, location.line, location.character))), ...result.diagnostics.map(item => button(`${item.line + 1} ${item.message}`, () => show(buffer.document.path, item.line, item.character))));
     for (const symbol of result.symbols ?? []) output.append(button(`${symbol.container ? `${symbol.container} · ` : ''}${symbol.name} · ${symbol.path}:${symbol.line + 1}`, () => show(symbol.path, symbol.line, symbol.character)));
     if (result.hover) output.append(el('pre', '', result.hover));
@@ -467,6 +476,32 @@ export function openFileBrowser(project: string, task: string, workspace = activ
   const panelHost = el('div', 'editor-extension-panels');
   const editor: WorkbenchEditorHost = {
     snapshot: () => { const buffer = current(); if (!buffer) return null; return { path: buffer.document.path, revision: buffer.document.revision, text: buffer.text, selection: { from: buffer.start, to: buffer.end } }; },
+    snapshots: () => { views.forEach((_, index) => capture(index)); return [...buffers.values()].filter(buffer => !buffer.document.readonly && !buffer.document.binary && !buffer.document.truncated && !conflicts.has(buffer.document.path) && !unresolved.has(buffer.document.path)).map(buffer => ({ path: buffer.document.path, revision: buffer.document.revision, text: buffer.text, selection: { from: buffer.start, to: buffer.end } })); },
+    reserveAll: expected => {
+      views.forEach((_, index) => capture(index));
+      if (disposed || editReserved || pendingWrites || syncing || !expected.length || new Set(expected.map(item => item.path)).size !== expected.length || expected.some(item => {
+        const buffer = buffers.get(item.path);
+        return !buffer || buffer.document.revision !== item.revision || buffer.text !== item.text || buffer.document.readonly || buffer.document.binary || buffer.document.truncated || conflicts.has(item.path) || unresolved.has(item.path);
+      })) return null;
+      editReserved = true; dialog.inert = true;
+      const editable = views.map(view => ({ content: view.content, readonly: view.content.readOnly }));
+      for (const view of editable) view.content.readOnly = true;
+      let released = false;
+      return () => { if (released) return; released = true; editReserved = false; dialog.inert = false; for (const view of editable) view.content.readOnly = view.readonly; if (disposeDeferred) dispose(); };
+    },
+    applyEditsAll: changes => {
+      views.forEach((_, index) => capture(index));
+      const plans = changes.map(change => ({ ...change, buffer: buffers.get(change.expected.path), sorted: [...change.edits].sort((a, b) => a.from - b.from) }));
+      if (new Set(plans.map(plan => plan.expected.path)).size !== plans.length || plans.some(({ buffer, expected, sorted }) => !buffer || buffer.document.revision !== expected.revision || buffer.text !== expected.text || buffer.document.readonly || buffer.document.binary || buffer.document.truncated || conflicts.has(expected.path) || unresolved.has(expected.path) || sorted.some((edit, index) => !Number.isSafeInteger(edit.from) || !Number.isSafeInteger(edit.to) || edit.from < 0 || edit.to < edit.from || edit.to > expected.text.length || typeof edit.text !== 'string' || (index > 0 && edit.from < sorted[index - 1]!.to)))) return false;
+      for (const { buffer, expected, sorted } of plans) {
+        let text = expected.text;
+        for (const edit of [...sorted].reverse()) text = text.slice(0, edit.from) + edit.text + text.slice(edit.to);
+        buffer!.text = text;
+        for (const view of views) if (view.path === expected.path) { view.content.view.dispatch({ changes: sorted.map(edit => ({ from: edit.from, to: edit.to, insert: edit.text })), annotations: isolateHistory.of('full') }); view.preview.update(text); }
+        scheduleDiagnostics(expected.path);
+      }
+      persist(); refreshTabs(); return true;
+    },
     reserve: expected => {
       const buffer = current();
       if (disposed || editReserved || pendingWrites || syncing || !buffer || buffer.document.path !== expected.path || buffer.document.revision !== expected.revision || buffer.text !== expected.text || views[focused]!.content.readOnly || conflicts.has(expected.path) || unresolved.has(expected.path)) return null;
