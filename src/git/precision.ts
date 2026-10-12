@@ -18,7 +18,9 @@ export function parseHunks(patch: string): GitDiffHunk[] {
 /** Rebuild a patch only from server-generated changed lines. No client patch or path is executed. */
 export function selectedPatch(patch: string, selected: number[]): string {
   const hunks = parseHunks(patch); const ids = new Set(selected);
-  if (!ids.size || ids.size !== selected.length || selected.some(id => !Number.isSafeInteger(id) || !hunks.some(h => h.lines.some(l => l.id === id && l.kind !== 'context')))) throw new AppError('bad_request', 'git_workbench_path');
+  // One pass builds the selectable ids, so validating a large selection stays linear in the diff size.
+  const changed = new Set(hunks.flatMap(h => h.lines.filter(l => l.kind !== 'context').map(l => l.id)));
+  if (!ids.size || ids.size !== selected.length || selected.some(id => !Number.isSafeInteger(id) || !changed.has(id))) throw new AppError('bad_request', 'git_workbench_path');
   let header = patch.slice(0, patch.indexOf('@@ '));
   if (!header || /(?:rename from|rename to|Binary files|GIT binary patch)/.test(header)) throw new AppError('conflict', 'git_workbench_path');
   if (header.includes('deleted file mode') && ids.size !== hunks.reduce((count, h) => count + h.lines.filter(l => l.kind !== 'context').length, 0)) {
