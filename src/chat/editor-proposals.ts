@@ -169,7 +169,8 @@ export class EditorProposalService {
     validateFiles(input.files);
     if (typeof input.instruction !== 'string' || !input.instruction.trim() || input.instruction.length > (this.deps.promptChars ?? 100_000)) throw new AppError('bad_request');
     const settled = Promise.withResolvers<void>();
-    const entry: { run?: CliRun; stopped: boolean; done: Promise<void>; info: RunningInfo } = { stopped: false, done: settled.promise,
+    // `committed`: the proposal is being written; from then on stop() can no longer withdraw it and says so.
+    const entry: { run?: CliRun; stopped: boolean; committed?: boolean; done: Promise<void>; info: RunningInfo } = { stopped: false, done: settled.promise,
       info: { kind: 'proposal', project, task, request: randomUUID(), ai: input.ai, startedAt: new Date().toISOString(), ...(input.model ? { model: input.model } : {}), ...(input.effort ? { effort: input.effort } : {}) } };
     this.runs.set(key, entry); this.deps.onChanged?.(project, task);
     let directory: string | undefined; let timer: ReturnType<typeof setTimeout> | undefined;
@@ -214,7 +215,11 @@ export class EditorProposalService {
       await withFileLocks([file], async () => {
         const proposals = await this.readProposals(project); proposals.push(proposal);
         while (proposals.length > 12 || Buffer.byteLength(JSON.stringify(proposals)) > 12 * 1024 * 1024) proposals.shift();
-        await this.safeFile(project); await writeJson(file, proposals);
+        await this.safeFile(project);
+        // A stop (or close, or the time limit) that arrived during the final checks still withdraws the proposal.
+        if (entry.stopped || this.closed) throw new AppError('unavailable');
+        entry.committed = true;
+        await writeJson(file, proposals);
       });
       return proposal;
     } finally {
@@ -276,7 +281,7 @@ export class EditorProposalService {
       return { proposal, changes };
     });
   }
-  stop(project: string, task: string): boolean { const entry = this.runs.get(JSON.stringify([project, task])); if (!entry) return false; entry.stopped = true; entry.run?.stop(); return true; }
+  stop(project: string, task: string): boolean { const entry = this.runs.get(JSON.stringify([project, task])); if (!entry || entry.committed) return false; entry.stopped = true; entry.run?.stop(); return true; }
   async close(): Promise<void> {
     this.closed = true;
     const entries = [...this.runs.values()];

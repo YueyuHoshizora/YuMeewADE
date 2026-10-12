@@ -78,6 +78,13 @@ test('real exec multifile proposal is isolated, preserves dirty drafts and atomi
     assert.deepEqual(service.active(), []);
     assert.equal(JSON.stringify(await service.history('P','')), history);
     await service.close();
+    // A stop that arrives while the finished output is checked against the files again still withdraws it.
+    let reads = 0; const checking = Promise.withResolvers<void>(); const resume = Promise.withResolvers<void>();
+    const late = new EditorProposalService({ providers: { codex: provider }, editor: { read: async (_project, _task, file): Promise<EditorDocument> => { if (++reads === 3) { checking.resolve(); await resume.promise; } return { path: file, text: 'disk base', revision: revisions[file]!, language: 'typescript', size: 9, binary: false, truncated: false, readonly: false, languageAvailable: false }; } }, ws, settings: new SettingsStore(ws, DEFAULT_CONFIG), assertExecutable: async () => {}, isBusy: () => false, concurrentRuns: 1, runSeconds: 30 });
+    const withdrawn = assert.rejects(late.generate('P', '', input));
+    await checking.promise; assert.equal(late.stop('P', ''), true); resume.resolve(); await withdrawn;
+    assert.equal(JSON.stringify(await late.history('P', '')), history);
+    await late.close();
   } finally { await fs.rm(root, { recursive: true, force: true }); }
 });
 
