@@ -2,6 +2,7 @@ import type { Busy } from '../../shared/types.ts';
 import { request } from '../api.ts';
 import { t } from '../i18n/index.ts';
 import { button, el, run } from './dom.ts';
+import { localTime } from './display.ts';
 
 export function renderPermissions(host: HTMLElement, busy: Busy | null, project: string, task: string): void {
   host.replaceChildren();
@@ -19,7 +20,7 @@ export function renderPermissions(host: HTMLElement, busy: Busy | null, project:
       try { await request('/api/chat/approve', { project, task, id: card.id, allow, turn: allow && remember.checked }); }
       catch (err) { for (const b of item.querySelectorAll('button')) b.disabled = false; throw err; }
     });
-    item.append(el('strong', '', `${t('permission.waiting')} · ${card.tool}`), el('pre', '', card.summary), el('p', 'muted', `${t('permission.expires')} ${new Date(card.expiresAt).toLocaleTimeString()}`), label,
+    item.append(el('strong', '', `${t('permission.waiting')} · ${card.tool}`), el('pre', '', card.summary), el('p', 'muted', `${t('permission.expires')} ${localTime(card.expiresAt)}`), label,
       button(t('permission.allow'), () => answer(true), 'primary'), button(t('permission.deny'), () => answer(false), 'danger'));
     host.append(item);
   }
