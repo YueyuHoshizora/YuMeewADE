@@ -411,6 +411,21 @@ test('revertFile restores one file to the fork point and only touches files that
   }
 }));
 
+test('revertFile treats a file name with glob characters literally', () => withTmpWorkspace(async ws => {
+  const projects = new ProjectLedger(ws); const tasks = new TaskLedger(ws);
+  await projects.create({ name: 'P' });
+  const repo = ws.projectDir('P');
+  for (const name of ['file*.txt', 'file-other.txt']) await fs.writeFile(path.join(repo, name), 'base\n');
+  await commitAll(repo, 'glob-looking names');
+  const task = await tasks.create('P', { title: 'glob' });
+  const wt = new WorktreeService({ ws, projects, tasks, diffBytes: 100_000 });
+  const dir = await wt.prepare('P', task.id);
+  for (const name of ['file*.txt', 'file-other.txt']) await fs.writeFile(path.join(dir, name), 'important edit\n');
+  await wt.revertFile('P', task.id, 'file*.txt');
+  assert.equal(await fs.readFile(path.join(dir, 'file*.txt'), 'utf8'), 'base\n');
+  assert.equal(await fs.readFile(path.join(dir, 'file-other.txt'), 'utf8'), 'important edit\n', 'an unrelated edit survives');
+}));
+
 test('checkpoint secret copying refuses destination directory and file symlinks', () => withTmpWorkspace(async (ws, tmp) => {
   const projects = new ProjectLedger(ws);
   const tasks = new TaskLedger(ws);

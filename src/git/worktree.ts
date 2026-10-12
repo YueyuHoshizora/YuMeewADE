@@ -253,11 +253,12 @@ export class WorktreeService {
       ]);
       if (!changed.has(relative)) throw new AppError('not_found', 'file_missing');
       const existed = (await git(dir, ['cat-file', '-e', `${base}:${relative}`])).code === 0;
+      // Literal pathspecs: a file named `file*.txt` (or `:(glob)…`) names itself, not every file the pattern matches.
       if (existed) {
-        await gitOk(dir, ['checkout', base, '--', relative]);
-        await gitOk(dir, ['reset', '-q', '--', relative]);
-      } else if ((await git(dir, ['ls-files', '--error-unmatch', '--', relative])).code === 0) {
-        await gitOk(dir, ['rm', '-f', '-q', '--', relative]);
+        await gitOk(dir, ['--literal-pathspecs', 'checkout', base, '--', relative]);
+        await gitOk(dir, ['--literal-pathspecs', 'reset', '-q', '--', relative]);
+      } else if ((await git(dir, ['--literal-pathspecs', 'ls-files', '--error-unmatch', '--', relative])).code === 0) {
+        await gitOk(dir, ['--literal-pathspecs', 'rm', '-f', '-q', '--', relative]);
       } else {
         await fs.rm(path.join(dir, relative), { force: true });
       }
