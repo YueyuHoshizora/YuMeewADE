@@ -9,7 +9,7 @@ import { log } from '../shared/log.ts';
 import { isValidProjectName } from '../shared/names.ts';
 import { AUTO_FIX_MAX, PHASE_STATES, PHASES_MAX, PROJECT_STATUSES, type NewProjectInput, type Phase, type PhaseState, type Project, type ProjectExpectation, type ProjectPatch, type ProjectStatus } from '../shared/types.ts';
 import { type YamlValue } from '../shared/yaml.ts';
-import { ensureRepo } from '../git/git.ts';
+import { ensureRepo, git } from '../git/git.ts';
 import { parseVerificationChecks, parseVerificationInputModel } from '../shared/verification.ts';
 import { TEMPLATES_DIR, type Workspace } from './workspace.ts';
 
@@ -32,6 +32,11 @@ export function todayDate(now = new Date()): string {
   return `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`;
 }
 
+/** The repository a folder belongs to (its real common git dir), or the real folder itself when it is not in one or git is unavailable. */
+async function repositoryKey(dir: string): Promise<string> {
+  const common = await git(dir, ['rev-parse', '--path-format=absolute', '--git-common-dir']);
+  return fs.realpath(common.code === 0 && !common.truncated ? common.stdout.trim() : dir);
+}
 // Electron's fs.cp cannot copy an ASAR directory; read each template through its virtual filesystem.
 async function copyProjectTemplate(source: string, destination: string): Promise<void> {
   for (const entry of await fs.readdir(source, { withFileTypes: true })) {
@@ -106,6 +111,14 @@ export class ProjectLedger {
     if (patch.status !== undefined && !PROJECT_STATUSES.includes(patch.status)) throw new AppError('bad_request', 'invalid_state');
     if (patch.body) {
       if (!path.isAbsolute(patch.body) || !(await fs.stat(patch.body).catch(() => null))?.isDirectory()) throw new AppError('bad_request', 'body_not_folder', { field: 'body' });
+      // Task ids are only unique per project and copies use branch `ym/<task>`, so two projects on one repository would share branches.
+      // An unchanged body is not rechecked, so projects set up that way before can still be edited.
+      if ((id === undefined ? null : await this.get(id).catch(() => null))?.body !== patch.body) {
+        const key = await repositoryKey(patch.body);
+        for (const other of await this.list()) {
+          if (other.id !== id && await repositoryKey(this.bodyPath(other)).catch(() => null) === key) throw new AppError('conflict', 'body_shared', { field: 'body' });
+        }
+      }
     }
     if (patch.parent) {
       let parent = await this.get(patch.parent);

@@ -5,6 +5,7 @@ import { test } from 'node:test';
 import { parseConfig } from '../shared/config.ts';
 import type { AppError } from '../shared/errors.ts';
 import { withTmpWorkspace } from '../testing/tmp.ts';
+import { ensureRepo } from '../git/git.ts';
 import { ProjectLedger } from './projects.ts';
 import { parseSteps, TaskLedger } from './tasks.ts';
 import { CompletionStore, phaseKey, stepsHash } from './completion.ts';
@@ -34,6 +35,24 @@ test('專案預設、階段推進、改名不搬目錄、階層與外部本體�
   for (let i = 0; i < 4; i++) await projects.nextPhase('P', projects.currentPhase(await projects.get('P')));
   assert.equal((await projects.get('P')).status, '完成');
   assert.equal(projects.currentPhase(await projects.get('P')), '');
+}));
+
+test('a second project cannot take a main folder in a repository another project already uses', () => withTmpWorkspace(async (ws, dir) => {
+  const projects = new ProjectLedger(ws);
+  const repo = path.join(dir, 'repo'); await fs.mkdir(path.join(repo, 'packages', 'web'), { recursive: true });
+  await projects.create({ name: 'A', body: repo });
+  await ensureRepo(repo);
+  const shared = (error: AppError) => error.detail === 'body_shared' && error.field === 'body';
+  // The same folder through another spelling, a folder inside the same repository, and another project's ledger repository.
+  for (const body of [path.join(repo, 'packages', '..'), path.join(repo, 'packages', 'web')]) await assert.rejects(projects.create({ name: 'B', body }), shared);
+  await projects.create({ name: 'C' });
+  await assert.rejects(projects.create({ name: 'B', body: ws.projectDir('C') }), shared);
+  const other = path.join(dir, 'other'); await fs.mkdir(other);
+  await projects.create({ name: 'B', body: other });
+  await assert.rejects(projects.update('B', { body: repo }), shared);
+  // A project already set up on a shared repository stays editable while its main folder is unchanged.
+  await fs.writeFile(ws.projectFile('B'), (await fs.readFile(ws.projectFile('B'), 'utf8')).replace(other, repo));
+  assert.equal((await projects.update('B', { body: repo, description: '仍可編輯' })).description, '仍可編輯');
 }));
 
 test('advancing after a reorder starts the next unfinished phase and never reopens a finished one', () => withTmpWorkspace(async ws => {

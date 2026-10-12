@@ -153,6 +153,7 @@ export const zhTW = {
 'detail.merge_conflict': '合併時發生衝突，請先在副本解決後再合併',
 'detail.merge_excluded': '此副本已排除合併',
 'detail.merge_in_progress': '已有尚未完成的合併，請先處理', 'detail.git_operation_in_progress': '有尚未完成的合併、rebase 或 cherry-pick（或仍標示衝突的檔案），請先完成或中止後再試', 'detail.git_no_upstream': '目前分支沒有設定上游分支', 'detail.git_not_fast_forward': '本機與上游分支都有新的提交，無法快轉；請用 rebase 或在終端機合併', 'detail.git_push_behind': '遠端有本機還沒有的提交，請先取得並合併（或快轉到上游）後再推送', 'detail.git_push_remote_rejected': '遠端拒絕了這次推送（例如受保護的分支或伺服器端檢查）', 'detail.git_remote_unreachable': '無法連線到遠端：請確認網路、遠端網址與登入權限', 'detail.git_hook_failed': 'Git hook 拒絕了這次提交；請在終端機執行 git commit 查看 hook 的輸出，或確認後改用「提交並略過 hooks」', 'detail.git_pull_local_changes': '本機未提交的變更與上游修改了相同檔案，請先提交、暫存（stash）或放棄這些變更', 'detail.editor_not_writable': '沒有寫入這個檔案（或其所在資料夾）的權限', 'detail.body_not_folder': '主資料夾必須是已存在資料夾的絕對路徑',
+'detail.body_shared': '這個主資料夾所在的 Git 儲存庫已被另一個專案使用；共用會讓兩個專案的作業副本搶用同名分支',
 'detail.worktree_exists': '副本仍存在，不能清除紀錄',
 'detail.mode_required': '執行中送出請選擇取消重做、補充說明或做完接續',
 'effort.low': '低', 'effort.medium': '中', 'effort.high': '高', 'effort.xhigh': '極高', 'effort.max': '最大', 'effort.ultra': 'Ultra',
