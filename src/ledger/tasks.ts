@@ -176,7 +176,19 @@ export class TaskLedger {
       if (patch.mergeExcluded !== undefined) { if (typeof patch.mergeExcluded !== 'boolean') throw new AppError('bad_request', 'field_type'); values['mergeExcluded'] = patch.mergeExcluded; }
       if (patch.title !== undefined && !patch.title.trim()) throw new AppError('bad_request', 'title_required');
       if (patch.title !== undefined && patch.title.length > TITLE_MAX) throw new AppError('bad_request', 'field_too_long', { field: 'title' });
-      if (patch.parent) { if (patch.parent === id) throw new AppError('bad_request', 'field_type', { field: 'parent' }); await this.get(project, patch.parent); }
+      if (patch.parent) {
+        if (patch.parent === id) throw new AppError('bad_request', 'field_type', { field: 'parent' });
+        // A descendant as the new parent would close a loop: neither task would have a root left to appear under.
+        // The project lock held here serializes every reparenting in this project, so the chain cannot change mid-walk.
+        const seen = new Set<string>();
+        let cursor: string | undefined = (await this.get(project, patch.parent)).parent;
+        while (cursor && !seen.has(cursor)) {
+          if (cursor === id) throw new AppError('bad_request', 'field_type', { field: 'parent' });
+          seen.add(cursor);
+          // An ancestor that no longer exists (archived) ends the chain, as it does in the sidebar.
+          cursor = await this.get(project, cursor).then(task => task.parent, () => undefined);
+        }
+      }
       if (!Object.keys(values).length) throw new AppError('bad_request', 'no_updatable_fields');
       values['updated'] = nowMinute();
       await atomicWrite(this.ws.taskFile(project, id), serializeFrontmatter(patchHeaderLines(fm.headerLines, values), fm.body));

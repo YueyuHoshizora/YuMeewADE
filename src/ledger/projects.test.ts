@@ -16,6 +16,16 @@ test('create reuses an empty leftover folder but never touches one with data', (
   assert.equal(await fs.readFile(path.join(ws.projectDir('Busy'), 'keep.txt'), 'utf8'), 'data');
 }));
 
+test('two concurrent moves that only form a loop together cannot both succeed', () => withTmpWorkspace(async ws => {
+  const projects = new ProjectLedger(ws);
+  for (const name of ['A', 'B']) await projects.create({ name });
+  const results = await Promise.allSettled([projects.update('A', { parent: 'B' }), projects.update('B', { parent: 'A' })]);
+  assert.deepEqual(results.map(result => result.status).sort(), ['fulfilled', 'rejected']);
+  const list = await projects.list();
+  assert.ok(list.some(project => !project.parent), 'at least one project stays a sidebar root');
+  await assert.rejects(projects.update('A', { parent: 'A' }), { status: 400, field: 'parent' });
+}));
+
 test('verify command is trimmed, persisted, preserved and cleared', () => withTmpWorkspace(async ws => {
   const projects = new ProjectLedger(ws);
   assert.equal((await projects.create({ name: 'P', verify: '  npm test  ' })).verify, 'npm test');

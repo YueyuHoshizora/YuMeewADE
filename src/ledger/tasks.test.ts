@@ -111,6 +111,21 @@ test('沒指定階段的子作業沿用上層作業的階段，明確指定（�
   assert.equal((await ledger.create('P', { title: 'Top' })).phase, '');
 }));
 
+test('moving a task under its own descendant is refused, while other reparenting still works', () => withTmpWorkspace(async ws => {
+  await new ProjectLedger(ws).create({ name: 'P' });
+  const ledger = new TaskLedger(ws);
+  const a = await ledger.create('P', { title: 'A' });
+  const b = await ledger.create('P', { title: 'B', parent: a.id });
+  const c = await ledger.create('P', { title: 'C', parent: b.id });
+  const other = await ledger.create('P', { title: 'Other' });
+  for (const parent of [b.id, c.id]) await assert.rejects(ledger.update('P', a.id, { parent }), { status: 400, field: 'parent' });
+  assert.equal((await ledger.get('P', a.id)).parent, '');
+  // Concurrent moves that would only form a loop together: the project lock lets just one of them pass.
+  const results = await Promise.allSettled([ledger.update('P', other.id, { parent: a.id }), ledger.update('P', a.id, { parent: other.id })]);
+  assert.deepEqual(results.map(result => result.status).sort(), ['fulfilled', 'rejected']);
+  assert.equal((await ledger.update('P', c.id, { parent: a.id })).parent, a.id);
+}));
+
 test('步驟改名保留勾選，移動時連同縮排子項目一起搬且不帶走區段尾端空行', () => withTmpWorkspace(async ws => {
   await new ProjectLedger(ws).create({ name: 'P' });
   const ledger = new TaskLedger(ws); const task = await ledger.create('P', { title: 'T' });

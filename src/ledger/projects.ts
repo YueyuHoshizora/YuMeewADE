@@ -148,8 +148,15 @@ export class ProjectLedger {
 
   /** `expected` holds fields as the caller saw them; any changed since (another window, a hand or AI edit of PROJECT.md) make this a conflict instead of an overwrite. */
   async update(id: string, patch: ProjectPatch, expected?: ProjectExpectation): Promise<Project> {
-    return withFileLocks([this.ws.projectFile(id)], () => this.updateLocked(id, patch, expected));
+    return withFileLocks([this.ws.projectFile(id), ...(patch.parent ? [this.hierarchyLock()] : [])], () => this.updateLocked(id, patch, expected));
   }
+
+  /**
+   * The parent-chain check reads other projects' files, which per-project locks do not cover: two reciprocal moves
+   * (A under B, B under A) would each pass against the old tree. Every update that sets a parent holds this one key
+   * (a new project cannot be anyone's ancestor). It is an in-process lock key only; no file is created.
+   */
+  private hierarchyLock(): string { return path.join(this.ws.projectsDir, '.project-hierarchy.lock'); }
 
   private async updateLocked(id: string, patch: ProjectPatch, expected?: ProjectExpectation): Promise<Project> {
     const current = await this.get(id);
