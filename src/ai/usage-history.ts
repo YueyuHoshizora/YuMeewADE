@@ -14,8 +14,9 @@ const object = (value: unknown): value is Record<string, unknown> => !!value && 
 const text = (value: unknown): value is string => typeof value === 'string' && value.length > 0 && value.length <= 256 && !/[\u0000-\u001f]/u.test(value);
 const amount = (value: unknown): value is number => typeof value === 'number' && Number.isFinite(value) && value >= 0;
 const iso = (value: unknown): value is string => typeof value === 'string' && value.length <= 40 && Number.isFinite(Date.parse(value));
+/** `task` is empty for project-level work (editor proposals in the main folder). */
 export function usageScope(value: unknown): UsageScope {
-  if (!object(value) || !text(value.project) || !text(value.task) || !text(value.ai) || !text(value.account)) throw new AppError('bad_request');
+  if (!object(value) || !text(value.project) || !(value.task === '' || text(value.task)) || !text(value.ai) || !text(value.account)) throw new AppError('bad_request');
   return { project: value.project, task: value.task, ai: value.ai, account: value.account };
 }
 export function budgetSettings(value: unknown): BudgetSettings {

@@ -39,6 +39,18 @@ test('configured warnings require current scoped one-use acknowledgment and neve
   await history.record({ ...scope, requestId: 'two', usage: { input: 1, output: 1 } });
   await assert.rejects(history.assertProceed(scope, empty));
 });
+test('project-level work without a task is budget-checked and recorded under the project', async t => {
+  const root = await fs.mkdtemp(path.join(os.tmpdir(), 'usage-project-')); t.after(() => fs.rm(root, { recursive: true, force: true }));
+  const history = new UsageHistory(root);
+  const projectScope = { ...scope, task: '' };
+  await history.saveSettings({ rules: [{ id: 'tokens', project: scope.project, unit: 'tokens', threshold: 10, since: '2026-01-01T00:00:00Z' }], quotaRemainingPercent: null, cloudExpiryHours: null });
+  await history.assertProceed(projectScope, empty);
+  await history.record({ ...projectScope, requestId: 'one', usage: { input: 10, output: 1 } });
+  assert.deepEqual((await history.view()).totals.map(total => [total.project, total.task, total.input + total.output]), [['project', '', 11]]);
+  // The project rule now warns for both project-level and task work.
+  await assert.rejects(history.assertProceed(projectScope, empty), { detail: 'usage_ack_required' });
+  await assert.rejects(history.assertProceed(scope, empty), { detail: 'usage_ack_required' });
+});
 test('quota warnings respect unavailable provenance and cloud expiry does not convert balances into spend', async t => {
   const root = await fs.mkdtemp(path.join(os.tmpdir(), 'usage-quota-')); t.after(() => fs.rm(root, { recursive: true, force: true }));
   const history = new UsageHistory(root, () => Date.parse('2026-10-11T00:00:00Z'));

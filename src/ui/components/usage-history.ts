@@ -39,6 +39,8 @@ export function workflowBudgetRisk(scope: UsageScope): HTMLElement {
   });
   return panel;
 }
+/** Project-level work (editor proposals in the main folder) has no task. */
+const scopeLabel = (scope: { project: string; task: string }) => scope.task ? `${scope.project} / ${scope.task}` : scope.project;
 export function usageHistoryPanel(): HTMLElement {
   const panel = card(t('budget.history')); const result = el('div'); const project = input(); const task = input();
   panel.append(el('p', 'muted', t('budget.provenance')), row(field(t('budget.project'), project), field(t('budget.task'), task)), button(t('common.refresh'), async () => load()), result);
@@ -49,14 +51,14 @@ export function usageHistoryPanel(): HTMLElement {
     result.replaceChildren();
     if (!view.totals.length) result.append(el('p', 'muted', t('budget.unknown')));
     for (const total of view.totals) {
-      const line = el('section', 'account-card'); line.append(el('h4', '', `${total.project} / ${total.task} · ${total.ai} / ${total.account}`));
+      const line = el('section', 'account-card'); line.append(el('h4', '', `${scopeLabel(total)} · ${total.ai} / ${total.account}`));
       line.append(el('p', '', `${labelValue(t('budget.unit.tokens'), total.tokenReports ? usageAmount('tokens', total.input + total.output) : t('budget.unknown'))} (${labelValue(t('budget.cached'), total.cachedReports ? usageAmount('tokens', total.cached) : t('budget.unknown'))})`));
       if (total.ai === 'codex') line.append(el('p', '', labelValue(t('budget.unit.codexCredits'), total.codexCreditReports ? usageAmount('codexCredits', total.codexCredits) : t('budget.unknown'))));
       if (total.ai === 'claude') line.append(el('p', '', labelValue(t('budget.unit.claudeUsd'), total.claudeUsdReports ? usageAmount('claudeUsd', total.claudeUsd) : t('budget.unknown'))));
       line.append(el('p', 'muted', t('budget.unknownCount', { count: total.unknownReports }))); result.append(line);
     }
     const entries = el('details', 'disclosure'); entries.append(el('summary', '', t('budget.reports')));
-    for (const record of view.records) entries.append(el('p', '', `${localDateTime(record.at)} · ${record.project}/${record.task} · ${record.ai}/${record.account} · ${record.requestId} · ${record.sessionId ?? '—'} · ${labelValue(t('budget.unit.tokens'), record.usage ? usageAmount('tokens', record.usage.input + record.usage.output) : t('budget.unknown'))}${record.codexCredits !== undefined ? ` · ${labelValue(t('budget.unit.codexCredits'), usageAmount('codexCredits', record.codexCredits))}` : ''}${record.claudeUsd !== undefined ? ` · ${labelValue(t('budget.unit.claudeUsd'), usageAmount('claudeUsd', record.claudeUsd))}` : ''}`));
+    for (const record of view.records) entries.append(el('p', '', `${localDateTime(record.at)} · ${scopeLabel(record)} · ${record.ai}/${record.account} · ${record.requestId} · ${record.sessionId ?? '—'} · ${labelValue(t('budget.unit.tokens'), record.usage ? usageAmount('tokens', record.usage.input + record.usage.output) : t('budget.unknown'))}${record.codexCredits !== undefined ? ` · ${labelValue(t('budget.unit.codexCredits'), usageAmount('codexCredits', record.codexCredits))}` : ''}${record.claudeUsd !== undefined ? ` · ${labelValue(t('budget.unit.claudeUsd'), usageAmount('claudeUsd', record.claudeUsd))}` : ''}`));
     result.append(entries); const last = view.records.at(-1); before = last ? `${last.at}|${last.requestId}` : undefined;
     if (view.hasMore) result.append(button(t('budget.older'), async () => load(true)));
   }
