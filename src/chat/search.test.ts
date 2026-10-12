@@ -38,6 +38,20 @@ test('snippets include sixty characters on either side, collapse line breaks and
   assert.equal((await search(readers([user('Needle\nshort')]), 'needle')).hits[0]?.snippet, 'Needle short');
 });
 
+test('snippet edges never split an emoji into a lone surrogate', async () => {
+  // The 60-unit window starts on the second half of a cat and ends on the first half of another.
+  const text = '🐈'.repeat(40) + 'xneedlexyz' + '🐈'.repeat(40);
+  const snippet = (await search(readers([user(text)]), 'needle')).hits[0]!.snippet;
+  assert.ok(snippet.isWellFormed(), JSON.stringify(snippet));
+  assert.equal(snippet, '…' + '🐈'.repeat(30) + 'xneedlexyz' + '🐈'.repeat(29) + '…');
+});
+
+test('a snippet still contains the match when lower-casing lengthens earlier text', async () => {
+  // Each İ lower-cases to two code units, so 100 of them would push an index from the lower-cased copy past the match.
+  const snippet = (await search(readers([user('İ'.repeat(100) + ' needle tail')]), 'NEEDLE')).hits[0]!.snippet;
+  assert.equal(snippet, '…' + 'İ'.repeat(59) + ' needle tail');
+});
+
 test('search respects project/task reader order and stops once fifty hits are collected', async () => {
   const ordered = await search({
     projects: async () => [{ id: 'Z' }, { id: 'A' }],

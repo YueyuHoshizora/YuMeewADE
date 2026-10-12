@@ -18,10 +18,31 @@ export function searchQuery(value: unknown): string {
 }
 
 function snippet(text: string, index: number, length: number): string {
-  const start = Math.max(0, index - 60);
-  const end = Math.min(text.length, index + length + 60);
+  let start = Math.max(0, index - 60);
+  let end = Math.min(text.length, index + length + 60);
+  // Never cut an astral character (emoji, rare CJK) in half: a lone surrogate renders as a replacement character.
+  const high = (at: number): boolean => (text.charCodeAt(at) & 0xfc00) === 0xd800;
+  const low = (at: number): boolean => (text.charCodeAt(at) & 0xfc00) === 0xdc00;
+  if (low(start) && high(start - 1)) start--;
+  if (high(end - 1) && low(end)) end++;
   const excerpt = text.slice(start, end).replace(/\s+/gu, ' ').trim();
   return `${start > 0 ? '…' : ''}${excerpt}${end < text.length ? '…' : ''}`;
+}
+
+/**
+ * Index of `query` (already lower-cased) in `text`, as an index into `text` itself. Lower-casing can lengthen a string
+ * (Turkish İ becomes i + combining dot), so an index into the lower-cased copy would place the snippet past the match.
+ */
+function locate(text: string, query: string): number {
+  const lower = text.toLocaleLowerCase();
+  const at = lower.indexOf(query);
+  if (at <= 0 || lower.length === text.length) return at;
+  let original = 0; let lowered = 0;
+  for (const character of text) {
+    if (lowered >= at) break;
+    lowered += character.toLocaleLowerCase().length; original += character.length;
+  }
+  return original;
 }
 
 /** Bounds the work of a no-match search across every conversation; hits stop at 50 independently. */
@@ -39,7 +60,7 @@ export async function search(readers: SearchReaders, value: unknown, scanRows = 
   for (const project of await readers.projects()) {
     for (const task of await readers.tasks(project.id)) {
       const text = `${task.id} ${task.title}`.normalize('NFC');
-      const taskIndex = text.toLocaleLowerCase().indexOf(query);
+      const taskIndex = locate(text, query);
       if (taskIndex !== -1) {
         hits.push({ project: project.id, task: task.id, title: task.title, kind: 'task', snippet: snippet(text, taskIndex, query.length) });
         if (hits.length === 50) return { hits, truncated: true };
@@ -51,7 +72,7 @@ export async function search(readers: SearchReaders, value: unknown, scanRows = 
           if (++scanned > scanRows) return { hits, truncated: false, partial: true };
           // Ledger lines carry markdown list markers; the snippet shows the text itself.
           const line = raw.replace(/^\s*[-*+]\s+(\[[ xX]\]\s+)?/, '').normalize('NFC');
-          const match = line.toLocaleLowerCase().indexOf(query);
+          const match = locate(line, query);
           if (match === -1) continue;
           hits.push({ project: project.id, task: task.id, title: task.title, kind: 'record', snippet: snippet(line, match, query.length) });
           if (hits.length === 50) return { hits, truncated: true };
@@ -66,7 +87,7 @@ export async function search(readers: SearchReaders, value: unknown, scanRows = 
         // Questions are parsed out of the reply text into `asks`; they are part of what the AI said.
         const asks = row.role === 'assistant' ? (row.asks ?? []).map(ask => [ask.question, ...ask.options].join('\n')) : [];
         const body = [row.text, ...asks].filter(Boolean).join('\n').normalize('NFC');
-        const match = body.toLocaleLowerCase().indexOf(query);
+        const match = locate(body, query);
         if (match === -1) continue;
         hits.push({
           project: project.id,
