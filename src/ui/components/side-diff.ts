@@ -30,10 +30,10 @@ export function sideDiff(unified: HTMLElement, ids: { project: string; task?: st
       notice.textContent = t(contents.binary ? 'sideDiff.binary' : 'sideDiff.large'); notice.hidden = false; return;
     }
     // Load CodeMirror only after the user requests the heavy comparison view.
-    const [{ MergeView }, { EditorState }, { EditorView, lineNumbers }, { syntaxHighlighting }, { appHighlight, editorLanguage }] = await Promise.all([import('@codemirror/merge'), import('@codemirror/state'), import('@codemirror/view'), import('@codemirror/language'), import('./editor-engine.ts')]);
+    const [{ MergeView }, { EditorState }, { EditorView, lineNumbers }, { syntaxHighlighting }, { appHighlight, editorLanguage, editorPhrases }] = await Promise.all([import('@codemirror/merge'), import('@codemirror/state'), import('@codemirror/view'), import('@codemirror/language'), import('./editor-engine.ts')]);
     if (current !== serial || closed) return;
     // Same CSS-variable colors as the main editor so gutters and collapsed-line bars follow the light/dark theme.
-    const extensions = [lineNumbers(), editorLanguage(ids.path), syntaxHighlighting(appHighlight), EditorState.readOnly.of(true), EditorView.editable.of(false), EditorState.phrases.of({ '$ unchanged lines': t('sideDiff.unchanged') }), EditorView.theme({
+    const extensions = [lineNumbers(), editorLanguage(ids.path), syntaxHighlighting(appHighlight), EditorState.readOnly.of(true), EditorView.editable.of(false), editorPhrases(), EditorView.theme({
       '&': { backgroundColor: 'var(--panel)', color: 'var(--c-e7eaf4)' }, '.cm-scroller': { overflow: 'visible' },
       '.cm-gutters': { backgroundColor: 'var(--panel)', color: 'var(--muted)', borderColor: 'var(--border)' },
       '.cm-collapsedLines': { background: 'color-mix(in srgb, var(--accent) 10%, var(--panel))', color: 'var(--muted)' },

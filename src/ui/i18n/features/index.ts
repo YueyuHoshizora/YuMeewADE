@@ -44,6 +44,7 @@ import * as workflowGraph from './workflow-graph.ts';
 import * as providerCapabilities from './provider-capabilities.ts';
 import * as editorProposals from './editor-proposals.ts';
 import * as ideWorkbench from './ide-workbench.ts';
+import * as codemirror from './codemirror.ts';
 
 export const featureZhTW = {
   ...archive.featureZhTW,
@@ -93,6 +94,7 @@ export const featureZhTW = {
   ...providerCapabilities.featureZhTW,
   ...editorProposals.featureZhTW,
   ...ideWorkbench.featureZhTW,
+  ...codemirror.featureZhTW,
 };
 export const featureZhCN = {
   ...archive.featureZhCN,
@@ -142,6 +144,7 @@ export const featureZhCN = {
   ...providerCapabilities.featureZhCN,
   ...editorProposals.featureZhCN,
   ...ideWorkbench.featureZhCN,
+  ...codemirror.featureZhCN,
 };
 export const featureEn = {
   ...archive.featureEn,
@@ -191,6 +194,7 @@ export const featureEn = {
   ...providerCapabilities.featureEn,
   ...editorProposals.featureEn,
   ...ideWorkbench.featureEn,
+  ...codemirror.featureEn,
 };
 export const featureJa = {
   ...archive.featureJa,
@@ -240,6 +244,7 @@ export const featureJa = {
   ...providerCapabilities.featureJa,
   ...editorProposals.featureJa,
   ...ideWorkbench.featureJa,
+  ...codemirror.featureJa,
 };
 export const featureDe = {
   ...archive.featureDe,
@@ -289,6 +294,7 @@ export const featureDe = {
   ...providerCapabilities.featureDe,
   ...editorProposals.featureDe,
   ...ideWorkbench.featureDe,
+  ...codemirror.featureDe,
 };
 export const featureFr = {
   ...archive.featureFr,
@@ -338,6 +344,7 @@ export const featureFr = {
   ...providerCapabilities.featureFr,
   ...editorProposals.featureFr,
   ...ideWorkbench.featureFr,
+  ...codemirror.featureFr,
 };
 export const featureIt = {
   ...archive.featureIt,
@@ -387,4 +394,5 @@ export const featureIt = {
   ...providerCapabilities.featureIt,
   ...editorProposals.featureIt,
   ...ideWorkbench.featureIt,
+  ...codemirror.featureIt,
 };

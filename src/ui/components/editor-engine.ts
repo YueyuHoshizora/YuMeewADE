@@ -30,6 +30,19 @@ import { autocompletion, type CompletionContext, type CompletionResult } from '@
 import { lintGutter, setDiagnostics, type Diagnostic } from '@codemirror/lint';
 import { readPreferences } from './editor-preferences.ts';
 import type { EditorResolvedFormatPreferences } from '../../shared/types.ts';
+import { t } from '../i18n/index.ts';
+
+/** CodeMirror's English panel strings (search, go to line, lint, folding, merge) in the UI language. */
+export function editorPhrases() {
+  return EditorState.phrases.of({
+    'Find': t('cm.find'), 'Replace': t('cm.replace'), 'next': t('cm.next'), 'previous': t('cm.previous'), 'all': t('cm.all'),
+    'match case': t('cm.matchCase'), 'regexp': t('cm.regexp'), 'by word': t('cm.byWord'), 'replace': t('cm.replaceOne'), 'replace all': t('cm.replaceAll'),
+    'close': t('cm.close'), 'current match': t('cm.currentMatch'), 'on line': t('cm.onLine'), 'replaced $ matches': t('cm.replacedMatches'),
+    'replaced match on line $': t('cm.replacedOnLine'), 'Go to line': t('cm.gotoLine'), 'go': t('cm.go'), 'Diagnostics': t('cm.diagnostics'),
+    'No diagnostics': t('cm.noDiagnostics'), 'Completions': t('cm.completions'), 'folded code': t('cm.foldedCode'), 'unfold': t('cm.unfold'),
+    'to': t('cm.to'), 'Control character': t('cm.controlCharacter'), 'Selection deleted': t('cm.selectionDeleted'), '$ unchanged lines': t('sideDiff.unchanged'),
+  });
+}
 
 // basicSetup 的預設配色是亮底用色（fallback）；這組以 App 主題變數上色，深淺主題都可讀，且優先於預設。
 export const appHighlight = HighlightStyle.define([
@@ -153,7 +166,7 @@ export class EditorContent {
   }
   private state(text: string): EditorState {
     return EditorState.create({ doc: text, extensions: [
-      basicSetup, syntaxHighlighting(appHighlight), rectangularSelection(), crosshairCursor(),
+      basicSetup, syntaxHighlighting(appHighlight), rectangularSelection(), crosshairCursor(), editorPhrases(),
       EditorView.clickAddsSelectionRange.of(event => event.altKey || event.metaKey || event.ctrlKey),
       keymap.of([indentWithTab]), this.language.of([]), this.editable.of(EditorState.readOnly.of(true)), this.preferences.of(this.preferenceExtensions()),
       this.debug.of(this.debugExtensions()),
@@ -166,7 +179,11 @@ export class EditorContent {
         '.cm-gutters': { backgroundColor: 'var(--panel)', color: 'var(--muted)', borderColor: 'var(--border)' },
         '.cm-content': { caretColor: 'var(--accent)' },
         '.cm-activeLine, .cm-activeLineGutter': { backgroundColor: 'color-mix(in srgb, var(--accent) 10%, transparent)' },
-        '.cm-panels, .cm-tooltip': { backgroundColor: 'var(--panel)', color: 'var(--c-e7eaf4)' }
+        '.cm-panels, .cm-tooltip': { backgroundColor: 'var(--panel)', color: 'var(--c-e7eaf4)' },
+        // CodeMirror's default panel controls use a light gradient, which hides the app's light button text in dark mode.
+        '.cm-panel .cm-button': { backgroundImage: 'none', backgroundColor: 'var(--c-23283a)', color: 'var(--c-e7eaf4)', border: '1px solid var(--border)', borderRadius: '6px', padding: '2px 8px' },
+        '.cm-panel .cm-textfield': { backgroundColor: 'var(--c-121620)', color: 'var(--c-e7eaf4)', border: '1px solid var(--border)', borderRadius: '6px', padding: '2px 6px' },
+        '.cm-panel label': { color: 'var(--muted)' },
       }),
       EditorView.updateListener.of(update => {
         if (this.replacing) return;
