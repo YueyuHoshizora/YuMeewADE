@@ -497,17 +497,18 @@ export class ChatRunner extends EventEmitter {
     await this.deps.oplog.record({ action: 'chat', project: p, task: t });
     this.deps.onChanged(p, t);
     // A queued /fast ran in place of a turn; whatever was queued behind it still has to start.
-    if (fromQueue) this.trackQueuedRun(p, t, s);
+    if (fromQueue) this.trackQueuedRun(p, t, s, true);
     return { request: item.id, queued: false };
   }
 
-  private trackQueuedRun(p: string, t: string, s: Slot): void {
+  /** `afterCommand`: a queued command (`/fast`) ran instead of a turn, so `s.text` (the last turn, '' once stopped or failed) says nothing about it. */
+  private trackQueuedRun(p: string, t: string, s: Slot, afterCommand = false): void {
     const job = s.finished.then(async () => {
       const sent = await this.lock(p, t, async () => {
         if (s.busy || this.shuttingDown) return false;
         const queue = await this.deps.store.readQueue(p, t);
         const first = queue[0];
-        if (!first || first.error || s.text === '') return false;
+        if (!first || first.error || !afterCommand && s.text === '') return false;
         // An open question needs the human first, as for auto-fix and workflows: only a queued answer may proceed.
         if (!first.answer && (await this.deps.tasks.get(p, t)).state === '等待回覆') return false;
         try {

@@ -227,6 +227,14 @@ test('stop clears queue; unqueue and fromQueue; queued launch error remains', ()
   assert.ok(started?.role === 'user'); assert.equal(started.mode, 'queue');
   await s.send('normal'); await s.store.updateQueue('P', s.task.id, () => [{ id: 'bad', text: 'x', ai: 'missing', at: 't' }]); await s.runner.whenIdle(); assert.equal((await s.store.readQueue('P', s.task.id))[0]?.error, 'bad_request');
 }));
+test('starting a saved /fast queue item on a fresh runner applies it and continues with the instruction queued behind it', () => withTmpWorkspace(async ws => {
+  const s = await setup(ws);
+  Object.assign(s.mock, { resolveCommand: async () => ({ text: '/fast on', native: false, fast: 'on' }) });
+  await s.store.updateQueue('P', s.task.id, () => [{ id: 'fast', text: '/fast on', ai: 'codex', at: 't' }, { id: 'next', text: 'next instruction', ai: 'codex', at: 't' }]);
+  await s.send('', { fromQueue: 'fast' }); await s.runner.whenIdle();
+  assert.deepEqual(await s.store.readQueue('P', s.task.id), []);
+  assert.ok((await s.store.readLog('P', s.task.id)).some(row => row.role === 'assistant'));
+}));
 test('unqueue with restore returns queued images to the task draft so the instruction can be edited', () => withTmpWorkspace(async ws => {
   const s = await setup(ws, { chunkMs: 5 }); await s.send('slow [slow]');
   const image = '11111111-1111-4111-8111-111111111111.png';
