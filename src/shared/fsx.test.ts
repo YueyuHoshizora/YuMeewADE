@@ -54,3 +54,23 @@ test('a JSON file hand-saved with a byte order mark is still read', async () => 
     assert.deepEqual(await readJson(file, {}), { enterToSend: true });
   } finally { await fs.rm(root, { recursive: true, force: true }); }
 });
+
+test('a corrupted or wrongly shaped JSON file is reported by name, never as an internal crash or a silent default', async () => {
+  const root = await fs.mkdtemp(path.join(os.tmpdir(), 'ym-json-'));
+  try {
+    const file = path.join(root, 'settings.json');
+    const corrupt = { status: 500, detail: 'file_corrupt', field: 'settings.json' };
+    await fs.writeFile(file, '{"fullAccess": {"claude": false},');
+    await assert.rejects(readJson(file, {}), corrupt);
+    await fs.writeFile(file, 'null');
+    await assert.rejects(readJson(file, {}), corrupt);
+    await fs.writeFile(file, '[]');
+    await assert.rejects(readJson(file, {}), corrupt);
+    assert.deepEqual(await readJson(file, ['fallback']), []);
+    await fs.writeFile(file, '{}');
+    await assert.rejects(readJson(file, []), corrupt);
+    // A null fallback means any JSON value is acceptable to the caller.
+    await fs.writeFile(file, 'null');
+    assert.equal(await readJson(file, null), null);
+  } finally { await fs.rm(root, { recursive: true, force: true }); }
+});

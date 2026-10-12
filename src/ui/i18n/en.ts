@@ -274,6 +274,7 @@ export const en: Record<MessageKey, string> = {
 'detail.patch_not_object': 'Patch must be an object',
 'detail.body_not_object': 'Request body must be a JSON object',
 'detail.bad_json': 'Invalid JSON',
+'detail.file_corrupt': '{field} is corrupted and cannot be read; repair it or restore it from a backup',
 'detail.title_required': 'Title cannot be empty',
 'detail.role_missing': 'Role not found',
 'detail.invalid_effort': 'Invalid reasoning effort',

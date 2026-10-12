@@ -51,6 +51,7 @@ export const DETAIL_MESSAGES = {
   patch_not_object: 'patch 必須是物件',
   body_not_object: '請求體必須是 JSON 物件',
   bad_json: 'JSON 格式錯誤',
+  file_corrupt: '{field} 的內容已損壞無法讀取，請修正或從備份還原',
   title_required: '標題不得為空',
   role_missing: 'role 不存在',
   invalid_effort: 'effort 不合法',

@@ -3,6 +3,7 @@
 import { promises as fs } from 'node:fs';
 import path from 'node:path';
 import { randomUUID } from 'node:crypto';
+import { AppError } from './errors.ts';
 
 export async function atomicWrite(file: string, content: string | Uint8Array): Promise<void> {
   await fs.mkdir(path.dirname(file), { recursive: true });
@@ -47,7 +48,15 @@ export async function readJson<T>(file: string, fallback: T): Promise<T> {
     throw err;
   }
   // JSON.parse rejects a leading byte order mark, which some Windows editors add when a user hand-edits the file.
-  return JSON.parse(text.replace(/^\uFEFF/, '')) as T;
+  let value: unknown;
+  try { value = JSON.parse(text.replace(/^\uFEFF/, '')); } catch (cause) { throw corrupt(file, cause); }
+  // An object/array fallback states the shape callers dereference; `null` or `[]` in place of `{}` would otherwise surface as TypeErrors.
+  if (fallback !== null && typeof fallback === 'object' && (value === null || typeof value !== 'object' || Array.isArray(value) !== Array.isArray(fallback))) throw corrupt(file);
+  return value as T;
+}
+/** Only the file name is public: the user must know which file to repair, never its absolute path. */
+function corrupt(file: string, cause?: unknown): AppError {
+  return new AppError('internal', 'file_corrupt', { field: path.basename(file), ...(cause === undefined ? {} : { cause }) });
 }
 
 export async function writeJson(file: string, value: unknown): Promise<void> {

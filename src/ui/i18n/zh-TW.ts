@@ -117,6 +117,7 @@ export const zhTW = {
 'detail.patch_not_object': 'patch 必須是物件',
 'detail.body_not_object': '請求體必須是 JSON 物件',
 'detail.bad_json': 'JSON 格式錯誤',
+'detail.file_corrupt': '{field} 的內容已損壞無法讀取，請修正或從備份還原',
 'detail.title_required': '標題不得為空',
 'detail.role_missing': '角色不存在',
 'detail.invalid_effort': '思考強度不合法',

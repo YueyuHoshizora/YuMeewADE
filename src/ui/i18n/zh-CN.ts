@@ -274,6 +274,7 @@ export const zhCN: Record<MessageKey, string> = {
 'detail.patch_not_object': 'patch 必须是对象',
 'detail.body_not_object': '请求体必须是 JSON 对象',
 'detail.bad_json': 'JSON 格式错误',
+'detail.file_corrupt': '{field} 的内容已损坏无法读取，请修正或从备份还原',
 'detail.title_required': '标题不得为空',
 'detail.role_missing': '角色不存在',
 'detail.invalid_effort': '思考强度不合法',
