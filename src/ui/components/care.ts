@@ -1,5 +1,5 @@
 import type { CareBackup, CareHealth, CareCapacity, CareLifecycle } from '../../shared/types.ts';
-import { ApiFailure, api, request } from '../api.ts';
+import { ApiFailure, api, coreFetch, request } from '../api.ts';
 import { labelValue, t } from '../i18n/index.ts';
 import { button, card, confirmModal, el, errorMessage, field, input, modal, readLocal, row, storeLocal, toast, type ViewContext } from './dom.ts';
 import { formatBytes, localDateTime } from './display.ts';
@@ -25,9 +25,9 @@ export function carePanel(context: ViewContext): HTMLElement {
   };
   const binary = async (url: string, body: BodyInit, headers: Record<string, string>): Promise<Response> => {
     try {
-      const response = await fetch(url, { method: 'POST', headers, body });
+      const response = await coreFetch(url, { method: 'POST', headers, body });
       // Keep the server's status/detail so showError names the real cause (wrong password, corrupt file, …).
-      if (!response.ok) throw new ApiFailure(response.status, await response.json());
+      if (!response.ok) throw new ApiFailure(response.status, await response.json().catch(() => ({ error: 'internal', message: '' })));
       return response;
     } finally { password.value = ''; }
   };

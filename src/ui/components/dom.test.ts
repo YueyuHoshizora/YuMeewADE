@@ -31,7 +31,7 @@ Object.defineProperty(globalThis, 'navigator', {
 });
 // Locale initialization reads browser globals, so import only after installing the fixture.
 const { button: makeButton, iconButton, setLocked, statusRegion, errorMessage, UserError } = await import('./dom.ts');
-const { ApiFailure } = await import('../api.ts');
+const { ApiFailure, NetworkFailure, request } = await import('../api.ts');
 const { t } = await import('../i18n/index.ts');
 
 test('icon controls expose a contextual accessible name and disable during their action', async () => {
@@ -69,11 +69,29 @@ test('status regions announce atomic polite updates and start empty', () => {
   assert.equal(status.className, 'visually-hidden');
 });
 
-test('error messages keep localized user errors and server details instead of a generic network failure', () => {
+test('error messages keep localized user errors and server details and reserve "connection failed" for an unreachable core', () => {
   assert.equal(errorMessage(new UserError('Save the file first')), 'Save the file first');
   assert.equal(errorMessage(new ApiFailure(409, { error: 'conflict', message: '狀態衝突', detail: 'editor_conflict' })), `409 · ${t('detail.editor_conflict')}`);
   assert.equal(errorMessage(new ApiFailure(403, { error: 'forbidden', message: '未允許' })), `403 · ${t('err.forbidden')}`);
-  // Raw fetch/parse failures carry developer text; only those collapse to the network message.
-  assert.equal(errorMessage(new TypeError('Failed to fetch')), t('err.network'));
-  assert.equal(errorMessage(new Error('internal detail')), t('err.network'));
+  // Only an unreachable core is a connection failure; other client errors say "internal" without leaking developer text.
+  assert.equal(errorMessage(new NetworkFailure()), t('err.network'));
+  const logged = console.error; console.error = () => {};
+  try {
+    assert.equal(errorMessage(new SyntaxError('Unexpected token')), t('err.internal'));
+    assert.equal(errorMessage(new Error('internal detail')), t('err.internal'));
+  } finally { console.error = logged; }
+});
+
+test('requests distinguish an unreachable core from a reply that is not the core JSON', async () => {
+  const original = globalThis.fetch;
+  try {
+    globalThis.fetch = async () => { throw new TypeError('Failed to fetch'); };
+    await assert.rejects(request('/api/state'), NetworkFailure);
+    globalThis.fetch = async () => new Response('<html>Bad gateway</html>', { status: 502 });
+    await assert.rejects(request('/api/state'), (error: unknown) => error instanceof ApiFailure && error.status === 502 && error.body.error === 'internal');
+    globalThis.fetch = async () => new Response('not json', { status: 200 });
+    await assert.rejects(request('/api/state'), (error: unknown) => error instanceof ApiFailure && error.body.error === 'internal');
+    globalThis.fetch = async () => Response.json({ error: 'conflict', message: 'x', detail: 'editor_conflict' }, { status: 409 });
+    await assert.rejects(request('/api/state'), (error: unknown) => error instanceof ApiFailure && error.body.detail === 'editor_conflict');
+  } finally { globalThis.fetch = original; }
 });

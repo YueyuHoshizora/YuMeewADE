@@ -1,7 +1,7 @@
 import type { AppState, ArchivePreview } from '../../shared/types.ts';
 import { t } from '../i18n/index.ts';
 import type { MessageKey } from '../i18n/zh-TW.ts';
-import { ApiFailure, request } from '../api.ts';
+import { ApiFailure, NetworkFailure, request } from '../api.ts';
 export function el<K extends keyof HTMLElementTagNameMap>(tag: K, className = '', content = ''): HTMLElementTagNameMap[K] {
   const node = document.createElement(tag); node.className = className; node.textContent = content; return node;
 }
@@ -72,7 +72,9 @@ export function toast(message: string): void { const node = document.getElementB
 export class UserError extends Error {}
 export function errorMessage(error: unknown): string {
   if (error instanceof UserError) return error.message;
-  if (!(error instanceof ApiFailure)) return t('err.network');
+  if (error instanceof NetworkFailure) return t('err.network');
+  // Anything else is a client-side defect; say so instead of blaming the connection, and keep the details for debugging.
+  if (!(error instanceof ApiFailure)) { console.error(error); return t('err.internal'); }
   const key = (error.body.detail ? `detail.${error.body.detail}` : `err.${error.body.error}`) as MessageKey;
   return `${error.status} · ${t(key, { field: error.body.field ?? '' })}`;
 }

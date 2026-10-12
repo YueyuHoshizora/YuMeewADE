@@ -7,11 +7,20 @@ export class ApiFailure extends Error {
     super(body.message); this.status = status; this.body = body;
   }
 }
-export async function request<T>(path: string, body?: unknown): Promise<T> {
-  const res = await fetch(path, body === undefined ? {} : { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
-  const data = await res.json() as T;
+/** The core could not be reached at all (core stopped, network down); distinct from an error the core reported. */
+export class NetworkFailure extends Error {}
+export async function coreFetch(path: string, init: RequestInit): Promise<Response> {
+  try { return await fetch(path, init); } catch { throw new NetworkFailure(); }
+}
+async function decode<T>(res: Response): Promise<T> {
+  let data: unknown;
+  // A reply that is not the core's JSON (e.g. a proxy error page) is an internal failure, not a lost connection.
+  try { data = await res.json(); } catch { throw new ApiFailure(res.ok ? 502 : res.status, { error: 'internal', message: '' }); }
   if (!res.ok) throw new ApiFailure(res.status, data as ApiError);
-  return data;
+  return data as T;
+}
+export async function request<T>(path: string, body?: unknown): Promise<T> {
+  return decode<T>(await coreFetch(path, body === undefined ? {} : { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) }));
 }
 export const query = (path: string, params: Record<string, string>) => `${path}?${new URLSearchParams(params)}`;
 export const api = {
@@ -30,9 +39,6 @@ export const api = {
   updateAi: (ai: string) => request<{ before: string; after: string; info: AiInfo }>('/api/ai/update', { ai }),
   log: () => request<OpLogEntry[]>('/api/log?n=100'),
   async upload(project: string, file: File, scope = 'quickstart'): Promise<UploadResult> {
-    const res = await fetch(query('/api/upload', { project, name: file.name, scope }), { method: 'POST', body: file });
-    const data = await res.json() as UploadResult;
-    if (!res.ok) throw new ApiFailure(res.status, data as unknown as ApiError);
-    return data;
+    return decode<UploadResult>(await coreFetch(query('/api/upload', { project, name: file.name, scope }), { method: 'POST', body: file }));
   },
 };
