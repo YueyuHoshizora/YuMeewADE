@@ -31,12 +31,6 @@ export class SseHub {
     return this.conns.size;
   }
 
-  /** 這條 key 目前是否有客戶端開著（未讀判定用）。 */
-  watching(key: string): boolean {
-    for (const c of this.conns) if (c.key === key && !c.res.writableEnded && !c.res.destroyed) return true;
-    return false;
-  }
-
   /** 開啟一條流並先送 ready；超過上限回 503。 */
   open(req: IncomingMessage, res: ServerResponse, key: string, ready: ChatEvent | GlobalEvent): void {
     if (this.conns.size >= this.limit) throw new AppError('unavailable', 'sse_limit');

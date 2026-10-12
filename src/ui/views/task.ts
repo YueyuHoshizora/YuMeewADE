@@ -1070,6 +1070,7 @@ export function taskView(
         renderQueue();
         break;
       case 'idle':
+        markSeen();
         if (busy?.request === event.data.request) {
           busy = null;
           partial = '';
@@ -1093,6 +1094,11 @@ export function taskView(
       }
     };
   }
+  // A finished reply stays unread (and is notified) until it can actually be seen: a page left open in a background or
+  // minimized window is not attention, so reads are reported only while this window is visible and focused.
+  const markSeen = () => { if (alive && !document.hidden && document.hasFocus()) void request('/api/task/read', { project: project.id, task: task.id }).catch(() => undefined); };
+  const onAttention = () => { if (context.state.unread.some(item => item.project === project.id && item.task === task.id)) markSeen(); };
+  window.addEventListener('focus', onAttention); document.addEventListener('visibilitychange', onAttention);
   const source = stream(query('/api/chat/stream', { project: project.id, task: task.id }), listeners);
   const timer = window.setInterval(clock, 1000);
   void run(() => request('/api/task/read', { project: project.id, task: task.id }));
@@ -1100,6 +1106,7 @@ export function taskView(
     node,
     dispose: () => {
       alive = false;
+      window.removeEventListener('focus', onAttention); document.removeEventListener('visibilitychange', onAttention);
       source.close();
       removeLive();
       virtual.dispose();

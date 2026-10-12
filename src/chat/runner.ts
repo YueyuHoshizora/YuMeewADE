@@ -51,7 +51,6 @@ export interface RunnerDeps {
     approvalSeconds?: number;
   };
   publish(project: string, task: string, event: ChatEvent): void;
-  watching(project: string, task: string): boolean;
   /** 在作業副本跑專案的驗證指令；省略＝不做自動驗證。 */
   verify?: (project: string, task: string) => Promise<VerifyResult>;
   onChanged(project?: string, task?: string): void;
@@ -689,7 +688,8 @@ export class ChatRunner extends EventEmitter {
       s.busy = null;
       s.run = null;
       s.partial = '';
-      if (!this.deps.watching(p, t)) this.unreadTasks.set(`${p}\0${t}`, { project: p, task: t });
+      // An open connection is not attention: the window may be in the background. The task page marks it read once seen.
+      this.unreadTasks.set(`${p}\0${t}`, { project: p, task: t });
       this.publish(p, t, { event: 'idle', data: { request: item.id } });
       this.deps.onChanged(p, t);
     }

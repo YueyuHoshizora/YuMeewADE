@@ -31,7 +31,7 @@ async function setup(ws: Workspace, options: MockOptions = {}, runSeconds = 600,
   const projects = new ProjectLedger(ws); await projects.create({ name: 'P' });
   const tasks = new TaskLedger(ws); const task = await tasks.create('P', { title: 'T', workspace: 'direct' });
   const settings = new SettingsStore(ws, DEFAULT_CONFIG); await settings.update({ initial: { ai: 'codex', model: 'm', effort: 'high' } });
-  const store = new ChatStore(ws); const calls: SendOptions[] = []; const events: ChatEvent[] = []; let watching = false;
+  const store = new ChatStore(ws); const calls: SendOptions[] = []; const events: ChatEvent[] = [];
   const mock = new MockCliProvider({ chunkMs: 1, ...options, text: opts => { calls.push(opts); return typeof options.text === 'function' ? options.text(opts) : options.text ?? 'ok'; } });
   const completion = new CompletionStore(ws);
   const restored: string[] = []; let checkpointCount = 0;
@@ -39,9 +39,9 @@ async function setup(ws: Workspace, options: MockOptions = {}, runSeconds = 600,
   const forks: string[] = [];
   const usageAccounts: string[] = [];
   const worktree = new WorktreeService({ ws, projects, tasks, diffBytes: DEFAULT_CONFIG.limits.diffBytes });
-  const runner = new ChatRunner({ ws, store, projects, tasks, settings, completion, oplog: new OpLog(ws), roles: () => loadRoles(ws.rolesFile), providers: { mock, claude: mock, codex: mock }, limits: { concurrentRuns: 2, queueLength: 3, handoffChars: 60000, imagesPerSend: 10, runSeconds }, worktree: { bodyPath: async () => ws.projectDir('P'), prepare: async () => ws.projectDir('P'), checkpoint: async () => String(++checkpointCount).padStart(40, '0'), restore: async (_p: string, _t: string, sha: string) => { restored.push(sha); }, finishTurn: async (_p: string, _t: string, start: string) => start.endsWith('1') ? { after: 'f'.repeat(40), changes: { files: 2, added: 3, removed: 1 } } : { after: 'e'.repeat(40) }, rangeDiff: async (_p: string, _t: string, from: string, to: string) => { ranges.push([from, to]); return { diff: 'd', truncated: false }; }, prepareFrom: async (_p: string, _t: string, sha: string) => { forks.push(sha); return ws.projectDir('P'); } } as unknown as WorktreeService, publish: (_p, _t, ev) => events.push(ev), watching: () => watching, onChanged: () => {}, onUsage: (_ai, _event, account) => { usageAccounts.push(account); }, ...overrides });
+  const runner = new ChatRunner({ ws, store, projects, tasks, settings, completion, oplog: new OpLog(ws), roles: () => loadRoles(ws.rolesFile), providers: { mock, claude: mock, codex: mock }, limits: { concurrentRuns: 2, queueLength: 3, handoffChars: 60000, imagesPerSend: 10, runSeconds }, worktree: { bodyPath: async () => ws.projectDir('P'), prepare: async () => ws.projectDir('P'), checkpoint: async () => String(++checkpointCount).padStart(40, '0'), restore: async (_p: string, _t: string, sha: string) => { restored.push(sha); }, finishTurn: async (_p: string, _t: string, start: string) => start.endsWith('1') ? { after: 'f'.repeat(40), changes: { files: 2, added: 3, removed: 1 } } : { after: 'e'.repeat(40) }, rangeDiff: async (_p: string, _t: string, from: string, to: string) => { ranges.push([from, to]); return { diff: 'd', truncated: false }; }, prepareFrom: async (_p: string, _t: string, sha: string) => { forks.push(sha); return ws.projectDir('P'); } } as unknown as WorktreeService, publish: (_p, _t, ev) => events.push(ev), onChanged: () => {}, onUsage: (_ai, _event, account) => { usageAccounts.push(account); }, ...overrides });
   const send = (text: string, extra: Partial<Parameters<ChatRunner['send']>[0]> = {}) => runner.send({ project: 'P', task: task.id, text, ...extra });
-  return { runner, store, settings, projects, tasks, task, send, calls, events, usageAccounts, completion, restored, ranges, forks, mock, worktree, watch: () => { watching = true; } };
+  return { runner, store, settings, projects, tasks, task, send, calls, events, usageAccounts, completion, restored, ranges, forks, mock, worktree };
 }
 test('Mock CLI receives numbered file references on first send, resume and provider handoff while stored text stays original', () => withTmpWorkspace(async ws => {
   const s = await setup(ws);
@@ -171,8 +171,10 @@ test('roleless defaults, tool rows, asks, answer clearing, unread', () => withTm
   await s.send('go'); await s.runner.whenIdle();
   const task = await s.tasks.get('P', s.task.id); assert.equal(task.cli, 'codex'); assert.equal(task.model, 'm'); assert.equal(task.state, '等待回覆'); assert.equal(task.question, 'Which?');
   const rows = await s.store.readLog('P', s.task.id); assert.equal(rows[0]?.role, 'user'); assert.equal(rows[1]?.role, 'event'); assert.equal(rows[2]?.text, 'done');
-  assert.equal(s.runner.unread().length, 1); s.runner.markRead('P', s.task.id); s.watch();
-  await s.send('answer now', { answer: true }); await s.runner.whenIdle(); assert.equal((await s.tasks.get('P', s.task.id)).question, ''); assert.equal(s.runner.unread().length, 0);
+  assert.equal(s.runner.unread().length, 1); s.runner.markRead('P', s.task.id);
+  await s.send('answer now', { answer: true }); await s.runner.whenIdle(); assert.equal((await s.tasks.get('P', s.task.id)).question, '');
+  // Every finished turn is unread until the task page reports it was seen; an open page in a background window is not.
+  assert.deepEqual(s.runner.unread(), [{ project: 'P', task: s.task.id }]);
   assert.ok(s.calls[1]?.resumeId); assert.ok(s.events.some(e => e.event === 'busy'));
 }));
 test('mode required; redo/amend stop prior run and keep queue; normal finish drains', () => withTmpWorkspace(async ws => {

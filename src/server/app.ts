@@ -245,7 +245,6 @@ export class App {
       providers: this.providers,
       limits: config.limits,
       publish: (project, task, ev) => this.sse.publish(taskKey(project, task), ev),
-      watching: (project, task) => this.sse.watching(taskKey(project, task)),
       onChanged: (project, task) => this.changed(project, task),
       onUsage: (ai, ev, account) => this.usage.record(ai, ev, account),
     });
