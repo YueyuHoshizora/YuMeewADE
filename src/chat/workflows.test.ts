@@ -104,6 +104,28 @@ test('stop drains concurrent nodes and never starts a dependent without a new ex
   await s.workflow.get('P', s.task.id); assert.equal(calls, 1);
 }));
 
+test('a native gate still preparing when the workflow stops never starts', () => withTmpWorkspace(async ws => {
+  for (const kind of ['verify', 'review'] as const) {
+    const entered = Promise.withResolvers<void>(); const release = Promise.withResolvers<void>();
+    let gateCalls = 0; let starts = 0;
+    const s = await fixture(ws, async (_p, task, input) => {
+      if (input.text === 'gate') gateCalls++;
+      return { request: task, ai: 'mock', text: 'source', ok: true, approved: true, structured: true, snapshot: { id: 'snapshot' } };
+    }, {
+      verify: async () => { gateCalls++; return { ok: true, id: 'verified' }; }, currentVerification: async () => true, currentReview: async () => true,
+      // The second branch preparation is the gate's (the workflow task itself is checked too): hold it while stopping.
+      beforeStart: async (_p, t) => { if (t !== s.task.id && ++starts === 2) { entered.resolve(); await release.promise; } },
+    });
+    await s.workflow.configure('P', s.task.id, [], [node('source'), node('gate', ['source'], { kind, review: false })]);
+    s.reset(); await s.workflow.start('P', s.task.id); await entered.promise;
+    const stopping = s.workflow.stop('P', s.task.id); release.resolve(); await stopping;
+    const plan = await s.workflow.get('P', s.task.id);
+    assert.equal(gateCalls, 0, kind);
+    assert.equal(plan.state, 'paused'); assert.equal(plan.nodeStates?.source, 'succeeded'); assert.equal(plan.nodeStates?.gate, 'pending');
+    await fs.rm(ws.projectDir('P'), { recursive: true, force: true });
+  }
+}));
+
 test('native failed verification blocks review and delivery; rerun invalidates downstream evidence', () => withTmpWorkspace(async ws => {
   let checks = 0; let reviews = 0;
   const s = await fixture(ws, async (_p, task) => {

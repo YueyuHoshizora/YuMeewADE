@@ -208,6 +208,8 @@ export class WorkflowService {
       await withFileLocks([this.file(p, t)], () => writeJson(this.file(p, t), structuredClone(plan)));
       try {
         await this.deps.beforeStart(p, branch);
+        // Stop cancels only the gates already running; one still preparing must not start afterwards.
+        if (job.stopped) return;
         if (step.kind === 'verify') {
           if (!this.deps.verify) throw new AppError('unavailable', 'workflow_invalid');
           const result = await this.deps.verify(p, branch);
@@ -217,6 +219,7 @@ export class WorkflowService {
         } else {
           const slot = await this.resolveStep(step);
           if (!slot) throw new AppError('unavailable', 'workflow_invalid');
+          if (job.stopped) return;
           const result = await this.deps.review(p, branch, { ai: slot.cli, model: slot.model, effort: slot.effort, text: step.text });
           const ok = result.ok && result.structured === true && result.approved === true && !!result.snapshot && await this.deps.currentReview?.(p, branch, result.snapshot.id) === true;
           plan.results.push({ step: index, node: id, task: branch, role: step.role, ai: slot.cli, request: result.request, at: new Date().toISOString(), ok, approved: ok, output: result.text, ...(result.snapshot ? { reviewSnapshot: result.snapshot.id } : {}) });
