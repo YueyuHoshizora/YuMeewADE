@@ -2,7 +2,7 @@ import type { EmbeddedPreviewState } from '../../shared/types.ts';
 import type { WorkbenchPanelContext } from './files.ts';
 import { query, request } from '../api.ts';
 import { t } from '../i18n/index.ts';
-import { area, button, el, field, input, row, run } from './dom.ts';
+import { area, button, el, field, input, row, run, setLocked } from './dom.ts';
 
 export function embeddedPreviewWorkbench(context: WorkbenchPanelContext): HTMLElement {
   const root = el('section', 'embedded-preview-panel');
@@ -39,7 +39,7 @@ export function embeddedPreviewWorkbench(context: WorkbenchPanelContext): HTMLEl
   function render(): void {
     status.textContent = current ? t(`preview.${current.state}`) : t('preview.idle');
     const active = current?.state === 'starting' || current?.state === 'running';
-    start.disabled = active; stop.disabled = !active; reload.disabled = current?.state !== 'running'; external.disabled = current?.state !== 'running';
+    setLocked(start, active); setLocked(stop, !active); setLocked(reload, current?.state !== 'running'); setLocked(external, current?.state !== 'running');
     command.disabled = active; args.disabled = active;
     url.value = current?.url ?? ''; output.textContent = current?.output ?? '';
     if (current?.state === 'running') { if (frame.hidden) frame.src = current.url; frame.hidden = false; }

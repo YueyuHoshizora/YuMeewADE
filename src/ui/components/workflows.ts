@@ -1,7 +1,7 @@
 import type { UsageScope, VerifyStatus, WorkflowPlan, WorkflowStep } from '../../shared/types.ts';
 import { query, request } from '../api.ts';
 import { t } from '../i18n/index.ts';
-import { area, button, confirmModal, el, field, modal, row, run, select, taskHash, UserError, type ViewContext } from './dom.ts';
+import { area, button, confirmModal, el, field, modal, row, run, select, setLocked, taskHash, UserError, type ViewContext } from './dom.ts';
 import { confirmUsageRound, workflowBudgetRisk } from './usage-history.ts';
 import { readonlyDiffView, verificationStatusView } from './verification-view.ts';
 import { renderWorkflowTimeline } from './workflow-timeline.ts';
@@ -53,13 +53,13 @@ export function workflowButton(context: ViewContext, project: string, task: stri
       if (plan.delivery) status.textContent += ` · ${t('workflow.native.delivery')}: ${t(plan.delivery.state === 'ready' ? 'workflow.delivery.ready' : 'workflow.delivery.blocked')}${plan.delivery.gates.map(gate => ` · ${gate.node}: ${t(gate.ok ? 'verify.pass' : gate.at ? 'verify.fail' : 'workflow.delivery.pending')}`).join('')}`;
       timeline.replaceChildren(renderWorkflowTimeline(plan));
       void run(renderRisk);
-      save.disabled = plan.state === 'running';
-      start.disabled = plan.state === 'running' || !plan.steps.some(s => plan.nodeStates?.[s.id!] === 'pending' || plan.nodeStates?.[s.id!] === 'human' && !s.review && context.state.roles.roles[s.role]?.main.cli !== '人');
+      setLocked(save, plan.state === 'running');
+      setLocked(start, plan.state === 'running' || !plan.steps.some(s => plan.nodeStates?.[s.id!] === 'pending' || plan.nodeStates?.[s.id!] === 'human' && !s.review && context.state.roles.roles[s.role]?.main.cli !== '人'));
       stop.hidden = plan.state !== 'running';
       approve.hidden = plan.reason !== 'workflow_human' || !plan.steps.some(s => plan.nodeStates?.[s.id!] === 'human' && context.state.roles.roles[s.role]?.main.cli === '人');
       editors.forEach(editor => { editor.role.disabled = editor.text.disabled = editor.review.disabled = editor.remove.disabled = editor.id.disabled = editor.needs.disabled = editor.upstream.disabled = editor.condition.disabled = editor.kind.disabled = plan.state === 'running'; });
       evidence.hidden = approve.hidden;
-      rerunCurrent.disabled = plan.state === 'running' || plan.cursor >= plan.steps.length;
+      setLocked(rerunCurrent, plan.state === 'running' || plan.cursor >= plan.steps.length);
       history.replaceChildren(...plan.results.map((result, index) => {
         const block = el('section', 'card');
         block.append(el('p', result.ok ? '' : 'error-mark', `${result.node ?? (result.step ?? index) + 1} · ${result.role} · ${result.ai} · ${t(result.ok ? 'verify.pass' : 'verify.fail')} · ${result.at}`));

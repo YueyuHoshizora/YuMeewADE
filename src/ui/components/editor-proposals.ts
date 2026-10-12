@@ -3,7 +3,7 @@ import type { ProviderCapability } from '../../shared/types.ts';
 import type { WorkbenchPanelContext } from './files.ts';
 import { request, query } from '../api.ts';
 import { t } from '../i18n/index.ts';
-import { el, button, area, confirmModal, errorMessage, input, UserError } from './dom.ts';
+import { el, button, area, confirmModal, errorMessage, input, setLocked, UserError } from './dom.ts';
 export function mountEditorProposals(context: WorkbenchPanelContext): HTMLElement {
   const { project, task, editor } = context;
   const node = el('section'); const instruction = area('', t('proposal.instruction'));
@@ -91,19 +91,19 @@ export function mountEditorProposals(context: WorkbenchPanelContext): HTMLElemen
     if (busy) return;
     const snapshots = editor.snapshots().filter(snapshot => selected.has(snapshot.path));
     if (!snapshots.length) { status.textContent = t('proposal.noFiles'); return; }
-    busy = true; generate.disabled = true;
+    busy = true; setLocked(generate, true);
     try {
       const files = snapshots.map(snapshot => ({ path: snapshot.path, revision: snapshot.revision, text: snapshot.text, selection: snapshot.selection.from === snapshot.selection.to ? { from: 0, to: snapshot.text.length } : snapshot.selection }));
       const proposal = await request<EditorProposal>('/api/editor/proposals/generate', { project, task, files, instruction: instruction.value, ai: provider.value, ...(model.value.trim() ? { model: model.value.trim() } : {}), ...(effort.value.trim() ? { effort: effort.value.trim() } : {}) });
       results.prepend(render(proposal)); announce(proposal); status.textContent = t('proposal.note');
     } catch (error) { status.textContent = errorMessage(error); }
-    finally { busy = false; generate.disabled = !provider.options.length; }
+    finally { busy = false; setLocked(generate, !provider.options.length); }
   });
-  generate.disabled = true; refreshFiles();
+  setLocked(generate, true); refreshFiles();
   node.append(el('h3', '', t('proposal.title')), el('p', '', t('proposal.note')), files, button(t('proposalMulti.refresh'), refreshFiles, 'subtle'), provider, model, effort, instruction, generate, button(t('proposal.stop'), async () => { await request('/api/editor/proposals/stop', { project, task }); }, 'subtle'), status, results);
   void request<{ providers: ProviderCapability[] }>('/api/ai/capabilities').then(({ providers }) => {
     for (const capability of providers.filter(p => p.readonly && p.ai !== 'mock')) { const option = el('option'); option.value = capability.ai; option.textContent = `${capability.ai} · ${capability.enforcement}`; provider.append(option); }
-    generate.disabled = !provider.options.length; if (!provider.options.length) status.textContent = t('cap.no');
+    setLocked(generate, !provider.options.length); if (!provider.options.length) status.textContent = t('cap.no');
   }).catch(() => { status.textContent = t('cap.no'); });
   void request<{ proposals: EditorProposal[] }>(query('/api/editor/proposals', { project, task })).then(({ proposals }) => {
     for (const proposal of proposals.reverse()) { results.append(render(proposal)); announce(proposal); }

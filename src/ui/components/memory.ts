@@ -1,7 +1,7 @@
 import type { MemoryFile } from '../../shared/types.ts';
 import { ApiFailure, query, request } from '../api.ts';
 import { t } from '../i18n/index.ts';
-import { area, button, confirmModal, disclosure, el, field, input, row, run, toast } from './dom.ts';
+import { area, button, confirmModal, disclosure, el, field, input, row, run, setLocked, toast } from './dom.ts';
 import { markdown } from './markdown.ts';
 
 export function memoryPanel(project: string): HTMLDetailsElement {
@@ -30,18 +30,18 @@ export function memoryPanel(project: string): HTMLDetailsElement {
     }
   }, 'danger');
   function clear(): void {
-    selected = ''; revision = null; name.value = ''; name.disabled = false; text.value = ''; preview.replaceChildren(); remove.disabled = true;
+    selected = ''; revision = null; name.value = ''; name.disabled = false; text.value = ''; preview.replaceChildren(); setLocked(remove, true);
     status.textContent = t('memory.hint');
   }
   async function open(fileName: string): Promise<void> {
     const file = await request<MemoryFile>(query('/api/project/memory', { project, name: fileName }));
     selected = file.name; revision = file.revision; name.value = file.name; name.disabled = true; text.value = file.text;
-    remove.disabled = false; status.textContent = t('memory.hint'); preview.replaceChildren(markdown(file.text));
+    setLocked(remove, false); status.textContent = t('memory.hint'); preview.replaceChildren(markdown(file.text));
   }
   async function refresh(): Promise<void> {
     const { files } = await request<{ files: string[] }>(query('/api/project/memory', { project }));
     list.replaceChildren(...files.map(file => button(file, () => open(file)))); loaded = true;
-    remove.disabled = !selected;
+    setLocked(remove, !selected);
   }
   text.oninput = () => preview.replaceChildren(markdown(text.value));
   clear();

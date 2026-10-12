@@ -1,7 +1,7 @@
 import type { ReviewCapability, ReviewInput, ReviewResult, ReviewHistory, ReviewFindingState, FileView } from '../../shared/types.ts';
 import { query, request } from '../api.ts';
 import { t } from '../i18n/index.ts';
-import { area, button, el, field, modal, run, select } from './dom.ts';
+import { area, button, el, field, modal, run, select, setLocked } from './dom.ts';
 import { confirmUsageRound } from './usage-history.ts';
 
 /** A dedicated API, never the ordinary writing-session send route. */
@@ -24,7 +24,7 @@ export async function reviewButton(project: string, task: string, pick: () => Re
   });
   function refresh(): void {
     const capability = providers[pick().ai];
-    action.disabled = running || !capability?.supported;
+    setLocked(action, running || !capability?.supported);
     stop.hidden = !running;
     note.textContent = t(!capability?.supported ? 'readonlyReview.unsupported' : capability.enforcement === 'native-sandbox' ? 'readonlyReview.native' : 'readonlyReview.tools');
     action.title = note.textContent;
