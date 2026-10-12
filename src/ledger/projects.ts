@@ -197,8 +197,10 @@ export class ProjectLedger {
       const index = project.phases.findIndex(p => p.state !== '完成');
       if (index < 0) return project;
       project.phases[index]!.state = '完成';
-      if (project.phases[index + 1]) project.phases[index + 1]!.state = '進行中';
-      return this.updateLocked(id, { phases: project.phases, ...(index + 1 === project.phases.length ? { status: '完成' as const } : {}) });
+      // Reordering keeps finished phases finished, so the next phase to start is the next unfinished one, not the next row.
+      const following = project.phases.find(p => p.state !== '完成');
+      if (following) following.state = '進行中';
+      return this.updateLocked(id, { phases: project.phases, ...(following ? {} : { status: '完成' as const }) });
     });
   }
   /**

@@ -36,6 +36,20 @@ test('專案預設、階段推進、改名不搬目錄、階層與外部本體�
   assert.equal(projects.currentPhase(await projects.get('P')), '');
 }));
 
+test('advancing after a reorder starts the next unfinished phase and never reopens a finished one', () => withTmpWorkspace(async ws => {
+  const projects = new ProjectLedger(ws);
+  await projects.create({ name: 'P', phases: ['A', 'B', 'C'] });
+  await projects.nextPhase('P', 'A');
+  await projects.setPhases('P', ['A', 'B', 'C'], [{ name: 'B', from: 'B' }, { name: 'A', from: 'A' }, { name: 'C', from: 'C' }]);
+  const advanced = await projects.nextPhase('P', 'B');
+  assert.deepEqual(advanced.phases.map(p => [p.name, p.state]), [['B', '完成'], ['A', '完成'], ['C', '進行中']]);
+  assert.equal(projects.currentPhase(advanced), 'C');
+  assert.notEqual(advanced.status, '完成');
+  // A finished phase at the end of the list does not hide unfinished work before it.
+  await projects.setPhases('P', ['B', 'A', 'C'], [{ name: 'C', from: 'C' }, { name: 'B', from: 'B' }, { name: 'A', from: 'A' }]);
+  assert.equal((await projects.nextPhase('P', 'C')).status, '完成');
+}));
+
 test('舊專案缺欄位仍能讀、issues 與正文保留', () => withTmpWorkspace(async ws => {
   const projects = new ProjectLedger(ws);
   await projects.create({ name: 'P' });
