@@ -55,6 +55,22 @@ test('a second project cannot take a main folder in a repository another project
   assert.equal((await projects.update('B', { body: repo, description: '仍可編輯' })).description, '仍可編輯');
 }));
 
+test('main-folder claims are exclusive even when concurrent, and clearing a body is checked like setting one', () => withTmpWorkspace(async (ws, dir) => {
+  const projects = new ProjectLedger(ws);
+  const shared = (error: AppError) => error.detail === 'body_shared';
+  const repo = path.join(dir, 'repo'); await fs.mkdir(repo); await ensureRepo(repo);
+  for (const name of ['A', 'B']) { await fs.mkdir(path.join(dir, `own-${name}`)); await projects.create({ name, body: path.join(dir, `own-${name}`) }); }
+  const claims = await Promise.allSettled([projects.update('A', { body: repo }), projects.update('B', { body: repo })]);
+  assert.deepEqual(claims.map(c => c.status).sort(), ['fulfilled', 'rejected']);
+  assert.ok(claims.some(c => c.status === 'rejected' && shared(c.reason as AppError)));
+  // D points at C's ledger folder; C clearing its own body would make both use that same folder.
+  const outside = path.join(dir, 'outside'); await fs.mkdir(outside);
+  await projects.create({ name: 'C', body: outside });
+  await ensureRepo(ws.projectDir('C'));
+  await projects.create({ name: 'D', body: ws.projectDir('C') });
+  await assert.rejects(projects.update('C', { body: '' }), shared);
+}));
+
 test('advancing after a reorder starts the next unfinished phase and never reopens a finished one', () => withTmpWorkspace(async ws => {
   const projects = new ProjectLedger(ws);
   await projects.create({ name: 'P', phases: ['A', 'B', 'C'] });

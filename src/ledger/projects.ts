@@ -109,10 +109,13 @@ export class ProjectLedger {
     if (patch.requireVerification !== undefined && typeof patch.requireVerification !== 'boolean') throw new AppError('bad_request', 'field_type', { field: 'requireVerification' });
     if (patch.autoFix !== undefined && (typeof patch.autoFix !== 'number' || !Number.isInteger(patch.autoFix) || patch.autoFix < 0 || patch.autoFix > AUTO_FIX_MAX)) throw new AppError('bad_request', 'field_type', { field: 'autoFix' });
     if (patch.status !== undefined && !PROJECT_STATUSES.includes(patch.status)) throw new AppError('bad_request', 'invalid_state');
-    if (patch.body) {
-      if (!path.isAbsolute(patch.body) || !(await fs.stat(patch.body).catch(() => null))?.isDirectory()) throw new AppError('bad_request', 'body_not_folder', { field: 'body' });
-      // An unchanged body is not rechecked, so projects set up that way before can still be edited.
-      if ((id === undefined ? null : await this.get(id).catch(() => null))?.body !== patch.body) await this.assertRepositoryFree(patch.body, id);
+    if (patch.body !== undefined) {
+      if (patch.body && (!path.isAbsolute(patch.body) || !(await fs.stat(patch.body).catch(() => null))?.isDirectory())) throw new AppError('bad_request', 'body_not_folder', { field: 'body' });
+      // An unchanged body is not rechecked, so projects set up that way before can still be edited. Clearing it makes the
+      // ledger folder the main folder, which another project may already point at.
+      const before = id === undefined ? undefined : await this.get(id).catch(() => null);
+      if (patch.body && before?.body !== patch.body) await this.assertRepositoryFree(patch.body, id);
+      else if (!patch.body && before?.body && id !== undefined) await this.assertRepositoryFree(this.ws.projectDir(id), id);
     }
     if (patch.parent) {
       let parent = await this.get(patch.parent);
@@ -141,7 +144,7 @@ export class ProjectLedger {
   }
 
   async create(input: NewProjectInput): Promise<Project> {
-    return withFileLocks([this.ws.projectFile(input.name)], async () => {
+    return withFileLocks([this.ws.projectFile(input.name), this.repositoryLock()], async () => {
       const phases = input.phases ?? ['計畫', '實作', '檢查', '收尾'];
       if (!Array.isArray(phases) || phases.some(p => typeof p !== 'string')) throw new AppError('bad_request', 'field_type', { field: 'phases' });
       const patch = { ...input, phases: phases.map((name, i) => ({ name: name.trim(), state: i === 0 ? '進行中' as const : '未開始' as const })) };
@@ -167,7 +170,7 @@ export class ProjectLedger {
 
   /** `expected` holds fields as the caller saw them; any changed since (another window, a hand or AI edit of PROJECT.md) make this a conflict instead of an overwrite. */
   async update(id: string, patch: ProjectPatch, expected?: ProjectExpectation): Promise<Project> {
-    return withFileLocks([this.ws.projectFile(id), ...(patch.parent ? [this.hierarchyLock()] : [])], () => this.updateLocked(id, patch, expected));
+    return withFileLocks([this.ws.projectFile(id), ...(patch.parent ? [this.hierarchyLock()] : []), ...(patch.body !== undefined ? [this.repositoryLock()] : [])], () => this.updateLocked(id, patch, expected));
   }
 
   /**
@@ -176,6 +179,8 @@ export class ProjectLedger {
    * (a new project cannot be anyone's ancestor). It is an in-process lock key only; no file is created.
    */
   private hierarchyLock(): string { return path.join(this.ws.projectsDir, '.project-hierarchy.lock'); }
+  /** Same idea for main folders: checking that a repository is free and claiming it must not interleave with another claim. */
+  private repositoryLock(): string { return path.join(this.ws.projectsDir, '.project-repository.lock'); }
 
   private async updateLocked(id: string, patch: ProjectPatch, expected?: ProjectExpectation): Promise<Project> {
     const current = await this.get(id);
