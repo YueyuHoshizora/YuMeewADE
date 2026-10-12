@@ -272,7 +272,8 @@ export function projectView(context: ViewContext, project: ProjectView, params: 
   }));
   let rulesLoading = false;
   rulesBox.addEventListener('toggle', () => {
-    if (!rulesBox.open || rulesLoading || !rules.disabled) return;
+    // Reopening reloads unedited rules, so an AI or hand edit made meanwhile shows up instead of a stale copy that can no longer be saved.
+    if (!rulesBox.open || rulesLoading || (!rules.disabled && rules.value !== rulesLoaded)) return;
     rulesLoading = true;
     void run(async () => {
       try {
