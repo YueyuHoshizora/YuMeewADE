@@ -56,6 +56,7 @@ export const zhCN: Record<MessageKey, string> = {
 'chat.turnUsage': '输入 {input} · 输出 {output}', 'chat.cachedUsage': ' · 缓存 {cached}',
 'chat.usageHint': '这些 token 用量由 CLI 报告。',
 'chat.queuePaused': '队列已暂停：第一条指令失败，后续指令会等待，直到移除失败项或手动开始。',
+'chat.queueWaitsAnswer': '队列已暂停：AI 正在等你回答。回答后会接着执行后续指令，也可以按“开始”直接执行。',
 'copy.leftover': '合并成功，但以下未提交的文件未被合并；工作副本已保留。',
 'chat.earlier': '载入更早的消息',
 'search.title': '搜索所有对话', 'search.placeholder': '搜索作业和对话内容…', 'search.truncated': '结果过多，请缩小搜索范围。',

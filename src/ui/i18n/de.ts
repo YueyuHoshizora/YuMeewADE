@@ -56,6 +56,7 @@ export const de: Record<MessageKey, string> = {
 'chat.turnUsage': 'Eingabe {input} · Ausgabe {output}', 'chat.cachedUsage': ' · Cache {cached}',
 'chat.usageHint': 'Diese Tokenzahlen werden von der CLI gemeldet.',
 'chat.queuePaused': 'Warteschlange pausiert: Der erste Eintrag ist fehlgeschlagen. Weitere warten, bis er entfernt oder manuell gestartet wird.',
+'chat.queueWaitsAnswer': 'Warteschlange pausiert: Die KI wartet auf deine Antwort. Weitere Einträge folgen nach der Antwort, oder starte einen jetzt mit „Starten“.',
 'copy.leftover': 'Zusammenführung erfolgreich, aber diese nicht committeten Dateien wurden nicht übernommen; der Worktree wurde behalten.',
 'chat.earlier': 'Ältere Nachrichten laden',
 'search.title': 'Alle Gespräche durchsuchen', 'search.placeholder': 'Aufgaben und Gesprächsinhalte durchsuchen…', 'search.truncated': 'Zu viele Ergebnisse. Suche eingrenzen.',

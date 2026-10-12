@@ -55,6 +55,7 @@ export const zhTW = {
 'chat.turnUsage': '輸入 {input} · 輸出 {output}', 'chat.cachedUsage': ' · 快取 {cached}',
 'chat.usageHint': '這些 token 用量由 CLI 回報。',
 'chat.queuePaused': '隊列已暫停：第一筆指示失敗，後續指示會等待，直到移除失敗項目或手動開始。',
+'chat.queueWaitsAnswer': '隊列已暫停：AI 正在等你回答。回答後會接著執行後續指示，也可以按「開始」直接執行。',
 'copy.leftover': '合併成功，但以下未提交的檔案未被合併；工作副本已保留。',
 'chat.earlier': '載入較早的訊息',
 'search.title': '搜尋所有對話', 'search.placeholder': '搜尋作業與對話內容…', 'search.truncated': '結果過多，請縮小搜尋範圍。',

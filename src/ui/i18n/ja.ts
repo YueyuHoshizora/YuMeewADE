@@ -56,6 +56,7 @@ export const ja: Record<MessageKey, string> = {
 'chat.turnUsage': '入力 {input} · 出力 {output}', 'chat.cachedUsage': ' · キャッシュ {cached}',
 'chat.usageHint': 'これらのトークン数は CLI が報告した値です。',
 'chat.queuePaused': 'キューは一時停止中：先頭の指示が失敗しました。削除するか手動で開始するまで後続の指示は待機します。',
+'chat.queueWaitsAnswer': 'キューは一時停止中：AI があなたの回答を待っています。回答すると後続の指示が続きます。「開始」で今すぐ実行することもできます。',
 'copy.leftover': 'マージは成功しましたが、以下の未コミットファイルはマージされず、worktree は保持されました。',
 'chat.earlier': '以前のメッセージを読み込む',
 'search.title': 'すべての会話を検索', 'search.placeholder': '作業と会話の内容を検索…', 'search.truncated': '結果が多すぎます。検索を絞り込んでください。',

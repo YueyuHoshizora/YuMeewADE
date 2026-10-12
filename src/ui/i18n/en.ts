@@ -56,6 +56,7 @@ export const en: Record<MessageKey, string> = {
 'chat.turnUsage': 'in {input} · out {output}', 'chat.cachedUsage': ' · cached {cached}',
 'chat.usageHint': 'These token counts are reported by the CLI.',
 'chat.queuePaused': 'Queue paused: the first item failed. Later items wait until it is removed or started manually.',
+'chat.queueWaitsAnswer': 'Queue paused: the AI is waiting for your answer. Later items continue after you answer, or press Start to run one now.',
 'copy.leftover': 'Merge succeeded, but these uncommitted files were not merged; the worktree was kept.',
 'chat.earlier': 'Load earlier messages',
 'search.title': 'Search all conversations', 'search.placeholder': 'Search tasks and conversation content…', 'search.truncated': 'Too many results. Refine your search.',

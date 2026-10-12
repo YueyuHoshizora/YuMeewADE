@@ -367,6 +367,8 @@ export function taskView(
     }));
     if (queue.some(item => item.error)) {
       queueNode.prepend(el('p', 'warning queue-paused', t('chat.queuePaused')));
+    } else if (!busy && task.state === '等待回覆' && queue[0] && !queue[0].answer) {
+      queueNode.prepend(el('p', 'warning queue-paused', t('chat.queueWaitsAnswer')));
     }
     queueNode.hidden = !queue.length;
   }
@@ -1153,6 +1155,7 @@ export function taskView(
       ]) !== JSON.stringify([
         nextTask.state, nextTask.phase, nextTask.steps, nextTask.memo, nextTask.next, nextTask.due, nextTask.tags,
       ]);
+      const stateChanged = task.state !== nextTask.state;
       project = nextProject;
       task = nextTask;
       slashCommands.refresh();
@@ -1162,6 +1165,7 @@ export function taskView(
       renderQuestion();
       updateHeaderActions();
       if (footerChanged) renderFooter();
+      if (stateChanged) renderQueue();
       if (workChanged) void run(renderWork);
     },
   };

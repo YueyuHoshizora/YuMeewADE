@@ -185,6 +185,24 @@ test('roleless defaults, tool rows, asks, answer clearing, unread', () => withTm
   assert.deepEqual(s.runner.unread(), [{ project: 'P', task: s.task.id }]);
   assert.ok(s.calls[1]?.resumeId); assert.ok(s.events.some(e => e.event === 'busy'));
 }));
+test('an open question pauses ordinary queued instructions until it is answered; a queued answer proceeds', () => withTmpWorkspace(async ws => {
+  const s = await setup(ws, { chunkMs: 2, text: opts => opts.prompt.includes('[ask-me]') ? 'done\n[[question]]\nWhich branch?\n1. A\n2. B\n[[/question]]' : 'ok' });
+  await s.send('[ask-me] [slow]'); await s.send('second', { mode: 'queue' }); await s.runner.whenIdle();
+  assert.equal(s.calls.length, 1);
+  assert.deepEqual((await s.store.readQueue('P', s.task.id)).map(item => item.text), ['second']);
+  let task = await s.tasks.get('P', s.task.id);
+  assert.equal(task.state, '等待回覆'); assert.equal(task.question, 'Which branch?');
+  // Answering ends the wait; the paused instruction then runs on its own.
+  await s.send('A', { answer: true }); await s.runner.whenIdle();
+  assert.deepEqual(s.calls.map(call => call.prompt.includes('second')), [false, false, true]);
+  assert.deepEqual(await s.store.readQueue('P', s.task.id), []);
+  task = await s.tasks.get('P', s.task.id);
+  assert.equal(task.question, '');
+  // An answer queued behind the asking turn is the reply the question waits for.
+  await s.send('[ask-me] again [slow]'); await s.send('B', { mode: 'queue', answer: true }); await s.runner.whenIdle();
+  assert.equal(s.calls.length, 5);
+  assert.equal((await s.tasks.get('P', s.task.id)).question, '');
+}));
 test('mode required; redo/amend stop prior run and keep queue; normal finish drains', () => withTmpWorkspace(async ws => {
   const s = await setup(ws, { chunkMs: 5, stopMs: 2 });
   await s.send('first [slow]'); await assert.rejects(s.send('missing'), /取消重做/u);

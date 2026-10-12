@@ -56,6 +56,7 @@ export const it: Record<MessageKey, string> = {
 'chat.turnUsage': 'input {input} · output {output}', 'chat.cachedUsage': ' · cache {cached}',
 'chat.usageHint': 'Questi conteggi di token sono riportati dalla CLI.',
 'chat.queuePaused': 'Coda in pausa: il primo elemento è fallito. I successivi attendono la sua rimozione o l’avvio manuale.',
+'chat.queueWaitsAnswer': 'Coda in pausa: l’IA attende la tua risposta. Gli elementi successivi riprendono dopo la risposta, oppure avviane uno con «Avvia».',
 'copy.leftover': 'Unione riuscita, ma questi file senza commit non sono stati uniti; il worktree è stato conservato.',
 'chat.earlier': 'Carica i messaggi precedenti',
 'search.title': 'Cerca in tutte le conversazioni', 'search.placeholder': 'Cerca nelle attività e nelle conversazioni…', 'search.truncated': 'Troppi risultati. Affina la ricerca.',

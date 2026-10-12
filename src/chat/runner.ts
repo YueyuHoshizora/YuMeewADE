@@ -484,6 +484,8 @@ export class ChatRunner extends EventEmitter {
         const queue = await this.deps.store.readQueue(p, t);
         const first = queue[0];
         if (!first || first.error || s.text === '') return false;
+        // An open question needs the human first, as for auto-fix and workflows: only a queued answer may proceed.
+        if (!first.answer && (await this.deps.tasks.get(p, t)).state === '等待回覆') return false;
         try {
           await this.sendLocked({ project: p, task: t, text: first.text, fromQueue: first.id });
         } catch (err) {
