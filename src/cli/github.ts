@@ -3,6 +3,8 @@ import { AppError } from '../shared/errors.ts';
 import type { GitPullRequestStatus } from '../shared/types.ts';
 import type { GithubReviewStatus, GithubPullRequest, GithubComment, GithubIssue, GithubFeedbackInput, GithubFeedbackRemote, GithubReviewThread } from '../shared/github.ts';
 
+// 30 threads × 10 comments × 4,000 characters, with worst-case JSON escaping and metadata headroom.
+const JSON_OUTPUT_LIMIT = 8_000_000;
 type GithubInput = { action: 'status' } | { action: 'review'; branch: string } | { action: 'issues'; search: string } | { action: 'issue'; number: number } | { action: 'create'; title: string; body: string; base: string; head: string } | GithubFeedbackInput;
 export function github(root: string, input: { action: 'status' }, command?: string): Promise<GitPullRequestStatus>;
 export function github(root: string, input: { action: 'review'; branch: string }, command?: string): Promise<GithubReviewStatus>;
@@ -18,13 +20,13 @@ export async function github(root: string, input: GithubInput, command = 'gh'): 
     if (input.action === 'status') return { available: false, authenticated: false, repository: null };
     throw new AppError('unavailable', 'gh_unavailable');
   }
-  const run = (args: string[]): Promise<{ code: number; stdout: string }> => {
+  const run = (args: string[], outputLimit = 64_000): Promise<{ code: number; stdout: string }> => {
     const { promise, resolve, reject } = Promise.withResolvers<{ code: number; stdout: string }>();
     const child = spawnCli(executable, args, { cwd: root, env, stdio: ['ignore', 'pipe', 'ignore'], detached: process.platform !== 'win32', windowsHide: true });
     let stdout = ''; let overflow = false; let timedOut = false; let stop: (() => void) | undefined;
     const deadline = setTimeout(() => { timedOut = true; stop = terminateTree(child, () => resolve({ code: -1, stdout: '' })); }, 120_000);
     child.stdout?.setEncoding('utf8');
-    child.stdout?.on('data', (chunk: string) => { if (stdout.length + chunk.length > 64_000) overflow = true; else stdout += chunk; });
+    child.stdout?.on('data', (chunk: string) => { if (stdout.length + chunk.length > outputLimit) overflow = true; else stdout += chunk; });
     child.on('error', () => { clearTimeout(deadline); stop?.(); reject(new AppError('unavailable', 'gh_unavailable')); });
     child.on('close', code => { clearTimeout(deadline); stop?.(); resolve({ code: overflow || timedOut ? -1 : code ?? -1, stdout }); });
     return promise;
@@ -42,13 +44,13 @@ export async function github(root: string, input: GithubInput, command = 'gh'): 
   if (input.action === 'feedback-read' || input.action === 'feedback-write') {
     if (!validRepository(input.repository) || input.repository !== repository || !Number.isSafeInteger(input.number) || input.number <= 0 || !['thread', 'issue'].includes(input.kind)) throw new AppError('conflict', 'gh_pr_failed');
     const json = async (args: string[]): Promise<unknown> => {
-      const result = await run(args);
+      const result = await run(args, JSON_OUTPUT_LIMIT);
       if (result.code !== 0) throw new AppError('conflict', 'gh_pr_failed');
       try { return JSON.parse(result.stdout); } catch { throw new AppError('conflict', 'gh_pr_failed'); }
     };
     const read = async (): Promise<GithubFeedbackRemote> => {
       if (input.kind === 'issue') {
-        const issue = parseIssue(await json(['issue', 'view', String(input.number), '--repo', repository, '--json', 'number,title,body,url,state', '--jq', '{number,title,body:(.body[:10000]),url,state}']));
+        const issue = parseIssue(await json(['issue', 'view', String(input.number), '--repo', repository, '--json', 'number,title,body,url,state,updatedAt', '--jq', '{number,title,body:(.body[:10000]),url,state,contentVersion:.updatedAt}']));
         if (issue.number !== input.number || !identityUrl(issue.url, repository, 'issues', input.number)) throw new AppError('conflict', 'gh_pr_failed');
         return { repository, issue, url: issue.url, headOid: '' };
       }
@@ -64,6 +66,10 @@ export async function github(root: string, input: GithubInput, command = 'gh'): 
     if (input.body.length > 10000 || input.title.length > 300 || /[\0]/.test(input.body + input.title)) throw new AppError('bad_request', 'field_type');
     if (input.kind === 'thread') {
       if (current.headOid !== input.headOid || current.thread?.resolved !== input.expectedResolved || !['reply', 'resolve', 'unresolve'].includes(input.operation)) throw new AppError('conflict', 'gh_pr_failed');
+      if (!input.commentId || !validNodeId(input.commentId)) throw new AppError('conflict', 'gh_pr_failed');
+      const pinned = object(await json(['api', 'graphql', '-f', 'query=query($id:ID!){node(id:$id){... on PullRequestReviewComment{id pullRequest{number url repository{nameWithOwner}}}}}', '-f', `id=${input.commentId}`, '--jq', '.data.node']));
+      const pinnedPr = object(pinned['pullRequest']);
+      if (pinned['id'] !== input.commentId || pinnedPr['number'] !== input.number || object(pinnedPr['repository'])['nameWithOwner'] !== repository || !identityUrl(text(pinnedPr['url']), repository, 'pull', input.number)) throw new AppError('conflict', 'gh_pr_failed');
       if (input.operation === 'reply' && !input.body.trim()) throw new AppError('bad_request', 'field_type');
       const mutation = input.operation === 'reply'
         ? 'mutation($id:ID!,$body:String!){addPullRequestReviewThreadReply(input:{pullRequestReviewThreadId:$id,body:$body}){comment{id}}}'
@@ -73,26 +79,29 @@ export async function github(root: string, input: GithubInput, command = 'gh'): 
       const response = object(await json(['api', 'graphql', '-f', `query=${mutation}`, '-f', `id=${input.threadId}`, ...(input.operation === 'reply' ? ['-f', `body=${input.body}`] : [])]));
       const payload = object(object(response['data'])[input.operation === 'reply' ? 'addPullRequestReviewThreadReply' : input.operation === 'resolve' ? 'resolveReviewThread' : 'unresolveReviewThread']);
       if (response['errors'] || (input.operation === 'reply' ? !validNodeId(text(object(payload['comment'])['id'])) : object(payload['thread'])['id'] !== input.threadId)) throw new AppError('conflict', 'gh_pr_failed');
+      if (input.operation !== 'reply') current.thread!.resolved = input.operation === 'resolve';
     } else {
       if (current.issue?.state !== input.expectedState) throw new AppError('conflict', 'gh_pr_failed');
       const endpoint = `repos/${repository}/issues/${input.number}`;
       if (input.operation === 'reply') {
         if (!input.body.trim()) throw new AppError('bad_request', 'field_type');
         await json(['api', `${endpoint}/comments`, '--method', 'POST', '-f', `body=${input.body}`]);
-      } else if (input.operation === 'close') await json(['api', endpoint, '--method', 'PATCH', '-f', 'state=closed']);
+      } else if (input.operation === 'close') current.issue = parseIssue(await json(['api', endpoint, '--method', 'PATCH', '-f', 'state=closed']));
       else if (input.operation === 'update') {
+        if (!input.expectedContentVersion || current.issue?.contentVersion !== input.expectedContentVersion) throw new AppError('conflict', 'gh_pr_failed');
         if (!input.title.trim()) throw new AppError('bad_request', 'title_required');
-        await json(['api', endpoint, '--method', 'PATCH', '-f', `title=${input.title}`, '-f', `body=${input.body}`]);
+        current.issue = parseIssue(await json(['api', endpoint, '--method', 'PATCH', '-f', `title=${input.title}`, '-f', `body=${input.body}`]));
       } else throw new AppError('bad_request', 'field_type');
     }
-    return read();
+    // Do not make confirmed writes depend on another read: a failed refresh would allow duplicate retries.
+    return current;
   }
   if (input.action === 'issues' || input.action === 'issue') {
     if (input.action === 'issue' && (!Number.isSafeInteger(input.number) || input.number <= 0) || input.action === 'issues' && (input.search.length > 300 || input.search.includes('\0'))) throw new AppError('bad_request', 'field_type');
     const args = input.action === 'issues'
       ? ['issue', 'list', '--repo', repository, '--state', 'open', '--limit', '30', '--json', 'number,title,url', ...(input.search ? ['--search', input.search] : [])]
-      : ['issue', 'view', String(input.number), '--repo', repository, '--json', 'number,title,body,url,state', '--jq', '{number,title,body:(.body[:10000]),url,state}'];
-    const result = await run(args);
+      : ['issue', 'view', String(input.number), '--repo', repository, '--json', 'number,title,body,url,state,updatedAt', '--jq', '{number,title,body:(.body[:10000]),url,state,contentVersion:.updatedAt}'];
+    const result = await run(args, JSON_OUTPUT_LIMIT);
     if (result.code !== 0) throw new AppError('conflict', 'gh_pr_failed');
     let value: unknown;
     try { value = JSON.parse(result.stdout); } catch { throw new AppError('conflict', 'gh_pr_failed'); }
@@ -102,7 +111,7 @@ export async function github(root: string, input: GithubInput, command = 'gh'): 
   }
   if (input.action === 'review') {
     const json = async (args: string[]): Promise<unknown> => {
-      const result = await run(args);
+      const result = await run(args, JSON_OUTPUT_LIMIT);
       if (result.code !== 0) throw new AppError('conflict', 'gh_pr_failed');
       try { return JSON.parse(result.stdout); } catch { throw new AppError('conflict', 'gh_pr_failed'); }
     };
@@ -138,8 +147,9 @@ export function parsePullRequest(value: unknown, threads: unknown): GithubPullRe
 
 export function parseIssue(value: unknown): GithubIssue {
   const v = object(value);
-  if (!Number.isSafeInteger(v['number']) || (v['number'] as number) <= 0 || !text(v['title'], 300).trim() || !/^https:\/\/[^\s/]+\/[^\s]+\/issues\/\d+$/.test(url(v['url']))) throw new AppError('conflict', 'gh_pr_failed');
-  return { number: v['number'] as number, title: text(v['title'], 300), body: text(v['body'], 10_000), url: url(v['url']), state: text(v['state'], 30) };
+  if (!Number.isSafeInteger(v['number']) || (v['number'] as number) <= 0 || !text(v['title'], 300).trim() || !/^https:\/\/[^\s/]+\/[^\s]+\/issues\/\d+$/.test(url(v['html_url'] ?? v['url']))) throw new AppError('conflict', 'gh_pr_failed');
+  const version = text(v['contentVersion'] ?? v['updated_at'], 100);
+  return { number: v['number'] as number, title: text(v['title'], 300), body: text(v['body'], 10_000), url: url(v['html_url'] ?? v['url']), state: text(v['state'], 30).toUpperCase(), ...(version ? { contentVersion: version } : {}) };
 }
 
 const validRepository = (value: string): boolean => value.length <= 200 && /^[A-Za-z0-9][A-Za-z0-9_.-]*\/[A-Za-z0-9][A-Za-z0-9_.-]*$/.test(value) && !value.includes('..');

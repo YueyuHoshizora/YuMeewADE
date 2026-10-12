@@ -10,7 +10,7 @@ export function registerWorkbenchRoutes(router: Router, app: App): void {
   const text = (body: Record<string, unknown>, key: string, max: number): string => {
     const value = body[key]; if (typeof value !== 'string' || value.length > max || value.includes('\0')) throw new AppError('bad_request', 'field_type', { field: key }); return value;
   };
-  const refreshed = (value: LinkedFeedback, remote: GithubFeedbackRemote): LinkedFeedback => ({ ...value, resolved: remote.thread?.resolved ?? false, state: remote.issue?.state ?? '', headOid: remote.headOid });
+  const refreshed = (value: LinkedFeedback, remote: GithubFeedbackRemote): LinkedFeedback => ({ ...value, resolved: remote.thread?.resolved ?? false, state: remote.issue?.state ?? '', headOid: remote.headOid, ...(remote.issue?.contentVersion ? { contentVersion: remote.issue.contentVersion } : {}) });
   router.get('/api/git/linked-feedback', async ({ query }) => feedback.get(reqString(query, 'project', 120), reqString(query, 'task', 120)));
   router.post('/api/git/feedback-task', async ({ body }) => {
     const project = reqString(body, 'project', 120); await app.trust.assertExecutable(project); busy(project);
@@ -36,7 +36,7 @@ export function registerWorkbenchRoutes(router: Router, app: App): void {
       const input = { repository: current.repository, number: current.number, threadId: current.threadId, kind: current.kind };
       const remote = operation === 'refresh'
         ? await app.gitWorkbench.githubFeedback(project, { action: 'feedback-read', ...input })
-        : await app.gitWorkbench.githubFeedback(project, { action: 'feedback-write', ...input, operation, headOid: current.headOid, expectedResolved: current.resolved, expectedState: current.state, body: body.body === undefined ? '' : text(body, 'body', 10000), title: body.title === undefined ? '' : text(body, 'title', 300), confirmed: true });
+        : await app.gitWorkbench.githubFeedback(project, { action: 'feedback-write', ...input, commentId: current.commentId, ...(current.contentVersion ? { expectedContentVersion: current.contentVersion } : {}), operation, headOid: current.headOid, expectedResolved: current.resolved, expectedState: current.state, body: body.body === undefined ? '' : text(body, 'body', 10000), title: body.title === undefined ? '' : text(body, 'title', 300), confirmed: true });
       return refreshed(current, remote);
     });
     await app.oplog.record({ action: `github.feedback-${operation}`, project, task }); app.changed(project, task);
@@ -72,7 +72,7 @@ export function registerWorkbenchRoutes(router: Router, app: App): void {
     const draft = body.draft === undefined ? `${issue.title}\n${issue.url}\n\n${issue.body}`.slice(0, app.config.limits.promptChars) : text(body, 'draft', app.config.limits.promptChars);
     busy(project);
     const task = await app.tasks.create(project, { title: reqString(body, 'title', 300), issue: issue.number, issueUrl: issue.url, phase: app.projects.currentPhase(await app.projects.get(project)) });
-    const linked = await feedback.create(project, task.id, { repository: status.repository, kind: 'issue', number: issue.number, url: issue.url, threadId: '', commentId: '', path: '', line: null, source: issue.body, draft, resolved: false, state: issue.state, headOid: '' });
+    const linked = await feedback.create(project, task.id, { repository: status.repository, kind: 'issue', number: issue.number, url: issue.url, threadId: '', commentId: '', path: '', line: null, source: issue.body, draft, resolved: false, state: issue.state, headOid: '', ...(issue.contentVersion ? { contentVersion: issue.contentVersion } : {}) });
     await app.oplog.record({ action: 'github.issue-task', project, task: task.id });
     app.changed(project, task.id);
     return { task, feedback: linked };

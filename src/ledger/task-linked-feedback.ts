@@ -33,6 +33,7 @@ export class TaskLinkedFeedback {
       const v = value as Record<string, unknown>;
       for (const key of ['revision', 'repository', 'url', 'threadId', 'commentId', 'path', 'source', 'draft', 'headOid', 'state']) if (typeof v[key] !== 'string') throw new AppError('conflict');
       if (!['thread', 'issue'].includes(v['kind'] as string) || !Number.isSafeInteger(v['number']) || (v['number'] as number) <= 0 || typeof v['resolved'] !== 'boolean' || v['line'] !== null && (!Number.isSafeInteger(v['line']) || (v['line'] as number) <= 0)) throw new AppError('conflict');
+      if (v['contentVersion'] !== undefined && (typeof v['contentVersion'] !== 'string' || v['contentVersion'].length > 100)) throw new AppError('conflict');
       return v as unknown as LinkedFeedback;
     } catch (error) { if ((error as NodeJS.ErrnoException).code === 'ENOENT') return null; throw error instanceof AppError ? error : new AppError('conflict'); }
   }
