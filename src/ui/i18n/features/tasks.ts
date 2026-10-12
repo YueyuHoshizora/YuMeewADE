@@ -1,10 +1,10 @@
-export const featureZhTW = { 'tasks.due': '期限', 'tasks.tags': '標籤（逗號分隔）', 'tasks.overdue': '逾期' };
-export const featureZhCN = { 'tasks.due': '期限', 'tasks.tags': '标签（逗号分隔）', 'tasks.overdue': '逾期' };
-export const featureEn = { 'tasks.due': 'Due date', 'tasks.tags': 'Tags (comma separated)', 'tasks.overdue': 'Overdue' };
-export const featureJa = { 'tasks.due': '期限', 'tasks.tags': 'タグ（カンマ区切り）', 'tasks.overdue': '期限超過' };
-export const featureDe = { 'tasks.due': 'Fälligkeitsdatum', 'tasks.tags': 'Tags (kommagetrennt)', 'tasks.overdue': 'Überfällig' };
-export const featureFr = { 'tasks.due': 'Échéance', 'tasks.tags': 'Étiquettes (séparées par des virgules)', 'tasks.overdue': 'En retard' };
-export const featureIt = { 'tasks.due': 'Scadenza', 'tasks.tags': 'Etichette (separate da virgole)', 'tasks.overdue': 'Scaduto' };
+export const featureZhTW = { 'tasks.due': '期限', 'tasks.tags': '標籤（逗號分隔）', 'tasks.overdue': '逾期', 'detail.step_changed': '步驟清單已經變更，請確認後再操作' };
+export const featureZhCN = { 'tasks.due': '期限', 'tasks.tags': '标签（逗号分隔）', 'tasks.overdue': '逾期', 'detail.step_changed': '步骤列表已经变更，请确认后再操作' };
+export const featureEn = { 'tasks.due': 'Due date', 'tasks.tags': 'Tags (comma separated)', 'tasks.overdue': 'Overdue', 'detail.step_changed': 'The step list has changed; check it and try again' };
+export const featureJa = { 'tasks.due': '期限', 'tasks.tags': 'タグ（カンマ区切り）', 'tasks.overdue': '期限超過', 'detail.step_changed': '手順の一覧が変更されています。確認してからもう一度操作してください' };
+export const featureDe = { 'tasks.due': 'Fälligkeitsdatum', 'tasks.tags': 'Tags (kommagetrennt)', 'tasks.overdue': 'Überfällig', 'detail.step_changed': 'Die Schrittliste hat sich geändert; bitte prüfen und erneut versuchen' };
+export const featureFr = { 'tasks.due': 'Échéance', 'tasks.tags': 'Étiquettes (séparées par des virgules)', 'tasks.overdue': 'En retard', 'detail.step_changed': 'La liste des étapes a changé ; vérifie-la puis réessaie' };
+export const featureIt = { 'tasks.due': 'Scadenza', 'tasks.tags': 'Etichette (separate da virgole)', 'tasks.overdue': 'Scaduto', 'detail.step_changed': 'L’elenco dei passaggi è cambiato; controllalo e riprova' };
 
 export const templatesZhTW = { 'tasks.templates': '作業範本', 'tasks.templateName': '範本名稱', 'tasks.templateSource': '來源作業', 'tasks.instruction': '第一則指示（建立後放入草稿，不自動執行）', 'tasks.projectTemplate': '專案範本', 'tasks.workspaceTemplate': '工作區範本', 'tasks.fromTemplate': '從範本建立', 'tasks.saveTemplate': '從作業儲存範本' };
 export const templatesZhCN = { 'tasks.templates': '任务模板', 'tasks.templateName': '模板名称', 'tasks.templateSource': '来源任务', 'tasks.instruction': '第一条指示（创建后放入草稿，不自动执行）', 'tasks.projectTemplate': '项目模板', 'tasks.workspaceTemplate': '工作区模板', 'tasks.fromTemplate': '从模板创建', 'tasks.saveTemplate': '从任务保存模板' };

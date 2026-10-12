@@ -7,6 +7,7 @@ import { phaseKey, stepsHash } from '../../ledger/completion.ts';
 import { phaseTasks } from '../../state/state.ts';
 import { Router, reqString } from '../router.ts';
 import { TaskTemplates } from '../../ledger/task-templates.ts';
+import { STEP_TEXT_MAX } from '../../ledger/tasks.ts';
 import { TASK_STATES, type BulkTaskAction, type BulkTaskResult } from '../../shared/types.ts';
 import { validDue, validTag } from '../../shared/task-metadata.ts';
 import { isValidTaskId } from '../../shared/names.ts';
@@ -235,8 +236,8 @@ export function registerLedgerRoutes(router: Router, app: App): void {
     const count = Number(body.add !== undefined) + Number(body.remove !== undefined) + Number(body.index !== undefined);
     if (count !== 1) throw new AppError('bad_request');
     const result = body.add !== undefined ? await app.tasks.addStep(project, task, reqString(body, 'add', 300))
-      : body.remove !== undefined ? await app.tasks.removeStep(project, task, index(body.remove))
-      : await app.tasks.setStep(project, task, index(body.index), boolean(body.done));
+      : body.remove !== undefined ? await app.tasks.removeStep(project, task, index(body.remove), reqString(body, 'text', STEP_TEXT_MAX))
+      : await app.tasks.setStep(project, task, index(body.index), boolean(body.done), reqString(body, 'text', STEP_TEXT_MAX));
     await changed('task.step', project, task);
     return result;
   });

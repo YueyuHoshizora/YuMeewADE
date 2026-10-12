@@ -19,6 +19,13 @@ const STR_FIELDS = ['title', 'phase', 'role', 'parent', 'cli', 'model', 'effort'
 // Same per-step bound as task templates, which create tasks through here; the count keeps one request from writing a huge ledger file.
 export const STEP_TEXT_MAX = 2000;
 export const STEPS_MAX = 500;
+const STEP_ROW = /^\s*[-*]\s*\[[ xX]\]\s*(.+)$/;
+/** The caller names the step it saw; if the list changed meanwhile (another window, the AI), no other step is touched. */
+function stepRow(rows: string[], indices: number[], index: number, expected: string): number {
+  const row = indices[index];
+  if (row === undefined || STEP_ROW.exec(rows[row]!)?.[1] !== expected) throw new AppError('conflict', 'step_changed');
+  return row;
+}
 const HEADINGS = { steps: /^(步驟|手順|Steps)$/i, memo: /^(備註|メモ|Memo)$/i, next: /^(下一步|次にやること|Next)$/i };
 
 interface BodySection { rows: string[]; start: number; end: number }
@@ -139,9 +146,9 @@ export class TaskLedger {
       return this.get(project, id);
     });
   }
-  async setStep(project: string, id: string, index: number, done: boolean): Promise<Task> {
-    if (!Number.isInteger(index) || typeof done !== 'boolean') throw new AppError('bad_request', 'field_type');
-    return this.editSteps(project, id, (rows, indices) => { const row = indices[index]; if (row === undefined) throw new AppError('bad_request', 'field_type', { field: 'index' }); rows[row] = rows[row]!.replace(/\[[ xX]\]/, done ? '[x]' : '[ ]'); });
+  async setStep(project: string, id: string, index: number, done: boolean, expected: string): Promise<Task> {
+    if (!Number.isInteger(index) || typeof done !== 'boolean' || typeof expected !== 'string') throw new AppError('bad_request', 'field_type');
+    return this.editSteps(project, id, (rows, indices) => { const row = stepRow(rows, indices, index, expected); rows[row] = rows[row]!.replace(/\[[ xX]\]/, done ? '[x]' : '[ ]'); });
   }
   async addStep(project: string, id: string, text: string): Promise<Task> {
     if (typeof text !== 'string' || !text.trim() || text.length > STEP_TEXT_MAX) throw new AppError('bad_request', 'field_type', { field: 'add' });
@@ -150,9 +157,9 @@ export class TaskLedger {
       rows.splice(end, 0, `- [ ] ${text.replace(/[\r\n]+/g, ' ').trim()}`);
     });
   }
-  async removeStep(project: string, id: string, index: number): Promise<Task> {
-    if (!Number.isInteger(index)) throw new AppError('bad_request', 'field_type');
-    return this.editSteps(project, id, (rows, indices) => { const row = indices[index]; if (row === undefined) throw new AppError('bad_request', 'field_type', { field: 'remove' }); rows.splice(row, 1); });
+  async removeStep(project: string, id: string, index: number, expected: string): Promise<Task> {
+    if (!Number.isInteger(index) || typeof expected !== 'string') throw new AppError('bad_request', 'field_type');
+    return this.editSteps(project, id, (rows, indices) => { rows.splice(stepRow(rows, indices, index, expected), 1); });
   }
   async appendMemo(project: string, id: string, text: string): Promise<Task> {
     if (typeof text !== 'string' || !text.trim() || text.length > 300) throw new AppError('bad_request', 'field_type', { field: 'text' });

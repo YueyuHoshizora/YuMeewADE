@@ -201,6 +201,7 @@ HTTP JSON plus SSE, identical in desktop and web versions. Types are defined in 
 | `POST /api/project/phases` | Edit phases `{project, previous: string[], phases: [{name, from?}]}` (up to 12, unique names): `from` names the existing phase an entry continues, and a rename moves its tasks along; 409 `phase_changed` if `previous` no longer matches. Phases change only here; `/api/project/update` with `phases` returns 400 |
 | `POST /api/order`、`/api/pin` | Project ordering and pinning |
 | `POST /api/task/new`、`/api/task/update`、`/api/task/step`、`/api/task/memo`、`/api/task/completion`、`/api/task/archive`、`/api/task/read` | Tasks |
+| `POST /api/task/step` | `{project, task}` plus exactly one of `add` (new step), `index` + `done` (toggle) or `remove` (index); toggling and removing also need the step `text` shown, and a changed list returns 409 `step_changed` instead of touching another step |
 | `POST /api/task/bulk` | `{project, tasks: string[] (1–200, unique), action: {kind: state/phase/due/addTag/removeTag, value} or {kind: archive, confirm: true}}`; returns `results: [{task, ok, error?, detail?}]`; archive never forces working-copy removal |
 | `POST /api/start` | Quick start (create a task and send) |
 | `POST /api/chat/send` | Send `{project, task, text, ai?, model?, effort?, mode?, answer?, images?, fromQueue?}`; while running, `mode` is required: `redo`／`amend`／`queue` |

@@ -898,15 +898,16 @@ export function taskView(
       check.checked = step.done;
       check.onchange = () => {
         void run(async () => {
-          await request('/api/task/step', { project: project.id, task: task.id, index, done: check.checked });
-          await context.refresh();
+          // The step text lets the core refuse if the list changed underneath this page; refresh either way to resync the checkbox.
+          try { await request('/api/task/step', { project: project.id, task: task.id, index, text: step.text, done: check.checked }); }
+          finally { await context.refresh(); }
         });
       };
       steps.append(row(
         field(step.text, check),
         iconButton('×', `${t('common.remove')}: ${step.text}`, async () => {
-          await request('/api/task/step', { project: project.id, task: task.id, remove: index });
-          await context.refresh();
+          try { await request('/api/task/step', { project: project.id, task: task.id, remove: index, text: step.text }); }
+          finally { await context.refresh(); }
         }),
       ));
     });

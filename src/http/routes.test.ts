@@ -80,12 +80,14 @@ test('state, completion approval and step hash continuation', async () => {
   const view = async () => ((await s.api('GET', '/api/state')).json as AppState).projects[0]!;
   try {
     assert.equal((await view()).tasks[0]!.confirm, false);
-    assert.equal((await s.api('POST', '/api/task/step', { ...ids, index: 0, done: true })).status, 200);
+    assert.equal((await s.api('POST', '/api/task/step', { ...ids, index: 0, done: true })).status, 400);
+    assert.equal((await s.api('POST', '/api/task/step', { ...ids, index: 0, text: 'Other', done: true })).status, 409);
+    assert.equal((await s.api('POST', '/api/task/step', { ...ids, index: 0, text: 'Implement', done: true })).status, 200);
     assert.equal((await view()).tasks[0]!.confirm, true);
     await s.api('POST', '/api/task/completion', { ...ids, action: 'continue' });
     assert.equal((await view()).tasks[0]!.confirm, false);
     await s.api('POST', '/api/task/step', { ...ids, add: 'Review' });
-    await s.api('POST', '/api/task/step', { ...ids, index: 1, done: true });
+    await s.api('POST', '/api/task/step', { ...ids, index: 1, text: 'Review', done: true });
     assert.equal((await view()).tasks[0]!.confirm, true);
     // External ledger completion requires approval, unlike the human update route.
     await s.app.tasks.update(p.id, t.id, { state: '完成' });
@@ -99,7 +101,7 @@ test('state, completion approval and step hash continuation', async () => {
     assert.equal(await s.app.completion.isApproved(p.id, t.id), true);
     await s.api('POST', '/api/task/update', { ...ids, patch: { state: '暫停' } });
     assert.equal(await s.app.completion.isApproved(p.id, t.id), false);
-    assert.equal((await s.api('POST', '/api/task/step', { ...ids, index: 0, done: 'yes' })).status, 400);
+    assert.equal((await s.api('POST', '/api/task/step', { ...ids, index: 0, text: 'Implement', done: 'yes' })).status, 400);
     assert.equal((await s.api('POST', '/api/task/completion', { ...ids, action: 'invalid' })).status, 400);
     assert.ok((await s.app.oplog.recent(200)).some((entry) => entry.action === 'task.approve'));
   } finally { await s.close(); }

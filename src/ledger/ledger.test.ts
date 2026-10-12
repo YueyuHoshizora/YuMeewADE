@@ -52,10 +52,14 @@ test('步驟編輯與 memo 只變更自己的段落；舊 owner 與段落相容'
   const tasks = new TaskLedger(ws);
   const task = await tasks.create('P', { title: '作業', steps: ['讀規格', '實作'], workspace: 'direct' });
   assert.equal(task.workspace, 'direct'); assert.deepEqual(task.steps, [{ text: '讀規格', done: false }, { text: '實作', done: false }]);
-  await tasks.setStep('P', task.id, 0, true);
-  await tasks.addStep('P', task.id, '驗證'); await tasks.removeStep('P', task.id, 1);
+  await tasks.setStep('P', task.id, 0, true, '讀規格');
+  await tasks.addStep('P', task.id, '驗證'); await tasks.removeStep('P', task.id, 1, '實作');
   assert.deepEqual((await tasks.get('P', task.id)).steps, [{ text: '讀規格', done: true }, { text: '驗證', done: false }]);
-  await assert.rejects(tasks.setStep('P', task.id, 99, true));
+  await assert.rejects(tasks.setStep('P', task.id, 99, true, '讀規格'), (error: AppError) => error.detail === 'step_changed');
+  // A page that still shows the removed step at index 1 must not toggle or delete the step that moved into its place.
+  await assert.rejects(tasks.setStep('P', task.id, 1, true, '實作'), (error: AppError) => error.detail === 'step_changed');
+  await assert.rejects(tasks.removeStep('P', task.id, 1, '實作'), (error: AppError) => error.detail === 'step_changed');
+  assert.deepEqual((await tasks.get('P', task.id)).steps, [{ text: '讀規格', done: true }, { text: '驗證', done: false }]);
   await assert.rejects(tasks.appendMemo('P', task.id, 'x'.repeat(301)));
   await tasks.appendMemo('P', task.id, '完成初稿');
   assert.match((await tasks.get('P', task.id)).memo, /完成初稿$/);
@@ -77,7 +81,7 @@ test('多個作業台帳同時改標題、memo 與步驟，且錯誤不阻擋後
   const result = await two.get('P', task.id);
   assert.equal(result.title, 'renamed'); assert.match(result.memo, /memo-1/);
   assert.deepEqual(result.steps, [{ text: 'step-1', done: false }]);
-  const edits = await Promise.allSettled([one.update('P', task.id, { title: '' }), two.setStep('P', task.id, 0, true)]);
+  const edits = await Promise.allSettled([one.update('P', task.id, { title: '' }), two.setStep('P', task.id, 0, true, 'step-1')]);
   assert.equal(edits[0]!.status, 'rejected'); assert.equal(edits[1]!.status, 'fulfilled');
   assert.deepEqual((await one.get('P', task.id)).steps, [{ text: 'step-1', done: true }]);
 }));

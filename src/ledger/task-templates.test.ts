@@ -10,7 +10,7 @@ import { TaskTemplates } from './task-templates.ts';
 test('專案與工作區範本往返，不複製步驟完成，禁止覆寫與越界', () => withTmpWorkspace(async ws => {
   await new ProjectLedger(ws).create({ name: 'P' });
   const tasks = new TaskLedger(ws); const source = await tasks.create('P', { title: '來源', steps: ['第一步', '下一步'] });
-  await tasks.setStep('P', source.id, 0, true);
+  await tasks.setStep('P', source.id, 0, true, '第一步');
   const templates = new TaskTemplates(ws);
   assert.deepEqual(await templates.list('P'), []);
   for (const scope of ['project', 'workspace'] as const) {
