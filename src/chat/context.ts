@@ -61,8 +61,9 @@ export async function buildTaskContext(ws: Workspace, project: string, task: str
   const header = `<task_context>\n${HANDOFF_NOTICE}\n`; const footer = '\n</task_context>';
   let remaining = Math.max(0, limit - header.length - footer.length);
   const parts: string[] = []; const allocations: BuiltTaskContext['allocations'] = [];
-  const add = (id: string, label: string, raw: string, allocated: number): void => {
-    const body = quoteBoundaries(raw);
+  const add = (id: string, rawLabel: string, raw: string, allocated: number): void => {
+    // A pinned source's path is user text too: a file name must not be able to close the context block early.
+    const label = quoteBoundaries(rawLabel); const body = quoteBoundaries(raw);
     const separator = parts.length ? 2 : 0;
     const cap = Math.min(allocated, Math.max(0, remaining - separator));
     const content = fitContextSection(`${label}\n${body}`, cap);
