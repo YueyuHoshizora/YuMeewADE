@@ -6,10 +6,11 @@ const RECORD_HEADINGS: [keyof TaskSections, string][] = [['done', '做了什麼'
 /** `ledger` is the task file's steps and free-text sections; whatever has content precedes the conversation. */
 export function formatTranscript(title: string, rows: ChatRow[], workspaceRoot: string, tools = false, ledger?: { steps: Step[]; sections: TaskSections }): string {
   const safe = (text: string) => text.replaceAll(workspaceRoot, '[工作區]');
+  const block = (text: string) => closeFence(safe(text));
   const sections = [`# ${safe(title).replace(/[\r\n]/gu, ' ')}`];
   const record = [
     ...(ledger?.steps.length ? [`### 步驟\n\n${safe(ledger.steps.map(step => `- [${step.done ? 'x' : ' '}] ${step.text}`).join('\n'))}`] : []),
-    ...RECORD_HEADINGS.filter(([key]) => ledger?.sections[key].length).map(([key, heading]) => `### ${heading}\n\n${safe(ledger!.sections[key].join('\n'))}`),
+    ...RECORD_HEADINGS.filter(([key]) => ledger?.sections[key].length).map(([key, heading]) => `### ${heading}\n\n${block(ledger!.sections[key].join('\n'))}`),
   ];
   if (record.length) sections.push(['## 作業紀錄', ...record].join('\n\n'));
   for (const row of rows) {
@@ -28,7 +29,7 @@ export function formatTranscript(title: string, rows: ChatRow[], workspaceRoot: 
       const model = [row.model, row.effort].filter(Boolean).join(' / ');
       if (model) parts.push(`模型／思考：${safe(model)}`);
     }
-    parts.push(safe(row.text));
+    parts.push(block(row.text));
     if (row.role === 'user' && row.images?.length) {
       parts.push(`圖片：\n${row.images.map(image => `- ${path.basename(image.replaceAll('\\', '/'))}`).join('\n')}`);
     }
@@ -40,4 +41,21 @@ export function formatTranscript(title: string, rows: ChatRow[], workspaceRoot: 
     sections.push(parts.join('\n\n'));
   }
   return sections.join('\n\n') + '\n';
+}
+
+/**
+ * A reply cut off mid code block (stopped, failed, interrupted) leaves its fence open, and Markdown would then render
+ * every later turn of the export as code. Closing it inside the same message keeps each turn's content in place.
+ */
+function closeFence(text: string): string {
+  let open: { char: string; length: number } | undefined;
+  for (const line of text.split('\n')) {
+    // CommonMark: up to three spaces of indentation, then at least three backticks or tildes.
+    const fence = /^ {0,3}(`{3,}|~{3,})(.*)$/u.exec(line);
+    if (!fence) continue;
+    const marker = fence[1]!; const rest = fence[2]!;
+    if (!open) { if (marker[0] === '~' || !rest.includes('`')) open = { char: marker[0]!, length: marker.length }; }
+    else if (marker[0] === open.char && marker.length >= open.length && !rest.trim()) open = undefined;
+  }
+  return open ? `${text}${text.endsWith('\n') ? '' : '\n'}${open.char.repeat(open.length)}` : text;
 }

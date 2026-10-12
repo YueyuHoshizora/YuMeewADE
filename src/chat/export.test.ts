@@ -34,3 +34,19 @@ test('Markdown export puts the steps and non-empty task record sections before t
   const empty = formatTranscript('Task', rows, '/private/work', false, { steps: [], sections: { done: [], next: [], cautions: [], memo: [] } });
   assert.ok(empty.startsWith('# Task\n\n## 你'));
 });
+
+test('a reply cut off inside a code block does not turn the rest of the export into code', () => {
+  const fences = (markdown: string) => markdown.split('\n').filter(line => /^ {0,3}(`{3,}|~{3,})/u.test(line));
+  const rows: ChatRow[] = [
+    { role: 'assistant', at: 'now', text: 'Here:\n```ts\nconst a = 1;', ai: 'codex', request: 'r1', ms: 1, stopped: true },
+    { role: 'user', at: 'now', text: 'Show a longer fence:\n````md\n```inner\n```', to: 'codex', request: 'r2' },
+    { role: 'assistant', at: 'now', text: 'Closed:\n~~~\ncode\n~~~\nand inline ``` ticks', ai: 'codex', request: 'r2', ms: 1 },
+    { role: 'user', at: 'now', text: 'Next turn', to: 'codex', request: 'r3' },
+  ];
+  const text = formatTranscript('Task', rows, '/private/work');
+  // Every turn heading sits outside any code block: the fences before it pair up.
+  for (const [index] of [...text.matchAll(/^## (你|AI)$/gmu)].map(match => [match.index])) assert.equal(fences(text.slice(0, index)).length % 2, 0);
+  assert.match(text, /const a = 1;\n```\n\n（已停止）/u);
+  assert.match(text, /```inner\n```\n````\n\n## AI/u, 'a shorter fence inside a longer one does not close it');
+  assert.match(text, /and inline ``` ticks\n\n## 你/u, 'balanced fences are left untouched');
+});
