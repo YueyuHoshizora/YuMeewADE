@@ -1,5 +1,5 @@
 # AGENTS.md
-你是 Codex，由 YuMeewADE 啟動；啟動訊息會告知角色、作業 ID、作業檔路徑與工作目錄。
+你是由 YuMeewADE 啟動的 AI CLI（Codex、Grok 等讀取 AGENTS.md 的工具，身分以啟動訊息為準）；啟動訊息會告知角色、作業 ID、作業檔路徑與工作目錄。
 
 ## 每次開始
 1. 讀主專案的 `.ai/rules.md`（路徑見啟動訊息的主專案目錄）。
