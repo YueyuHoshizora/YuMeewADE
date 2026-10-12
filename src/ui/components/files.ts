@@ -219,7 +219,7 @@ export function openFileBrowser(project: string, task: string, workspace = activ
         document: { ...buffer.document, text: '' }, text: '', clean: true,
         start: buffer.start, end: buffer.end, top: buffer.top, left: buffer.left
       });
-      const state = { version: 4, buffers: recovery, unresolved: [...unresolved], split: Number(views[0]?.node.style.flex) || 50, panes: views.map((view, index) => ({ tabs: paneTabs[index], path: view.path ?? null, start: view.content.selectionStart, end: view.content.selectionEnd, top: view.content.scrollTop, left: view.content.scrollLeft })), focused };
+      const state = { version: 4, buffers: recovery, unresolved: [...unresolved], split: Number(views[0]?.node.style.flex) || 50, panes: views.map((view, index) => ({ tabs: paneTabs[index], navigation: navigation[index], path: view.path ?? null, start: view.content.selectionStart, end: view.content.selectionEnd, top: view.content.scrollTop, left: view.content.scrollLeft })), focused };
       let data = JSON.stringify(state); let omitted = false;
       while (new TextEncoder().encode(data).byteLength > 4 * 1024 * 1024 && recovery.length && 'clean' in recovery.at(-1)!) {
         recovery.pop(); omitted = true; data = JSON.stringify(state);
@@ -541,7 +541,7 @@ export function openFileBrowser(project: string, task: string, workspace = activ
     while (views.length < savedPanes.length) pane();
     if (views.length === 2 && typeof session?.split === 'number' && session.split >= 20 && session.split <= 80) { views[0]!.node.style.flex = String(session.split); views[1]!.node.style.flex = String(100 - session.split); }
     for (let index = 0; index < savedPanes.length; index++) {
-      const saved = savedPanes[index] as { tabs?: unknown; path?: unknown; start?: unknown; end?: unknown; top?: unknown; left?: unknown };
+      const saved = savedPanes[index] as { tabs?: unknown; navigation?: { entries?: unknown; cursor?: unknown }; path?: unknown; start?: unknown; end?: unknown; top?: unknown; left?: unknown };
       paneTabs[index] = Array.isArray(saved?.tabs) ? saved.tabs.flatMap(tab => tab && typeof tab === 'object' && typeof tab.path === 'string' && buffers.has(tab.path) ? [{ path: tab.path, pinned: tab.pinned === true, preview: tab.preview === true }] : []) : [...buffers.keys()].map(path => ({ path, pinned: false, preview: false }));
       if (!saved || typeof saved.path !== 'string' || !buffers.has(saved.path)) continue;
       activate(saved.path, index);
@@ -552,10 +552,18 @@ export function openFileBrowser(project: string, task: string, workspace = activ
       view.content.scrollTop = typeof saved.top === 'number' && Number.isFinite(saved.top) && saved.top >= 0 ? saved.top : 0;
       view.content.scrollLeft = typeof saved.left === 'number' && Number.isFinite(saved.left) && saved.left >= 0 ? saved.left : 0;
     }
+    if (session?.version === 4) for (let index = 0; index < savedPanes.length; index++) {
+      const saved = savedPanes[index] as { navigation?: { entries?: unknown; cursor?: unknown } };
+      const entries = saved.navigation?.entries;
+      if (!Array.isArray(entries) || entries.length > 200) continue;
+      const valid = entries.filter((entry): entry is Position => entry && typeof entry.path === 'string' && buffers.has(entry.path) && ['start', 'end', 'top', 'left'].every(key => typeof entry[key] === 'number' && Number.isFinite(entry[key]) && entry[key] >= 0) && Number.isSafeInteger(entry.start) && Number.isSafeInteger(entry.end) && entry.end >= entry.start);
+      const cursor = saved.navigation?.cursor;
+      navigation[index] = { entries: valid, cursor: typeof cursor === 'number' && Number.isSafeInteger(cursor) && cursor >= -1 && cursor < valid.length ? cursor : valid.length - 1 };
+    }
     if (savedPanes.length) {
       focused = typeof session?.focused === 'number' && Number.isSafeInteger(session.focused) && session.focused >= 0 && session.focused < views.length ? session.focused : 0;
       views[focused]!.content.focus();
-    } else { const first = buffers.keys().next().value; if (first) activate(first); }
+    } else { paneTabs[0] = [...buffers.keys()].map(path => ({ path, pinned: false, preview: false })); const first = buffers.keys().next().value; if (first) activate(first); }
   }
   pane();
   const send = button(t('editorEvents.send'), sendSelection);
