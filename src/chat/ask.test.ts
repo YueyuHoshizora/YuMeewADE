@@ -47,3 +47,15 @@ test('empty question stays visible; aliases and multiple blocks are parsed', () 
     { question: 'Q2', options: ['B'], multi: false },
   ]);
 });
+
+test('question tags quoted in fenced or inline code stay visible and are not asked', () => {
+  for (const fence of ['```', '~~~~']) {
+    const sample = `Syntax:\n${fence}text\n[[question]]\nWhich database?\n1. SQLite\n${fence}\nDone.`;
+    assert.deepEqual(parseAsk(sample), { text: sample, asks: [] });
+  }
+  const inline = 'Wrap it in `[[question]]` and `[[/question]]`.\nNothing else.';
+  assert.deepEqual(parseAsk(inline), { text: inline, asks: [] });
+  // An empty block closes too, so the real question after it is still asked; code inside a question stays verbatim.
+  const parsed = parseAsk('```\n```\n[[question]]\nRun `npm test`?\n1. Yes `now`\n[[/question]]');
+  assert.deepEqual(parsed, { text: '```\n```', asks: [{ question: 'Run `npm test`?', options: ['Yes `now`'], multi: false }] });
+});
