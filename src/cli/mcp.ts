@@ -144,12 +144,20 @@ export async function addMcp(ai: McpAi, config: CliCommandConfig, env: NodeJS.Pr
   if (existing.servers.length >= 256 || existing.servers.some(s => s.name === input.name)) throw new AppError('conflict');
   const args = [...config.mcpAddArgs!];
   if (ai !== 'codex') args.push(ai === 'gemini' ? '--type' : '--transport', input.transport);
-  for (const [key, value] of Object.entries(input.env ?? {})) args.push('--env', `${key}=${value}`);
-  if (ai !== 'codex') for (const [key, value] of Object.entries(input.headers ?? {})) args.push('--header', `${key}: ${value}`);
-  args.push(input.name);
-  if (input.transport === 'stdio') args.push('--', input.command!, ...input.args!);
-  else if (ai === 'codex') args.push('--url', input.url!);
-  else args.push(input.url!);
+  const envFlags = Object.entries(input.env ?? {}).flatMap(([key, value]) => ['--env', `${key}=${value}`]);
+  const headerFlags = ai === 'codex' ? [] : Object.entries(input.headers ?? {}).flatMap(([key, value]) => ['--header', `${key}: ${value}`]);
+  if (ai === 'claude') {
+    // Claude's -e/--env and -H/--header are variadic: placed before <name> they swallow it. Its own usage puts env after
+    // the name (before `--`) and headers after the URL.
+    args.push(input.name);
+    if (input.transport === 'stdio') args.push(...envFlags, '--', input.command!, ...input.args!);
+    else args.push(input.url!, ...headerFlags);
+  } else {
+    args.push(...envFlags, ...headerFlags, input.name);
+    if (input.transport === 'stdio') args.push('--', input.command!, ...input.args!);
+    else if (ai === 'codex') args.push('--url', input.url!);
+    else args.push(input.url!);
+  }
   await invoke(config, args, env, home);
   // Codex add exposes no arbitrary-header flag. Persist its native table in the isolated account config.
   if (ai === 'codex' && Object.keys(input.headers ?? {}).length) {

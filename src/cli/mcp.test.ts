@@ -53,3 +53,35 @@ test('fake CLI mutations persist across leases, isolate accounts and sanitize fa
     await accounts.withEnv('codex', profiles[0], async env => assert.deepEqual((await listMcp('codex', config, env)).servers, []));
   } finally { await accounts.close(); vault.close(); await fs.rm(root, { recursive: true, force: true }); }
 });
+
+test('Claude add keeps the server name out of its variadic --env/--header flags', async () => {
+  const root = await fs.realpath(await fs.mkdtemp(path.join(os.tmpdir(), 'ym-mcp-claude-')));
+  try {
+    const home = path.join(root, 'home'); await fs.mkdir(home);
+    // Commander-style parsing like Claude Code: --env/--header take every following non-option value; `--` ends options.
+    const command = path.join(root, 'claude');
+    await fs.writeFile(command, `#!${process.execPath}
+const fs=require('node:fs'),path=require('node:path');const args=process.argv.slice(2),file=path.join(process.env.CLAUDE_CONFIG_DIR,'.claude.json');
+if(args[0]==='--help'){console.log('Commands: mcp');process.exit(0)}
+const doc=fs.existsSync(file)?JSON.parse(fs.readFileSync(file,'utf8')):{mcpServers:{}};
+if(args[1]==='list'){console.log('');process.exit(0)}
+if(args[1]!=='add')process.exit(2);
+const positional=[],env=[],headers=[];let i=2;
+for(;i<args.length;i++){const a=args[i];if(a==='--'){i++;break}
+if(a==='--scope'||a==='--transport'){i++;continue}
+if(a==='--env'||a==='--header'){const into=a==='--env'?env:headers;while(i+1<args.length&&!args[i+1].startsWith('-'))into.push(args[++i]);continue}
+positional.push(a)}
+positional.push(...args.slice(i));
+if(env.some(v=>!v.includes('='))){console.error('Invalid environment variable format');process.exit(1)}
+if(positional.length<2){console.error("error: missing required argument 'name'");process.exit(1)}
+doc.mcpServers[positional[0]]={target:positional[1],args:positional.slice(2),env,headers};fs.writeFileSync(file,JSON.stringify(doc));
+`, { mode: 0o755 });
+    const config = { ...DEFAULT_CONFIG.cli.claude, command };
+    const env = { PATH: process.env['PATH'], HOME: home, CLAUDE_CONFIG_DIR: home };
+    await addMcp('claude', config, env, { name: 'web', transport: 'http', url: 'https://example.com/mcp', headers: { Authorization: 'Bearer x' } });
+    await addMcp('claude', config, env, { name: 'local', transport: 'stdio', command: 'node', args: ['server.js'], env: { KEY: 'v' } });
+    const servers = JSON.parse(await fs.readFile(path.join(home, '.claude.json'), 'utf8')).mcpServers;
+    assert.deepEqual(servers.web, { target: 'https://example.com/mcp', args: [], env: [], headers: ['Authorization: Bearer x'] });
+    assert.deepEqual(servers.local, { target: 'node', args: ['server.js'], env: ['KEY=v'], headers: [] });
+  } finally { await fs.rm(root, { recursive: true, force: true }); }
+});
