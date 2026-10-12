@@ -110,7 +110,7 @@ test('a native gate still preparing when the workflow stops never starts', () =>
     let gateCalls = 0; let starts = 0;
     const s = await fixture(ws, async (_p, task, input) => {
       if (input.text === 'gate') gateCalls++;
-      return { request: task, ai: 'mock', text: 'source', ok: true, approved: true, structured: true, snapshot: { id: 'snapshot' } };
+      return { request: task, ai: 'mock', text: 'source', ok: true, approved: true, structured: true, snapshot: { id: 'snapshot' } as NonNullable<ReviewResult['snapshot']> };
     }, {
       verify: async () => { gateCalls++; return { ok: true, id: 'verified' }; }, currentVerification: async () => true, currentReview: async () => true,
       // The second branch preparation is the gate's (the workflow task itself is checked too): hold it while stopping.
