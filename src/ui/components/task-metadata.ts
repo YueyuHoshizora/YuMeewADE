@@ -10,7 +10,7 @@ export function metadataFields(task?: Task): { node: HTMLElement; value: () => {
   return { node: row(field(t('tasks.due'), due), field(t('tasks.tags'), tags)), value: () => ({ due: due.value, tags: tags.value.split(',').map(s => s.trim()).filter(Boolean) }) };
 }
 export function metadataBadge(task: Task): HTMLElement {
-  const node = el('span', overdue(task) ? 'warning' : 'muted');
+  const node = el('span', `task-meta ${overdue(task) ? 'warning' : 'muted'}`);
   node.textContent = [task.due ? `${overdue(task) ? t('tasks.overdue') + ' ' : ''}${task.due}` : '', ...(task.tags ?? []).map(tag => `#${tag}`)].filter(Boolean).join(' · ');
   return node;
 }
