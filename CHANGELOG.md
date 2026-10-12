@@ -187,6 +187,7 @@
 - 受限（`restricted`）專案也禁止查看單輪修改（`/api/chat/turn-diff`）與作業合併資訊（`/api/task/merged`），與 README 所說「禁止 Git 讀寫、作業差異」一致；先前這兩個端點沒有檢查信任。作業頁自動查詢合併資訊時遇到受限專案只是不顯示，不會跳錯誤。
 - 工具核准卡也會遮蔽沒有標籤的常見憑證（GitHub `ghp_`／`github_pat_`、OpenAI／Anthropic `sk-`、GitLab `glpat-`、Slack `xox?-`、AWS `AKIA…`、Google `AIza…`、JWT）與網址裡的 `帳號:密碼@`；先前只認得 `token=`、`password:` 這類有標籤的寫法與 `Bearer`，像 `git push https://x-access-token:ghp_…@github.com/…` 會原樣顯示。
 - 桌面版只讓 IDE 自己的頁面取得它用到的權限（系統通知、複製按鈕寫入剪貼簿），其他一律拒絕。先前沿用 Electron 預設的全部允許：實測內嵌網頁預覽（專案自己的開發伺服器，從另一個 loopback origin 嵌入）呼叫 `Notification.requestPermission()` 會得到 `granted`，可以冒充 App 跳出系統通知。
+- Windows 終端輸出裡的檔案路徑也能點開：`C:\repo\src\main.ts:12`、`src\util.ts(4,2)` 這類反斜線與磁碟機代號的寫法會對應到終端根目錄下的檔案（磁碟機與資料夾名稱不分大小寫）；先前只認得 `/` 分隔的路徑。
 
 ### 驗證、審查與工作流程
 

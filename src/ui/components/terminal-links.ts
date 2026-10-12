@@ -1,8 +1,9 @@
 export type TerminalLink = { kind: 'url'; url: string } | { kind: 'file'; path: string; line?: number };
 
 const URL_PATTERN = /https?:\/\/[^\s<>"'`]+/g;
-// `src/a.ts:12:5`, `/abs/a.ts:3`, `./a.ts(12,5)` (tsc). The extension must start with a letter so versions like `1.2.3` never match.
-const FILE_PATTERN = /(?<![\w./@~+-])((?:\.{0,2}\/)?(?:[\w@~+-][\w.@~+-]*\/)*[\w@~+-][\w.@~+-]*\.([A-Za-z]\w*))(?::(\d+)(?::\d+)?|\((\d+),\d+\))?/g;
+// `src/a.ts:12:5`, `/abs/a.ts:3`, `./a.ts(12,5)` (tsc), and on Windows `C:\repo\a.ts:3` or `src\a.ts`. The extension must start
+// with a letter so versions like `1.2.3` never match.
+const FILE_PATTERN = /(?<![\w./\\@~+-])((?:[A-Za-z]:[\\/]|\.{0,2}[\\/])?(?:[\w@~+-][\w.@~+-]*[\\/])*[\w@~+-][\w.@~+-]*\.([A-Za-z]\w*))(?::(\d+)(?::\d+)?|\((\d+),\d+\))?/g;
 
 /** Drops trailing sentence punctuation and unmatched closing brackets that terminals print after URLs. */
 function trimUrl(url: string): string {
@@ -28,7 +29,7 @@ export function terminalLinkAt(text: string, column: number): TerminalLink | und
     const [, path, extension, colonLine, parenLine] = match;
     const line = Number(colonLine ?? parenLine);
     // A bare `e.g` or `a.b` is too likely to be prose; demand a directory, a line number or a real extension.
-    if (!path!.includes('/') && !colonLine && !parenLine && extension!.length < 2) return undefined;
+    if (!/[\\/]/.test(path!) && !colonLine && !parenLine && extension!.length < 2) return undefined;
     return { kind: 'file', path: path!, ...(Number.isSafeInteger(line) && line >= 1 ? { line } : {}) };
   }
   return undefined;
@@ -36,11 +37,15 @@ export function terminalLinkAt(text: string, column: number): TerminalLink | und
 
 /** Maps a printed path to one relative to the terminal's root, or undefined when it points outside it. */
 export function terminalFilePath(printed: string, root: string): string | undefined {
-  let relative = printed;
-  if (printed.startsWith('/')) {
-    const base = root.replace(/\/+$/, '');
-    if (!base || !printed.startsWith(`${base}/`)) return undefined;
-    relative = printed.slice(base.length + 1);
+  // Windows tools print `\` separators and drive letters; the editor API takes `/`-separated relative paths.
+  let relative = printed.replace(/\\/g, '/');
+  const drive = /^[A-Za-z]:\//.test(relative);
+  if (relative.startsWith('/') || drive) {
+    const base = root.replace(/\\/g, '/').replace(/\/+$/, '');
+    // Drive letters and folder names compare case-insensitively on Windows.
+    const inside = drive ? relative.toLowerCase().startsWith(`${base.toLowerCase()}/`) : relative.startsWith(`${base}/`);
+    if (!base || !inside) return undefined;
+    relative = relative.slice(base.length + 1);
   }
   relative = relative.replace(/^(\.\/)+/, '');
   const parts = relative.split('/');

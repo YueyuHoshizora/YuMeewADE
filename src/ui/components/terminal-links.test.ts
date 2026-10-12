@@ -31,3 +31,16 @@ test('printed paths map inside the root only', () => {
   assert.equal(terminalFilePath('src/../../a.ts', '/repo'), undefined);
   assert.equal(terminalFilePath('/repo/a.ts', ''), undefined);
 });
+
+test('Windows paths printed by terminal tools are links mapped under the terminal root', () => {
+  const line = 'error at C:\\Work\\Repo\\src\\main.ts:12:3 and src\\util.ts(4,2)';
+  assert.deepEqual(terminalLinkAt(line, line.indexOf('main.ts')), { kind: 'file', path: 'C:\\Work\\Repo\\src\\main.ts', line: 12 });
+  assert.deepEqual(terminalLinkAt(line, line.indexOf('util.ts')), { kind: 'file', path: 'src\\util.ts', line: 4 });
+  assert.equal(terminalFilePath('C:\\Work\\Repo\\src\\main.ts', 'C:\\Work\\Repo'), 'src/main.ts');
+  // Case differs between the printed path and the root, as Windows allows.
+  assert.equal(terminalFilePath('c:/work/repo/src/main.ts', 'C:\\Work\\Repo\\'), 'src/main.ts');
+  assert.equal(terminalFilePath('src\\util.ts', 'C:\\Work\\Repo'), 'src/util.ts');
+  assert.equal(terminalFilePath('C:\\Work\\Repository\\a.ts', 'C:\\Work\\Repo'), undefined);
+  assert.equal(terminalFilePath('D:\\Work\\Repo\\a.ts', 'C:\\Work\\Repo'), undefined);
+  assert.equal(terminalFilePath('src\\..\\..\\a.ts', 'C:\\Work\\Repo'), undefined);
+});
