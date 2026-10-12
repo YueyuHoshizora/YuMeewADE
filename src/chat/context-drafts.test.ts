@@ -78,6 +78,23 @@ test('source paths are read-only bounded and reject escape and symlink paths', (
   assert.equal((await buildTaskContext(ws, 'P', task.id, root, 1)).text, '');
 }));
 
+test('secret and private-key files cannot be pinned, and one saved earlier is dropped instead of read', () => withTmpWorkspace(async ws => {
+  await new ProjectLedger(ws).create({ name: 'P' });
+  const task = await new TaskLedger(ws).create('P', { title: 'T' });
+  const root = ws.projectDir('P');
+  for (const name of ['.envrc', '.envproduction', '.dev.varsproduction', '.ENV', 'keys/id_ecdsa', 'id_dsa', 'id_ed25519_sk', '.npmrc']) {
+    assert.throws(() => validateContext({ decisions: '', sources: [{ path: name, start: 1, end: 1 }] }, 1000), { code: 'bad_request' }, name);
+  }
+  await fs.writeFile(path.join(root, '.envrc'), 'export API_TOKEN=PRIVATE');
+  await fs.writeFile(path.join(root, 'guide.txt'), 'safe');
+  // Saved before `.envrc` counted as a secret.
+  await fs.mkdir(path.join(root, '.ai', 'chat'), { recursive: true });
+  await fs.writeFile(path.join(root, '.ai', 'chat', `${task.id}.context.json`), JSON.stringify({ decisions: '', sources: [{ path: '.envrc', start: 1, end: 1 }, { path: 'guide.txt', start: 1, end: 1 }], revision: 1 }));
+  const context = await buildTaskContext(ws, 'P', task.id, root, 10_000);
+  assert.ok(!context.text.includes('PRIVATE')); assert.ok(context.text.includes('safe'));
+  assert.deepEqual(context.sources.map(source => source.path), ['guide.txt']);
+}));
+
 test('handoff exposes zero-based source indices without losing the authorization notice', () => {
   const rows = [{ at: 'a', role: 'user' as const, text: 'older', to: 'a', request: 'a' }, { at: 'b', role: 'user' as const, text: 'x'.repeat(1000), to: 'b', request: 'b' }];
   const preview = inspectHandoff(rows, 180, 40);

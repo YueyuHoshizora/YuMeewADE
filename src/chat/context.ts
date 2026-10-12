@@ -2,6 +2,7 @@ import { constants, promises as fs } from 'node:fs';
 import path from 'node:path';
 import type { Workspace } from '../ledger/workspace.ts';
 import { AppError } from '../shared/errors.ts';
+import { isLocalSecret } from '../git/git.ts';
 import { isInside, readJson, writeJson, withFileLocks } from '../shared/fsx.ts';
 import { HANDOFF_NOTICE, quoteBoundaries } from './prompt.ts';
 import type { PinnedSource, TaskContext, BuiltTaskContext, ContextManifest } from '../shared/context-budget.ts';
@@ -12,14 +13,23 @@ export function contextFile(ws: Workspace, project: string, task: string): strin
   return path.join(ws.projectDir(project), '.ai', 'chat', `${task}.context.json`);
 }
 export async function readContext(ws: Workspace, project: string, task: string): Promise<TaskContext> {
-  return validateContext(await readJson(contextFile(ws, project, task), { decisions: '', sources: [] }), 2_000_000);
+  const saved = await readJson<unknown>(contextFile(ws, project, task), { decisions: '', sources: [] });
+  // A source saved before its name counted as a secret is dropped, not read and not a reason to refuse the whole context.
+  if (saved && typeof saved === 'object' && Array.isArray((saved as TaskContext).sources)) {
+    const value = saved as TaskContext;
+    value.sources = value.sources.filter(source => !(source && typeof source.path === 'string' && secretPath(source.path)));
+  }
+  return validateContext(saved, 2_000_000);
 }
+/** Never pinned: the shared local-secret names (any `.env*`, `.dev.vars*`, `.npmrc`) plus credential stores and SSH keys. */
+const PRIVATE_NAME = /^(?:credentials|secrets?|id_(?:rsa|dsa|ecdsa|ed25519)(?:_sk)?)(?:\.|$)/iu;
+const secretPath = (file: string): boolean => file.split('/').some(part => isLocalSecret(part) || PRIVATE_NAME.test(part));
 export function validateContext(value: unknown, limit: number): TaskContext {
   if (!value || typeof value !== 'object') throw new AppError('bad_request');
   const input = value as TaskContext;
   if (typeof input.decisions !== 'string' || input.decisions.length > limit || !Array.isArray(input.sources) || input.sources.length > 30) throw new AppError('bad_request');
   const sources = input.sources.map(source => {
-    if (!source || typeof source.path !== 'string' || !source.path || source.path.length > 4096 || path.isAbsolute(source.path) || source.path.includes('\\') || source.path.split('/').some(part => part === '..' || part === '.git' || /^(?:\.npmrc$|\.env(?:\.|$)|\.dev\.vars(?:\.|$)|(?:credentials|secrets?|id_rsa|id_ed25519)(?:\.|$))/iu.test(part)) || !Number.isSafeInteger(source.start) || !Number.isSafeInteger(source.end) || source.start < 1 || source.end < source.start || source.end - source.start > 10000) throw new AppError('bad_request');
+    if (!source || typeof source.path !== 'string' || !source.path || source.path.length > 4096 || path.isAbsolute(source.path) || source.path.includes('\\') || source.path.split('/').some(part => part === '..' || part === '.git') || secretPath(source.path) || !Number.isSafeInteger(source.start) || !Number.isSafeInteger(source.end) || source.start < 1 || source.end < source.start || source.end - source.start > 10000) throw new AppError('bad_request');
     for (const key of ['priority', 'order', 'allocatedChars'] as const) if (source[key] !== undefined && (!Number.isSafeInteger(source[key]) || source[key]! < 0 || source[key]! > 2_000_000)) throw new AppError('bad_request');
     if (source.enabled !== undefined && typeof source.enabled !== 'boolean') throw new AppError('bad_request');
     return { path: source.path, start: source.start, end: source.end, priority: source.priority ?? 0, order: source.order ?? input.sources.indexOf(source), enabled: source.enabled ?? true, allocatedChars: source.allocatedChars ?? limit };
