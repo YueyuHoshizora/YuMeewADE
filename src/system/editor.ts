@@ -556,7 +556,7 @@ export class EditorService {
     if (action === 'diagnostics') {
       let items: unknown[];
       try { const result = await client.request('textDocument/diagnostic', { textDocument: { uri } }) as { items?: unknown[] }; items = result.items ?? []; }
-      catch (error) { if (!client.alive) throw error; items = await client.publishedDiagnostics(uri); }
+      catch (error) { if (!client.alive) throw error; const published = await client.publishedDiagnostics(uri); items = published.items; truncated ||= published.truncated; }
       if (!Array.isArray(items)) throw new AppError('bad_request');
       if (items.length > 1000) { truncated = true; items = items.slice(0, 1000); }
       for (const value of items) {

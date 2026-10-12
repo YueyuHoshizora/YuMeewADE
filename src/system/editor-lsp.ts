@@ -12,6 +12,7 @@ export class LanguageClient {
   private dead = false;
   private readonly onDeath: () => void;
   readonly diagnostics = new Map<string, unknown[]>();
+  private diagnosticTruncated = new Set<string>();
   private diagnosticVersions = new Map<string, number>();
   private diagnosticWaiters = new Map<string, () => void>();
   private opened = new Set<string>();
@@ -55,10 +56,11 @@ export class LanguageClient {
       if (message.error) pending.reject(new AppError('unavailable')); else pending.resolve(message.result);
     } else if (message.method === 'textDocument/publishDiagnostics') {
       const params = message.params as { uri: string; diagnostics: unknown[]; version?: number } | undefined;
-      if (!params || typeof params.uri !== 'string' || !Array.isArray(params.diagnostics) || params.diagnostics.length > 1000 || (!this.diagnostics.has(params.uri) && this.diagnostics.size >= 1000)) { this.dispose(); return; }
+      if (!params || typeof params.uri !== 'string' || !Array.isArray(params.diagnostics) || (!this.diagnostics.has(params.uri) && this.diagnostics.size >= 1000)) { this.dispose(); return; }
       if (!this.opened.has(params.uri)) return;
       if (typeof params.version === 'number' && params.version < (this.diagnosticVersions.get(params.uri) ?? 0)) return;
-      this.diagnostics.set(params.uri, params.diagnostics);
+      this.diagnostics.set(params.uri, params.diagnostics.length > 1000 ? params.diagnostics.slice(0, 1000) : params.diagnostics);
+      if (params.diagnostics.length > 1000) this.diagnosticTruncated.add(params.uri); else this.diagnosticTruncated.delete(params.uri);
       this.diagnosticWaiters.get(params.uri)?.();
     } else if (message.id !== undefined) {
       // 不允許 server 改檔或執行 command；唯有設定查詢提供空設定。
@@ -67,7 +69,7 @@ export class LanguageClient {
     }
   }
   openDocument(uri: string, languageId: string, version: number, text: string): void {
-    this.diagnostics.delete(uri); this.diagnosticVersions.set(uri, version);
+    this.diagnostics.delete(uri); this.diagnosticTruncated.delete(uri); this.diagnosticVersions.set(uri, version);
     const opening = !this.opened.has(uri); this.opened.add(uri);
     this.notify(opening ? 'textDocument/didOpen' : 'textDocument/didChange', opening
       ? { textDocument: { uri, languageId, version, text } }
@@ -75,17 +77,17 @@ export class LanguageClient {
   }
   closeDocument(uri: string): void {
     if (this.opened.delete(uri)) this.notify('textDocument/didClose', { textDocument: { uri } });
-    this.diagnostics.delete(uri);
+    this.diagnostics.delete(uri); this.diagnosticTruncated.delete(uri);
     this.diagnosticWaiters.get(uri)?.();
   }
-  async publishedDiagnostics(uri: string): Promise<unknown[]> {
-    if (this.diagnostics.has(uri)) return this.diagnostics.get(uri)!;
+  async publishedDiagnostics(uri: string): Promise<{ items: unknown[]; truncated: boolean }> {
+    if (this.diagnostics.has(uri)) return { items: this.diagnostics.get(uri)!, truncated: this.diagnosticTruncated.has(uri) };
     await new Promise<void>(resolve => {
       const finish = () => { clearTimeout(timer); this.diagnosticWaiters.delete(uri); resolve(); };
       const timer = setTimeout(finish, 800);
       this.diagnosticWaiters.set(uri, finish);
     });
-    return this.diagnostics.get(uri) ?? [];
+    return { items: this.diagnostics.get(uri) ?? [], truncated: this.diagnosticTruncated.has(uri) };
   }
   private send(message: unknown): void { const body = Buffer.from(JSON.stringify(message)); this.child.stdin.write(`Content-Length: ${body.length}\r\n\r\n`); this.child.stdin.write(body); }
   notify(method: string, params: unknown): void {
@@ -106,7 +108,7 @@ export class LanguageClient {
     if (this.dead) return;
     this.dead = true;
     for (const pending of this.pending.values()) { clearTimeout(pending.timer); pending.reject(new AppError('unavailable')); }
-    this.pending.clear(); this.diagnostics.clear();
+    this.pending.clear(); this.diagnostics.clear(); this.diagnosticTruncated.clear();
     this.diagnosticVersions.clear();
     this.opened.clear();
     for (const finish of this.diagnosticWaiters.values()) finish();
