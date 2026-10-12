@@ -361,3 +361,14 @@ test('a tracked file deleted from the working tree reads as missing, not as an i
   assert.equal(await fs.stat(path.join(root, 'src')).catch(() => null), null);
   editor.dispose();
 }));
+
+test('folder lookups and new files under a folder that does not exist are not found, not internal errors', () => withTmpWorkspace(async ws => {
+  const projects = new ProjectLedger(ws); const tasks = new TaskLedger(ws);
+  await projects.create({ name: 'P' });
+  const editor = new EditorService(new WorktreeService({ ws, projects, tasks, diffBytes: 100000 }), tasks, {});
+  const missing = (error: unknown) => error instanceof AppError && error.status === 404;
+  await assert.rejects(editor.folderRevision('P', '', 'gone'), missing);
+  await assert.rejects(editor.mutate('P', '', { action: 'createFile', path: 'gone/new.txt' }), missing);
+  await assert.rejects(editor.mutate('P', '', { action: 'delete', path: 'gone', confirmation: 'gone', revision: 'x' }), missing);
+  editor.dispose();
+}));

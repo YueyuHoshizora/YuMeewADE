@@ -10,7 +10,7 @@ import type { SettingsStore } from '../ledger/settings.ts';
 import type { EditorProposal, EditorProposalInput, ProposalDecision, ProposalDecisionInput, ProposalEdit, ProposalFile, ProposalFileInput, ProposalSnapshot } from '../shared/editor-proposals.ts';
 import type { EditorDocument, TurnUsage } from '../shared/types.ts';
 import { AppError } from '../shared/errors.ts';
-import { writeJson, withFileLocks } from '../shared/fsx.ts';
+import { isMissing, writeJson, withFileLocks } from '../shared/fsx.ts';
 
 const MAX_TEXT = 262_144;
 const MAX_FILES = 16;
@@ -84,10 +84,13 @@ export class EditorProposalService {
     const file = this.file(project);
     const relative = path.relative(this.deps.ws.root, path.dirname(file));
     if (relative.startsWith('..') || path.isAbsolute(relative)) throw new AppError('bad_request');
+    // A missing project folder means the project does not exist; a missing `.ai` folder only means no proposals yet.
+    const projectDepth = path.relative(this.deps.ws.root, this.deps.ws.projectDir(project)).split(path.sep).length;
     let directory = root;
-    for (const part of relative.split(path.sep)) {
+    for (const [index, part] of relative.split(path.sep).entries()) {
       directory = path.join(directory, part);
-      const stat = await fs.lstat(directory);
+      const stat = await fs.lstat(directory).catch((error: unknown) => { if (isMissing(error)) return null; throw error; });
+      if (!stat) { if (index < projectDepth) throw new AppError('not_found', 'project_missing'); break; }
       if (stat.isSymbolicLink() || !stat.isDirectory() || await fs.realpath(directory) !== directory) throw new AppError('bad_request');
     }
     const stat = await fs.lstat(file).catch(error => { if ((error as NodeJS.ErrnoException).code === 'ENOENT') return null; throw error; });

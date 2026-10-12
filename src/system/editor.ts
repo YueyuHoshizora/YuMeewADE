@@ -10,7 +10,7 @@ import { git, gitOk, isLocalSecret } from '../git/git.ts';
 import type { TaskLedger } from '../ledger/tasks.ts';
 import type { EditorDocument, EditorLocation, EditorDiagnostic } from '../shared/types.ts';
 import { AppError } from '../shared/errors.ts';
-import { isInside, pathExists, withFileLocks } from '../shared/fsx.ts';
+import { isInside, missingAs, pathExists, withFileLocks } from '../shared/fsx.ts';
 import { LanguageClient } from './editor-lsp.ts';
 import type { EditorBufferSnapshot, EditorAction, EditorActionResult, EditorChange, EditorMutation, EditorSearchResult, EditorProblem, EditorRevisionResult, EditorMergeResult } from '../shared/editor-workbench.ts';
 import type { EditorSettings, EditorSettingsPatch, EditorResolvedFormatPreferences } from '../shared/editor-preferences.ts';
@@ -132,11 +132,15 @@ export class EditorService {
     if (listed && !(await this.files(root)).includes(relative)) throw new AppError('not_found', 'file_missing');
     // A tracked file deleted in the working tree is still listed by `git ls-files --cached`; it is missing, not an error.
     // Unlisted lookups (history and restoring deleted files) keep the raw ENOENT their callers expect.
-    const missing = (error: unknown): never => { if (listed && ['ENOENT', 'ENOTDIR'].includes((error as NodeJS.ErrnoException).code ?? '')) throw new AppError('not_found', 'file_missing'); throw error; };
+    const missing = listed ? missingAs(() => new AppError('not_found', 'file_missing')) : (error: unknown): never => { throw error; };
     let file = root;
     for (const part of relative.split('/')) { file = path.join(file, part); if ((await fs.lstat(file).catch(missing)).isSymbolicLink()) throw new AppError('not_found', 'file_missing'); }
     if (!isInside(root, await fs.realpath(file).catch(missing))) throw new AppError('not_found', 'file_missing');
     return { root, file, readonly };
+  }
+  /** Unlisted lookup (folders, parents of new files) where a path missing on disk is the caller's 404, not an internal error. */
+  private existing(project: string, task: string, relative: string): Promise<{ root: string; file: string; readonly: boolean }> {
+    return this.target(project, task, relative, false).catch(missingAs(() => new AppError('not_found', 'file_missing')));
   }
   private async document(file: string, relative: string, readonly = false, selected?: EditorEncoding): Promise<EditorDocument> {
     if (selected !== undefined) validateEncoding(selected);
@@ -590,7 +594,7 @@ export class EditorService {
     return { hits, scanned, total, page, pageSize, truncated };
   }
   async folderRevision(project: string, task: string, relative: string): Promise<{ revision: string }> {
-    const target = await this.target(project, task, relative, false); const hash = createHash('sha256'); const allowed = new Set(await this.files(target.root)); let count = 0;
+    const target = await this.existing(project, task, relative); const hash = createHash('sha256'); const allowed = new Set(await this.files(target.root)); let count = 0;
     const walk = async (directory: string, prefix: string): Promise<void> => {
       const stat = await fs.lstat(directory); if (!stat.isDirectory() || stat.isSymbolicLink()) throw new AppError('bad_request');
       hash.update(`${prefix}:${stat.dev}:${stat.ino}:${stat.mtimeMs}:${stat.ctimeMs}\0`);
@@ -611,7 +615,7 @@ export class EditorService {
       const validateNew = async (relative: string): Promise<string> => {
         if (!relative || relative.length > 1000 || path.isAbsolute(relative) || relative.includes('\\') || relative.split('/').some(part => !part || part === '.' || part === '..' || part === '.git' || part === '.ai' || isLocalSecret(part))) throw new AppError('bad_request');
         const parent = path.posix.dirname(relative);
-        if (parent !== '.') await this.target(project, task, parent, false);
+        if (parent !== '.') await this.existing(project, task, parent);
         const file = path.join(root, relative);
         if (await pathExists(file)) throw new AppError('conflict', 'editor_conflict');
         return file;
@@ -622,7 +626,7 @@ export class EditorService {
         return;
       }
       if (mutation.confirmation !== mutation.path) throw new AppError('bad_request');
-      const target = await this.target(project, task, mutation.path, false);
+      const target = await this.existing(project, task, mutation.path);
       const stat = await fs.lstat(target.file);
       if (stat.isDirectory()) {
         if ((await this.folderRevision(project, task, mutation.path)).revision !== mutation.revision) throw new AppError('conflict', 'editor_conflict');

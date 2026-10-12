@@ -115,3 +115,13 @@ test('persisted single-file proposals recover into the multifile schema without 
     assert.equal('path' in proposal!, false); await service.close();
   } finally { await fs.rm(root, { recursive: true, force: true }); }
 });
+
+test('proposal history is empty for a project without an .ai folder and not found for an unknown project', async () => {
+  const root = await fs.mkdtemp(path.join(os.tmpdir(), 'proposal-missing-'));
+  try {
+    const ws = new Workspace(root); await ws.init(); await fs.mkdir(ws.projectDir('P'), { recursive: true });
+    const service = new EditorProposalService({ providers: {}, editor: { read: async () => { throw new Error('unused'); } }, ws, settings: new SettingsStore(ws, DEFAULT_CONFIG), assertExecutable: async () => {}, isBusy: () => false, concurrentRuns: 1, runSeconds: 30 });
+    assert.deepEqual(await service.history('P', ''), []);
+    await assert.rejects(service.history('Missing', ''), { status: 404, detail: 'project_missing' });
+  } finally { await fs.rm(root, { recursive: true, force: true }); }
+});
