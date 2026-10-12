@@ -15,15 +15,20 @@ export function openCommand(platform: NodeJS.Platform, target: string, directory
   return { command: 'xdg-open', args: [show ? path.dirname(target) : target] };
 }
 
-export async function openPath(target: string, reveal = false): Promise<void> {
+/** Decides on the real target: a symlink named `innocent` that points at `Danger.app` must still only be revealed. */
+export async function openTarget(target: string, reveal = false, platform: NodeJS.Platform = process.platform): Promise<{ command: string; args: string[] }> {
   if (!path.isAbsolute(target) || target.includes('\0')) throw new AppError('bad_request');
-  let directory: boolean;
-  try { directory = (await fs.stat(target)).isDirectory(); }
+  let real: string; let directory: boolean;
+  try { real = await fs.realpath(target); directory = (await fs.stat(real)).isDirectory(); }
   catch (cause) {
     if ((cause as NodeJS.ErrnoException).code === 'ENOENT') throw new AppError('not_found');
     throw cause;
   }
-  const { command, args } = openCommand(process.platform, target, directory, reveal);
+  return openCommand(platform, real, directory, reveal);
+}
+
+export async function openPath(target: string, reveal = false): Promise<void> {
+  const { command, args } = await openTarget(target, reveal);
   // Validate existence before spawning; argv never passes through a shell.
   const { promise, resolve, reject } = Promise.withResolvers<void>();
   const child = spawn(command, args, { stdio: 'ignore', windowsHide: true });
