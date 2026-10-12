@@ -73,3 +73,10 @@ export interface CliProvider {
   /** 不送指示，查指定設定目錄的帳號額度；沒有資料回 null。 */
   quota?(configDir?: string): Promise<Extract<CliEvent, { type: 'quota' }> | null>;
 }
+
+/** A quota time a CLI reports in Unix seconds → ISO, or null when it is no usable date (`toISOString` would throw). */
+export function quotaTime(seconds: unknown): string | null {
+  if (typeof seconds !== 'number' || !Number.isFinite(seconds) || seconds <= 0) return null;
+  const date = new Date(seconds * 1000);
+  return Number.isFinite(date.getTime()) ? date.toISOString() : null;
+}

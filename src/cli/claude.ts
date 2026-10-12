@@ -4,7 +4,7 @@ import { randomUUID } from 'node:crypto';
 import type { Ask, CloudCredits, ExtraUsage, QuotaWindow, ResetCredit, ResetCredits, TurnUsage } from '../shared/types.ts';
 import { captureCommand, findExecutable, minimalEnv, runLineProcess } from './process.ts';
 import { readClaudeToken } from './claude-credentials.ts';
-import type { CliEvent, CliProvider, CliRun, SendOptions } from './provider.ts';
+import { quotaTime, type CliEvent, type CliProvider, type CliRun, type SendOptions } from './provider.ts';
 import { claudeCommands, slashName } from './commands.ts';
 import { AppError } from '../shared/errors.ts';
 import { readonlyConfigured, reviewArgs } from './readonly.ts';
@@ -32,11 +32,11 @@ export function claudeQuota(info: unknown): { windows: QuotaWindow[]; limited: b
   const windows: QuotaWindow[] = [];
   for (const [key, value] of entries) {
     if (!value || typeof value !== 'object' || !('utilization' in value) || typeof value.utilization !== 'number') continue;
-    const resets = 'resetsAt' in value && typeof value.resetsAt === 'number' && value.resetsAt > 0 ? value.resetsAt : null;
+    const resets = 'resetsAt' in value ? quotaTime(value.resetsAt) : null;
     windows.push({
       label: key.replace(/^five_hour/u, '5h').replace(/^seven_day/u, '7d').replaceAll('_', ' '),
       usedPercent: Math.round(Math.min(1, Math.max(0, value.utilization)) * 1000) / 10,
-      resetsAt: resets === null ? null : new Date(resets * 1000).toISOString(),
+      resetsAt: resets,
     });
   }
   const limited = i['status'] === 'rejected';

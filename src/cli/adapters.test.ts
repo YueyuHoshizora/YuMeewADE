@@ -448,6 +448,20 @@ test('即時額度查詢：走 initialize → rateLimits/read 取得回應，錯
   }
 });
 
+test('quota reset and credit times outside the Date range become unknown instead of throwing', async () => {
+  const huge = 1e100;
+  assert.deepEqual(codexQuota({ primary: { used_percent: 95, window_minutes: 300, resets_at: huge } }, 'T')?.windows, [{ label: '5h', usedPercent: 95, resetsAt: null }]);
+  assert.deepEqual(codexAppServerQuota({ rateLimits: { primary: { usedPercent: 1, windowDurationMins: 60, resetsAt: 1 } }, rateLimitResetCredits: { availableCount: 1, credits: [{ status: 'available', expiresAt: huge }] } }, 'T')?.resetCredits?.credits, [{ title: null, expiresAt: null }]);
+  assert.equal(claudeQuota({ status: 'allowed', unifiedWindows: { five_hour: { utilization: 0.5, resetsAt: huge } } })?.windows[0]?.resetsAt, null);
+  // Through the live app-server query the same value used to throw inside a stream callback and end the process.
+  const dir = await fs.mkdtemp(path.join(os.tmpdir(), 'codex-quota-range-'));
+  try {
+    const server = path.join(dir, 'server.ts');
+    await fs.writeFile(server, `process.stdin.on('data', d => { for (const l of String(d).split('\\n').filter(Boolean)) { const m = JSON.parse(l); if (m.method === 'initialize') console.log(JSON.stringify({ id: 1, result: {} })); if (m.id === 2) console.log(JSON.stringify({ id: 2, result: { rateLimits: { primary: { usedPercent: 95, windowDurationMins: 300, resetsAt: ${huge} } } } })); } });`);
+    assert.deepEqual((await fetchCodexQuota(process.execPath, [server], process.env))?.windows, [{ label: '5h', usedPercent: 95, resetsAt: null }]);
+  } finally { await fs.rm(dir, { recursive: true, force: true }); }
+});
+
 test('Claude OAuth 用量回應轉成窗口：只收已知窗口、百分比夾在 0–100、達 100% 視為上限', () => {
   const body = {
     five_hour: { utilization: 33.04, resets_at: '2026-10-10T22:59:59.624195+00:00' },

@@ -8,7 +8,7 @@ import type { CliCommandConfig } from '../shared/config.ts';
 import { CREDITS_UNIT } from '../shared/types.ts';
 import type { ExtraUsage, QuotaWindow, ResetCredit, ResetCredits } from '../shared/types.ts';
 import { findExecutable, minimalEnv, runLineProcess, terminateTree } from './process.ts';
-import type { CliEvent, CliProvider, CliRun, SendOptions } from './provider.ts';
+import { quotaTime, type CliEvent, type CliProvider, type CliRun, type SendOptions } from './provider.ts';
 import { codexPrompts, expandCodexPrompt, slashName } from './commands.ts';
 import { AppError } from '../shared/errors.ts';
 import { readonlyConfigured, reviewArgs } from './readonly.ts';
@@ -42,11 +42,11 @@ export function codexQuota(limits: unknown, at: string): QuotaEvent | null {
     const w = l[key];
     if (!w || typeof w !== 'object' || !('used_percent' in w) || typeof w.used_percent !== 'number') continue;
     const minutes = 'window_minutes' in w && typeof w.window_minutes === 'number' ? w.window_minutes : 0;
-    const resets = 'resets_at' in w && typeof w.resets_at === 'number' && w.resets_at > 0 ? w.resets_at : null;
+    const resets = 'resets_at' in w ? quotaTime(w.resets_at) : null;
     windows.push({
       label: minutes <= 0 ? key : minutes % 1440 === 0 ? `${minutes / 1440}d` : minutes % 60 === 0 ? `${minutes / 60}h` : `${minutes}m`,
       usedPercent: Math.round(Math.min(100, Math.max(0, w.used_percent)) * 10) / 10,
-      resetsAt: resets === null ? null : new Date(resets * 1000).toISOString(),
+      resetsAt: resets,
     });
   }
   const limited = l['rate_limit_reached_type'] !== null && l['rate_limit_reached_type'] !== undefined;
@@ -68,7 +68,7 @@ export function codexResetCredits(value: unknown): ResetCredits | undefined {
     const expires = credit['expiresAt'];
     credits.push({
       title: typeof credit['title'] === 'string' && credit['title'] ? credit['title'].slice(0, 80) : null,
-      expiresAt: typeof expires === 'number' && Number.isFinite(expires) && expires > 0 ? new Date(expires * 1000).toISOString() : null,
+      expiresAt: quotaTime(expires),
     });
   }
   credits.sort((a, b) => (a.expiresAt ?? '9').localeCompare(b.expiresAt ?? '9'));
@@ -136,7 +136,8 @@ export async function fetchCodexQuota(command: string, args: string[], env: Node
         reject(new Error('initialize failed'));
       } else if (msg.id === 2) {
         if (msg.error) reject(new Error('rateLimits/read failed'));
-        else resolve(codexAppServerQuota(msg.result, new Date().toISOString()));
+        // This runs in a stream callback: an exception here would not reach the awaiting caller but end the process.
+        else try { resolve(codexAppServerQuota(msg.result, new Date().toISOString())); } catch (error) { reject(error); }
       }
     }
   });
