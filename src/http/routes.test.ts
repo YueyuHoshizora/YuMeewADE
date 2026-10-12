@@ -437,10 +437,13 @@ test('restricted projects block Git reads that can execute repository clean filt
       assert.equal((await s.api('POST', '/api/project/trust', { project: p.id, state, overrides: {}, revision: view.revision, confirmed: true })).status, 200);
     };
     await update('restricted');
-    for (const route of [`/api/git/status?project=${p.id}`, `/api/git/diff?project=${p.id}&path=source.txt`, `/api/task/preview?project=${p.id}&task=${t.id}`, `/api/task/diff?project=${p.id}&task=${t.id}`, `/api/task/merged?project=${p.id}&task=${t.id}`, `/api/chat/turn-diff?project=${p.id}&task=${t.id}&request=r`]) {
+    for (const route of [`/api/git/status?project=${p.id}`, `/api/git/diff?project=${p.id}&path=source.txt`, `/api/task/preview?project=${p.id}&task=${t.id}`, `/api/task/diff?project=${p.id}&task=${t.id}`, `/api/task/merged?project=${p.id}&task=${t.id}`, `/api/chat/turn-diff?project=${p.id}&task=${t.id}&request=r`, `/api/review/history?project=${p.id}&task=${t.id}`]) {
       const response = await s.api('GET', route);
       assert.equal(response.status, 403);
       assert.equal((response.json as { detail: string }).detail, 'project_restricted');
+    }
+    for (const [route, body] of [['/api/review/gate', { required: true }], ['/api/review/finding', { snapshot: 's', finding: 'f', state: 'resolved', evidence: 'e' }]] as const) {
+      assert.equal(((await s.api('POST', route, { project: p.id, task: t.id, ...body })).json as { detail: string }).detail, 'project_restricted', route);
     }
     await assert.rejects(fs.access(marker), { code: 'ENOENT' });
     assert.equal((await s.api('GET', '/api/state')).status, 200);

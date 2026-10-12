@@ -37,10 +37,11 @@ export function registerRoutes(router: Router, app: App): void {
   router.setRequestGuard(async (path, ctx) => {
     const post = ctx.req.method === 'POST';
     const executable = post
-      ? path.startsWith('/api/git/') || ['/api/task/merge', '/api/task/unmerge', '/api/task/revert-file', '/api/task/verify', '/api/task/archive', '/api/project/archive', '/api/chat/rollback', '/api/chat/fork', '/api/editor/language', '/api/editor/settings', '/api/execution/start', '/api/execution/terminal', '/api/execution/ide', '/api/execution/debug', '/api/terminal/start'].includes(path)
+      ? path.startsWith('/api/git/') || ['/api/task/merge', '/api/task/unmerge', '/api/task/revert-file', '/api/task/verify', '/api/task/archive', '/api/project/archive', '/api/chat/rollback', '/api/chat/fork', '/api/editor/language', '/api/editor/settings', '/api/execution/start', '/api/execution/terminal', '/api/execution/ide', '/api/execution/debug', '/api/terminal/start', '/api/review/gate', '/api/review/finding'].includes(path)
       // Git status/diff/merge previews can invoke repository filters or merge drivers, even on GET. Turn diffs and merge
-      // lookups are task diffs and Git reads too, which restricted projects forbid as a whole.
-      : path.startsWith('/api/git/') || ['/api/task/preview', '/api/task/diff', '/api/task/merged', '/api/chat/turn-diff', '/api/archive/preview', '/api/chat/commands', '/api/editor/problems'].includes(path);
+      // lookups are task diffs and Git reads too, which restricted projects forbid as a whole; so is the review history
+      // (and the gate/finding updates answering with it), whose staleness check fingerprints the copy through Git.
+      : path.startsWith('/api/git/') || ['/api/task/preview', '/api/task/diff', '/api/task/merged', '/api/chat/turn-diff', '/api/archive/preview', '/api/chat/commands', '/api/editor/problems', '/api/review/history'].includes(path);
     const project = post ? ctx.body.project : ctx.query.get('project');
     // On case-insensitive (or normalization-folding) file systems `p` opens project `P`'s folder, but every lock, trust
     // record, running-task map and order entry is keyed by the exact name: an alias would bypass them all.
