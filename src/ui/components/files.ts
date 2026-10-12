@@ -676,7 +676,7 @@ export function openFileBrowser(project: string, task: string, workspace = activ
   // Keyboard file picking in the tree filter: Enter opens the best ranked match, arrows walk the results.
   // (Ctrl/⌘+P stays the global go-to-file picker.)
   filter.addEventListener('keydown', event => {
-    if (event.isComposing) return;
+    if (event.isComposing || event.keyCode === 229) return;
     const first = results.querySelector<HTMLButtonElement>('.file-result');
     if (event.key === 'Enter' && first) { event.preventDefault(); first.click(); }
     else if (event.key === 'ArrowDown' && first) { event.preventDefault(); first.focus(); }

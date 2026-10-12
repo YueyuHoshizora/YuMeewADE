@@ -39,7 +39,7 @@ function picker(title: string, source: (query: string) => Promise<Command[]> | C
     if (delay) debounce = window.setTimeout(() => { void run(update); }, delay); else void run(update);
   };
   dialog.addEventListener('keydown', event => {
-    if (event.isComposing) return;
+    if (event.isComposing || event.keyCode === 229) return;
     if (event.key === 'ArrowDown' || event.key === 'ArrowUp') { event.preventDefault(); if (results.length) selected = (selected + (event.key === 'ArrowDown' ? 1 : results.length - 1)) % results.length; highlight(); }
     if (event.key === 'Enter') { event.preventDefault(); choose(selected); }
   });

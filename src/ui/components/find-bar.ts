@@ -46,7 +46,7 @@ export function openFindBar(): void {
   node.append(field, iconButton('↑', t('find.previous'), () => { go(-1); field.focus(); }), iconButton('↓', t('find.next'), () => { go(1); field.focus(); }), status, iconButton('×', t('common.close'), close));
   field.addEventListener('input', () => { index = -1; go(0); });
   field.addEventListener('keydown', event => {
-    if (event.isComposing) return;
+    if (event.isComposing || event.keyCode === 229) return;
     if (event.key === 'Enter') { event.preventDefault(); go(event.shiftKey ? -1 : 1); }
     else if (event.key === 'Escape') { event.preventDefault(); event.stopPropagation(); close(); }
   });
