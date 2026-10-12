@@ -463,7 +463,10 @@ export class GitWorkbench {
       // Decided up front rather than from git's (possibly localized) refusal message.
       const incoming = new Set(split(await this.command(root, ['diff', '--name-only', '--no-renames', '-z', 'HEAD', '@{upstream}'])));
       if ((await this.files(root)).some(file => incoming.has(file.path) || !!file.originalPath && incoming.has(file.originalPath))) throw new AppError('conflict', 'git_pull_local_changes');
-      await this.command(root, ['merge', '--ff-only', '@{upstream}']);
+      // Ignored files are local work too, and git would overwrite one that sits where upstream adds a file (or a folder).
+      const ignored = split(await this.command(root, ['ls-files', '-z', '--others', '--ignored', '--exclude-standard', '--directory'])).map(entry => entry.replace(/\/$/u, ''));
+      if ([...incoming].some(file => ignored.some(entry => file === entry || file.startsWith(`${entry}/`)))) throw new AppError('conflict', 'git_pull_local_changes');
+      await this.command(root, ['merge', '--ff-only', '--no-overwrite-ignore', '@{upstream}']);
       return { updated: true };
     });
   }

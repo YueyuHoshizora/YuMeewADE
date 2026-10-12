@@ -425,6 +425,22 @@ test('pull only fast-forwards and refuses diverged history or local edits upstre
   assert.equal((await gitOk(root, ['rev-parse', 'HEAD'])).trim(), local);
 }));
 
+test('pull refuses to overwrite an ignored local file where upstream adds a file', () => withTmpWorkspace(async ws => {
+  const projects = new ProjectLedger(ws); const tasks = new TaskLedger(ws); await projects.create({ name: 'P' });
+  const root = ws.projectDir('P'); const workbench = new GitWorkbench({ ws, projects, tasks, isRunning: () => false });
+  const remote = path.join(ws.root, 'remote.git'); await fs.mkdir(remote); await gitOk(remote, ['init', '--bare', '-q']);
+  const branch = (await gitOk(root, ['symbolic-ref', '--short', 'HEAD'])).trim();
+  await gitOk(root, ['remote', 'add', 'origin', remote]); await gitOk(root, ['push', '-q', '-u', 'origin', branch]);
+  const other = path.join(ws.root, 'other'); await gitOk(ws.root, ['clone', '-q', remote, other]);
+  await fs.writeFile(path.join(other, 'draft.txt'), 'upstream\n'); await commitAll(other, 'draft'); await gitOk(other, ['push', '-q', 'origin', branch]);
+  await workbench.fetch('P', undefined, 'origin');
+  await fs.appendFile(path.join(root, '.git', 'info', 'exclude'), 'draft.txt\n'); await fs.writeFile(path.join(root, 'draft.txt'), 'precious local draft\n');
+  await assert.rejects(workbench.fastForward('P', undefined), (error: unknown) => error instanceof AppError && error.detail === 'git_pull_local_changes');
+  assert.equal(await fs.readFile(path.join(root, 'draft.txt'), 'utf8'), 'precious local draft\n');
+  await fs.rm(path.join(root, 'draft.txt'));
+  assert.deepEqual(await workbench.fastForward('P', undefined), { updated: true });
+}));
+
 test('push, fetch and commit failures name their cause instead of a generic git failure', () => withTmpWorkspace(async ws => {
   const projects = new ProjectLedger(ws); const tasks = new TaskLedger(ws);
   await projects.create({ name: 'P' }); const root = ws.projectDir('P');
