@@ -39,6 +39,9 @@ export function openUsageDetails(getState: () => AppState, getUsage: () => Usage
   const dialog = el('dialog', 'modal usage-details');
   const title = el('h2', '', t('usage.details')); title.id = 'usage-details-title';
   dialog.setAttribute('aria-labelledby', title.id);
+  const content = el('div', 'usage-details-content');
+  const close = iconButton('×', t('common.close'), () => dialog.close());
+  close.classList.add('usage-details-close');
   const accounts = el('div', 'usage-accounts');
   const add = el('details', 'disclosure'); add.append(el('summary', '', t('usage.addAccount')));
   add.open = addAccount;
@@ -78,10 +81,11 @@ export function openUsageDetails(getState: () => AppState, getUsage: () => Usage
   }); };
   add.append(el('p', 'muted', t('usage.accountHelp')), form);
   const reload = button(t('usage.refresh'), async () => { await request<UsageState>('/api/accounts/refresh', {}); await refresh(); render(); });
-  dialog.append(row(title, iconButton('×', t('common.close'), () => dialog.close())));
-  if (manageAccounts) dialog.append(el('p', 'muted', t('usage.accountNotice')));
-  dialog.append(reload, accounts);
-  if (manageAccounts) dialog.append(add);
+  content.append(title);
+  if (manageAccounts) content.append(el('p', 'muted', t('usage.accountNotice')));
+  content.append(reload, accounts);
+  if (manageAccounts) content.append(add);
+  dialog.append(content, close);
   let previous = '';
   function render(): void {
     const state = getState(); const usage = getUsage();
