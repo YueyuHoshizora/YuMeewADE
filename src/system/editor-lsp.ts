@@ -107,6 +107,8 @@ export class LanguageClient {
   private fail(): void {
     if (this.dead) return;
     this.dead = true;
+    // The leader may already have exited while helpers still keep its process group alive.
+    terminateTree(this.child, () => undefined);
     for (const pending of this.pending.values()) { clearTimeout(pending.timer); pending.reject(new AppError('unavailable')); }
     this.pending.clear(); this.diagnostics.clear(); this.diagnosticTruncated.clear();
     this.diagnosticVersions.clear();
@@ -114,5 +116,5 @@ export class LanguageClient {
     for (const finish of this.diagnosticWaiters.values()) finish();
     this.onDeath();
   }
-  dispose(): void { this.fail(); terminateTree(this.child, () => undefined); }
+  dispose(): void { this.fail(); }
 }

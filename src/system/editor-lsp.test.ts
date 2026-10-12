@@ -92,3 +92,32 @@ test('Problems propagates push diagnostics truncation without killing the langua
   } finally { editor.dispose(); }
 }));
 
+test('LSP leader crash rejects requests and kills SIGTERM-resistant helpers before disposal', { skip: process.platform === 'win32' }, async () => {
+  const root = await fs.mkdtemp(path.join(os.tmpdir(), 'lsp-crash-'));
+  const helper = "process.on('SIGTERM', () => {}); process.stdout.write('ready'); setInterval(() => {}, 1000)";
+  const crashingServer = server.replace("if (message.method === 'initialize') send({id:message.id,result:{capabilities:{}}});", `if (message.method === 'initialize') {
+    const child = require('node:child_process').spawn(process.execPath, ['-e', ${JSON.stringify(helper)}], {cwd:process.cwd(),stdio:['ignore','pipe','ignore']});
+    child.stdout.once('data', () => send({id:message.id,result:{capabilities:{},helperPid:child.pid}}));
+  } else if (message.method === 'crash') process.exit(1);`);
+  const { promise: died, resolve } = Promise.withResolvers<void>();
+  const client = new LanguageClient([process.execPath, '-e', crashingServer], root, resolve);
+  let pid: number | undefined;
+  const alive = () => { if (!pid) return false; try { process.kill(pid, 0); return true; } catch { return false; } };
+  try {
+    const ready = await client.ready; assert.ok(ready && typeof ready === 'object' && 'helperPid' in ready && typeof ready.helperPid === 'number');
+    pid = ready.helperPid;
+    assert.equal(alive(), true);
+    await assert.rejects(client.request('crash', {}), { code: 'unavailable' });
+    await died;
+    assert.equal(client.alive, false);
+    // Do not dispose before observing cleanup: EditorService has already evicted this dead client.
+    // Real process-group signal delivery and the 3-second SIGKILL escalation cannot use mocked timers across subprocesses.
+    for (let i = 0; i < 50 && alive(); i++) await delay(100);
+    assert.equal(alive(), false, 'orphan helper must be killed even when its leader already exited');
+    client.dispose(); client.dispose();
+  } finally {
+    client.dispose();
+    if (alive()) process.kill(pid!, 'SIGKILL');
+    await fs.rm(root, { recursive: true, force: true });
+  }
+});
