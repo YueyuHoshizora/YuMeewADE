@@ -155,6 +155,12 @@ function createWindow(url: string): BrowserWindow {
       })
       .then(allowed => callback({ cancel: !allowed }), () => callback({ cancel: true }));
   });
+  // Electron grants every permission request by default, so the embedded preview (a project's own dev server, framed
+  // from another loopback origin) could get system notifications and pose as the IDE. Only the IDE's own page gets the
+  // two permissions it uses: notifications and the copy buttons' clipboard writes.
+  win.webContents.session.setPermissionRequestHandler((_contents, permission, callback, details) => {
+    callback((permission === 'notifications' || permission === 'clipboard-sanitized-write') && details.isMainFrame && acceptsFrame(details.requestingUrl, origin));
+  });
   mainWindow = win;
   win.on('focus', () => { mainWindow = win; });
   win.on('closed', () => {
