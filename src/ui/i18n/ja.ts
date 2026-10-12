@@ -59,6 +59,7 @@ export const ja: Record<MessageKey, string> = {
 'copy.leftover': 'マージは成功しましたが、以下の未コミットファイルはマージされず、worktree は保持されました。',
 'chat.earlier': '以前のメッセージを読み込む',
 'search.title': 'すべての会話を検索', 'search.placeholder': '作業と会話の内容を検索…', 'search.truncated': '結果が多すぎます。検索を絞り込んでください。',
+'search.partial': '会話が多すぎるため一部のみ検索しました。結果は不完全な可能性があります。より具体的な語句で検索してください。',
 'settings.theme': '外観', 'settings.theme.system': 'システム', 'settings.theme.light': 'ライト', 'settings.theme.dark': 'ダーク',
 'settings.notifications': '作業の完了や回答が必要なときに通知', 'settings.notificationPermission': 'システム通知を許可', 'notification.done': 'AI の返信が完了しました', 'notification.answer': 'AI があなたの回答を待っています',
 'connection.reconnecting': 'コアとの接続が切れました。再接続中…',

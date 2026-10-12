@@ -59,6 +59,7 @@ export const en: Record<MessageKey, string> = {
 'copy.leftover': 'Merge succeeded, but these uncommitted files were not merged; the worktree was kept.',
 'chat.earlier': 'Load earlier messages',
 'search.title': 'Search all conversations', 'search.placeholder': 'Search tasks and conversation content…', 'search.truncated': 'Too many results. Refine your search.',
+'search.partial': 'Too many conversations to scan; only part was searched and results may be incomplete. Try a more specific term.',
 'settings.theme': 'Appearance', 'settings.theme.system': 'System', 'settings.theme.light': 'Light', 'settings.theme.dark': 'Dark',
 'settings.notifications': 'Notify when tasks finish or need an answer', 'settings.notificationPermission': 'Allow system notifications', 'notification.done': 'AI has finished replying', 'notification.answer': 'AI needs your answer',
 'connection.reconnecting': 'Disconnected from core. Reconnecting…',

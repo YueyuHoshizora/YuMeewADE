@@ -61,6 +61,18 @@ test('search respects project/task reader order and stops once fifty hits are co
   assert.deepEqual(bounded.hits.map(hit => hit.index), Array.from({ length: 50 }, (_, index) => 99 - index));
 });
 
+test('search stops at the scan budget and reports partial results instead of reading every log', async () => {
+  const read: string[] = [];
+  const result = await search({
+    projects: async () => [{ id: 'Project' }],
+    tasks: async () => [{ id: 'a', title: 'Work' }, { id: 'b', title: 'Work' }, { id: 'c', title: 'Work' }],
+    readLog: async (_project, task) => { read.push(task); return Array.from({ length: 3 }, (_, index) => user(task === 'b' && index === 0 ? 'needle' : `other ${index}`)); },
+  }, 'needle', 5);
+  // Budget 5: all of "a" (3 rows), then "b" newest-first reaches rows 2 and 1 before stopping, missing row 0.
+  assert.deepEqual(result, { hits: [], truncated: false, partial: true });
+  assert.deepEqual(read, ['a', 'b']);
+});
+
 test('invalid queries use existing field errors before reading any data', async () => {
   const empty: SearchReaders = {
     projects: async () => { throw new Error('invalid query must not scan'); },

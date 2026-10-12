@@ -22,10 +22,14 @@ function snippet(text: string, index: number, length: number): string {
   return `${start > 0 ? '…' : ''}${excerpt}${end < text.length ? '…' : ''}`;
 }
 
+/** Bounds the work of a no-match search across every conversation; hits stop at 50 independently. */
+export const SEARCH_SCAN_ROWS = 200_000;
+
 /** Reader order is retained; only user/assistant text is searched, newest first. */
-export async function search(readers: SearchReaders, value: unknown): Promise<SearchResult> {
+export async function search(readers: SearchReaders, value: unknown, scanRows = SEARCH_SCAN_ROWS): Promise<SearchResult> {
   const query = searchQuery(value).toLocaleLowerCase();
   const hits: SearchHit[] = [];
+  let scanned = 0;
   for (const project of await readers.projects()) {
     for (const task of await readers.tasks(project.id)) {
       const text = `${task.id} ${task.title}`;
@@ -36,6 +40,7 @@ export async function search(readers: SearchReaders, value: unknown): Promise<Se
       }
       const rows = await readers.readLog(project.id, task.id);
       for (let index = rows.length - 1; index >= 0; index--) {
+        if (++scanned > scanRows) return { hits, truncated: false, partial: true };
         const row = rows[index]!;
         if (row.role !== 'user' && row.role !== 'assistant') continue;
         const match = row.text.toLocaleLowerCase().indexOf(query);

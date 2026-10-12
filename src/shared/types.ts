@@ -545,6 +545,8 @@ export interface SearchResult {
   hits: SearchHit[];
   /** 命中數超過上限而截斷。 */
   truncated: boolean;
+  /** 掃描量達上限，尚有對話未搜尋（結果不完整）。 */
+  partial?: boolean;
 }
 
 /** 作業對話流（`GET /api/chat/stream?project&task`）。snapshot 的 start 為 rows[0] 的索引。 */

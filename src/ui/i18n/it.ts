@@ -59,6 +59,7 @@ export const it: Record<MessageKey, string> = {
 'copy.leftover': 'Unione riuscita, ma questi file senza commit non sono stati uniti; il worktree è stato conservato.',
 'chat.earlier': 'Carica i messaggi precedenti',
 'search.title': 'Cerca in tutte le conversazioni', 'search.placeholder': 'Cerca nelle attività e nelle conversazioni…', 'search.truncated': 'Troppi risultati. Affina la ricerca.',
+'search.partial': 'Troppe conversazioni; è stata cercata solo una parte e i risultati possono essere incompleti. Usa un termine più preciso.',
 'settings.theme': 'Aspetto', 'settings.theme.system': 'Sistema', 'settings.theme.light': 'Chiaro', 'settings.theme.dark': 'Scuro',
 'settings.notifications': 'Notifica al termine delle attività o quando serve una risposta', 'settings.notificationPermission': 'Consenti notifiche di sistema', 'notification.done': 'L’IA ha completato la risposta', 'notification.answer': 'L’IA ha bisogno della tua risposta',
 'connection.reconnecting': 'Connessione al nucleo interrotta. Riconnessione…',
