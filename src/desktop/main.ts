@@ -8,7 +8,7 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { hostAuthority, loadConfig } from '../shared/config.ts';
 import { probe, waitForCore } from './probe.ts';
-import { acceptsFrame, validBadgeCount } from './policy.ts';
+import { acceptsFrame, grantsPermission, validBadgeCount } from './policy.ts';
 import { stopOwnedCore } from './shutdown.ts';
 import { configureSecretApplication, createSecretRequestHandler } from './secret-service.ts';
 import { reportArtifactSmoke } from './artifact-smoke.ts';
@@ -155,12 +155,12 @@ function createWindow(url: string): BrowserWindow {
       })
       .then(allowed => callback({ cancel: !allowed }), () => callback({ cancel: true }));
   });
-  // Electron grants every permission request by default, so the embedded preview (a project's own dev server, framed
-  // from another loopback origin) could get system notifications and pose as the IDE. Only the IDE's own page gets the
-  // two permissions it uses: notifications and the copy buttons' clipboard writes.
+  // The embedded preview (a project's own dev server, framed from another loopback origin) must not get system
+  // notifications and pose as the IDE, nor read installed fonts and similar check-only permissions.
   win.webContents.session.setPermissionRequestHandler((_contents, permission, callback, details) => {
-    callback((permission === 'notifications' || permission === 'clipboard-sanitized-write') && details.isMainFrame && acceptsFrame(details.requestingUrl, origin));
+    callback(grantsPermission(permission, details.isMainFrame, details.requestingUrl, origin));
   });
+  win.webContents.session.setPermissionCheckHandler((_contents, permission, _requestingOrigin, details) => grantsPermission(permission, details.isMainFrame, details.requestingUrl, origin));
   mainWindow = win;
   win.on('focus', () => { mainWindow = win; });
   win.on('closed', () => {
