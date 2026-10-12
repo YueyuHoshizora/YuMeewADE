@@ -15,6 +15,7 @@
 ## 畫面與流程
 
 - **長對話視窗化**：只掛載可視區附近的訊息，快取可變高度；串流只更新新文字／新列，向上載入舊頁維持閱讀位置，底部跟隨與所有訊息操作保留。工具事件每 24 列分組，展開後仍有 DOM 上限；Tab 可到訊息及操作，訊息外框用 ↑／↓ 移到相鄰訊息。瀏覽器尋找只涵蓋目前掛載內容；查完整歷史請用 App 搜尋或匯出對話。
+  在作業頁按 ⌘/Ctrl+Shift+F（或選單／命令面板的搜尋）會開啟搜尋並預設勾選「只搜尋這個作業」，可搜尋整段對話含未掛載的舊訊息；取消勾選即回到跨專案搜尋。
 - **終端機分頁**：每個作業可並行開啟多個 PTY，新增／改名／關閉分頁；關閉執行中分頁先確認並停止程序。受 `limits.concurrentRuns` 限制，保留 owner capability 與五分鐘失聯回收。
   按住 ⌘／Ctrl 點選終端中的網址會以瀏覽器（桌面版為系統瀏覽器）開啟；點選檔案路徑（`src/a.ts:12:5`、`a.ts(12,5)`、堆疊中的絕對路徑）會在編輯器開啟並跳到該行。按住修飾鍵移過連結時游標變為手形。路徑以作業工作目錄為準，絕對路徑必須位於其中，否則只提示無法開啟；路徑需有副檔名，避免把一般文字誤當連結。換行的長路徑以「填滿整行」推斷接續，調整終端寬度前已換行的輸出可能無法辨識。
 - **底部終端機面板**：執行對話框可在 dock 開啟終端機；按標題列按鈕或 Ctrl/⌘+` 顯示／隱藏。拖曳頂邊或以方向鍵調整高度，大小與顯示狀態保存在 localStorage。切換畫面／隱藏不停止程序或清除輸出，可切換專案／作業群組。
@@ -199,7 +200,7 @@ HTTP JSON 加 SSE，桌面版與網頁版完全相同。型別定義在 [`src/sh
 | `GET /api/chat/stream?project=&task=` | SSE（單一作業）：`snapshot`（最後 200 列與 `start`）／`busy`／`delta`／`row`／`queue`／`idle` |
 | `GET /api/chat/history?project=&task=&before=` | 補讀 `before` 之前的 200 列對話 |
 | `GET /api/chat/export?project=&task=&tools=` | 下載對話 Markdown（`tools=1` 含工具呼叫；不含工作區絕對路徑） |
-| `GET /api/search?q=` | 跨專案搜尋作業標題與對話內容（最多 50 筆） |
+| `GET /api/search?q=&project=&task=` | 搜尋作業標題與對話內容（最多 50 筆）；可選 `project`（及 `task`）只搜尋該專案或作業，名稱不合法回 400、不存在回 404，`task` 必須搭配 `project` |
 | `POST /api/project/new`、`/api/project/update`、`/api/project/archive` | 專案 |
 | `POST /api/phase/next`、`/api/phase/continue` | 階段 |
 | `POST /api/order`、`/api/pin` | 專案排序與釘選 |

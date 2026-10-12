@@ -60,6 +60,7 @@ export const ja: Record<MessageKey, string> = {
 'chat.earlier': '以前のメッセージを読み込む',
 'search.title': 'すべての会話を検索', 'search.placeholder': '作業と会話の内容を検索…', 'search.truncated': '結果が多すぎます。検索を絞り込んでください。',
 'search.partial': '会話が多すぎるため一部のみ検索しました。結果は不完全な可能性があります。より具体的な語句で検索してください。',
+'search.scopeTask': 'この作業のみ：{title}',
 'find.label': 'ページ内を検索', 'find.next': '次へ', 'find.previous': '前へ', 'find.none': '一致する文字はありません',
 'settings.theme': '外観', 'settings.theme.system': 'システム', 'settings.theme.light': 'ライト', 'settings.theme.dark': 'ダーク',
 'settings.notifications': '作業の完了や回答が必要なときに通知', 'settings.notificationPermission': 'システム通知を許可', 'notification.done': 'AI の返信が完了しました', 'notification.answer': 'AI があなたの回答を待っています',

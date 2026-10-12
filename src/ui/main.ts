@@ -1,7 +1,7 @@
 import type { AppState, UsageState } from '../shared/types.ts';
 import { api } from './api.ts';
 import { getLocale, t } from './i18n/index.ts';
-import { button, el, link, readLocal, run, showError, taskHash, toast, type View, type ViewContext } from './components/dom.ts';
+import { button, el, link, readLocal, run, searchHash, showError, taskHash, toast, type View, type ViewContext } from './components/dom.ts';
 import { aiLabel, localDateTime, localTime, quotaLabel } from './components/display.ts';
 import { quotaAlerts, quotaCountdowns, type QuotaAlert } from './components/quota-alert.ts';
 import { needsReply, tree } from './components/tree.ts';
@@ -125,7 +125,7 @@ function navigate(force = false): void {
   else if (parts[0] === 'new') view = newProjectView(context, params);
   else if (parts[0] === 'open') view = openProjectView(context);
   else if (parts[0] === 'settings') view = lazyView(async () => (await import('./views/settings.ts')).settingsView(context, () => { drawShell(); navigate(true); }));
-  else if (parts[0] === 'search') view = lazyView(async () => (await import('./views/search.ts')).searchView());
+  else if (parts[0] === 'search') view = lazyView(async () => (await import('./views/search.ts')).searchView(context, params));
   else if (parts[0] === 'overview') view = lazyView(async () => (await import('./views/overview.ts')).overviewView(context));
   else if (parts[0] === 'p' && project) view = projectView(context, project, params);
   else if (parts[0] === 't' && project && task) view = lazyView(async () => (await import('./views/task.ts')).taskView(context, project, task, params));
@@ -179,7 +179,7 @@ window.addEventListener('keydown', event => {
   if (state && paletteShortcut(event, { state, refresh })) return;
   if ((event.ctrlKey || event.metaKey) && event.shiftKey && event.key.toLowerCase() === 'f') {
     event.preventDefault();
-    location.hash = '#/search';
+    location.hash = searchHash();
     return;
   }
   // Electron has no find bar; browsers keep their own. Editors and the terminal claim the key first via preventDefault.
@@ -209,6 +209,6 @@ window.yumeewade?.onMenuCommand?.(command => {
   window.dispatchEvent(new CustomEvent('yumeewade:menu', { detail: { command } }));
   if (command === 'new-project') location.hash = '#/new';
   else if (command === 'settings') location.hash = '#/settings';
-  else if (command === 'search') location.hash = '#/search';
+  else if (command === 'search') location.hash = searchHash();
   else if (command === 'open-project') void run(async () => { if (!state) await refresh(); if (state) await openProjectFromFolder({ state, refresh }); });
 });

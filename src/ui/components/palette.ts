@@ -3,7 +3,7 @@ import { LOCALES, localeName, setLocale, t } from '../i18n/index.ts';
 import { getTheme, setTheme } from '../theme.ts';
 import { openProjectFromFolder } from '../views/projects.ts';
 import { archiveButton } from './archive.ts';
-import { button, confirmModal, el, input, projectHash, row, run, taskHash, type ViewContext } from './dom.ts';
+import { button, confirmModal, el, input, projectHash, row, run, searchHash, taskHash, type ViewContext } from './dom.ts';
 import { executionButton } from './execution.ts';
 import { openFileBrowser } from './editor-loader.ts';
 import { fileQuery, rank, routeScope } from './palette-logic.ts';
@@ -53,7 +53,7 @@ export function openCommandPalette(context: ViewContext): void {
     { label: t('nav.new'), action: go('#/new') },
     { label: t('project.openExisting'), action: () => openProjectFromFolder(context) },
     { label: t('nav.settings'), action: go('#/settings') },
-    { label: t('search.title'), action: go('#/search') },
+    { label: t('search.title'), action: () => { location.hash = searchHash(); } },
     { label: t('nav.turn'), action: go('#/turn') },
     { label: t('overview.title'), action: go('#/overview') },
     { label: t('palette.theme'), action: () => setTheme(getTheme() === 'dark' ? 'light' : 'dark') },

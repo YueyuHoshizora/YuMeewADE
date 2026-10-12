@@ -60,6 +60,7 @@ export const fr: Record<MessageKey, string> = {
 'chat.earlier': 'Charger les messages précédents',
 'search.title': 'Rechercher dans les conversations', 'search.placeholder': 'Rechercher des tâches et des conversations…', 'search.truncated': 'Trop de résultats. Affinez la recherche.',
 'search.partial': 'Trop de conversations ; seule une partie a été parcourue et les résultats peuvent être incomplets. Utilisez un terme plus précis.',
+'search.scopeTask': 'Seulement cette tâche : {title}',
 'find.label': 'Rechercher dans la page', 'find.next': 'Occurrence suivante', 'find.previous': 'Occurrence précédente', 'find.none': 'Aucune correspondance',
 'settings.theme': 'Apparence', 'settings.theme.system': 'Système', 'settings.theme.light': 'Clair', 'settings.theme.dark': 'Sombre',
 'settings.notifications': 'Notifier à la fin des tâches ou si une réponse est nécessaire', 'settings.notificationPermission': 'Autoriser les notifications système', 'notification.done': 'La réponse de l’IA est terminée', 'notification.answer': 'L’IA attend votre réponse',

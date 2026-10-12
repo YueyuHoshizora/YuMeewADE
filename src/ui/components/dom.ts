@@ -46,6 +46,11 @@ export function card(title: string, ...children: Node[]): HTMLElement { const no
 export function link(label: string, hash: string, className = ''): HTMLAnchorElement { const node = el('a', className, label); node.href = hash; return node; }
 export const projectHash = (p: string) => `#/p/${encodeURIComponent(p)}`;
 export const taskHash = (p: string, task: string) => `#/t/${encodeURIComponent(p)}/${encodeURIComponent(task)}`;
+/** Search opened from a task page carries that task so the search page can offer to stay within it. */
+export function searchHash(current = location.hash): string {
+  const parts = (current.slice(1).split('?')[0] ?? '').split('/').filter(Boolean).map(decodeURIComponent);
+  return parts[0] === 't' && parts[1] && parts[2] ? `#/search?${new URLSearchParams({ project: parts[1], task: parts[2] })}` : '#/search';
+}
 export function toast(message: string): void { const node = document.getElementById('toast')!; node.textContent = message; node.hidden = false; window.setTimeout(() => { node.hidden = true; }, 5000); }
 /** A failure whose message is already localized for the user (validation, stale draft, …). */
 export class UserError extends Error {}

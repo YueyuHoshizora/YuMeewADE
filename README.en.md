@@ -17,6 +17,7 @@ The workflow draws on [kieiken/project-hub](https://github.com/kieiken/project-h
 - **GitHub Issues**: manually search up to 30 open issues and read bodies (up to 10,000 characters). Creating a task prefills its title and first instruction draft without starting AI; `issue` / `issueUrl` persist the linked issue chip. `PROJECT.md`'s `issues` is a separate displayed list of local problems/risks, not GitHub issues.
 
 - **Windowed long conversations**: only messages near the viewport are mounted, with cached variable heights. Streaming updates only new text/rows; loading older pages preserves the reading position, bottom following and message actions. Tool events are grouped in batches of 24 to bound expanded DOM size. Tab reaches messages/actions; ↑/↓ on a message wrapper moves to its neighbor. Browser Find covers mounted content only; use app search or conversation export for the full history.
+  ⌘/Ctrl+Shift+F on a task page (or Search from the menu/command palette) opens search with “Only this task” checked, covering the whole conversation including unmounted older messages; uncheck it to search across projects.
 - **Terminal tabs**: run multiple PTYs per task; add, rename, or close tabs. Closing a running tab requires confirmation and stops its processes. `limits.concurrentRuns`, owner capabilities, and five-minute lost-owner cleanup remain enforced.
   ⌘/Ctrl+click a URL in the terminal to open it in the browser (the system browser on desktop), or a file path (`src/a.ts:12:5`, `a.ts(12,5)`, absolute paths in stack traces) to open it in the editor at that line; holding the modifier over a link shows a pointer. Paths resolve against the task working directory, and absolute paths outside it only report that they cannot be opened. Paths need an extension so ordinary prose is not linked. Wrapped long paths are joined by inferring that a full-width row continues on the next, so output wrapped before a terminal resize may not be recognized.
 - **Docked terminal**: open a terminal from the execution dialog. Toggle with the header button or Ctrl/⌘+`; drag the top edge (or use arrow keys) to resize. Height and visibility are remembered in localStorage. Hiding or navigating preserves running sessions and output; switch labeled project/task groups in the dock.
@@ -194,7 +195,7 @@ HTTP JSON plus SSE, identical in desktop and web versions. Types are defined in 
 | `GET /api/chat/stream?project=&task=` | SSE (single task): `snapshot` (last 200 rows plus `start`)／`busy`／`delta`／`row`／`queue`／`idle` |
 | `GET /api/chat/history?project=&task=&before=` | Load the 200 chat rows before `before` |
 | `GET /api/chat/export?project=&task=&tools=` | Download the conversation as Markdown (`tools=1` includes tool calls; no absolute workspace paths) |
-| `GET /api/search?q=` | Search task titles and chat text across projects (up to 50 hits) |
+| `GET /api/search?q=&project=&task=` | Search task titles and chat text (up to 50 hits); optional `project` (and `task`) limits it to that project or task. Invalid names return 400, unknown ones 404, and `task` requires `project` |
 | `POST /api/project/new`、`/api/project/update`、`/api/project/archive` | Projects |
 | `POST /api/phase/next`、`/api/phase/continue` | Phases |
 | `POST /api/order`、`/api/pin` | Project ordering and pinning |

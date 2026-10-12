@@ -1,10 +1,10 @@
 import type { SearchResult } from '../../shared/types.ts';
 import { query, request } from '../api.ts';
 import { t } from '../i18n/index.ts';
-import { el, input, link, run, taskHash, type View } from '../components/dom.ts';
+import { el, field, input, link, run, taskHash, type View, type ViewContext } from '../components/dom.ts';
 import { searchParts } from '../components/search-match.ts';
 
-export function searchView(): View {
+export function searchView(context: ViewContext, params: URLSearchParams): View {
   const node = el('div', 'page search-page');
   const search = input('', t('search.placeholder'));
   search.type = 'search';
@@ -12,7 +12,12 @@ export function searchView(): View {
   const results = el('div', 'search-results');
   const status = el('p', 'muted');
   status.setAttribute('role', 'status');
-  node.append(el('h1', '', t('search.title')), search, status, results);
+  // Opened from a task: offer to stay within it (checked), so long, partly unmounted conversations can be searched fully.
+  const project = params.get('project') ?? ''; const taskId = params.get('task') ?? '';
+  const task = context.state.projects.find(p => p.id === project)?.tasks.find(item => item.id === taskId);
+  const scoped = input(); scoped.type = 'checkbox'; scoped.checked = !!task;
+  node.append(el('h1', '', t('search.title')), search, ...(task ? [field(t('search.scopeTask', { title: task.title }), scoped)] : []), status, results);
+  scoped.onchange = () => search.dispatchEvent(new Event('input'));
   let alive = true;
   let serial = 0;
   let timer = 0;
@@ -27,7 +32,7 @@ export function searchView(): View {
       void run(async () => {
         status.textContent = t('common.loading');
         try {
-          const data = await request<SearchResult>(query('/api/search', { q: term }));
+          const data = await request<SearchResult>(query('/api/search', { q: term, ...(task && scoped.checked ? { project, task: taskId } : {}) }));
           if (!alive || current !== serial) return;
           for (const hit of data.hits) {
             const hash = taskHash(hit.project, hit.task);
