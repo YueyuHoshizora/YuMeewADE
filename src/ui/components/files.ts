@@ -218,7 +218,7 @@ export function openFileBrowser(project: string, task: string, workspace = activ
         document: { ...buffer.document, text: '' }, text: '', clean: true,
         start: buffer.start, end: buffer.end, top: buffer.top, left: buffer.left
       });
-      const state = { version: 3, buffers: recovery, unresolved: [...unresolved], split: Number(views[0]?.node.style.flex) || 50, panes: views.map(view => ({ path: view.path ?? null, start: view.content.selectionStart, end: view.content.selectionEnd, top: view.content.scrollTop, left: view.content.scrollLeft })), focused };
+      const state = { version: 4, buffers: recovery, unresolved: [...unresolved], split: Number(views[0]?.node.style.flex) || 50, panes: views.map((view, index) => ({ tabs: paneTabs[index], path: view.path ?? null, start: view.content.selectionStart, end: view.content.selectionEnd, top: view.content.scrollTop, left: view.content.scrollLeft })), focused };
       let data = JSON.stringify(state); let omitted = false;
       while (new TextEncoder().encode(data).byteLength > 4 * 1024 * 1024 && recovery.length && 'clean' in recovery.at(-1)!) {
         recovery.pop(); omitted = true; data = JSON.stringify(state);
@@ -231,6 +231,7 @@ export function openFileBrowser(project: string, task: string, workspace = activ
   function capture(index: number): void { const view = views[index]!; const buffer = view.path ? buffers.get(view.path) : undefined; if (buffer && !isImage(buffer.document.path)) { buffer.text = view.content.value; buffer.start = view.content.selectionStart; buffer.end = view.content.selectionEnd; buffer.top = view.content.scrollTop; buffer.left = view.content.scrollLeft; } }
   type Position = { path: string; start: number; end: number; top: number; left: number };
   const navigation: { entries: Position[]; cursor: number }[] = [];
+  const paneTabs: { path: string; pinned: boolean; preview: boolean }[][] = [];
   let replaying = false;
   function position(index: number): Position | undefined { const view = views[index]!; return view.path ? { path: view.path, start: view.content.selectionStart, end: view.content.selectionEnd, top: view.content.scrollTop, left: view.content.scrollLeft } : undefined; }
   function recordPosition(index: number): void {
@@ -248,24 +249,40 @@ export function openFileBrowser(project: string, task: string, workspace = activ
     replaying = true;
     try { await show(entry.path); if (disposed) return; activate(entry.path, index); const content = views[index]!.content; content.setSelectionRange(entry.start, entry.end); content.scrollTop = entry.top; content.scrollLeft = entry.left; history.cursor = target; capture(index); schedulePersist(); } finally { replaying = false; }
   }
+  async function closeTabs(index: number, paths: string[]): Promise<void> {
+    if (editReserved) return;
+    views.forEach((_, i) => capture(i));
+    const dropping = paths.filter(path => !paneTabs.some((tabs, i) => i !== index && tabs.some(tab => tab.path === path)));
+    const dirtyPaths = dropping.filter(path => { const buffer = buffers.get(path); return buffer && dirty(buffer); });
+    if (dirtyPaths.length && !await confirmModal(t('editor.dirty'), dirtyPaths.join('\n'), t('editor.discard'))) return;
+    if (editReserved) return;
+    paneTabs[index] = paneTabs[index]!.filter(tab => !paths.includes(tab.path));
+    for (const path of dropping) { buffers.delete(path); await closeDiagnostics(path); views.forEach(view => view.content.forget(path)); }
+    const view = views[index]!;
+    if (view.path && paths.includes(view.path)) { view.path = undefined; view.content.value = ''; view.content.readOnly = true; view.preview.clear(); const next = paneTabs[index]!.at(-1); if (next) activate(next.path, index); }
+    persist(); refreshTabs();
+  }
   function refreshTabs(): void {
-    for (const view of views) view.tabs.replaceChildren(...[...buffers].map(([path, buffer]) => row(
-      button(`${path}${dirty(buffer) ? ' *' : ''} · ${t('editor.diagnostics')}: ${live.get(path)?.diagnostics.length ?? 0}`, () => activate(path, views.indexOf(view))),
-      button(t('common.close'), async () => {
-        if (editReserved) return;
-        views.forEach((_, index) => capture(index));
-        if (dirty(buffer) && !(await confirmModal(t('editor.dirty'), path, t('editor.discard')))) return;
-        if (editReserved) return;
-        buffers.delete(path);
-        await closeDiagnostics(path);
-        for (const item of views) { item.content.forget(path); if (item.path === path) { item.path = undefined; item.content.value = ''; item.content.readOnly = true; item.preview.clear(); } }
-        persist(); refreshTabs();
-      })
-    )));
+    for (const [index, view] of views.entries()) view.tabs.replaceChildren(...paneTabs[index]!.filter(tab => buffers.has(tab.path)).map(tab => {
+      const buffer = buffers.get(tab.path)!;
+      return row(button(`${tab.pinned ? '● ' : ''}${tab.preview ? '◇ ' : ''}${tab.path}${dirty(buffer) ? ' *' : ''}`, () => activate(tab.path, index)),
+        button(t(tab.pinned ? 'editorFront.unpin' : 'editorFront.pin'), () => { if (editReserved) return; tab.pinned = !tab.pinned; tab.preview = false; persist(); refreshTabs(); }),
+        button(t('common.close'), () => closeTabs(index, [tab.path])),
+        button(t('editorFront.closeOthers'), () => closeTabs(index, paneTabs[index]!.filter(other => other.path !== tab.path && !other.pinned).map(other => other.path))),
+        button(t('editorFront.closeRight'), () => closeTabs(index, paneTabs[index]!.slice(paneTabs[index]!.indexOf(tab) + 1).filter(other => !other.pinned).map(other => other.path))));
+    }));
   }
   function activate(path: string, index = focused, line?: number, character = 0): void {
     if (editReserved) return;
     capture(index); const buffer = buffers.get(path); if (!buffer) return;
+    if (!paneTabs[index]!.some(tab => tab.path === path)) {
+      const preview = paneTabs[index]!.find(tab => tab.preview && !tab.pinned);
+      if (preview) {
+        if (dirty(buffers.get(preview.path)!)) preview.preview = false;
+        else { paneTabs[index] = paneTabs[index]!.filter(tab => tab !== preview); if (!paneTabs.some(tabs => tabs.some(tab => tab.path === preview.path))) { buffers.delete(preview.path); void closeDiagnostics(preview.path); } }
+      }
+      paneTabs[index]!.push({ path, pinned: false, preview: true });
+    }
     recordPosition(index);
     const wasReplaying = replaying; replaying = true;
     const view = views[index]!; view.path = path; view.content.open(path, buffer.text); view.content.readOnly = isImage(path) || buffer.document.readonly || buffer.document.binary || buffer.document.truncated;
@@ -299,6 +316,7 @@ export function openFileBrowser(project: string, task: string, workspace = activ
   }
   function pane(): void {
     const index = views.length; const code = el('div', 'editor-code'); const content = new EditorContent(code, t('editor.content'));
+    paneTabs.push([]);
     const tabs = el('div'); const node = el('div'); const body = el('div'); const preview = new FilePreview(code, ids); body.append(code, preview.node); node.style.minWidth = '0'; node.style.flex = '1'; node.append(tabs, body); views.push({ path: undefined, content, preview, tabs, node }); panes.append(node);
     navigation.push({ entries: [], cursor: -1 });
     node.prepend(row(button(t('editorFront.back'), () => { focused = index; return navigatePosition(-1); }), button(t('editorFront.forward'), () => { focused = index; return navigatePosition(1); })));
@@ -318,6 +336,7 @@ export function openFileBrowser(project: string, task: string, workspace = activ
     content.onfocus = () => { focused = index; schedulePersist(); };
     content.oninput = () => {
       capture(index); const path = views[index]!.path;
+      if (path) for (const tabs of paneTabs) for (const tab of tabs) if (tab.path === path) tab.preview = false;
       for (let other = 0; other < views.length; other++) if (other !== index && views[other]!.path === path && path) {
         const sibling = views[other]!; const start = sibling.content.selectionStart; const end = sibling.content.selectionEnd; const top = sibling.content.scrollTop; const left = sibling.content.scrollLeft;
         sibling.content.value = content.value; sibling.content.setSelectionRange(start, end); sibling.content.scrollTop = top; sibling.content.scrollLeft = left;
@@ -474,7 +493,7 @@ export function openFileBrowser(project: string, task: string, workspace = activ
     if (!raw) return;
     let parsed: unknown; try { parsed = JSON.parse(raw); } catch { output.append(el('p', 'warning', t('ew.recoveryLimit'))); return; }
     const session = parsed && typeof parsed === 'object' && !Array.isArray(parsed) ? parsed as { version?: unknown; buffers?: unknown; panes?: unknown; focused?: unknown; unresolved?: unknown; split?: unknown } : undefined;
-    const values = Array.isArray(parsed) ? parsed : session?.version === 3 ? session.buffers : undefined;
+    const values = Array.isArray(parsed) ? parsed : session?.version === 3 || session?.version === 4 ? session.buffers : undefined;
     if (!Array.isArray(values) || values.length > 50 || new TextEncoder().encode(raw).byteLength > 4 * 1024 * 1024) { output.append(el('p', 'warning', t('ew.recoveryLimit'))); return; }
     if (values.some(value => value && typeof value === 'object' && !('clean' in value && value.clean === true)) && !(await confirmModal(t('ew.recover'), t('ew.recover'), t('ew.recover')))) throw new Error(t('ew.recover'));
     for (const value of values) { if (!value || typeof value !== 'object') continue; const candidate = value as Partial<EditorRecovery> & { clean?: boolean }; if (!candidate.document || typeof candidate.document.path !== 'string' || typeof candidate.document.revision !== 'string' || typeof candidate.text !== 'string' || candidate.text.length > 4 * 1024 * 1024) continue;
@@ -493,11 +512,12 @@ export function openFileBrowser(project: string, task: string, workspace = activ
     }
     refreshTabs();
     if (Array.isArray(session?.unresolved)) for (const path of session.unresolved.slice(0, 50)) if (typeof path === 'string' && buffers.has(path)) markUnresolved(path);
-    const savedPanes = session?.version === 3 && Array.isArray(session.panes) && session.panes.length > 0 && session.panes.length <= 2 ? session.panes : [];
+    const savedPanes = (session?.version === 3 || session?.version === 4) && Array.isArray(session.panes) && session.panes.length > 0 && session.panes.length <= 2 ? session.panes : [];
     while (views.length < savedPanes.length) pane();
     if (views.length === 2 && typeof session?.split === 'number' && session.split >= 20 && session.split <= 80) { views[0]!.node.style.flex = String(session.split); views[1]!.node.style.flex = String(100 - session.split); }
     for (let index = 0; index < savedPanes.length; index++) {
-      const saved = savedPanes[index] as { path?: unknown; start?: unknown; end?: unknown; top?: unknown; left?: unknown };
+      const saved = savedPanes[index] as { tabs?: unknown; path?: unknown; start?: unknown; end?: unknown; top?: unknown; left?: unknown };
+      paneTabs[index] = Array.isArray(saved?.tabs) ? saved.tabs.flatMap(tab => tab && typeof tab === 'object' && typeof tab.path === 'string' && buffers.has(tab.path) ? [{ path: tab.path, pinned: tab.pinned === true, preview: tab.preview === true }] : []) : [...buffers.keys()].map(path => ({ path, pinned: false, preview: false }));
       if (!saved || typeof saved.path !== 'string' || !buffers.has(saved.path)) continue;
       activate(saved.path, index);
       const view = views[index]!;
