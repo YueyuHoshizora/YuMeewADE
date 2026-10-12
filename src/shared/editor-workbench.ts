@@ -1,6 +1,7 @@
 import type { EditorDocument, EditorLocation, EditorDiagnostic } from './types.ts';
 export type EditorAction = 'definition' | 'references' | 'diagnostics' | 'completion' | 'hover' | 'rename' | 'format' | 'codeActions' | 'documentSymbols' | 'workspaceSymbols';
-export interface EditorChange { path: string; revision: string; text: string }
+export interface EditorBufferSnapshot { path: string; revision: string; text: string }
+export interface EditorChange { path: string; revision: string; text: string; baseText?: string }
 export interface EditorSuggestion { label: string; detail?: string; insertText: string; start?: number; end?: number }
 export interface EditorSymbol extends EditorLocation { name: string; kind: number; container?: string }
 export interface EditorActionResult { locations: EditorLocation[]; diagnostics: EditorDiagnostic[]; hover?: string; suggestions?: EditorSuggestion[]; changes?: EditorChange[]; actions?: { title: string; changes: EditorChange[] }[]; symbols?: EditorSymbol[] }

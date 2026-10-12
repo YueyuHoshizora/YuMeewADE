@@ -11,7 +11,7 @@ import type { EditorDocument, EditorLocation, EditorDiagnostic } from '../shared
 import { AppError } from '../shared/errors.ts';
 import { isInside, pathExists, withFileLocks } from '../shared/fsx.ts';
 import { LanguageClient } from './editor-lsp.ts';
-import type { EditorAction, EditorActionResult, EditorChange, EditorMutation, EditorSearchResult, EditorProblem, EditorRevisionResult, EditorMergeResult } from '../shared/editor-workbench.ts';
+import type { EditorBufferSnapshot, EditorAction, EditorActionResult, EditorChange, EditorMutation, EditorSearchResult, EditorProblem, EditorRevisionResult, EditorMergeResult } from '../shared/editor-workbench.ts';
 import type { EditorSettings, EditorSettingsPatch, EditorResolvedFormatPreferences } from '../shared/editor-preferences.ts';
 import { EditorSettingsStore, validateEditorCommands, DEFAULT_EDITOR_FORMAT, applyEditorConfig } from './editor-settings.ts';
 
@@ -234,10 +234,27 @@ export class EditorService {
       // Keep the bounded version counter until server eviction so late publications cannot match a reopened buffer.
     });
   }
-  async language(project: string, task: string, relative: string, text: string, line: number, character: number, action: EditorAction, newName?: string): Promise<EditorActionResult> {
+  async language(project: string, task: string, relative: string, text: string, line: number, character: number, action: EditorAction, newName?: string, buffers: EditorBufferSnapshot[] = [], revision?: string): Promise<EditorActionResult> {
     const { root, file } = await this.target(project, task, relative);
     return withFileLocks([file], async () => {
     const document = await this.document(file, relative);
+    const drafts = new Map<string, EditorBufferSnapshot>();
+    if (buffers.length > 50) throw new AppError('too_large');
+    let draftBytes = 0;
+    for (const buffer of buffers) {
+      if (!buffer || typeof buffer.path !== 'string' || typeof buffer.revision !== 'string' || typeof buffer.text !== 'string' || drafts.has(buffer.path) || Buffer.byteLength(buffer.text) > this.MAX || buffer.text.includes('\0')) throw new AppError('bad_request');
+      const current = await this.read(project, task, buffer.path);
+      draftBytes += Buffer.byteLength(buffer.text);
+      if (draftBytes > 16 * 1024 * 1024) throw new AppError('too_large');
+      if (current.binary || current.truncated || current.revision !== buffer.revision) throw new AppError('conflict', 'editor_conflict');
+      drafts.set(buffer.path, buffer);
+    }
+    if (revision !== undefined) {
+      if (document.revision !== revision) throw new AppError('conflict', 'editor_conflict');
+      const supplied = drafts.get(relative);
+      if (supplied && (supplied.text !== text || supplied.revision !== revision)) throw new AppError('bad_request');
+      drafts.set(relative, { path: relative, revision, text });
+    } else if (['rename', 'format', 'codeActions'].includes(action) && text !== document.text) throw new AppError('bad_request');
     if (document.binary || document.truncated || Buffer.byteLength(text) > this.MAX || Buffer.byteLength(JSON.stringify(text)) > this.bodyBytes - 8192 || text.includes('\0')) throw new AppError('bad_request', 'editor_readonly');
     await this.assertExecutable?.(project);
     const command = (await this.configured(project)).commands[document.language];
@@ -263,12 +280,25 @@ export class EditorService {
     let snapshotBytes = Buffer.byteLength(text);
     for (const snapshot of this.snapshots.values()) if (snapshot.root !== root || snapshot.uri !== uri) snapshotBytes += Buffer.byteLength(snapshot.text);
     if (snapshotBytes > 32 * 1024 * 1024) throw new AppError('too_large');
+    if (this.snapshots.size + drafts.size > 1000 || snapshotBytes + draftBytes > 32 * 1024 * 1024 || this.versions.size + drafts.size * this.clients.size > 16000) throw new AppError('too_large');
     this.snapshots.set(`${root}\0${uri}`, { root, uri, language: document.language, text });
     for (const [clientKey, active] of this.clients) if (clientKey.startsWith(`${root}\0`)) {
       const snapshotKey = `${clientKey}\0${uri}`;
       if (!this.versions.has(snapshotKey) && this.versions.size >= 16000) throw new AppError('too_large');
       const version = (this.versions.get(snapshotKey) ?? 0) + 1; this.versions.set(snapshotKey, version);
       active.openDocument(uri, document.language, version, text);
+    }
+    for (const draft of drafts.values()) {
+      if (draft.path === relative) continue;
+      const target = await this.target(project, task, draft.path);
+      const current = await this.document(target.file, draft.path);
+      const draftUri = pathToFileURL(target.file).href;
+      this.snapshots.set(`${root}\0${draftUri}`, { root, uri: draftUri, language: current.language, text: draft.text });
+      for (const [clientKey, active] of this.clients) if (clientKey.startsWith(`${root}\0`)) {
+        const snapshotKey = `${clientKey}\0${draftUri}`;
+        const version = (this.versions.get(snapshotKey) ?? 0) + 1;
+        this.versions.set(snapshotKey, version); active.openDocument(draftUri, current.language, version, draft.text);
+      }
     }
     const locations: EditorLocation[] = []; const diagnostics: EditorDiagnostic[] = [];
     if (action === 'documentSymbols' || action === 'workspaceSymbols') {
@@ -322,17 +352,16 @@ export class EditorService {
           return { label: item.label, ...(typeof item.detail === 'string' ? { detail: item.detail } : {}), insertText, ...(range ? { start: offset(range.start), end: offset(range.end) } : {}) };
         }) };
       }
-      if (text !== document.text) throw new AppError('conflict', 'editor_conflict');
       if (action === 'codeActions') {
         if (Array.isArray(result) && result.length > 50) throw new AppError('too_large');
         const actions = [];
         for (const item of (Array.isArray(result) ? result : []).slice(0, 50)) {
           const value = item as { title?: string; edit?: unknown };
-          if (typeof value.title === 'string' && value.edit) actions.push({ title: value.title, changes: await this.workspaceChanges(project, task, root, value.edit) });
+          if (typeof value.title === 'string' && value.title.length <= 1000 && value.edit) actions.push({ title: value.title, changes: await this.workspaceChanges(project, task, root, value.edit, drafts) });
         }
         return { locations, diagnostics, actions };
       }
-      const changes = await this.workspaceChanges(project, task, root, action === 'format' ? { changes: { [uri]: result ?? [] } } : result);
+      const changes = await this.workspaceChanges(project, task, root, action === 'format' ? { changes: { [uri]: result ?? [] } } : result, drafts);
       if (format) {
         const eol = format.eol === 'preserve' ? (document.text.includes('\r\n') ? '\r\n' : '\n') : format.eol === 'crlf' ? '\r\n' : '\n';
         for (const change of changes) {
@@ -364,7 +393,7 @@ export class EditorService {
     return { locations, diagnostics };
     });
   }
-  private async workspaceChanges(project: string, task: string, root: string, value: unknown): Promise<EditorChange[]> {
+  private async workspaceChanges(project: string, task: string, root: string, value: unknown, drafts = new Map<string, EditorBufferSnapshot>()): Promise<EditorChange[]> {
     if (!value || typeof value !== 'object') return [];
     const edit = value as { changes?: Record<string, unknown[]>; documentChanges?: { textDocument?: { uri: string }; edits?: unknown[] }[] };
     const entries = Object.entries(edit.changes ?? {});
@@ -379,16 +408,19 @@ export class EditorService {
       if (seen.has(relative)) throw new AppError('bad_request'); seen.add(relative);
       const document = await this.read(project, task, relative);
       if (document.binary || document.truncated || document.readonly || !Array.isArray(edits) || edits.length > 10000) throw new AppError('bad_request', 'editor_readonly');
-      const lines = document.text.split('\n');
+      const draft = drafts.get(relative);
+      if (draft && draft.revision !== document.revision) throw new AppError('conflict', 'editor_conflict');
+      const baseText = draft?.text ?? document.text;
+      const lines = baseText.split('\n');
       const offset = (position: { line: number; character: number }): number => {
         if (!Number.isSafeInteger(position.line) || !Number.isSafeInteger(position.character) || position.line < 0 || position.line >= lines.length || position.character < 0 || position.character > lines[position.line]!.length) throw new AppError('bad_request');
         return lines.slice(0, position.line).reduce((n, line) => n + line.length + 1, 0) + position.character;
       };
       const ranges = edits.map(item => { const edit = item as { range: { start: { line: number; character: number }; end: { line: number; character: number } }; newText: string }; if (typeof edit.newText !== 'string') throw new AppError('bad_request'); return { start: offset(edit.range.start), end: offset(edit.range.end), text: edit.newText }; }).sort((a, b) => b.start - a.start);
-      let text = document.text; let boundary = text.length;
+      let text = baseText; let boundary = text.length;
       for (const range of ranges) { if (range.end < range.start || range.end > boundary) throw new AppError('bad_request'); text = text.slice(0, range.start) + range.text + text.slice(range.end); boundary = range.start; }
       if (Buffer.byteLength(text) > this.MAX || text.includes('\0')) throw new AppError('too_large');
-      output.push({ path: relative, revision: document.revision, text });
+      output.push({ path: relative, revision: document.revision, text, ...(draft ? { baseText } : {}) });
     }
     return output;
   }
