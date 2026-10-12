@@ -77,7 +77,7 @@ config.yaml          設定範本；templates/ 內為 roles.yaml／PROJECT.md／
 9. **對外錯誤一律 generic**：回應為 `{error, message, detail?, field?}`；`detail` 必須是 `src/shared/errors.ts` 的 `DETAIL_MESSAGES` 代碼（新增代碼同時補七語 `detail.*` 翻譯），`message` 為固定繁中；例外堆疊與內部路徑只進本地日誌。
 10. **供應鏈**：相依釘選確切版本、lockfile 入庫；Electron／Vite／electron-builder／TypeScript 升版須人工裁示。
 11. **資源防護**：同時執行中的對話數、SSE 連線數、隊列長度皆有上限（`limits.*`）；超限回 409／503，不排隊無限等待。
-12. **CSRF／DNS rebinding**：所有請求檢查 `Host` 為 `127.0.0.1:{port}` 或 `localhost:{port}`；非 GET 請求若帶 `Origin` 必須同源，否則 403。（本條為實作補強，嚴於企劃書。）
+12. **CSRF／DNS rebinding**：所有請求檢查 `Host` 為 `127.0.0.1:{port}` 或 `localhost:{port}`；非 GET 請求若帶 `Origin` 必須同源，否則 403；`/api/` 請求的 `Sec-Fetch-Site` 為 `cross-site` 或 `same-site`（其他網站、其他本機 port）一律 403。（本條為實作補強，嚴於企劃書。）
 
 ## 七、測試與驗證
 

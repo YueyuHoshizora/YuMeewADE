@@ -7,7 +7,7 @@
 工作流程參考 [kieiken/project-hub](https://github.com/kieiken/project-hub)（MIT）：台帳即檔案、作業副本、三種執行中指示、AI 問題選項、完成確認、階段。本專案沒有包含它的程式碼，畫面也是另外設計的。
 
 > **安全宣告（請先讀）**
-> - 核心只監聽 `http://127.0.0.1:4560`，**沒有登入、沒有認證**。這是刻意的：它是單人本機工具，不是網頁服務。本機上的其他程序可以呼叫它。請勿改綁 `0.0.0.0`，也不要把 port 轉發到外部。
+> - 核心只監聽 `http://127.0.0.1:4560`，**沒有登入、沒有認證**。這是刻意的：它是單人本機工具，不是網頁服務。本機上的其他程序可以呼叫它。瀏覽器裡的其他網站、其他本機 port 的頁面（含開發伺服器與內嵌預覽）則不能呼叫 API：核心檢查 Host、Origin 與 `Sec-Fetch-Site`。請勿改綁 `0.0.0.0`，也不要把 port 轉發到外部。
 > - **AI 預設擁有完整權限**：claude 以 `--dangerously-skip-permissions`、codex 以 `--dangerously-bypass-approvals-and-sandbox`、grok 以 `--always-approve` 啟動，會用你的帳號權限改檔與執行任何指令。可在「設定 → AI 工具 → 完整權限」關閉。關閉後 Claude 需核准的工具由聊天卡片詢問；Codex 保持工作目錄沙箱、Grok 保持 `dontAsk`、agy 保持編輯模式，這三者目前不支援本程式的互動核准。安全模式不是跨 CLI 一致的唯讀或 OS 沙箱；CLI 與其設定仍須可信任。
 > - CLI 管理 AI 費用與 OAuth 登入，App 不保證不產生費用。App **會保存並更新憑證**：透過 Electron `safeStorage` 的作業系統保護加密後，存入 App 私有目錄的 `credentials.sqlite`（Node `node:sqlite`），不在工作區。Linux 必須有受支援的 libsecret／KWallet；不可用時拒絕啟動，不退回明文。核心為 CLI 還原隔離帳號檔案，並保存刷新後憑證；額度僅送固定官方端點。憑證不回傳 App API／畫面／日誌，但隔離 CLI 檔案與恢復快照可能含機密，不能公開分享。
 > - 本機 `GET /api/care/log` 檢視器刻意允許本機使用者讀取既有日誌堆疊；只讀固定檔案且限制大小，沿用 loopback／Host／Origin 保護，無遠端認證。home 轉為 `~` 並防禦遮蔽憑證與 token-like 文字，但不能保證任意日誌無機密，複製或分享前務必人工檢查。
