@@ -65,8 +65,10 @@ export function checkOrigin(req: IncomingMessage, opts: RouterOptions): void {
   // A GET carries no Origin, so a page elsewhere (another site, or another loopback port such as a dev server or the
   // embedded preview) could still trigger API reads with side effects — CLI command discovery, GitHub queries, Git
   // status. Browsers mark where each request comes from; only the UI itself (same-origin) or a typed URL may call.
+  // This runs only for requests already routed as API calls: testing the raw request target here would let
+  // `//other.host/api/…` (which routes to /api/…) slip past.
   const site = req.headers['sec-fetch-site'];
-  if ((site === 'cross-site' || site === 'same-site') && (req.url ?? '').startsWith('/api/')) throw new AppError('forbidden');
+  if (site === 'cross-site' || site === 'same-site') throw new AppError('forbidden');
 }
 
 export async function readRawBody(req: IncomingMessage, limit: number): Promise<Buffer> {

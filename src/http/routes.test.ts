@@ -359,7 +359,8 @@ test('HTTP gate rejects bad host/origin, malformed JSON and oversized bodies', a
     assert.equal(await raw({ Host: 'evil.example:80' }, ['{}']), 403);
     assert.equal((await s.api('POST', '/api/project/new', { name: 'A' }, { Origin: 'http://evil.example' })).status, 403);
     // A GET from another site or another loopback port (dev server, embedded preview) is refused; the UI itself is not.
-    for (const site of ['cross-site', 'same-site']) assert.equal((await s.api('GET', '/api/state', undefined, { 'Sec-Fetch-Site': site })).status, 403, site);
+    // `//host/api/state` routes to /api/state too, so it must meet the same gate.
+    for (const site of ['cross-site', 'same-site']) for (const target of ['/api/state', '//evil.example/api/state', '//localhost/api/state']) assert.equal((await s.api('GET', target, undefined, { 'Sec-Fetch-Site': site })).status, 403, `${site} ${target}`);
     for (const site of ['same-origin', 'none']) assert.equal((await s.api('GET', '/api/state', undefined, { 'Sec-Fetch-Site': site })).status, 200, site);
     assert.equal((await s.api('POST', '/api/project/new', '{bad')).status, 400);
     assert.equal((await s.api('POST', '/api/project/new', '[1]')).status, 400);
