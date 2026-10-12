@@ -135,6 +135,9 @@ export class AiCatalog {
     if (name === 'grok' && this.cache.grok?.profile !== this.grokProfile(settings)) {
       await this.loadGrok(settings, false);
     }
+    if (name === 'gemini' && this.cache.gemini?.profile !== this.geminiProfile(settings)) {
+      await this.loadGemini(settings, false);
+    }
     const cached = this.cache[name]!;
     return { name, ...status, models: structuredClone(cached.models), source: cached.source, refreshedAt: cached.refreshedAt, fullAccess: settings.fullAccess[name] ?? this.config.cli[name].fullAccess };
   }
@@ -149,7 +152,7 @@ export class AiCatalog {
       return this.get(name);
     }
     if (name === 'gemini') {
-      await this.loadGemini(true);
+      await this.loadGemini(await this.settings.get(), true);
       return this.get(name);
     }
     if (name === 'codex') {
@@ -228,12 +231,21 @@ export class AiCatalog {
     if (strict && !models.length) throw new AppError('internal', 'bad_json');
     await this.persist('grok', { models, source: models.length ? 'cli' : 'unavailable', refreshedAt: new Date().toISOString(), profile });
   }
-  private async loadGemini(strict: boolean): Promise<void> {
-    const result = await captureCommand({ command: this.config.cli.gemini.command, args: ['models'], env: this.env(), timeoutMs: 120_000 });
+  private geminiProfile(settings: Settings): string {
+    return JSON.stringify([settings.activeAccounts.gemini ?? 'default', this.configDir('gemini', settings) ?? this.home]);
+  }
+  private async loadGemini(settings: Settings, strict: boolean): Promise<void> {
+    const query = (env: NodeJS.ProcessEnv) => captureCommand({ command: this.config.cli.gemini.command, args: ['models'], env, timeoutMs: 120_000 });
+    let result: CommandCapture;
+    try {
+      result = this.accounts ? await this.accounts.withEnv('gemini', this.configDir('gemini', settings), query) : await query({ ...this.env(), HOME: this.configDir('gemini', settings) ?? this.home });
+    } catch {
+      result = { ok: false, stdout: '', stderr: '', reason: 'Account credentials unavailable.' };
+    }
     const models = result.ok ? parseGeminiModels(result.stdout) : [];
     if (strict && !result.ok) throw new AppError('unavailable', 'cli_unavailable', { field: 'gemini', cause: result.reason });
     if (strict && !models.length) throw new AppError('internal', 'bad_json');
-    await this.persist('gemini', { models, source: models.length ? 'cli' : 'unavailable', refreshedAt: new Date().toISOString() });
+    await this.persist('gemini', { models, source: models.length ? 'cli' : 'unavailable', refreshedAt: new Date().toISOString(), profile: this.geminiProfile(settings) });
   }
   private async status(ai: CatalogAi): Promise<{ available: boolean; version: string }> {
     const command = this.config.cli[ai].command;
@@ -264,8 +276,8 @@ export class AiCatalog {
       for (const name of NAMES) {
         if (name === 'gemini') {
           const existing = savedCache(saved.gemini);
-          if (existing) this.cache.gemini = existing;
-          else { this.cache.gemini = { models: [], source: 'unavailable', refreshedAt: new Date().toISOString() }; await this.loadGemini(false).catch(() => undefined); }
+          this.cache.gemini = { models: [], source: 'unavailable', refreshedAt: new Date().toISOString() };
+          if (existing?.profile) this.cache.gemini = existing;
           continue;
         }
         if (name === 'grok') {

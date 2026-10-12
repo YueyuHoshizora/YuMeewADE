@@ -7,6 +7,8 @@ import { Workspace } from '../ledger/workspace.ts';
 import { DEFAULT_CONFIG } from '../shared/config.ts';
 import { AppError } from '../shared/errors.ts';
 import type { Settings } from '../shared/types.ts';
+import { CredentialAccounts } from '../cli/accounts.ts';
+import { compareVersions } from '../system/update.ts';
 import { AiCatalog, parseGrokModels } from './catalog.ts';
 
 const CLAUDE_CACHE = {
@@ -212,3 +214,35 @@ test('Grok saved model capabilities survive restart but never leak to another ac
   assert.ok(saved.claude.models.length);
   assert.ok(saved.codex.models.length);
 });
+
+test('Gemini discovery follows the selected account and scopes persisted models to its profile', async (t) => {
+  const f = await fixture(t);
+  const command = path.join(f.root, 'gemini-cli');
+  await fs.writeFile(command, `#!${process.execPath}\nimport fs from 'node:fs';\nif (process.argv[2] === '--version') console.log('agy 1.2.3');\nelse console.log(fs.readFileSync(process.env.HOME + '/models.txt', 'utf8'));\n`, { mode: 0o755 });
+  f.config.cli.gemini.command = command;
+  const firstHome = path.join(f.root, 'first');
+  const secondHome = path.join(f.root, 'second');
+  for (const [home, model] of [[f.home, 'default-model'], [firstHome, 'first-model'], [secondHome, 'second-model']]) {
+    await fs.mkdir(home!, { recursive: true });
+    await fs.writeFile(path.join(home!, 'models.txt'), `${model}\t${model}\n`);
+  }
+  f.settings.accounts.gemini = [{ id: 'first', name: 'First', configDir: firstHome }, { id: 'second', name: 'Second', configDir: secondHome }];
+  f.settings.activeAccounts.gemini = 'first';
+  // Keep the test seam at the credential lease boundary; the fake CLI still reads its actual HOME.
+  const accounts = Object.create(CredentialAccounts.prototype) as CredentialAccounts;
+  accounts.withEnv = async <T>(_ai: string, configDir: string | undefined, query: (env: NodeJS.ProcessEnv) => Promise<T>) => query({ ...process.env, HOME: configDir ?? f.home });
+  const deps = { ...f.deps, accounts };
+  const catalog = new AiCatalog(deps);
+  assert.deepEqual((await catalog.get('gemini')).models.map(model => model.id), ['first-model']);
+  const first = await catalog.refresh('gemini');
+  await fs.writeFile(path.join(firstHome, 'models.txt'), 'changed-model\tChanged\n');
+  assert.deepEqual((await new AiCatalog(deps).get('gemini')).models, first.models);
+  f.settings.activeAccounts.gemini = 'second';
+  assert.deepEqual((await catalog.get('gemini')).models.map(model => model.id), ['second-model']);
+  assert.deepEqual((await new AiCatalog(deps).get('gemini')).models.map(model => model.id), ['second-model']);
+  f.settings.activeAccounts.gemini = 'first';
+  assert.deepEqual((await new AiCatalog(deps).get('gemini')).models.map(model => model.id), ['changed-model']);
+  const saved = JSON.parse(await fs.readFile(path.join(f.ws.internalDir, 'models.json'), 'utf8'));
+  assert.equal(saved.gemini.profile, JSON.stringify(['first', firstHome]));
+});
+
