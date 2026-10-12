@@ -1,5 +1,5 @@
 import { createHash } from 'node:crypto';
-import { constants, promises as fs } from 'node:fs';
+import { constants, promises as fs, type Stats } from 'node:fs';
 import path from 'node:path';
 import { AppError } from '../shared/errors.ts';
 import { isInside } from '../shared/fsx.ts';
@@ -19,6 +19,7 @@ function glob(pattern: string): RegExp {
 
 /** 保守策略：除 Git 管理資料外連 ignored/generated 檔也納入，不把可能的輸入當作輸出忽略。 */
 export async function verificationFingerprint(root: string, configuration: string, value?: VerificationInputModel): Promise<string> {
+  root = await fs.realpath(root);
   const model = parseVerificationInputModel(value);
   const inputs = model.inputs?.map(glob);
   const outputs = model.outputs?.map(glob) ?? [];
@@ -31,6 +32,21 @@ export async function verificationFingerprint(root: string, configuration: strin
   const head = await git(root, ['rev-parse', '--verify', '-q', 'HEAD']);
   if (head.code < 0 || head.truncated) throw new AppError('internal', 'git_failed');
   digest.update(JSON.stringify([root, configuration, model, head.code === 0 ? head.stdout.trim() : null]));
+  async function hashFile(file: string, expected: Stats): Promise<void> {
+    const handle = await fs.open(file, constants.O_RDONLY | (constants.O_NOFOLLOW ?? 0));
+    try {
+      const before = await handle.stat();
+      const resolved = await fs.realpath(file);
+      if (!isInside(root, resolved)) throw new AppError('bad_request');
+      const currentPath = await fs.stat(resolved);
+      if (!before.isFile() || before.dev !== currentPath.dev || before.ino !== currentPath.ino || before.dev !== expected.dev || before.ino !== expected.ino) throw new AppError('conflict');
+      digest.update(JSON.stringify([before.mode, before.size, before.mtimeMs, before.ctimeMs]));
+      for await (const chunk of handle.createReadStream({ autoClose: false })) digest.update(chunk);
+      const after = await handle.stat();
+      if (before.size !== after.size || before.mtimeMs !== after.mtimeMs || before.ctimeMs !== after.ctimeMs) throw new AppError('conflict');
+      digest.update('\0');
+    } finally { await handle.close(); }
+  }
   async function visit(dir: string): Promise<void> {
     const canonical = await fs.realpath(dir);
     if (canonical !== root && !isInside(root, canonical)) throw new AppError('bad_request');
@@ -47,8 +63,9 @@ export async function verificationFingerprint(root: string, configuration: strin
       const file = path.join(dir, entry.name);
       const relative = path.relative(root, file);
       const portable = relative.split(path.sep).join('/');
-      if (excluded(portable) && (!entry.isDirectory() || !inputs || !mayContain(portable))) continue;
-      if (entry.isDirectory() ? !mayContain(portable) : !included(portable)) continue;
+      const directoryLike = entry.isDirectory() || entry.isSymbolicLink();
+      if (excluded(portable) && (!directoryLike || !inputs || !mayContain(portable))) continue;
+      if (directoryLike ? !mayContain(portable) : !included(portable)) continue;
       const stat = await fs.lstat(file);
       digest.update(JSON.stringify(stat.isDirectory()
         ? [relative, stat.mode, stat.ino, stat.dev]
@@ -57,22 +74,13 @@ export async function verificationFingerprint(root: string, configuration: strin
         const target = await fs.realpath(file);
         if ((target !== root && !isInside(root, target)) || path.relative(root, target).split(path.sep).includes('.git')) throw new AppError('bad_request');
         digest.update(JSON.stringify(['link', await fs.readlink(file)]));
+        const linked = await fs.stat(target);
+        if (linked.isFile()) await hashFile(target, linked);
+        else if (!linked.isDirectory() || model.inputs || model.outputs?.length) throw new AppError('bad_request');
       } else if (stat.isDirectory()) {
         await visit(file);
       } else if (stat.isFile()) {
-        const handle = await fs.open(file, constants.O_RDONLY | (constants.O_NOFOLLOW ?? 0));
-        try {
-          const before = await handle.stat();
-          const resolved = await fs.realpath(file);
-          if (!isInside(root, resolved)) throw new AppError('bad_request');
-          const currentPath = await fs.stat(resolved);
-          if (before.dev !== currentPath.dev || before.ino !== currentPath.ino) throw new AppError('conflict');
-          if (before.dev !== stat.dev || before.ino !== stat.ino) throw new AppError('conflict');
-          for await (const chunk of handle.createReadStream({ autoClose: false })) digest.update(chunk);
-          const after = await handle.stat();
-          if (before.size !== after.size || before.mtimeMs !== after.mtimeMs || before.ctimeMs !== after.ctimeMs) throw new AppError('conflict');
-          digest.update('\0');
-        } finally { await handle.close(); }
+        await hashFile(file, stat);
       } else throw new AppError('bad_request');
     }
   }

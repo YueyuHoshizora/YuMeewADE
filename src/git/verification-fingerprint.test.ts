@@ -35,3 +35,17 @@ test('unsafe patterns rejected and overlapping inputs take precedence', async ()
     assert.notEqual(await verificationFingerprint(root, '', model), before);
   } finally { await fs.rm(root, { recursive: true, force: true }); }
 });
+
+test('symlink input content cannot be hidden by declared outputs', async () => {
+  const root = await fs.mkdtemp(path.join(os.tmpdir(), 'verify-links-'));
+  try {
+    await fs.writeFile(path.join(root, 'generated.txt'), 'first');
+    await fs.symlink('generated.txt', path.join(root, 'input.txt'));
+    const model = { inputs: ['input.txt'], outputs: ['generated.txt'] };
+    const before = await verificationFingerprint(root, '', model);
+    await fs.writeFile(path.join(root, 'generated.txt'), 'other');
+    assert.notEqual(await verificationFingerprint(root, '', model), before);
+    await fs.symlink(os.tmpdir(), path.join(root, 'outside.txt'));
+    await assert.rejects(verificationFingerprint(root, '', { inputs: ['outside.txt'] }));
+  } finally { await fs.rm(root, { recursive: true, force: true }); }
+});

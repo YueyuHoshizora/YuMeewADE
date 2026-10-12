@@ -9,7 +9,7 @@ import { isValidProjectName } from '../shared/names.ts';
 import { AUTO_FIX_MAX, PHASE_STATES, PROJECT_STATUSES, type NewProjectInput, type Phase, type Project, type ProjectPatch, type ProjectStatus } from '../shared/types.ts';
 import { type YamlValue } from '../shared/yaml.ts';
 import { ensureRepo } from '../git/git.ts';
-import { parseVerificationChecks } from '../shared/verification.ts';
+import { parseVerificationChecks, parseVerificationInputModel } from '../shared/verification.ts';
 import { TEMPLATES_DIR, type Workspace } from './workspace.ts';
 
 export const RULES_MAX = 20_000;
@@ -54,6 +54,7 @@ export class ProjectLedger {
     catch (err) { if ((err as NodeJS.ErrnoException).code === 'ENOENT') throw new AppError('not_found', 'project_missing'); throw err; }
     const { data, body } = parseFrontmatter(text);
     const checks = data['checks'] === undefined ? [] : parseVerificationChecks(data['checks']);
+    const verificationInputs = parseVerificationInputModel(data['verificationInputs']);
     if (data['requireVerification'] !== undefined && typeof data['requireVerification'] !== 'boolean') throw new AppError('bad_request', 'field_type', { field: 'requireVerification' });
     const s = (key: string) => data[key] == null ? '' : String(data[key]);
     const phases: Phase[] = [];
@@ -68,6 +69,7 @@ export class ProjectLedger {
       return [];
     });
     return { id, name: s('name') || id, status: PROJECT_STATUSES.includes(s('status') as ProjectStatus) ? s('status') as ProjectStatus : '未開始', updated: s('updated'), description: s('description'), parent: s('parent'), body: s('body'), verify: s('verify') || checks[0]?.command || '', checks, requireVerification: data['requireVerification'] === true, autoFix: typeof data['autoFix'] === 'number' && Number.isInteger(data['autoFix']) ? Math.min(AUTO_FIX_MAX, Math.max(0, data['autoFix'])) : 0, phases, related: Array.isArray(data['related']) ? data['related'].filter((v): v is string => typeof v === 'string') : [], issues,
+      verificationInputs,
       notes: body.split(/\r?\n/).filter(line => line.trim() && !/^#\s|^\s*<!--/.test(line)).join('\n') };
   }
 
@@ -79,6 +81,7 @@ export class ProjectLedger {
       if (patch.verify.trim().length > 500) throw new AppError('bad_request', 'field_too_long', { field: 'verify' });
     }
     if (patch.checks !== undefined) parseVerificationChecks(patch.checks);
+    if (patch.verificationInputs !== undefined) parseVerificationInputModel(patch.verificationInputs);
     if (patch.requireVerification !== undefined && typeof patch.requireVerification !== 'boolean') throw new AppError('bad_request', 'field_type', { field: 'requireVerification' });
     if (patch.autoFix !== undefined && (typeof patch.autoFix !== 'number' || !Number.isInteger(patch.autoFix) || patch.autoFix < 0 || patch.autoFix > AUTO_FIX_MAX)) throw new AppError('bad_request', 'field_type', { field: 'autoFix' });
     if (patch.status !== undefined && !PROJECT_STATUSES.includes(patch.status)) throw new AppError('bad_request', 'invalid_state');
@@ -114,6 +117,8 @@ export class ProjectLedger {
       await Promise.all(['tasks', 'chat', 'uploads'].map(name => fs.mkdir(path.join(dir, '.ai', name), { recursive: true })));
       const template = parseFrontmatter(await fs.readFile(path.join(TEMPLATES_DIR, 'PROJECT.md'), 'utf8'));
       const values: Record<string, YamlValue> = { name: input.name, status: '進行中', updated: todayDate(), description: input.description ?? '', parent: input.parent ?? '', body: input.body ?? '', verify: input.verify?.trim() || input.checks?.[0]?.command.trim() || '', checks: parseVerificationChecks(input.checks ?? []).map(check => ({ ...check })), requireVerification: input.requireVerification ?? false, phases: patch.phases.map(p => ({ ...p })), related: input.related ?? [], issues: [] };
+      const model = parseVerificationInputModel(input.verificationInputs);
+      values['verificationInputs'] = { ...(model.inputs ? { inputs: model.inputs } : {}), ...(model.outputs ? { outputs: model.outputs } : {}) };
       await atomicWrite(this.ws.projectFile(input.name), serializeFrontmatter(patchHeaderLines(template.headerLines, values), template.body));
       await atomicWrite(path.join(dir, '.gitignore'), PROJECT_GITIGNORE);
       if (!input.body) await ensureRepo(dir);
@@ -140,6 +145,10 @@ export class ProjectLedger {
       values['checks'] = [];
     }
     if (patch.requireVerification !== undefined) values['requireVerification'] = patch.requireVerification;
+    if (patch.verificationInputs !== undefined) {
+      const model = parseVerificationInputModel(patch.verificationInputs);
+      values['verificationInputs'] = { ...(model.inputs ? { inputs: model.inputs } : {}), ...(model.outputs ? { outputs: model.outputs } : {}) };
+    }
     if (patch.autoFix !== undefined) values['autoFix'] = patch.autoFix;
     if (patch.phases !== undefined) values['phases'] = patch.phases.map(p => ({ ...p }));
     if (!Object.keys(values).length) throw new AppError('bad_request', 'no_updatable_fields');
