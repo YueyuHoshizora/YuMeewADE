@@ -985,3 +985,17 @@ test('workflow resumes an answered AI branch only on explicit start without repl
     assert.equal(plan.results.at(-1)?.output, 'thanks'); assert.equal(s.calls.length, 2);
   } finally { await workflow.close(); await s.runner.stopAll(); }
 }));
+test('an answer queued behind a running turn still answers the question when it starts', () => withTmpWorkspace(async ws => {
+  const s = await setup(ws, { chunkMs: 5, text: opts => opts.prompt.includes('ask me') ? 'done\n[[question]]\nWhich?\n1. A\n2. B\n[[/question]]' : 'ok' });
+  await s.send('ask me'); await s.runner.whenIdle();
+  assert.equal((await s.tasks.get('P', s.task.id)).question, 'Which?');
+  // Another instruction is running when the human picks an option; the answer waits in the queue.
+  await s.send('slow [slow]');
+  const queued = await s.send('A', { mode: 'queue', answer: true });
+  assert.equal(queued.queued, true);
+  await s.runner.whenIdle();
+  const task = await s.tasks.get('P', s.task.id);
+  assert.equal(task.question, '');
+  const answer = (await s.store.readLog('P', s.task.id)).find(row => row.role === 'user' && row.text === 'A');
+  assert.ok(answer?.role === 'user'); assert.equal(answer.mode, 'answer');
+}));

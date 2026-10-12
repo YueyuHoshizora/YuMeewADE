@@ -452,6 +452,8 @@ export interface QueueItem {
   model?: string;
   effort?: string;
   images?: string[];
+  /** 回答 AI 的提問；開始時和直接回答一樣清除作業的 question。 */
+  answer?: true;
   at: string;
   /** 自動開始失敗時的錯誤代碼。 */
   error?: string;

@@ -291,6 +291,7 @@ export class ChatRunner extends EventEmitter {
         ...(item.model ? { model: item.model } : {}),
         ...(item.effort ? { effort: item.effort } : {}),
         ...(item.images ? { images: item.images } : {}),
+        ...(item.answer ? { answer: true } : {}),
       };
     }
     if (typeof chosen.text !== 'string' || (!chosen.text.trim() && !chosen.images?.length)) {
@@ -333,6 +334,8 @@ export class ChatRunner extends EventEmitter {
       id: randomUUID(), text: chosen.text, ai: pick.cli,
       model: pick.model, effort: pick.effort, at: new Date().toISOString(),
       ...(chosen.images ? { images: chosen.images } : {}),
+      // An answer queued behind a running turn is still an answer when it starts: it clears the question it replies to.
+      ...(chosen.answer ? { answer: true as const } : {}),
     };
     if (s.busy && chosen.mode === 'queue') {
       const queue = await this.deps.store.updateQueue(p, t, q => {
