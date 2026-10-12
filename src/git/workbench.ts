@@ -1,4 +1,4 @@
-import { promises as fs } from 'node:fs';
+import { constants as fsConstants, promises as fs } from 'node:fs';
 import path from 'node:path';
 import os from 'node:os';
 import { createHash } from 'node:crypto';
@@ -11,7 +11,7 @@ import type { TaskLedger } from '../ledger/tasks.ts';
 import type { GitWorkbenchStatus, GitWorkbenchFile, GitPullRequestStatus, GitRemote } from '../shared/types.ts';
 import { AppError } from '../shared/errors.ts';
 import { missingAs, withFileLocks } from '../shared/fsx.ts';
-import { git, hasCommits, isLocalSecret, operationInProgress } from './git.ts';
+import { git, hasCommits, isLocalSecret, operationInProgress, type GitResult } from './git.ts';
 import { github } from '../cli/github.ts';
 import type { GithubFeedbackInput } from '../shared/github.ts';
 
@@ -26,12 +26,25 @@ const remoteUrl = (value: string) => {
     return ['https:', 'ssh:', 'git:', 'file:'].includes(url.protocol) && (url.protocol === 'file:' ? !!url.pathname && !url.username && !url.password : !!url.hostname);
   } catch { return false; }
 };
+/** Whether a failed commit can be blamed on the repository's own commit hooks (core.hooksPath is honored by --git-path). */
+async function commitHooks(root: string): Promise<boolean> {
+  const located = await git(root, ['rev-parse', '--git-path', 'hooks']);
+  if (located.code !== 0) return false;
+  const dir = path.resolve(root, located.stdout.trim());
+  for (const hook of ['pre-commit', 'prepare-commit-msg', 'commit-msg']) {
+    if (await fs.access(path.join(dir, hook), fsConstants.X_OK).then(() => true, () => false)) return true;
+  }
+  return false;
+}
 export class GitWorkbench {
   private readonly deps: { ws: Workspace; projects: ProjectLedger; tasks: TaskLedger; isRunning: (project: string, task: string) => boolean; ghCommand?: string };
   constructor(deps: { ws: Workspace; projects: ProjectLedger; tasks: TaskLedger; isRunning: (project: string, task: string) => boolean; ghCommand?: string }) { this.deps = deps; }
-  private async command(root: string, args: string[]): Promise<string> {
+  private run(root: string, args: string[]): Promise<GitResult> {
     // Stash internally uses magic pathspecs to remove saved untracked files.
-    const result = await git(root, args[0] === 'stash' ? args : ['--literal-pathspecs', ...args]);
+    return git(root, args[0] === 'stash' ? args : ['--literal-pathspecs', ...args]);
+  }
+  private async command(root: string, args: string[]): Promise<string> {
+    const result = await this.run(root, args);
     if (result.code !== 0 || result.truncated) throw new AppError('conflict', 'git_failed');
     return result.stdout;
   }
@@ -389,7 +402,9 @@ export class GitWorkbench {
       if (files.some(file => file.conflict)) throw new AppError('conflict', 'merge_conflict');
       if (files.some(file => file.staged && file.secret) || split(await this.command(root, ['diff', '--cached', '--name-only', '-z'])).some(isLocalSecret)) throw new AppError('forbidden', 'git_workbench_secret');
       if (!files.some(file => file.staged)) throw new AppError('conflict', 'git_nothing_staged');
-      await this.command(root, [...(options.bypassHooks ? ['-c', 'core.hooksPath=/dev/null'] : []), 'commit', ...(options.bypassHooks ? ['--no-verify'] : []), '-m', message]);
+      const committed = await this.run(root, [...(options.bypassHooks ? ['-c', 'core.hooksPath=/dev/null'] : []), 'commit', ...(options.bypassHooks ? ['--no-verify'] : []), '-m', message]);
+      // Hook output stays local (errors are generic); naming the cause points at the terminal or the confirmed bypass.
+      if (committed.code !== 0 || committed.truncated) throw new AppError('conflict', !options.bypassHooks && await commitHooks(root) ? 'git_hook_failed' : 'git_failed');
       return { sha: (await this.command(root, ['rev-parse', 'HEAD'])).trim() };
     });
   }
@@ -404,7 +419,11 @@ export class GitWorkbench {
     if (!managementName(name, 100) || !(await this.command(root, ['remote'])).split('\n').includes(name)) throw new AppError('bad_request', 'git_remote_invalid');
   }
   async fetch(project: string, task: string | undefined, remote: string): Promise<void> {
-    return this.locked(project, task, true, async root => { await this.validateRemote(root, remote); await this.command(root, ['fetch', '--', remote]); });
+    return this.locked(project, task, true, async root => {
+      await this.validateRemote(root, remote);
+      const fetched = await this.run(root, ['fetch', '--', remote]);
+      if (fetched.code !== 0 || fetched.truncated) throw new AppError('unavailable', 'git_remote_unreachable');
+    });
   }
   /** Pull limited to a fast-forward: never creates a merge commit, never touches diverged history, never overwrites local edits. */
   async fastForward(project: string, task: string | undefined): Promise<{ updated: boolean }> {
@@ -427,7 +446,15 @@ export class GitWorkbench {
       await this.validateRemote(root, remote);
       const branch = (await this.command(root, ['symbolic-ref', '--short', 'HEAD'])).trim();
       if (!branchName(branch)) throw new AppError('bad_request', 'git_branch_invalid');
-      await this.command(root, ['push', '--set-upstream', '--', remote, `refs/heads/${branch}:refs/heads/${branch}`]);
+      // Porcelain ref lines (`!\t<refs>\t[rejected] (fetch first)`) are fixed, untranslated machine output.
+      const pushed = await this.run(root, ['push', '--porcelain', '--set-upstream', '--', remote, `refs/heads/${branch}:refs/heads/${branch}`]);
+      if (pushed.code === 0 && !pushed.truncated) return;
+      const rejected = pushed.stdout.split('\n').filter(line => line.startsWith('!\t'));
+      if (rejected.some(line => line.includes('\t[remote rejected]'))) throw new AppError('conflict', 'git_push_remote_rejected');
+      if (rejected.some(line => line.includes('\t[rejected]'))) throw new AppError('conflict', 'git_push_behind');
+      // Without any ref status the remote was never reached: network, authentication or a wrong URL.
+      if (!/^[ +\-*=!]\t/mu.test(pushed.stdout)) throw new AppError('unavailable', 'git_remote_unreachable');
+      throw new AppError('conflict', 'git_failed');
     });
   }
   async pullRequestStatus(project: string, task?: string): Promise<GitPullRequestStatus> {

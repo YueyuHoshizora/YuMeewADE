@@ -332,3 +332,33 @@ test('pull only fast-forwards and refuses diverged history or local edits upstre
   await assert.rejects(workbench.fastForward('P', undefined), detail('git_not_fast_forward'));
   assert.equal((await gitOk(root, ['rev-parse', 'HEAD'])).trim(), local);
 }));
+
+test('push, fetch and commit failures name their cause instead of a generic git failure', () => withTmpWorkspace(async ws => {
+  const projects = new ProjectLedger(ws); const tasks = new TaskLedger(ws);
+  await projects.create({ name: 'P' }); const root = ws.projectDir('P');
+  const workbench = new GitWorkbench({ ws, projects, tasks, isRunning: () => false });
+  const remote = path.join(ws.root, 'remote.git'); await fs.mkdir(remote);
+  await gitOk(remote, ['init', '--bare', '-q']); await gitOk(root, ['remote', 'add', 'origin', remote]);
+  const cause = (detail: string) => (error: unknown) => error instanceof AppError && error.detail === detail;
+  await workbench.push('P', undefined, 'origin', true);
+  // Someone else pushes first: the remote is ahead of this branch.
+  const other = path.join(ws.root, 'other'); await gitOk(ws.root, ['clone', '-q', remote, other]);
+  const branch = (await gitOk(root, ['symbolic-ref', '--short', 'HEAD'])).trim();
+  await fs.writeFile(path.join(other, 'theirs.txt'), 'x'); await commitAll(other, 'theirs'); await gitOk(other, ['push', '-q', 'origin', `HEAD:${branch}`]);
+  await fs.writeFile(path.join(root, 'mine.txt'), 'y'); await workbench.stage('P', undefined, 'mine.txt'); await workbench.commit('P', undefined, 'mine');
+  await assert.rejects(workbench.push('P', undefined, 'origin', true), cause('git_push_behind'));
+  // The server refuses (protected branch, server-side policy).
+  await workbench.fetch('P', undefined, 'origin'); await gitOk(root, ['rebase', '-q', `origin/${branch}`]);
+  await fs.writeFile(path.join(remote, 'hooks', 'pre-receive'), '#!/bin/sh\nexit 1\n', { mode: 0o755 });
+  await assert.rejects(workbench.push('P', undefined, 'origin', true), cause('git_push_remote_rejected'));
+  // Nothing answers at the configured URL.
+  await gitOk(root, ['remote', 'add', 'gone', path.join(ws.root, 'missing.git')]);
+  await assert.rejects(workbench.push('P', undefined, 'gone', true), cause('git_remote_unreachable'));
+  await assert.rejects(workbench.fetch('P', undefined, 'gone'), cause('git_remote_unreachable'));
+  // The project's own pre-commit hook refuses; the confirmed bypass still commits.
+  const hooks = path.resolve(root, (await gitOk(root, ['rev-parse', '--git-path', 'hooks'])).trim()); await fs.mkdir(hooks, { recursive: true });
+  await fs.writeFile(path.join(hooks, 'pre-commit'), '#!/bin/sh\nexit 1\n', { mode: 0o755 });
+  await fs.writeFile(path.join(root, 'hooked.txt'), 'z'); await workbench.stage('P', undefined, 'hooked.txt');
+  await assert.rejects(workbench.commit('P', undefined, 'blocked'), cause('git_hook_failed'));
+  assert.match((await workbench.commit('P', undefined, 'bypassed', { bypassHooks: true, confirmed: true })).sha, /^[0-9a-f]{40}$/);
+}));
