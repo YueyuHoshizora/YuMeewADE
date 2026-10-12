@@ -266,24 +266,30 @@ export function taskView(
   const upload = attachments(project.id, context.state.limits, draft, task.id);
   const actions = el('div', 'send-actions');
   const running = el('p', 'running-line');
+  // One send at a time: the draft is cleared only after the request returns, so a repeated shortcut (key repeat, double
+  // press) would otherwise post the same text again — while running, as a second queued copy.
+  let sending = false;
   async function send(mode?: SendMode, text = draft.value.trim(), answer = false, retry?: Extract<ChatRow, { role: 'user' }>): Promise<boolean> {
-    if (retry && busy) return false;
-    if (!retry) await upload.ready();
-    const images = retry ? (retry.images ?? []).map(path => path.split(/[\\/]/).pop()!) : answer ? [] : upload.ids();
-    const selection = retry ? { ai: retry.to, ...(retry.model ? { model: retry.model } : {}), ...(retry.effort ? { effort: retry.effort } : {}) } : pick.value();
-    if (!text && !images.length) {
-      toast(t('chat.needText'));
-      return false;
-    }
-    if ((!busy || (mode !== undefined && mode !== 'queue')) && !await confirmUsageRound({ project: project.id, task: task.id, ai: selection.ai, account: context.state.settings.activeAccounts[selection.ai] ?? 'default' })) return false;
-    await api.send({ project: project.id, task: task.id, text, ...selection, ...(busy ? { mode: mode ?? 'queue' } : {}), answer, images });
-    if (!retry) storeLocal(pickKey, pick.value());
-    if (!answer && !retry) {
-      draft.value = '';
-      resizeDraft();
-      storeLocal(draftKey, '');
-      await upload.clear();
-    }
+    if (sending || (retry && busy)) return false;
+    sending = true;
+    try {
+      if (!retry) await upload.ready();
+      const images = retry ? (retry.images ?? []).map(path => path.split(/[\\/]/).pop()!) : answer ? [] : upload.ids();
+      const selection = retry ? { ai: retry.to, ...(retry.model ? { model: retry.model } : {}), ...(retry.effort ? { effort: retry.effort } : {}) } : pick.value();
+      if (!text && !images.length) {
+        toast(t('chat.needText'));
+        return false;
+      }
+      if ((!busy || (mode !== undefined && mode !== 'queue')) && !await confirmUsageRound({ project: project.id, task: task.id, ai: selection.ai, account: context.state.settings.activeAccounts[selection.ai] ?? 'default' })) return false;
+      await api.send({ project: project.id, task: task.id, text, ...selection, ...(busy ? { mode: mode ?? 'queue' } : {}), answer, images });
+      if (!retry) storeLocal(pickKey, pick.value());
+      if (!answer && !retry) {
+        draft.value = '';
+        resizeDraft();
+        storeLocal(draftKey, '');
+        await upload.clear();
+      }
+    } finally { sending = false; }
     await context.refresh();
     return true;
   }
