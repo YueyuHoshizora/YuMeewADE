@@ -194,6 +194,8 @@ npm run desktop      # 桌面版（開發機）
 | `limits` | `usagePollSeconds` | 帳號額度查詢間隔（秒），預設 `60`＝1 分鐘 |
 | `limits` | `mentionFileBytes`、`mentionTotalBytes` | @引用每檔／每次指示讀取上限（位元組），預設 65536／262144 |
 
+以秒或小時計的時間設定（`update.checkHours`、`limits.*Seconds`）不能超過計時器上限，約 24.8 天：小時最多 596、秒最多 2147482；超過會拒絕啟動，不會變成每毫秒觸發一次。
+
 ## 協定摘要（UI ⇄ 核心）
 
 HTTP JSON 加 SSE，桌面版與網頁版完全相同。型別定義在 [`src/shared/types.ts`](src/shared/types.ts)。

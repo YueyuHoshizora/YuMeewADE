@@ -216,12 +216,16 @@ function str(map: YamlMap, key: string, fallback: string, where: string): string
   return v;
 }
 
-function int(map: YamlMap, key: string, fallback: number, where: string): number {
+function int(map: YamlMap, key: string, fallback: number, where: string, max = Number.MAX_SAFE_INTEGER): number {
   const v = map[key];
   if (v === undefined || v === null) return fallback;
   if (typeof v !== 'number' || !Number.isInteger(v) || v <= 0) throw new ConfigError(`${where}.${key} 必須是正整數`);
+  if (v > max) throw new ConfigError(`${where}.${key} 不能超過 ${max}`);
   return v;
 }
+/** Node timers hold at most 2^31−1 ms (about 24.8 days); a longer delay fires after 1 ms, so a "monthly" check would loop. */
+const TIMER_SECONDS = Math.floor(2 ** 31 / 1000) - 1;
+const TIMER_HOURS = Math.floor(TIMER_SECONDS / 3600);
 
 function bool(map: YamlMap, key: string, fallback: boolean, where: string): boolean {
   const v = map[key];
@@ -331,7 +335,7 @@ export function parseConfig(text: string, source: string | null): Config {
     update: {
       enabled: bool(update, 'enabled', d.update.enabled, 'update'),
       repo: repoName(str(update, 'repo', d.update.repo, 'update')),
-      checkHours: int(update, 'checkHours', d.update.checkHours, 'update'),
+      checkHours: int(update, 'checkHours', d.update.checkHours, 'update', TIMER_HOURS),
     },
     execution: executionSection(map),
     cli: {
@@ -349,17 +353,17 @@ export function parseConfig(text: string, source: string | null): Config {
       sseConnections: int(limits, 'sseConnections', L.sseConnections, 'limits'),
       queueLength: int(limits, 'queueLength', L.queueLength, 'limits'),
       handoffChars: int(limits, 'handoffChars', L.handoffChars, 'limits'),
-      heartbeatSeconds: int(limits, 'heartbeatSeconds', L.heartbeatSeconds, 'limits'),
+      heartbeatSeconds: int(limits, 'heartbeatSeconds', L.heartbeatSeconds, 'limits', TIMER_SECONDS),
       diffBytes: int(limits, 'diffBytes', L.diffBytes, 'limits'),
       uploadBytes: int(limits, 'uploadBytes', L.uploadBytes, 'limits'),
       imagesPerSend: int(limits, 'imagesPerSend', L.imagesPerSend, 'limits'),
-      verifySeconds: int(limits, 'verifySeconds', L.verifySeconds, 'limits'),
+      verifySeconds: int(limits, 'verifySeconds', L.verifySeconds, 'limits', TIMER_SECONDS),
       verifyOutputBytes: int(limits, 'verifyOutputBytes', L.verifyOutputBytes, 'limits'),
-      runSeconds: int(limits, 'runSeconds', L.runSeconds, 'limits'),
+      runSeconds: int(limits, 'runSeconds', L.runSeconds, 'limits', TIMER_SECONDS),
       mentionFileBytes: int(limits, 'mentionFileBytes', L.mentionFileBytes, 'limits'),
       mentionTotalBytes: int(limits, 'mentionTotalBytes', L.mentionTotalBytes, 'limits'),
-      approvalSeconds: int(limits, 'approvalSeconds', L.approvalSeconds ?? 120, 'limits'),
-      usagePollSeconds: int(limits, 'usagePollSeconds', L.usagePollSeconds, 'limits'),
+      approvalSeconds: int(limits, 'approvalSeconds', L.approvalSeconds ?? 120, 'limits', TIMER_SECONDS),
+      usagePollSeconds: int(limits, 'usagePollSeconds', L.usagePollSeconds, 'limits', TIMER_SECONDS),
     },
     source,
   };

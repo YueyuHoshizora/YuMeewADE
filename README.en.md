@@ -188,6 +188,8 @@ Configuration lookup order: the `YUMEEWADE_CONFIG` environment variable → `con
 | `limits` | `usagePollSeconds` | Account quota query interval in seconds; default `60` = 1 minute |
 | `limits` | `mentionFileBytes`, `mentionTotalBytes` | @reference read limits per file / per instruction, in bytes; defaults 65536 / 262144 |
 
+Time settings in seconds or hours (`update.checkHours`, `limits.*Seconds`) cannot exceed the timer limit of about 24.8 days: at most 596 hours or 2147482 seconds. Larger values are rejected at startup instead of firing every millisecond.
+
 ## Protocol summary (UI ⇄ core)
 
 HTTP JSON plus SSE, identical in desktop and web versions. Types are defined in [`src/shared/types.ts`](src/shared/types.ts).

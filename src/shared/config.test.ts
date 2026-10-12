@@ -98,6 +98,16 @@ test('limits.runSeconds 預設 2 小時，可覆寫，且必須是正整數', ()
   for (const bad of ['0', '-5', '1.5', 'never']) assert.throws(() => parseConfig(`limits:\n  runSeconds: ${bad}\n`, null), ConfigError);
 });
 
+test('timer-backed settings refuse values past what a Node timer can hold, instead of firing every millisecond', () => {
+  // 2^31−1 ms is about 24.8 days: 596 hours and 2147482 seconds are the largest accepted values.
+  assert.equal(parseConfig('update:\n  checkHours: 596\n', null).update.checkHours, 596);
+  assert.equal(parseConfig('limits:\n  usagePollSeconds: 2147482\n', null).limits.usagePollSeconds, 2147482);
+  assert.throws(() => parseConfig('update:\n  checkHours: 720\n', null), (error: unknown) => error instanceof ConfigError && error.message.startsWith('update.checkHours '));
+  for (const key of ['usagePollSeconds', 'runSeconds', 'verifySeconds', 'approvalSeconds', 'heartbeatSeconds']) {
+    assert.throws(() => parseConfig(`limits:\n  ${key}: 2592000\n`, null), (error: unknown) => error instanceof ConfigError && error.message.startsWith(`limits.${key} `), key);
+  }
+});
+
 test('native integrations preserve argv and reject missing destinations or invalid configuration', () => {
   const config = parseConfig("execution:\n  ide: { command: code, args: ['--wait', '{cwd}'] }\n  browser: { command: chromium, args: ['{url}'] }\n", null);
   assert.deepEqual(config.execution.ide, { command: 'code', args: ['--wait', '{cwd}'] });

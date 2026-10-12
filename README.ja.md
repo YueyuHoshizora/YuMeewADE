@@ -188,6 +188,8 @@ npm run desktop      # 桌面版（開發機）
 | `limits` | `usagePollSeconds` | 利用枠取得間隔（秒）、既定 `60`＝1 分 |
 | `limits` | `mentionFileBytes`、`mentionTotalBytes` | @引用のファイル単位／指示単位の読み取り上限（バイト）、既定 65536／262144 |
 
+秒または時間単位の設定（`update.checkHours`、`limits.*Seconds`）はタイマー上限の約 24.8 日を超えられません（最大 596 時間／2147482 秒）。超えると起動を拒否し、1 ミリ秒ごとに発火することはありません。
+
 ## プロトコル概要（UI ⇄ コア）
 
 HTTP JSON と SSE を使い、デスクトップ版と Web 版で完全に共通です。型定義は [`src/shared/types.ts`](src/shared/types.ts) にあります。
