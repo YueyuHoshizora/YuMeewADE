@@ -146,7 +146,8 @@ export class ArchiveService {
         const records = project ? [await this.tasks.get(project, entry.task)] : await this.tasks.list(entry.project);
         // The archived ledger must be visible before checking its saved root/policy, but never before checkout.
         if (records.some(record => record.workspace !== 'direct')) await this.beforeRevive?.(entry.project);
-        for (const record of records) {
+        // A direct task has no checkout to revive, so its main folder need not even exist (it may have moved).
+        for (const record of records.filter(item => item.workspace !== 'direct')) {
           await this.worktree.revive(entry.project, record.id);
           revived.push(record.id);
         }
