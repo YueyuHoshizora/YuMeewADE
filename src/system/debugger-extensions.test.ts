@@ -103,3 +103,17 @@ test('Inspector attachment survives delayed metadata resolution and reaches the 
     assert.deepEqual(state().frames, []);
   } finally { debuggerService.close(); await execution.stopAll(); }
 }));
+
+test('an attach still resolving metadata when the service closes opens no Inspector connection', async () => {
+  let sockets = 0; const original = globalThis.WebSocket;
+  globalThis.WebSocket = class extends EventTarget { constructor() { super(); sockets++; } } as unknown as typeof WebSocket;
+  const entered = Promise.withResolvers<void>(); const metadata = Promise.withResolvers<string>();
+  const execution = { runDirectory() {}, async cwd() { return '/tmp'; }, output() { return { kind: 'debug', status: 'running', inspectorUrl: 'ws://127.0.0.1:1234/abcdef-1234' }; } };
+  const service = new DebuggerService(execution as unknown as ExecutionService, { metadataFile: async () => { entered.resolve(); return metadata.promise; } });
+  try {
+    const attaching = service.attach('P', 'T', 'run');
+    await entered.promise; service.close(); metadata.resolve('/tmp/metadata.json');
+    await assert.rejects(attaching, { code: 'unavailable' });
+    assert.equal(sockets, 0); assert.equal(service.isBusy(), false);
+  } finally { globalThis.WebSocket = original; service.close(); }
+});
