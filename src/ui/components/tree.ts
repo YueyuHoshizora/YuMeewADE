@@ -16,6 +16,10 @@ function taskTone(task: TaskView): string {
   if (task.state === '進行中' || task.hasChat) return 'processed';
   return 'untouched';
 }
+// A pointer press outside an open ⋯ menu closes it, like any popup menu.
+document.addEventListener('pointerdown', event => {
+  for (const open of document.querySelectorAll<HTMLDetailsElement>('details.context-menu[open]')) if (!open.contains(event.target as Node)) open.open = false;
+});
 export function tree(context: ViewContext): HTMLElement {
   const { state, refresh } = context; const root = el('div', 'tree'); const content = el('div', 'tree-content');
   const search = input(searchText, t('tree.search')); search.type = 'search'; search.className = 'tree-search'; search.setAttribute('aria-label', t('tree.search'));
@@ -65,7 +69,19 @@ export function tree(context: ViewContext): HTMLElement {
   }
   function menu(actions: { label: string; action: () => unknown }[]): HTMLElement {
     const details = disclosure('⋯', ...actions.map(a => button(a.label, () => { details.open = false; return a.action(); })));
-    details.className = 'context-menu'; details.querySelector('summary')!.setAttribute('aria-label', t('common.actions')); return details;
+    details.className = 'context-menu'; const summary = details.querySelector('summary')!; summary.setAttribute('aria-label', t('common.actions'));
+    // Menu keyboard model: arrows move between items (opening the menu), Esc closes and returns to the ⋯ button.
+    details.addEventListener('keydown', event => {
+      const items = [...details.querySelectorAll<HTMLButtonElement>('button:not([disabled])')];
+      if (event.key === 'Escape' && details.open) { event.preventDefault(); event.stopPropagation(); details.open = false; summary.focus(); return; }
+      if ((event.key !== 'ArrowDown' && event.key !== 'ArrowUp') || !items.length) return;
+      event.preventDefault(); details.open = true;
+      const at = items.indexOf(document.activeElement as HTMLButtonElement); const step = event.key === 'ArrowDown' ? 1 : -1;
+      items[at < 0 ? (step > 0 ? 0 : items.length - 1) : (at + step + items.length) % items.length]!.focus();
+    });
+    // Only one menu open at a time.
+    details.addEventListener('toggle', () => { if (details.open) for (const other of document.querySelectorAll<HTMLDetailsElement>('details.context-menu[open]')) if (other !== details) other.open = false; });
+    return details;
   }
   function badges(p: ProjectView, tasks: TaskView[]): HTMLElement {
     const node = el('span', 'badges');
