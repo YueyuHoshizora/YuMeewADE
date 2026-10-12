@@ -98,7 +98,7 @@ export function registerLedgerRoutes(router: Router, app: App): void {
     await app.projects.get(project);
     if (app.taskBusy(project)) throw new AppError('conflict', 'archive_project_running');
     for (const task of await app.tasks.list(project)) {
-      if (!(await app.worktree.exists(project, task.id))) continue;
+      if (!(await app.worktree.copyExists(project, task))) continue;
       if (!force) throw new AppError('conflict', 'archive_project_has_worktrees');
       const preview = await app.archive.preview(project, task.id);
       if (preview.unavailable.length) throw new AppError('conflict', 'archive_cannot_preserve');

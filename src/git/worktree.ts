@@ -98,9 +98,12 @@ export class WorktreeService {
     return (await this.projects.get(project)).body || this.ws.projectDir(project);
   }
   async exists(project: string, task: string): Promise<boolean> {
-    const record = await this.tasks.get(project, task);
+    return this.copyExists(project, await this.tasks.get(project, task));
+  }
+  /** Same check for callers that already hold the task record (avoids re-reading the ledger file). */
+  async copyExists(project: string, record: Pick<Task, 'id' | 'workdir'>): Promise<boolean> {
     if (record.workdir && await pathExists(record.workdir)) return true;
-    return pathExists(this.ws.worktreeDir(project, task));
+    return pathExists(this.ws.worktreeDir(project, record.id));
   }
   private async mutate<T>(project: string, change: () => Promise<T>): Promise<T> {
     const repo = await fs.realpath(await this.bodyPath(project));

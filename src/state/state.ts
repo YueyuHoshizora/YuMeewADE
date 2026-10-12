@@ -30,7 +30,7 @@ export async function buildState(app: App): Promise<StateSnapshot> {
     const tasks = await app.tasks.list(project.id);
     const taskViews: TaskView[] = await Promise.all(tasks.map(async (task) => {
       const [approved, continued, copy, chat] = await Promise.all([
-        app.completion.isApproved(project.id, task.id), app.completion.continued(project.id, task.id), app.worktree.exists(project.id, task.id),
+        app.completion.isApproved(project.id, task.id), app.completion.continued(project.id, task.id), app.worktree.copyExists(project.id, task),
         hasChat(app.ws.chatFile(project.id, task.id, 'jsonl')),
       ]);
       return { ...task, confirm: task.state === '完成' ? !approved : task.steps.length > 0 && task.steps.every((step) => step.done) && continued !== stepsHash(task.steps), copy, copyMissing: Boolean(task.workdir) && !copy, hasChat: chat };
