@@ -23,8 +23,8 @@ export function registerChatRoutes(router: Router, app: App): void {
     const p = reqString(query, 'project', 100);
     const t = reqString(query, 'task', 100);
     const task = await app.tasks.get(p, t);
-    const rows = await app.store.readLog(p, t);
-    const text = formatTranscript(task.title, rows, app.ws.root, query.get('tools') === '1');
+    const [rows, record] = await Promise.all([app.store.readLog(p, t), app.tasks.sections(p, t)]);
+    const text = formatTranscript(task.title, rows, app.ws.root, query.get('tools') === '1', record);
     const filename = encodeURIComponent(`${task.title}.md`).replace(/['()*]/gu, c => `%${c.charCodeAt(0).toString(16).toUpperCase()}`);
     res.writeHead(200, {
       'Content-Type': 'text/markdown; charset=utf-8',
