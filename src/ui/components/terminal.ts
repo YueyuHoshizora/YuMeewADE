@@ -70,7 +70,8 @@ function terminalSession(project: string, task: string, label: string, recover?:
         catch (error) { await request('/api/terminal/stop', identity()); throw error; }
       }
       if (!alive) { await request('/api/terminal/stop', identity()); return; }
-      after = 0; screen.write('\x1bc'); receiver.focus(); await poll();
+      // preventScroll: the root has overflow:hidden, so a focus-induced scroll of the page could never be undone by the user.
+      after = 0; screen.write('\x1bc'); receiver.focus({ preventScroll: true }); await poll();
     } finally { starting = false; }
   }
   async function stop(): Promise<void> {
@@ -107,7 +108,7 @@ function terminalSession(project: string, task: string, label: string, recover?:
   // Registered before the focus handler so the click that finishes a link press does not move focus into the shell.
   screen.node.addEventListener('click', event => { if (linkPress) { linkPress = false; event.stopImmediatePropagation(); } });
   screen.node.addEventListener('mousemove', event => { screen.node.style.cursor = (event.metaKey || event.ctrlKey) && screen.linkAt(event.clientX, event.clientY) ? 'pointer' : ''; });
-  screen.node.addEventListener('focus', () => receiver.focus()); screen.node.addEventListener('click', () => { if (!window.getSelection()?.toString()) receiver.focus(); });
+  screen.node.addEventListener('focus', () => receiver.focus({ preventScroll: true })); screen.node.addEventListener('click', () => { if (!window.getSelection()?.toString()) receiver.focus({ preventScroll: true }); });
   let resizeTimer: number | undefined;
   const observer = new ResizeObserver(entries => {
     const width = entries[0]?.contentRect.width ?? 0;

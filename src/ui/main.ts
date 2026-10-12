@@ -13,7 +13,7 @@ import { runningChip } from './components/running.ts';
 import { openUpdateDialog, updateChip, visibleUpdate } from './components/update.ts';
 import { openUsageDetails } from './components/usage-details.ts';
 import { showInitialCare } from './components/care.ts';
-import { mountTerminalDock, toggleTerminalDock } from './components/terminal-dock.ts';
+import { mountTerminalDock, setTerminalScope, toggleTerminalDock } from './components/terminal-dock.ts';
 import { openCommandPalette, paletteShortcut } from './components/palette.ts';
 import { openFindBar } from './components/find-bar.ts';
 import { terminalFilePath } from './components/terminal-links.ts';
@@ -132,7 +132,7 @@ function navigate(force = false): void {
   else view = lazyView(async () => (await import('./views/turn.ts')).turnView(context));
   main.classList.toggle('task-main', parts[0] === 't' && !waiting);
   main.replaceChildren(view.node); main.scrollTop = 0; document.body.classList.remove('sidebar-open'); drawShell();
-  setWorkbenchScope(project?.id ?? '', task?.id ?? '', state.root);
+  setWorkbenchScope(project?.id ?? '', task?.id ?? '', state.root); setTerminalScope(project?.id ?? '', task?.id ?? '');
 }
 /** Full redraw after any explicit change; exposed to views, so it must not accept arguments. */
 function refresh(): Promise<void> { return load(false); }
