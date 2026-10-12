@@ -13,6 +13,8 @@ import { WorkflowService } from './workflows.ts';
 import { ChatStore } from './store.ts';
 import { normalizeGraph, validateGraph, downstreamNodes } from '../shared/workflow-graph.ts';
 import type { WorkflowStep, ReviewResult } from '../shared/types.ts';
+import { WorkflowIntegrationService } from '../git/workflow-integration.ts';
+import { commitAll, gitOk } from '../git/git.ts';
 
 async function fixture(ws: Workspace, review: (p: string, t: string, input: { text: string }) => Promise<ReviewResult>, extra: Partial<ConstructorParameters<typeof WorkflowService>[0]> = {}) {
   const projects = new ProjectLedger(ws); await projects.create({ name: 'P' });
@@ -87,6 +89,33 @@ test('restart never authorizes execution and human evidence advances only a huma
   await assert.rejects(s.workflow.approveHuman('P', s.task.id, ''), { code: 'bad_request' });
   const approved = await s.workflow.approveHuman('P', s.task.id, 'Inspected real evidence', 'human');
   assert.equal(approved.state, 'completed'); assert.equal(approved.results.at(-1)?.approved, true); assert.equal(calls, 0);
+}));
+
+test('two independent human gates are approved one after the other and then complete the workflow', () => withTmpWorkspace(async ws => {
+  const s = await fixture(ws, async () => { throw new Error('no AI node'); });
+  await s.workflow.configure('P', s.task.id, [], [node('h1', [], { role: 'human' }), node('h2', [], { role: 'human' })]);
+  s.reset(); await s.workflow.start('P', s.task.id); await s.idle();
+  const first = await s.workflow.approveHuman('P', s.task.id, 'checked one', 'h1');
+  assert.deepEqual([first.state, first.reason, first.nodeStates], ['paused', 'workflow_human', { h1: 'succeeded', h2: 'human' }]);
+  const second = await s.workflow.approveHuman('P', s.task.id, 'checked two', 'h2');
+  assert.equal(second.state, 'completed');
+}));
+
+test('resolving the conflict of a final integration node completes the workflow', () => withTmpWorkspace(async ws => {
+  const tasks = new TaskLedger(ws); const worktree = new WorktreeService({ ws, projects: new ProjectLedger(ws), tasks, diffBytes: 100000 });
+  const s = await fixture(ws, async (p, t, input) => {
+    await fs.writeFile(path.join((await tasks.get(p, t)).workdir, 'shared.txt'), `${input.text}\n`);
+    return { request: t, ai: 'mock', text: input.text, ok: true, approved: true, structured: true };
+  }, { integration: new WorkflowIntegrationService({ tasks, worktrees: worktree, busy: () => false }) });
+  const repo = await worktree.bodyPath('P'); await fs.writeFile(path.join(repo, 'shared.txt'), 'base\n'); await commitAll(repo, 'base');
+  await s.workflow.configure('P', s.task.id, [], [node('a'), node('b'), node('merge', ['a', 'b'], { kind: 'integration', upstream: ['a', 'b'], review: false })]);
+  s.reset(); await s.workflow.start('P', s.task.id); await s.idle();
+  const paused = await s.workflow.get('P', s.task.id);
+  assert.deepEqual([paused.state, paused.nodeStates?.merge, paused.candidates?.merge?.state], ['paused', 'human', 'conflict']);
+  const candidate = await tasks.get('P', paused.candidates!.merge!.task);
+  await fs.writeFile(path.join(candidate.workdir, 'shared.txt'), 'resolved\n'); await gitOk(candidate.workdir, ['add', 'shared.txt']);
+  const resolved = await s.workflow.resolveIntegration('P', s.task.id, 'merge', paused.revision!);
+  assert.deepEqual([resolved.state, resolved.cursor, resolved.nodeStates?.merge], ['completed', 3, 'succeeded']);
 }));
 
 test('stop drains concurrent nodes and never starts a dependent without a new explicit start', () => withTmpWorkspace(async ws => {

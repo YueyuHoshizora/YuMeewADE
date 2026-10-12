@@ -347,7 +347,7 @@ export class WorkflowService {
     if (!step || step.kind === 'integration' || step.kind === 'verify' || step.kind === 'review' || plan.state !== 'paused' || (await this.deps.roles()).roles[step.role]?.main.cli !== HUMAN) throw new AppError('conflict', 'workflow_invalid');
     if (this.isBusy(p, t) || this.deps.isTaskBusy(p, t) || revision !== undefined && revision !== plan.revision) throw new AppError('conflict');
     plan.results.push({ step: plan.steps.indexOf(step), node: step.id!, role: step.role, ai: HUMAN, request: '', ok: true, approved: true, evidence, output: evidence, at: new Date().toISOString() });
-    plan.nodeStates![step.id!] = 'succeeded'; this.updateCursor(plan); plan.revision!++; plan.state = plan.cursor === plan.steps.length ? 'completed' : 'ready'; delete plan.reason;
+    plan.nodeStates![step.id!] = 'succeeded'; plan.revision!++; this.afterHuman(plan);
     appendWorkflowEvent(plan, { type: 'node.approved', node: step.id!, source: HUMAN, outcome: 'succeeded' });
     await this.refreshDelivery(p, plan);
     await writeJson(this.file(p, t), plan); this.deps.changed(p, t); return plan;
@@ -377,13 +377,19 @@ export class WorkflowService {
       const candidate = await this.deps.integration.resolve(p, plan.candidates[node]);
       plan.candidates[node] = candidate; plan.revision!++;
       if (candidate.state === 'ready') {
-        plan.nodeStates![node] = 'succeeded'; plan.state = 'ready'; delete plan.reason;
+        plan.nodeStates![node] = 'succeeded'; this.afterHuman(plan);
         plan.results.push({ node, task: candidate.task, role: plan.steps.find(s => s.id === node)!.role, ai: 'human', request: '', at: new Date().toISOString(), ok: true, output: candidate.diff });
       }
       appendWorkflowEvent(plan, { type: 'integration.resolved', node, task: candidate.task, source: HUMAN, outcome: candidate.state });
       await this.refreshDelivery(p, plan);
       this.updateCursor(plan); await writeJson(this.file(p, t), plan); this.deps.changed(p, t); return plan;
     });
+  }
+  /** After a person finished a node: keep waiting while another node still needs a person, complete when every node is done, otherwise continue. */
+  private afterHuman(plan: WorkflowPlan): void {
+    this.updateCursor(plan);
+    if (Object.values(plan.nodeStates!).includes('human')) { plan.state = 'paused'; plan.reason = 'workflow_human'; return; }
+    plan.state = plan.cursor === plan.steps.length ? 'completed' : 'ready'; delete plan.reason;
   }
   async stop(p: string, t: string): Promise<void> {
     const job = this.jobs.get(this.key(p, t)); if (!job) return;
