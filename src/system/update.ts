@@ -70,6 +70,7 @@ export async function fetchLatestRelease(repo: string, platform: NodeJS.Platform
     }
     return {
       version: body.tag_name.trim().replace(/^v/, ''),
+      tag: body.tag_name,
       url: body.html_url,
       notes: typeof body.body === 'string' ? body.body.slice(0, NOTES_MAX) : '',
       assets: pickAssets(raw, platform, arch),

@@ -691,8 +691,8 @@ export interface Limits {
 
 /** 發行頁上適合本機系統的下載檔；installer＝安裝版，portable＝免安裝版。 */
 export interface UpdateAsset { name: string; url: string; size: number; kind: 'installer' | 'portable' }
-/** 比目前版本新的正式發行。 */
-export interface UpdateInfo { version: string; url: string; notes: string; assets: UpdateAsset[] }
+/** 比目前版本新的正式發行。`tag` 為發行的原始標籤（可能有或沒有 `v`），下載網址依它組成。 */
+export interface UpdateInfo { version: string; tag: string; url: string; notes: string; assets: UpdateAsset[] }
 
 export interface AppState {
   version: string;

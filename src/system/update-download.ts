@@ -36,9 +36,10 @@ export function publisherSignature(manifest: IntegrityManifest, key?: string): b
     return publicKey.asymmetricKeyType === 'ed25519' && verify(null, Buffer.from(manifestPayload(manifest)), publicKey, Buffer.from(manifest.signature, 'base64'));
   } catch { return false; }
 }
-export function releaseURL(repo: string, version: string, name: string): string {
-  if (!/^[A-Za-z0-9_-]+\/[A-Za-z0-9_.-]+$/.test(repo) || !/^\d+\.\d+\.\d+$/.test(version) || !/^[A-Za-z0-9_. -]{1,180}$/.test(name) || name.includes('..')) throw new Error('Invalid release');
-  return `https://github.com/${repo}/releases/download/v${version}/${encodeURIComponent(name)}`;
+/** `tag` is the release's own tag (`1.2.0` or `v1.2.0`, as published), never rebuilt from the version. */
+export function releaseURL(repo: string, tag: string, name: string): string {
+  if (!/^[A-Za-z0-9_-]+\/[A-Za-z0-9_.-]+$/.test(repo) || !/^v?\d+\.\d+\.\d+(?:-[0-9A-Za-z.-]+)?(?:\+[0-9A-Za-z.-]+)?$/.test(tag) || !/^[A-Za-z0-9_. -]{1,180}$/.test(name) || name.includes('..')) throw new Error('Invalid release');
+  return `https://github.com/${repo}/releases/download/${encodeURIComponent(tag)}/${encodeURIComponent(name)}`;
 }
 export async function releaseResponse(url: string, fetcher: typeof fetch = fetch): Promise<Response> {
   let current = url;
@@ -79,14 +80,14 @@ export class UpdateDownloads {
     this.busy = true;
     let directory: string | undefined;
     try {
-      const metadata = parseManifest(await boundedText(await releaseResponse(releaseURL(this.repo, version, UPDATE_METADATA), this.fetcher)), version);
+      const metadata = parseManifest(await boundedText(await releaseResponse(releaseURL(this.repo, latest.tag, UPDATE_METADATA), this.fetcher)), version);
       const entry = metadata.assets.find(a => a.name === name);
       if (!entry || entry.size !== asset.size) throw new Error('Missing checksum');
       directory = await mkdtemp(path.join(tmpdir(), 'yumeewade-update-'));
       const temporary = path.join(directory, 'download.part'); const file = path.join(directory, name);
       const handle = await open(temporary, 'wx', 0o600); const hash = createHash('sha256'); let size = 0;
       try {
-        const response = await releaseResponse(releaseURL(this.repo, version, name), this.fetcher);
+        const response = await releaseResponse(releaseURL(this.repo, latest.tag, name), this.fetcher);
         for await (const chunk of response.body!) { size += chunk.length; if (size > entry.size || size > MAX || this.closed) throw new Error('Download exceeds limit'); hash.update(chunk); await handle.writeFile(chunk); }
         if (size !== entry.size || hash.digest('hex') !== entry.sha256) throw new Error('Checksum mismatch');
         await handle.sync();

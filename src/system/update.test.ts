@@ -43,7 +43,7 @@ test('fetchLatestRelease parses a release and rejects unusable or foreign ones',
 });
 
 test('UpdateWatcher only surfaces newer releases and keeps the last result on failure', async () => {
-  const info = (version: string): UpdateInfo => ({ version, url: 'u', notes: '', assets: [] });
+  const info = (version: string): UpdateInfo => ({ version, tag: version, url: 'u', notes: '', assets: [] });
   const results: (UpdateInfo | null)[] = [info('1.0.0'), info('1.0.1'), null, info('1.0.1')];
   let changes = 0;
   const watcher = new UpdateWatcher('1.0.0', async () => results.shift() ?? null, () => { changes++; });

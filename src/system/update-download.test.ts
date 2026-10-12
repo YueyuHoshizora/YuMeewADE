@@ -8,7 +8,7 @@ const repo = 'YueyuHoshizora/YuMeewADE';
 const name = 'YuMeewADE.Setup.1.2.0.exe';
 const bytes = Buffer.from('verified artifact');
 const metadata: IntegrityManifest = { version: '1.2.0', assets: [{ name, size: bytes.length, sha256: createHash('sha256').update(bytes).digest('hex') }] };
-const info: UpdateInfo = { version: '1.2.0', url: '', notes: '', assets: [{ name, size: bytes.length, url: 'https://attacker.example/ignored', kind: 'installer' }] };
+const info: UpdateInfo = { version: '1.2.0', tag: 'v1.2.0', url: '', notes: '', assets: [{ name, size: bytes.length, url: 'https://attacker.example/ignored', kind: 'installer' }] };
 
 test('only an independently pinned publisher key authenticates metadata; tampering fails', () => {
   const { privateKey, publicKey } = generateKeyPairSync('ed25519');
@@ -38,11 +38,21 @@ test('integrity-only download succeeds without trusting or executing the publish
   try {
     const result = await downloads.download('1.2.0', name);
     assert.equal(result.integrity, true); assert.equal(result.publisherTrusted, false); assert.equal(result.canLaunch, false);
-    assert.equal(urls[1], releaseURL(repo, '1.2.0', name));
+    assert.equal(urls[1], releaseURL(repo, 'v1.2.0', name));
     await assert.rejects(downloads.action(result.token, true));
     await assert.rejects(downloads.action('unknown', false));
     await assert.rejects(downloads.download('1.1.0', name));
     await assert.rejects(downloads.download('1.2.0', '../escape.exe'));
+  } finally { await downloads.close(); }
+});
+
+test('a release tagged without the v prefix downloads from its own tag', async () => {
+  const urls: string[] = [];
+  const fetcher: typeof fetch = async input => { urls.push(String(input)); return new Response(String(input).endsWith('.json') ? JSON.stringify(metadata) : bytes); };
+  const downloads = new UpdateDownloads(() => ({ ...info, tag: '1.2.0' }), repo, {}, fetcher);
+  try {
+    assert.equal((await downloads.download('1.2.0', name)).integrity, true);
+    assert.deepEqual(urls, [`https://github.com/${repo}/releases/download/1.2.0/update-integrity.json`, `https://github.com/${repo}/releases/download/1.2.0/${name}`]);
   } finally { await downloads.close(); }
 });
 
