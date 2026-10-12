@@ -83,7 +83,11 @@ export function tree(context: ViewContext): HTMLElement {
       control.setAttribute('aria-expanded', String(!collapsed.has(key)));
       filter();
     }, 'disclosure-button');
-    control.disabled = !hasChildren; control.setAttribute('aria-label', t(collapsed.has(key) ? 'tree.expand' : 'tree.collapse')); return control;
+    control.disabled = !hasChildren;
+    // A leaf's dot is decoration; announcing "Collapse" on it would be wrong.
+    if (hasChildren) { control.setAttribute('aria-label', t(collapsed.has(key) ? 'tree.expand' : 'tree.collapse')); control.setAttribute('aria-expanded', String(!collapsed.has(key))); }
+    else control.setAttribute('aria-hidden', 'true');
+    return control;
   }
   function taskNode(p: ProjectView, task: TaskView, ancestry: Set<string>): HTMLElement {
     const wrap = el('div', 'tree-node task-node'); wrap.dataset['search'] = `${task.title} ${task.id}`.toLocaleLowerCase(); if (ancestry.has(task.id)) return wrap;
