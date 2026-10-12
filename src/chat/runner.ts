@@ -5,7 +5,7 @@ import path from 'node:path';
 import type { CliEvent, CliProvider, CliRun } from '../cli/provider.ts';
 import type { Workspace } from '../ledger/workspace.ts';
 import type { ProjectLedger } from '../ledger/projects.ts';
-import type { TaskLedger } from '../ledger/tasks.ts';
+import { TITLE_MAX, type TaskLedger } from '../ledger/tasks.ts';
 import type { CompletionStore } from '../ledger/completion.ts';
 import type { SettingsStore } from '../ledger/settings.ts';
 import type { OpLog } from '../ledger/oplog.ts';
@@ -740,8 +740,12 @@ export class ChatRunner extends EventEmitter {
       const at = rows.findIndex(r => r.role === 'user' && r.request === request);
       const point = rows[at];
       if (point?.role !== 'user' || !point.checkpoint) throw new AppError('not_found', 'checkpoint_missing');
+      // The suffix must fit the title limit a source title may already fill; cut whole characters, never half a pair.
+      const suffix = '（分支）'; const chars = [...source.title]; let length = source.title.length;
+      while (length + suffix.length > TITLE_MAX) length -= chars.pop()!.length;
+      const title = chars.join('');
       const created = await this.deps.tasks.create(p, {
-        title: `${source.title}（分支）`, kind: 'derived', derivedFrom: t, workspace: 'isolated',
+        title: `${title}${suffix}`, kind: 'derived', derivedFrom: t, workspace: 'isolated',
         phase: source.phase, role: source.role, cli: source.cli, model: source.model, effort: source.effort,
       });
       try {

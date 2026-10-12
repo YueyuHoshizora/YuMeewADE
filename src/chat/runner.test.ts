@@ -142,6 +142,10 @@ test('fork 從指定指示的檢查點長出分支作業，帶走之前的對話
   assert.equal(copied.some(r => r.role === 'user' && r.text === 'second'), false);
   assert.equal((await s.tasks.get('P', s.task.id)).kind, 'main', 'the source task is untouched');
   await assert.rejects(s.runner.fork('P', s.task.id, 'missing'), (e: unknown) => e instanceof Error && 'detail' in e && e.detail === 'checkpoint_missing');
+  // A title already at the 300-character limit is shortened (by whole characters) so the suffix still fits.
+  await s.tasks.update('P', s.task.id, { title: `${'標'.repeat(298)}😀` });
+  const long = await s.runner.fork('P', s.task.id, second.request);
+  assert.equal(long.title, `${'標'.repeat(296)}（分支）`); assert.ok(long.title.length <= 300);
   await s.send('slow [slow]');
   await assert.rejects(s.runner.fork('P', s.task.id, second.request), (e: unknown) => e instanceof Error && 'detail' in e && e.detail === 'fork_while_running');
   await s.runner.stop('P', s.task.id); await s.runner.whenIdle();
