@@ -62,6 +62,10 @@ export function checkOrigin(req: IncomingMessage, opts: RouterOptions): void {
     const origin = req.headers.origin;
     if (origin !== undefined && !allowedHosts.some((h) => origin === `http://${h}`)) throw new AppError('forbidden');
   }
+}
+
+/** API calls additionally refuse requests a page on another site made (see below); the UI itself may be navigated to from anywhere. */
+function checkApiSource(req: IncomingMessage): void {
   // A GET carries no Origin, so a page elsewhere (another site, or another loopback port such as a dev server or the
   // embedded preview) could still trigger API reads with side effects — CLI command discovery, GitHub queries, Git
   // status. Browsers mark where each request comes from; only the UI itself (same-origin) or a typed URL may call.
@@ -151,10 +155,18 @@ export class Router {
 
   /** 回 true 代表已處理（含錯誤回應）；false 代表不是 API 路徑。 */
   async handle(req: IncomingMessage, res: ServerResponse): Promise<boolean> {
-    const url = new URL(req.url ?? '/', 'http://localhost');
+    // Every request, static files included, must name a loopback Host (DNS rebinding) and a same-origin Origin when it writes.
+    let url: URL;
+    try {
+      url = new URL(req.url ?? '/', 'http://localhost');
+      checkOrigin(req, this.opts);
+    } catch (err) {
+      sendError(res, err instanceof AppError ? err : new AppError('bad_request'));
+      return true;
+    }
     if (!url.pathname.startsWith('/api/')) return false;
     try {
-      checkOrigin(req, this.opts);
+      checkApiSource(req);
       const route = this.routes[`${req.method} ${url.pathname}`];
       if (!route) throw new AppError('not_found');
       let body: Record<string, unknown> = {};

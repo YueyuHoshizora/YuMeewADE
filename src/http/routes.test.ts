@@ -361,9 +361,9 @@ test('running archive/merge guards and unread read transition use mock provider'
 
 test('HTTP gate rejects bad host/origin, malformed JSON and oversized bodies', async () => {
   const s = await startTestServer('limits:\n  bodyBytes: 100\n');
-  const raw = (headers: Record<string, string>, chunks: string[]): Promise<number> => {
+  const raw = (headers: Record<string, string>, chunks: string[], target = '/api/project/new', method = 'POST'): Promise<number> => {
     const { promise, resolve } = Promise.withResolvers<number>();
-    const req = http.request({ host: '127.0.0.1', port: s.port, path: '/api/project/new', method: 'POST', headers }, (res) => {
+    const req = http.request({ host: '127.0.0.1', port: s.port, path: target, method, headers }, (res) => {
       res.resume(); resolve(res.statusCode ?? 0);
     });
     req.on('error', () => resolve(-1));
@@ -373,6 +373,9 @@ test('HTTP gate rejects bad host/origin, malformed JSON and oversized bodies', a
   };
   try {
     assert.equal(await raw({ Host: 'evil.example:80' }, ['{}']), 403);
+    // The UI files answer only on the loopback authorities as well (DNS rebinding), and a broken request target is a plain 400.
+    assert.equal(await raw({ Host: 'evil.example:80' }, [], '/index.html', 'GET'), 403);
+    assert.equal(await raw({}, [], 'http://[invalid/api/state', 'GET'), 400);
     assert.equal((await s.api('POST', '/api/project/new', { name: 'A' }, { Origin: 'http://evil.example' })).status, 403);
     // A GET from another site or another loopback port (dev server, embedded preview) is refused; the UI itself is not.
     // `//host/api/state` routes to /api/state too, so it must meet the same gate.
