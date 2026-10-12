@@ -1,5 +1,5 @@
 import { request } from '../api.ts';
-import { t } from '../i18n/index.ts';
+import { labelValue, t } from '../i18n/index.ts';
 import { needsReply } from '../components/tree.ts';
 import { button, el, link, row, taskHash, type View, type ViewContext } from '../components/dom.ts';
 import { onboardingBanner } from '../components/onboarding.ts';
@@ -25,7 +25,12 @@ export function turnView(context: ViewContext): View {
     list.replaceChildren(...(selected === 'reply' ? reply : confirm).map(({ project, task, waiting }) => {
       const item = el('div', 'turn-item'); item.append(el('p', 'muted', project.name), link(task.title, taskHash(project.id, task.id), 'turn-title'));
       if (selected === 'reply') item.append(el('p', '', waiting ? t('permission.waiting') : task.question));
-      else item.append(row(button(t('turn.approve'), async () => { await request('/api/task/completion', { project: project.id, task: task.id, action: 'approve' }); await context.refresh(); }, 'primary'), button(t('turn.continue'), async () => { await request('/api/task/completion', { project: project.id, task: task.id, action: 'continue' }); await context.refresh(); })));
+      else {
+        // Progress and the AI's own "next" line help decide between approving and asking to continue.
+        const progress = [task.steps.length ? t('task.steps', { done: task.steps.filter(step => step.done).length, total: task.steps.length }) : '', task.next ? labelValue(t('tasks.next'), task.next.replace(/^\s*[-*+]\s+/, '')) : ''].filter(Boolean);
+        if (progress.length) item.append(el('p', 'muted', progress.join(' · ')));
+        item.append(row(button(t('turn.approve'), async () => { await request('/api/task/completion', { project: project.id, task: task.id, action: 'approve' }); await context.refresh(); }, 'primary'), button(t('turn.continue'), async () => { await request('/api/task/completion', { project: project.id, task: task.id, action: 'continue' }); await context.refresh(); })));
+      }
       return item;
     })); if (!list.childNodes.length) list.append(el('p', 'empty', t('common.empty')));
   }
