@@ -14,6 +14,7 @@ export function taskComparisonButton(project: string): HTMLElement {
       results.replaceChildren(el('p', '', `${result.leftBranch} → ${result.rightBranch}`));
       if (!result.files.length) results.append(el('p', '', t('gitPrecision.noDiff')));
       for (const file of result.files) results.append(el('h3', '', file.path), el('pre', '', file.patch));
+      if (result.truncated) results.append(el('p', 'muted', t('gitPrecision.truncated', { n: result.files.length })));
     });
     compare.disabled = tasks.length < 2;
     modal(t('gitPrecision.compare'), el('p', '', t('gitPrecision.compareHint')), row(field(t('gitPrecision.left'), left), field(t('gitPrecision.right'), right)), compare, results);

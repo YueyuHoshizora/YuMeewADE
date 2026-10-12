@@ -151,6 +151,29 @@ test('比較真實作業副本未提交變更且不外洩secret／不接受symli
   await assert.rejects(workbench.compareTasks('P', left.id, right.id));
 }));
 
+test('task comparison scales with the difference, uses staged content and marks a cut list', () => withTmpWorkspace(async ws => {
+  const projects = new ProjectLedger(ws); const tasks = new TaskLedger(ws); await projects.create({ name: 'P' });
+  const root = ws.projectDir('P');
+  // More files than the old 5,000-path cap; all identical between the two copies.
+  await fs.mkdir(path.join(root, 'many'));
+  await Promise.all(Array.from({ length: 6000 }, (_, i) => fs.writeFile(path.join(root, 'many', `f${i}.txt`), `${i}\n`)));
+  await fs.writeFile(path.join(root, 'a.txt'), 'base\n'); await fs.writeFile(path.join(root, 'b.txt'), 'base\n');
+  await commitAll(root, 'many files');
+  const left = await tasks.create('P', { title: 'left' }); const right = await tasks.create('P', { title: 'right' });
+  const wt = new WorktreeService({ ws, projects, tasks, diffBytes: 100_000 });
+  const a = await wt.prepare('P', left.id); const b = await wt.prepare('P', right.id);
+  await fs.writeFile(path.join(a, 'a.txt'), 'left\n');
+  // Staged in the right copy only: the worktree equals the index, which differs from the left copy.
+  await fs.writeFile(path.join(b, 'b.txt'), 'staged\n'); await gitOk(b, ['add', 'b.txt']);
+  const workbench = new GitWorkbench({ ws, projects, tasks, isRunning: () => false });
+  const comparison = await workbench.compareTasks('P', left.id, right.id);
+  assert.deepEqual(comparison.files.map(file => file.path), ['a.txt', 'b.txt']);
+  assert.match(comparison.files[1]!.patch, /\+staged/); assert.equal(comparison.truncated, undefined);
+  await Promise.all(Array.from({ length: 120 }, (_, i) => fs.writeFile(path.join(b, `new${String(i).padStart(3, '0')}.txt`), 'x\n')));
+  const cut = await workbench.compareTasks('P', left.id, right.id);
+  assert.equal(cut.files.length, 100); assert.equal(cut.truncated, true);
+}));
+
 test('歷史、提交詳情與blame限制輸入並保護機密路徑', () => withTmpWorkspace(async ws => {
   const projects = new ProjectLedger(ws); const tasks = new TaskLedger(ws); await projects.create({ name: 'P' });
   const root = ws.projectDir('P'); const workbench = new GitWorkbench({ ws, projects, tasks, isRunning: () => false });

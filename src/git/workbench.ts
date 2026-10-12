@@ -354,11 +354,24 @@ export class GitWorkbench {
       const right = (await this.location(project, rightTask)).root;
       const leftBranch = (await this.command(left, ['rev-parse', '--abbrev-ref', 'HEAD'])).trim();
       const rightBranch = (await this.command(right, ['rev-parse', '--abbrev-ref', 'HEAD'])).trim();
-      const paths = new Set([...split(await this.command(left, ['ls-files', '-z', '--cached', '--others', '--exclude-standard'])), ...split(await this.command(right, ['ls-files', '-z', '--cached', '--others', '--exclude-standard']))]);
-      if (paths.size > 5000) throw new AppError('too_large');
-      const files: TaskComparison['files'] = []; let bytes = 0; let inputBytes = 0;
-      for (const relative of paths) {
+      // Files unchanged in a worktree equal their index blob, so they are compared by blob id; only differing or locally
+      // changed files are read. The comparison now scales with the size of the difference, not of the repository.
+      const side = async (root: string) => {
+        const blobs = new Map<string, string>();
+        for (const entry of split(await this.command(root, ['ls-files', '-s', '-z']))) { const match = /^\d+ ([0-9a-f]+) 0\t(.+)$/su.exec(entry); if (match) blobs.set(match[2]!, match[1]!); }
+        const changed = new Set<string>(); const status = split(await this.command(root, ['status', '--porcelain=v1', '-z', '--untracked-files=all', '--no-renames']));
+        for (const entry of status) if (entry[1] !== ' ') changed.add(entry.slice(3));
+        const listed = split(await this.command(root, ['ls-files', '-z', '--cached', '--others', '--exclude-standard']));
+        return { blobs, changed, listed };
+      };
+      const leftSide = await side(left); const rightSide = await side(right);
+      const paths = new Set([...leftSide.listed, ...rightSide.listed]);
+      if (paths.size > 200_000) throw new AppError('too_large');
+      const files: TaskComparison['files'] = []; let bytes = 0; let inputBytes = 0; let truncated = false;
+      const clean = (state: typeof leftSide, relative: string) => state.blobs.has(relative) && !state.changed.has(relative);
+      for (const relative of [...paths].sort()) {
         if (isLocalSecret(relative)) continue;
+        if (clean(leftSide, relative) && clean(rightSide, relative) && leftSide.blobs.get(relative) === rightSide.blobs.get(relative)) continue;
         await this.safePath(left, relative); await this.safePath(right, relative);
         const content = async (root: string) => {
           const full = path.join(root, relative);
@@ -370,14 +383,14 @@ export class GitWorkbench {
         };
         const a = await content(left); const b = await content(right);
         if (a === null && b === null || a !== null && b !== null && a.equals(b)) continue;
-        if (files.length >= 100) throw new AppError('too_large');
+        if (files.length >= 100) { truncated = true; break; }
         const result = await git(left, ['diff', '--no-index', '--no-ext-diff', '--no-textconv', '--', a === null ? '/dev/null' : path.join(left, relative), b === null ? '/dev/null' : path.join(right, relative)], { maxBytes: 1024 * 1024 });
         if (result.truncated || result.code !== 1) throw new AppError('conflict', 'git_failed');
         bytes += Buffer.byteLength(result.stdout);
-        if (bytes > 2 * 1024 * 1024) throw new AppError('too_large');
+        if (bytes > 2 * 1024 * 1024) { truncated = true; break; }
         files.push({ path: relative, patch: result.stdout.split('\n').map(line => /^(?:diff --git |--- |\+\+\+ |Binary files )/.test(line) ? line.replaceAll(left, 'left').replaceAll(right, 'right') : line).join('\n') });
       }
-      return { leftTask, rightTask, leftBranch, rightBranch, files };
+      return { leftTask, rightTask, leftBranch, rightBranch, files, ...(truncated ? { truncated } : {}) };
     });
   }
   async resolve(project: string, task: string | undefined, relative: string): Promise<void> {
