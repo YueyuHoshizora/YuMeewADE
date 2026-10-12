@@ -13,12 +13,12 @@ const { formatQuotaDuration, resetCountdownText, quotaCountdown, updateQuotaCoun
 const { t } = await import('../i18n/index.ts');
 
 test('quota duration rounds up to minutes using fixed English d h m units', () => {
-  assert.equal(formatQuotaDuration(0), '0d 0h 0m');
-  assert.equal(formatQuotaDuration(1), '0d 0h 1m');
-  assert.equal(formatQuotaDuration(60_001), '0d 0h 2m');
+  assert.equal(formatQuotaDuration(0), '0m');
+  assert.equal(formatQuotaDuration(1), '1m');
+  assert.equal(formatQuotaDuration(60_001), '2m');
   assert.equal(formatQuotaDuration(90_060_000), '1d 1h 1m');
-  assert.equal(formatQuotaDuration(3_600_000), '0d 1h 0m');
-  assert.equal(formatQuotaDuration(86_400_000), '1d 0h 0m');
+  assert.equal(formatQuotaDuration(3_600_000), '1h 0m');
+  assert.equal(formatQuotaDuration(86_400_000), '1d 0m');
 });
 
 test('missing or invalid resets have no countdown and elapsed resets await quota refresh', () => {

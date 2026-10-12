@@ -3,7 +3,9 @@ import { el } from './dom.ts';
 
 export function formatQuotaDuration(milliseconds: number): string {
   const minutes = Math.max(0, Math.ceil(milliseconds / 60_000));
-  return `${Math.floor(minutes / 1_440)}d ${Math.floor(minutes % 1_440 / 60)}h ${minutes % 60}m`;
+  const days = Math.floor(minutes / 1_440);
+  const hours = Math.floor(minutes % 1_440 / 60);
+  return `${days ? `${days}d ` : ''}${hours ? `${hours}h ` : ''}${minutes % 60}m`;
 }
 
 export function resetCountdownText(resetsAt: string, now = Date.now()): string | null {
