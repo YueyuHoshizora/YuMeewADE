@@ -1,7 +1,13 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { runLineProcess, captureCommand, windowsCommandLine, findExecutable } from './process.ts';
+import { runLineProcess, captureCommand, windowsCommandLine, findExecutable, minimalEnv } from './process.ts';
 import { setTimeout as delay } from 'node:timers/promises';
+
+test('Windows 的環境變數名稱不分大小寫：Path／SystemRoot 依白名單寫法放行，其他平台仍逐字比對', () => {
+  const source = { Path: 'C:\\Windows', SystemRoot: 'C:\\Windows', ComSpec: 'cmd.exe', Codex_Home: 'C:\\c', My_Var: 'x', lc_all: 'C', OPENAI_API_KEY: 'secret' };
+  assert.deepEqual(minimalEnv(['MY_VAR'], source, 'win32'), { PATH: 'C:\\Windows', SystemRoot: 'C:\\Windows', ComSpec: 'cmd.exe', CODEX_HOME: 'C:\\c', MY_VAR: 'x', lc_all: 'C', GIT_TERMINAL_PROMPT: '0' });
+  assert.deepEqual(minimalEnv(['MY_VAR'], source, 'linux'), { SystemRoot: 'C:\\Windows', ComSpec: 'cmd.exe', GIT_TERMINAL_PROMPT: '0' });
+});
 
 // 真實行程樹／系統 PID 不受 fake clock 控制，以短輪詢等 OS 回收。
 test('停止會終止持有 stdout 的孫行程並及時完成', { skip: process.platform === 'win32', timeout: 8000 }, async () => {

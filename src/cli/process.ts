@@ -10,12 +10,20 @@ const BASE_ENV = ['PATH', 'HOME', 'USER', 'LOGNAME', 'LANG', 'TERM', 'TMPDIR', '
 /** CLI 自己的設定目錄指標（不是憑證，但沒有它 CLI 會找不到登入狀態）。 */
 const CLI_HOME_ENV = ['CODEX_HOME', 'CLAUDE_CONFIG_DIR', 'GROK_HOME'];
 
-/** 只放行基本變數＋LC_*／XDG_*＋設定檔指定的名稱（安全節 8）。 */
-export function minimalEnv(passthrough: string[], source: NodeJS.ProcessEnv = process.env): NodeJS.ProcessEnv {
+/**
+ * 只放行基本變數＋LC_*／XDG_*＋設定檔指定的名稱（安全節 8）。Windows 的變數名稱不分大小寫，環境區塊裡通常是 `Path`，
+ * 所以在那裡以大寫比對並輸出白名單上的寫法；否則子行程會拿不到 PATH，連 CLI 本身都找不到。
+ */
+export function minimalEnv(passthrough: string[], source: NodeJS.ProcessEnv = process.env, platform: NodeJS.Platform = process.platform): NodeJS.ProcessEnv {
+  const caseless = platform === 'win32';
+  const fold = (name: string) => caseless ? name.toUpperCase() : name;
+  const allowed = new Map([...BASE_ENV, ...CLI_HOME_ENV, ...passthrough].map(name => [fold(name), name]));
   const out: NodeJS.ProcessEnv = {};
   for (const [k, v] of Object.entries(source)) {
     if (v === undefined) continue;
-    if (BASE_ENV.includes(k) || CLI_HOME_ENV.includes(k) || k.startsWith('LC_') || k.startsWith('XDG_') || passthrough.includes(k)) out[k] = v;
+    const key = fold(k);
+    const name = allowed.get(key) ?? (key.startsWith('LC_') || key.startsWith('XDG_') ? k : undefined);
+    if (name !== undefined) out[name] = v;
   }
   out['GIT_TERMINAL_PROMPT'] = '0';
   return out;
