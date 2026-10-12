@@ -11,13 +11,15 @@ import type { DebugSourceMap } from './debug-source-maps.ts';
 import type { DebugAction, DebugBreakpoint, DebugFrame, DebugLocation, DebugSession, DebugValue } from '../shared/execution-tools.ts';
 import type { ExecutionService } from './commands.ts';
 import { loopbackUrl } from './integrations.ts';
+import { DapDebugger } from './dap-debugger.ts';
+import type { DapLaunch, DapSession } from '../shared/dap.ts';
 
 function record(value: unknown): Record<string, unknown> { return value !== null && typeof value === 'object' && !Array.isArray(value) ? value as Record<string, unknown> : {}; }
 const text = (value: unknown): string => typeof value === 'string' ? value.slice(0, 8192) : '';
 function location(value: unknown): DebugLocation { const v = record(value); return { scriptId: text(v.scriptId), line: typeof v.lineNumber === 'number' ? v.lineNumber + 1 : 1, column: typeof v.columnNumber === 'number' ? v.columnNumber + 1 : 1 }; }
 interface Pending { resolve: (value: Record<string, unknown>) => void; reject: (reason: Error) => void; timer: NodeJS.Timeout }
 interface Entry { view: DebugSession; root: string; socket: WebSocket; next: number; pending: Map<number, Pending>; objects: Set<string>; breakpointPending: Set<string>; pauseVersion: number; closed: boolean; maps: Map<string, DebugSourceMap>; loading: Promise<void>[]; metadata?: string }
-export interface DebuggerOptions { metadataFile?: (project: string, task: string) => Promise<string>; beforeMutate?: (project: string, task: string) => Promise<void> }
+export interface DebuggerOptions { metadataFile?: (project: string, task: string) => Promise<string>; beforeMutate?: (project: string, task: string) => Promise<void>; beforeLaunch?: (project: string, task: string) => Promise<void> }
 
 /** Only attaches to inspectors started by this app; no arbitrary host, port, or remote evaluation endpoint. */
 export class DebuggerService {
@@ -26,7 +28,11 @@ export class DebuggerService {
   private readonly pendingRuns = new Set<string>();
   private closed = false;
   private readonly options: DebuggerOptions;
-  constructor(execution: ExecutionService, options: DebuggerOptions = {}) { this.execution = execution; this.options = options; }
+  private readonly dap: DapDebugger;
+  constructor(execution: ExecutionService, options: DebuggerOptions = {}) { this.execution = execution; this.options = options; this.dap = new DapDebugger(execution, options); }
+  launchDap(project: string, task: string, launch: DapLaunch): Promise<DapSession> { return this.dap.launch(project, task, launch); }
+  isRunning(project: string, task?: string): boolean { return this.dap.isRunning(project, task); }
+  isBusy(): boolean { return this.dap.isBusy() || this.pendingRuns.size > 0 || [...this.sessions.values()].some(e => !e.closed); }
   async attach(project: string, task: string, run: string): Promise<DebugSession> {
     if (this.closed) throw new AppError('unavailable');
     await this.options.beforeMutate?.(project, task);
@@ -148,8 +154,9 @@ export class DebuggerService {
     return e;
   }
   private snapshot(e: Entry): DebugSession { return structuredClone(e.view); }
-  state(project: string, task: string, id: string): DebugSession { return this.snapshot(this.get(project, task, id)); }
+  state(project: string, task: string, id: string): DebugSession { return this.dap.has(id) ? this.dap.state(project, task, id) : this.snapshot(this.get(project, task, id)); }
   async action(project: string, task: string, id: string, action: DebugAction): Promise<DebugSession> {
+    if (this.dap.has(id)) return this.dap.action(project, task, id, action);
     await this.options.beforeMutate?.(project, task);
     const current = this.get(project, task, id); await Promise.all(current.loading);
     const e = this.get(project, task, id);
@@ -157,6 +164,7 @@ export class DebuggerService {
     await this.rpc(e, `Debugger.${action}`); return this.snapshot(e);
   }
   async breakpoint(project: string, task: string, id: string, relative: string, line: number, expression?: string, persist = true, revision?: number): Promise<DebugSession> {
+    if (this.dap.has(id)) return this.dap.breakpoint(project, task, id, relative, line, expression, revision);
     await this.options.beforeMutate?.(project, task);
     const e = this.get(project, task, id); const condition = debugCondition(expression);
     if (revision !== undefined && (!Number.isSafeInteger(revision) || revision !== e.view.revision)) throw new AppError('conflict');
@@ -186,6 +194,7 @@ export class DebuggerService {
     } finally { e.breakpointPending.delete(reservation); }
   }
   async removeBreakpoint(project: string, task: string, id: string, breakpoint: string, revision?: number): Promise<DebugSession> {
+    if (this.dap.has(id)) return this.dap.removeBreakpoint(project, task, id, breakpoint, revision);
     await this.options.beforeMutate?.(project, task);
     const e = this.get(project, task, id);
     await Promise.all(e.loading);
@@ -199,6 +208,7 @@ export class DebuggerService {
     } finally { e.breakpointPending.delete(breakpoint); }
   }
   async variables(project: string, task: string, id: string, object: string): Promise<DebugValue[]> {
+    if (this.dap.has(id)) return this.dap.variables(project, task, id, object);
     const e = this.get(project, task, id); if (e.view.status !== 'paused' || !e.objects.has(object)) throw new AppError('bad_request');
     const version = e.pauseVersion;
     const result = await this.rpc(e, 'Runtime.getProperties', { objectId: object, ownProperties: true, generatePreview: false });
@@ -255,6 +265,7 @@ export class DebuggerService {
     });
   }
   async watch(project: string, task: string, id: string, frameId: string, expression: string): Promise<DebugValue> {
+    if (this.dap.has(id)) return this.dap.watch(project, task, id, frameId, expression);
     const parts = debugWatchPath(expression); const e = this.get(project, task, id);
     const frame = e.view.frames.find(f => f.id === frameId);
     if (e.view.status !== 'paused' || !frame) throw new AppError('bad_request');
@@ -276,7 +287,7 @@ export class DebuggerService {
     for (const pending of e.pending.values()) { clearTimeout(pending.timer); pending.reject(new AppError('unavailable')); } e.pending.clear();
     try { e.socket.close(); } catch { /* Already closed. */ }
   }
-  detach(project: string, task: string, id: string): void { this.disconnect(this.get(project, task, id)); }
-  close(): void { this.closed = true; for (const e of this.sessions.values()) this.disconnect(e); }
+  detach(project: string, task: string, id: string): void { if (this.dap.has(id)) this.dap.detach(project, task, id); else this.disconnect(this.get(project, task, id)); }
+  close(): void { this.closed = true; this.dap.close(); for (const e of this.sessions.values()) this.disconnect(e); }
   async stopAll(): Promise<void> { this.close(); }
 }

@@ -1,13 +1,14 @@
-import type { DebugAction, DebugSession, DebugValue, ExecutionRun } from '../../shared/types.ts';
+import type { DebugAction, DebugSession, DebugValue, ExecutionRun, DapLaunch, DapSession } from '../../shared/types.ts';
 import { query, request } from '../api.ts';
 import { t } from '../i18n/index.ts';
 import { button, el, field, input, row, run } from './dom.ts';
 
-export function embeddedDebugger(project: string, task: string, open?: (path: string, line: number) => void): { node: HTMLElement; attach: (run: string) => Promise<void>; dispose: () => void } {
+export function embeddedDebugger(project: string, task: string, open?: (path: string, line: number) => void): { node: HTMLElement; attach: (run: string) => Promise<void>; launch: (config: DapLaunch) => Promise<void>; dispose: () => void } {
   const node = el('section', 'card'); const controls = row(); const stack = el('div'); const variables = el('div'); const breakpoints = el('div'); const scripts = el('datalist'); scripts.id = `debug-scripts-${crypto.randomUUID()}`;
   const file = input(); file.setAttribute('list', scripts.id); const line = input('1'); line.type = 'number'; line.min = '1';
   const condition = input(); const watch = input(); const watchResult = el('code');
-  const status = el('p'); let session: DebugSession | undefined; let alive = true; let timer: number | undefined;
+  const risk = el('p', '', t('debug.risk')); const watchHelp = el('p', '', t('debug.watchGrammar'));
+  const status = el('p'); const capabilities = el('p'); let session: DebugSession | DapSession | undefined; let alive = true; let timer: number | undefined;
   const ids = () => ({ project, task, id: session!.id, revision: session!.revision });
   async function showVariables(object: string): Promise<void> {
     const values = await request<DebugValue[]>('/api/debugger/variables', { ...ids(), object });
@@ -21,6 +22,12 @@ export function embeddedDebugger(project: string, task: string, open?: (path: st
   function render(): void {
     if (!session || !alive) return;
     status.textContent = `${t(session.status === 'paused' ? 'tools.paused' : session.status === 'running' ? 'tools.running' : session.status === 'connecting' ? 'tools.connecting' : 'tools.closed')} · ${session.reason}`;
+    const dap = session && 'protocol' in session ? session as DapSession : undefined;
+    capabilities.textContent = dap ? `${t('dap.capabilities')} · ${t('dap.conditional')}: ${t(dap.capabilities.conditionalBreakpoints ? 'dap.supported' : 'dap.unsupported')} · ${t('dap.evaluate')}: ${t(dap.capabilities.evaluate ? 'dap.supported' : 'dap.unsupported')}${dap.diagnostic ? ` · ${t('dap.failure', { reason: t(`dap.${dap.diagnostic}`) })}` : ''}` : '';
+    condition.disabled = Boolean(dap && !dap.capabilities.conditionalBreakpoints);
+    watch.disabled = Boolean(dap && !dap.capabilities.evaluate);
+    risk.textContent = t(dap ? 'dap.expressionRisk' : 'debug.risk');
+    watchHelp.textContent = t(dap ? 'dap.expressionRisk' : 'debug.watchGrammar');
     stack.replaceChildren(el('h4', '', t('tools.stack')), ...session.frames.map(frame => {
       const script = session!.scripts.find(s => s.id === frame.location.scriptId);
       const source = frame.location.source; const target = source?.path ?? script?.path; const targetLine = source?.line ?? frame.location.line;
@@ -43,11 +50,12 @@ export function embeddedDebugger(project: string, task: string, open?: (path: st
   }
   const actions: { action: DebugAction; label: 'tools.pause' | 'tools.resume' | 'tools.stepOver' | 'tools.stepInto' | 'tools.stepOut' }[] = [{ action: 'pause', label: 'tools.pause' }, { action: 'resume', label: 'tools.resume' }, { action: 'stepOver', label: 'tools.stepOver' }, { action: 'stepInto', label: 'tools.stepInto' }, { action: 'stepOut', label: 'tools.stepOut' }];
   for (const action of actions) { const control = button(t(action.label), async () => { if (!session) return; session = await request<DebugSession>('/api/debugger/action', { ...ids(), action: action.action }); render(); }); control.dataset.action = action.action; control.disabled = true; controls.append(control); }
-  node.append(el('h3', '', t('tools.debugger')), el('p', '', t('debug.sourceMaps')), status, controls, field(t('tools.breakpointFile'), file), field(t('tools.breakpointLine'), line), field(t('debug.condition'), condition), el('p', '', t('debug.risk')), button(t('tools.breakpoint'), async () => { if (!session) return; session = await request<DebugSession>('/api/debugger/source-breakpoint', { ...ids(), path: file.value, line: Number(line.value), condition: condition.value }); render(); }), scripts, breakpoints, stack, variables, field(t('debug.watch'), watch), el('p', '', t('debug.watchGrammar')), button(t('debug.watch'), async () => {
+  node.append(el('h3', '', t('tools.debugger')), el('p', '', t('debug.sourceMaps')), status, controls, field(t('tools.breakpointFile'), file), field(t('tools.breakpointLine'), line), field(t('debug.condition'), condition), risk, button(t('tools.breakpoint'), async () => { if (!session) return; session = await request<DebugSession>('/api/debugger/source-breakpoint', { ...ids(), path: file.value, line: Number(line.value), condition: condition.value }); render(); }), scripts, breakpoints, stack, variables, field(t('debug.watch'), watch), watchHelp, button(t('debug.watch'), async () => {
     if (!session?.frames[0]) return;
     const value = await request<DebugValue>('/api/debugger/watch', { ...ids(), frame: session.frames[0].id, expression: watch.value });
     if (alive) watchResult.textContent = `${value.name}: ${value.value || value.type}`;
   }), watchResult);
+  node.append(capabilities, button(t('dap.stop'), async () => { if (!session) return; await request('/api/debugger/detach', ids()); await poll(); }));
   const gutter = (event: Event): void => {
     const detail: unknown = (event as CustomEvent).detail;
     if (!detail || typeof detail !== 'object') return;
@@ -67,8 +75,14 @@ export function embeddedDebugger(project: string, task: string, open?: (path: st
     if (!alive) { await request('/api/debugger/detach', ids()); return; }
     await poll();
   }
+  async function launch(config: DapLaunch): Promise<void> {
+    if (session) await request('/api/debugger/detach', ids());
+    clearTimeout(timer); session = await request<DapSession>('/api/debugger/dap/launch', { project, task, launch: config });
+    if (!alive) { await request('/api/debugger/detach', ids()); return; }
+    await poll();
+  }
   function dispose(): void { alive = false; clearTimeout(timer); window.removeEventListener('yumeewade:debug-gutter', gutter); window.dispatchEvent(new CustomEvent('yumeewade:debug-decoration', { detail: { project, task, run: session?.run, breakpoints: [] } })); if (session) void request('/api/debugger/detach', ids()).catch(() => undefined); }
-  return { node, attach, dispose };
+  return { node, attach, launch, dispose };
 }
 
 export function debuggerWorkbench(context: { project: string; task: string; open: (path: string, line: number) => void }): HTMLElement {
@@ -78,6 +92,16 @@ export function debuggerWorkbench(context: { project: string; task: string; open
     const list = await request<ExecutionRun[]>(query('/api/execution/list', { project: context.project, task: context.task }));
     runs.replaceChildren(...list.filter(r => r.kind === 'debug' && r.status === 'running').map(r => { const option = el('option'); option.value = r.id; option.textContent = `${r.command} · ${r.id}`; return option; }));
   }
+  const adapter = input(); const program = input(); const args = input('[]'); const launchBreakpoints = input('[]'); const stop = input(); stop.type = 'checkbox'; stop.checked = true;
+  const type = el('select'); for (const value of ['python', 'lldb']) { const option = el('option'); option.value = value; option.textContent = value === 'python' ? 'Python / debugpy' : 'LLDB'; type.append(option); }
+  const saved = el('select'); const name = input();
+  const storageKey = `yumeewade.dap.${context.project}.${context.task}`;
+  let configurations: Record<string, DapLaunch> = {};
+  try { const parsed: unknown = JSON.parse(localStorage.getItem(storageKey) ?? '{}'); if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) configurations = parsed as Record<string, DapLaunch>; } catch { /* Invalid local preferences are discarded, never launched. */ }
+  function refreshConfigurations(): void { saved.replaceChildren(...Object.keys(configurations).map(key => { const option = el('option'); option.value = key; option.textContent = key; return option; })); }
+  function configuration(): DapLaunch { return { adapter: JSON.parse(adapter.value) as string[], type: type.value, program: program.value, args: JSON.parse(args.value) as string[], breakpoints: JSON.parse(launchBreakpoints.value) as NonNullable<DapLaunch['breakpoints']>, stopOnEntry: stop.checked }; }
+  refreshConfigurations();
+  node.append(el('h3', '', t('dap.title')), el('p', '', t('dap.install')), field(t('dap.type'), type), field(t('dap.adapter'), adapter), el('p', '', t('dap.examples')), field(t('dap.program'), program), field(t('dap.args'), args), field(t('dap.initialBreakpoints'), launchBreakpoints), field(t('dap.stopOnEntry'), stop), field(t('dap.name'), name), button(t('common.save'), () => { if (!name.value.trim()) return; configurations[name.value.trim()] = configuration(); localStorage.setItem(storageKey, JSON.stringify(configurations)); refreshConfigurations(); }), field(t('dap.saved'), saved), button(t('dap.choose'), () => { const config = configurations[saved.value]; if (!config) return; adapter.value = JSON.stringify(config.adapter); type.value = config.type; program.value = config.program; args.value = JSON.stringify(config.args ?? []); launchBreakpoints.value = JSON.stringify(config.breakpoints ?? []); stop.checked = config.stopOnEntry ?? true; }), button(t('common.remove'), () => { delete configurations[saved.value]; localStorage.setItem(storageKey, JSON.stringify(configurations)); refreshConfigurations(); }), button(t('dap.launch'), () => panel.launch(configuration())));
   node.append(field(t('debug.run'), runs), button(t('debug.refresh'), refresh), button(t('debug.attach'), async () => { if (runs.value) await panel.attach(runs.value); }), panel.node);
   const observer = new MutationObserver(() => { if (!node.isConnected) { observer.disconnect(); panel.dispose(); } });
   queueMicrotask(() => { if (node.isConnected) observer.observe(document.body, { childList: true, subtree: true }); });
