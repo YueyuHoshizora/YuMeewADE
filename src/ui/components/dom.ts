@@ -60,7 +60,7 @@ export function modal(title: string, ...content: Node[]): void {
   const dialog = el('dialog', 'modal'); dialog.append(row(el('h2', '', title), button(t('common.close'), () => dialog.close())), ...content); dialog.addEventListener('close', () => dialog.remove()); document.body.append(dialog); dialog.showModal();
 }
 /** Escape、取消與關閉都會完成 Promise，不讓原生對話框阻塞 renderer。 */
-export function confirmModal(title: string, message: string, acceptLabel = t('common.save')): Promise<boolean> {
+export function confirmModal(title: string, message: string, acceptLabel: string): Promise<boolean> {
   const { promise, resolve } = Promise.withResolvers<boolean>();
   const dialog = el('dialog', 'modal decision-modal'); let accepted = false;
   dialog.append(el('h2', '', title), el('p', '', message), row(

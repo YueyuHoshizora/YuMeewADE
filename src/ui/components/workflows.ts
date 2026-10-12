@@ -81,14 +81,14 @@ export function workflowButton(context: ViewContext, project: string, task: stri
           modal(t('verify.run'), el('pre', '', JSON.stringify(verification, null, 2)));
         }));
         if ((result.step ?? index) < plan.steps.length) block.append(button(t('workflow.rerun'), async () => {
-          if (!await confirmModal(t('workflow.rerun'), t('workflow.preserve'))) return;
+          if (!await confirmModal(t('workflow.rerun'), t('workflow.preserve'), t('workflow.rerun'))) return;
           plan = await request<WorkflowPlan>('/api/task/workflow/rerun', { project, task, revision: plan.revision, from: result.step ?? index }); renderStatus();
         }));
         return block;
       }));
     }
     const save = button(t('common.save'), async () => {
-      if (!await confirmModal(t('workflow.title'), t('workflow.preserve'))) return;
+      if (!await confirmModal(t('workflow.title'), t('workflow.preserve'), t('common.save'))) return;
       const graph = editors.map(e => {
         const [node, outcome] = e.condition.value.trim().split(':');
         if (node && outcome !== 'success' && outcome !== 'approved' && outcome !== 'failure') throw new UserError(t('workflow.graph.condition'));
@@ -105,11 +105,11 @@ export function workflowButton(context: ViewContext, project: string, task: stri
     }, 'primary');
     const stop = button(t('chat.stop'), async () => { await request('/api/task/workflow/stop', { project, task }); await refresh(); });
     const approve = button(t('workflow.approveHuman'), async () => {
-      if (!await confirmModal(t('workflow.approveHuman'), t('workflow.approveConfirm'))) return;
+      if (!await confirmModal(t('workflow.approveHuman'), t('workflow.approveConfirm'), t('workflow.approveHuman'))) return;
       plan = await request<WorkflowPlan>('/api/task/workflow/approve', { project, task, revision: plan.revision, node: plan.steps.find(s => plan.nodeStates?.[s.id!] === 'human' && context.state.roles.roles[s.role]?.main.cli === '人')?.id, evidence: evidence.value }); renderStatus();
     });
     const rerunCurrent = button(t('workflow.rerun'), async () => {
-      if (!await confirmModal(t('workflow.rerun'), t('workflow.preserve'))) return;
+      if (!await confirmModal(t('workflow.rerun'), t('workflow.preserve'), t('workflow.rerun'))) return;
       const from = plan.steps.findIndex(step => ['pending', 'failed', 'human'].includes(plan.nodeStates?.[step.id!] ?? ''));
       plan = await request<WorkflowPlan>('/api/task/workflow/rerun', { project, task, revision: plan.revision, from }); renderStatus();
     });

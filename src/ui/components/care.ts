@@ -57,18 +57,18 @@ export function carePanel(context: ViewContext): HTMLElement {
     backups.replaceChildren(...entries.map(backup => row(
       el('span', '', `${backup.createdAt} · ${t(backup.complete ? 'care.complete' : 'care.partial')} · ${backup.externalCount} · ${backup.bytes.toLocaleString()}`),
       button(t('care.restore'), async () => {
-        if (!await confirmModal(t('care.restore'), t('care.restoreConfirm'))) return;
+        if (!await confirmModal(t('care.restore'), t('care.restoreConfirm'), t('care.restore'))) return;
         const restored = await request<{ root: string }>('/api/care/restore', { id: backup.id, destination: destination.value.trim() });
         const open = button(t('care.open'), async () => { await api.workspace(restored.root); await context.refresh(); location.hash = '#/'; });
         modal(t('care.restore'), el('p', '', restored.root), open);
       }),
       button(t('care.delete'), async () => {
-        if (!await confirmModal(t('care.delete'), `${t('care.deleteConfirm')} ${backup.id}`)) return;
+        if (!await confirmModal(t('care.delete'), `${t('care.deleteConfirm')} ${backup.id}`, t('care.delete'))) return;
         await request('/api/care/delete', { id: backup.id, confirmation: backup.id }); await refresh();
       }),
       button(t('care.export'), async () => {
         const secret = passwordHeaders(); if (!secret) return;
-        if (!await confirmModal(t('care.export'), t('care.secret'))) return;
+        if (!await confirmModal(t('care.export'), t('care.secret'), t('care.export'))) return;
         const response = await binary('/api/care/export', JSON.stringify({ id: backup.id }), { ...secret, 'Content-Type': 'application/json' });
         const url = URL.createObjectURL(await response.blob()); const link = el('a'); link.href = url; link.download = `${backup.id}.ymae`; link.click(); setTimeout(() => URL.revokeObjectURL(url), 60000);
       }),
@@ -77,13 +77,13 @@ export function carePanel(context: ViewContext): HTMLElement {
   const download = el('a', 'button', t('care.diagnostics')); download.href = '/api/care/diagnostics'; download.download = 'yumeewade-diagnostics.json';
   const panel = card(t('care.title'), el('p', '', t('care.risk')), field(t('care.network'), network), checked, status,
     el('p', '', t('care.scope')), el('p', 'warning', t('care.secret')), field(t('care.external'), external),
-    button(t('care.backup'), async () => { if (!await confirmModal(t('care.backup'), t('care.secret'))) return; await request('/api/care/backup', { includeExternal: external.checked }); await refresh(); }),
+    button(t('care.backup'), async () => { if (!await confirmModal(t('care.backup'), t('care.secret'), t('care.backup'))) return; await request('/api/care/backup', { includeExternal: external.checked }); await refresh(); }),
     button(t('care.list'), refresh), capacity, field(t('care.destination'), destination), backups,
     field(t('care.password'), password), el('p', '', t('care.passwordRule')),
     field(t('care.portableFile'), file), button(t('care.import'), async () => {
       const selected = file.files?.[0]; if (!selected) return;
       const secret = passwordHeaders(); if (!secret) return;
-      if (!await confirmModal(t('care.import'), t('care.restoreConfirm'))) return;
+      if (!await confirmModal(t('care.import'), t('care.restoreConfirm'), t('care.import'))) return;
       const response = await binary(`/api/care/import?destination=${encodeURIComponent(destination.value.trim())}`, selected, { ...secret, 'Content-Type': 'application/octet-stream' });
       const restored = await response.json() as { root: string };
       modal(t('care.import'), el('p', '', restored.root), button(t('care.open'), async () => { await api.workspace(restored.root); await context.refresh(); location.hash = '#/'; }));
@@ -91,7 +91,7 @@ export function carePanel(context: ViewContext): HTMLElement {
     }),
     field(t('care.schedule'), enabled), field(t('care.interval'), interval), field(t('care.retention'), retention),
     button(t('care.saveSchedule'), async () => {
-      if (enabled.checked && !await confirmModal(t('care.schedule'), t('care.secret'))) return;
+      if (enabled.checked && !await confirmModal(t('care.schedule'), t('care.secret'), t('care.saveSchedule'))) return;
       showSchedule(await request<CareLifecycle>('/api/care/schedule', { enabled: enabled.checked, intervalHours: Number(interval.value), retention: Number(retention.value), includeExternal: external.checked }));
     }), scheduleStatus,
     el('p', '', t('care.diagnosticScope')), download);

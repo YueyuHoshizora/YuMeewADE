@@ -22,7 +22,7 @@ export function projectTrustButton(project: string, task?: string): HTMLButtonEl
     }
     state.onchange = render;
     dialog.append(row(el('h2', '', t('trust.title')), button('×', () => dialog.close())), overview, el('p', 'warning', t('trust.warning')), field(t('trust.title'), state), overrides, button(t('common.save'), async () => {
-      if (!await confirmModal(t('trust.title'), t('trust.confirm'))) return;
+      if (!await confirmModal(t('trust.title'), t('trust.confirm'), t('common.save'))) return;
       const values: Record<string, boolean> = {};
       for (const [ai, choice] of choices) if (choice.value) values[ai] = choice.value === 'true';
       current = await request<ProjectTrustView>('/api/project/trust', { project, state: state.value, overrides: values, revision: current.revision, confirmed: true });
