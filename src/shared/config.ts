@@ -292,11 +292,11 @@ function cliSection(map: YamlMap, name: 'claude' | 'codex' | 'grok' | 'gemini'):
 function executionSection(map: YamlMap): Config['execution'] {
   const source = section(map, 'execution');
   const result: Config['execution'] = {};
-  for (const key of Object.keys(source)) if (!['ide', 'terminal', 'browser'].includes(key)) throw new ConfigError('execution 含未知欄位');
+  known(source, ['ide', 'terminal', 'browser'], 'execution');
   for (const key of ['ide', 'terminal', 'browser'] as const) {
     if (source[key] === undefined) continue;
     const tool = section(source, key);
-    if (Object.keys(tool).some(field => field !== 'command' && field !== 'args')) throw new ConfigError(`execution.${key} 含未知欄位`);
+    known(tool, ['command', 'args'], `execution.${key}`);
     const command = str(tool, 'command', '', `execution.${key}`);
     const args = strList(tool, 'args', [], `execution.${key}`);
     const placeholder = key === 'browser' ? '{url}' : '{cwd}';

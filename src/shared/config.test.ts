@@ -138,6 +138,8 @@ test('misspelled keys are rejected instead of silently falling back to defaults'
     // `__proto__` is just an unknown key, never a way to inject inherited settings.
     ['__proto__: { server: { port: 4999 } }\n', '__proto__'],
     ['server:\n  __proto__:\n    port: 1\n', 'server.__proto__'],
+    ['execution:\n  surprise: {}\n', 'execution.surprise'],
+    ["execution:\n  ide: { command: code, args: ['{cwd}'], argz: [] }\n", 'execution.ide.argz'],
   ] as const) {
     assert.throws(() => parseConfig(text, null), (error: unknown) => error instanceof ConfigError && error.message.startsWith(`${key} `), key);
   }
