@@ -1,4 +1,4 @@
-import type { AiPick, AppState, RoleInput, RoleSlot } from '../../shared/types.ts';
+import type { AiPick, AppState, RoleInput, RoleSlot, Settings } from '../../shared/types.ts';
 import { api } from '../api.ts';
 import { getLocale, hasMessage, LOCALES, localeName, setLocale, t, type Locale } from '../i18n/index.ts';
 import { aiPicker } from '../components/picker.ts';
@@ -72,22 +72,47 @@ export function settingsView(context: ViewContext, redraw: () => void): View {
   }
   node.append(aiSection);
   const modelsSection = card(t('settings.models'));
+  const modelPanels: ((state: AppState) => void)[] = [];
   for (const info of state.ais.filter(ai => ai.name !== 'mock')) {
     const panel = el('div', 'model-panel'); panel.append(el('h3', '', aiLabel(info.name))); const list = el('div', 'model-list');
-    let hidden = [...(state.settings.hiddenModels[info.name] ?? [])];
-    const oldOrder = state.settings.modelOrder[info.name] ?? [];
-    let order = [...oldOrder.filter(id => info.models.some(m => m.id === id)), ...info.models.filter(m => !oldOrder.includes(m.id)).map(m => m.id)];
-    async function save(): Promise<void> { await api.settings({ hiddenModels: { ...context.state.settings.hiddenModels, [info.name]: hidden }, modelOrder: { ...context.state.settings.modelOrder, [info.name]: order } }); await context.refresh(); }
+    // Every change starts from the latest state, not a copy taken when the page opened: the save replaces this AI's whole
+    // hidden list and order, so a stale copy would undo changes made in another window.
+    const current = (settings: Settings) => {
+      const hidden = [...(settings.hiddenModels[info.name] ?? [])];
+      const oldOrder = settings.modelOrder[info.name] ?? [];
+      return { hidden, order: [...oldOrder.filter(id => info.models.some(m => m.id === id)), ...info.models.filter(m => !oldOrder.includes(m.id)).map(m => m.id)] };
+    };
+    const key = (settings: Settings) => JSON.stringify(current(settings));
+    let shown = '';
+    async function save(patch: { hidden?: string[]; order?: string[] }): Promise<void> {
+      const saved = await api.settings({
+        ...(patch.hidden ? { hiddenModels: { ...context.state.settings.hiddenModels, [info.name]: patch.hidden } } : {}),
+        ...(patch.order ? { modelOrder: { ...context.state.settings.modelOrder, [info.name]: patch.order } } : {}),
+      });
+      // Our own change is already on screen; marking it shown keeps the refresh from redrawing away keyboard focus.
+      shown = key(saved);
+      await context.refresh();
+    }
     function render(): void {
+      const { hidden, order } = current(context.state.settings); shown = key(context.state.settings);
       list.replaceChildren(...order.map((id, at) => {
         const model = info.models.find(m => m.id === id)!; const check = input(); check.type = 'checkbox'; check.checked = !hidden.includes(id);
-        check.onchange = () => { void run(async () => { const before = [...hidden]; if (check.checked) hidden = hidden.filter(v => v !== id); else hidden.push(id); try { await save(); } catch (error) { hidden = before; check.checked = !check.checked; throw error; } }); };
-        async function move(direction: number): Promise<void> { const to = at + direction; if (to < 0 || to >= order.length) return; const before = [...order]; [order[at], order[to]] = [order[to]!, order[at]!]; try { await save(); render(); } catch (error) { order = before; throw error; } }
+        check.onchange = () => { void run(async () => {
+          const latest = current(context.state.settings).hidden.filter(v => v !== id);
+          try { await save({ hidden: check.checked ? latest : [...latest, id] }); } catch (error) { check.checked = !check.checked; throw error; }
+        }); };
+        async function move(direction: number): Promise<void> {
+          const latest = current(context.state.settings).order; const from = latest.indexOf(id); const to = from + direction;
+          if (from < 0 || to < 0 || to >= latest.length) return;
+          [latest[from], latest[to]] = [latest[to]!, latest[from]!];
+          await save({ order: latest }); render();
+        }
         const up = button('↑', () => move(-1)); up.setAttribute('aria-label', t('tree.up')); up.disabled = at === 0;
         const down = button('↓', () => move(1)); down.setAttribute('aria-label', t('tree.down')); down.disabled = at === order.length - 1;
         return row(field(model.label, check), el('code', 'muted', model.id), up, down);
       }));
     } render(); panel.append(list); modelsSection.append(panel);
+    modelPanels.push(source => { if (key(source.settings) !== shown) render(); });
   }
   node.append(modelsSection);
   const roles = card(t('settings.roles')); const roleList = el('div', 'role-list');
@@ -124,7 +149,7 @@ export function settingsView(context: ViewContext, redraw: () => void): View {
   };
   void run(async () => { const entries = await api.log(); if (!alive) return; for (const entry of entries) { const line = el('div', 'log-entry'); line.append(el('time', 'muted', localTime(entry.at)), el('strong', '', actionLabel(entry.action)), el('span', '', [entry.project, entry.task].filter(Boolean).join(' / '))); logs.append(line); } if (!entries.length) logs.append(el('p', 'muted', t('common.empty'))); }); node.append(card(t('settings.log'), logs));
   return { node, dispose: () => { alive = false; }, update: state => {
-    context.state = state; mcp.update(state);
+    context.state = state; mcp.update(state); for (const follow of modelPanels) follow(state);
     if (JSON.stringify(state.roles.roles) !== rolesBase && formValue() === rolesForm && !roleList.contains(document.activeElement)) buildRoles(state);
   } };
 }
