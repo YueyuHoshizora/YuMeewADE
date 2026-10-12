@@ -77,7 +77,7 @@ export function parseProposalEdits(output: string, text: string, selection: { fr
 }
 export class EditorProposalService {
   private readonly deps: Dependencies;
-  private readonly runs = new Map<string, { run?: CliRun; stopped: boolean; done: Promise<void>; info: RunningInfo }>();
+  private readonly runs = new Map<string, { run?: CliRun; stopped: boolean; committed?: boolean; done: Promise<void>; info: RunningInfo }>();
   private closed = false;
   constructor(deps: Dependencies) { this.deps = deps; }
   capabilities() { return providerCapabilities(this.deps.providers); }
