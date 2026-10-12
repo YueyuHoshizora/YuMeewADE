@@ -73,7 +73,8 @@ export class TaskLedger {
     const { data, body } = parseFrontmatter(await this.readRaw(project, id));
     const s = (k: string) => data[k] == null ? '' : String(data[k]);
     const memo = section(body, 'memo'), next = section(body, 'next');
-    const content = (part: BodySection) => part.start < 0 ? [] : part.rows.slice(part.start + 1, part.end).filter(row => row.trim() && !/^\s*<!--/.test(row));
+    // memo / next are one-line summaries for the UI, so the markdown list marker is dropped here; the full record keeps it.
+    const content = (part: BodySection) => part.start < 0 ? [] : part.rows.slice(part.start + 1, part.end).filter(row => row.trim() && !/^\s*<!--/.test(row)).map(row => row.replace(/^\s*[-*+]\s+/, ''));
     const due = typeof data['due'] === 'string' && validDue(data['due']) ? data['due'] : '';
     const tags = Array.isArray(data['tags']) ? [...new Set(data['tags'].filter(validTag))].slice(0, 32) : [];
     return { id, due, tags, title: s('title') || id, state: TASK_STATES.includes(s('state') as TaskState) ? s('state') as TaskState : '未開始', phase: s('phase'), role: s('role'), parent: s('parent'), kind: s('kind') === 'derived' ? 'derived' : 'main', derivedFrom: s('derivedFrom'), workspace: s('workspace') === 'direct' ? 'direct' : 'isolated', cli: s('cli') || s('owner'), model: s('model'), effort: s('effort'), question: s('question'), workdir: s('workdir'), mergeExcluded: data['mergeExcluded'] === true, updated: s('updated'), steps: parseSteps(body), memo: content(memo).at(-1) ?? '', next: content(next)[0] ?? '', ...(typeof data['issue'] === 'number' && Number.isSafeInteger(data['issue']) && data['issue'] > 0 ? { issue: data['issue'], issueUrl: /^https:\/\/[^\s]+$/.test(s('issueUrl')) ? s('issueUrl') : '' } : {}) };

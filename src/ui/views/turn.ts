@@ -27,7 +27,7 @@ export function turnView(context: ViewContext): View {
       if (selected === 'reply') item.append(el('p', '', waiting ? t('permission.waiting') : task.question));
       else {
         // Progress and the AI's own "next" line help decide between approving and asking to continue.
-        const progress = [task.steps.length ? t('task.steps', { done: task.steps.filter(step => step.done).length, total: task.steps.length }) : '', task.next ? labelValue(t('tasks.next'), task.next.replace(/^\s*[-*+]\s+/, '')) : ''].filter(Boolean);
+        const progress = [task.steps.length ? t('task.steps', { done: task.steps.filter(step => step.done).length, total: task.steps.length }) : '', task.next ? labelValue(t('tasks.next'), task.next) : ''].filter(Boolean);
         if (progress.length) item.append(el('p', 'muted', progress.join(' · ')));
         item.append(row(button(t('turn.approve'), async () => { await request('/api/task/completion', { project: project.id, task: task.id, action: 'approve' }); await context.refresh(); }, 'primary'), button(t('turn.continue'), async () => { await request('/api/task/completion', { project: project.id, task: task.id, action: 'continue' }); await context.refresh(); })));
       }

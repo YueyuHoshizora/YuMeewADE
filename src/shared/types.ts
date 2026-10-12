@@ -159,9 +159,9 @@ export interface Task {
   updated: string;
   /** 「## 步驟」清單。 */
   steps: Step[];
-  /** 「## 備註」最後一行（完整內容在檔案裡）。 */
+  /** 「## 備註」最後一行，去掉清單符號（完整內容在檔案裡）。 */
   memo: string;
-  /** 「## 下一步」第一行。 */
+  /** 「## 下一步」第一行，去掉清單符號。 */
   next: string;
   issue?: number;
   issueUrl?: string;

@@ -75,6 +75,8 @@ test('舊規則的「已完成的工作」標題與範本空標題並存時合�
   const sections = await ledger.sections('P', task.id);
   assert.deepEqual(sections.done, ['- legacy']);
   assert.deepEqual(sections.next, ['- go', '### 細節', '- sub']);
+  // The one-line summary on the task drops the list marker; the record above keeps the raw line.
+  assert.equal((await ledger.get('P', task.id)).next, 'go');
 }));
 
 test('沒指定階段的子作業沿用上層作業的階段，明確指定（含空字串）則照指定', () => withTmpWorkspace(async ws => {

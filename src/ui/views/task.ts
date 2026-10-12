@@ -975,9 +975,7 @@ export function taskView(
     if (metadata?.key !== metadataKey) metadata = { key: metadataKey, node: metadataEditor(project.id, task, () => context.refresh()) };
     const focused = footer.contains(document.activeElement) ? document.activeElement as HTMLElement : null;
     // The ledger keeps the AI's "next" section and the memo log; show the first next step and the newest memo instead of hiding them in a tooltip.
-    // Both sections hold raw markdown lines; drop the list marker the ledger writes in front of each entry.
-    const plain = (line: string) => line.replace(/^\s*[-*+]\s+/, '');
-    const notes = [task.next && labelValue(t('tasks.next'), plain(task.next)), task.memo && labelValue(t('tasks.latestMemo'), plain(task.memo))].filter(Boolean) as string[];
+    const notes = [task.next && labelValue(t('tasks.next'), task.next), task.memo && labelValue(t('tasks.latestMemo'), task.memo)].filter(Boolean) as string[];
     footer.replaceChildren(...notes.map(text => { const line = el('p', 'muted task-notes', text); line.title = text; return line; }), row(state, phase, detail, memo, leaveMemo), record, metadata.node);
     // Rebuilt step buttons are found again by label, so ↑/↓ keeps keyboard focus on the moved step.
     const label = focused?.getAttribute('aria-label');
