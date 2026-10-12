@@ -10,9 +10,12 @@ export function embeddedDebugger(project: string, task: string, open?: (path: st
   const risk = el('p', '', t('debug.risk')); const watchHelp = el('p', '', t('debug.watchGrammar'));
   const status = el('p'); const capabilities = el('p'); let session: DebugSession | DapSession | undefined; let alive = true; let timer: number | undefined;
   const ids = () => ({ project, task, id: session!.id, revision: session!.revision });
+  let valueEpoch = 0; let variablesRequest = 0; let valueContext = '';
+  function clearValues(): void { valueEpoch++; variables.replaceChildren(); watchResult.textContent = ''; }
   async function showVariables(object: string): Promise<void> {
+    const epoch = valueEpoch; const serial = ++variablesRequest;
     const values = await request<DebugValue[]>('/api/debugger/variables', { ...ids(), object });
-    if (!alive) return;
+    if (!alive || epoch !== valueEpoch || serial !== variablesRequest) return;
     variables.replaceChildren(el('h4', '', t('tools.variables')), ...values.map(value => {
       const item = row(el('code', '', `${value.name}: ${value.value || value.type}`));
       if (value.objectId) item.append(button(t('tools.expand'), () => showVariables(value.objectId!)));
@@ -25,6 +28,8 @@ export function embeddedDebugger(project: string, task: string, open?: (path: st
     const snapshot = JSON.stringify(session);
     if (snapshot === renderedSession) return;
     renderedSession = snapshot;
+    const context = JSON.stringify([session.id, session.status, session.frames]);
+    if (context !== valueContext) { valueContext = context; clearValues(); }
     status.textContent = `${t(session.status === 'paused' ? 'tools.paused' : session.status === 'running' ? 'tools.running' : session.status === 'connecting' ? 'tools.connecting' : 'tools.closed')} · ${session.reason}`;
     const dap = session && 'protocol' in session ? session as DapSession : undefined;
     capabilities.textContent = dap ? `${t('dap.capabilities')} · ${labelValue(t('dap.conditional'), t(dap.capabilities.conditionalBreakpoints ? 'dap.supported' : 'dap.unsupported'))} · ${labelValue(t('dap.evaluate'), t(dap.capabilities.evaluate ? 'dap.supported' : 'dap.unsupported'))}${dap.diagnostic ? ` · ${t('dap.failure', { reason: t(`dap.${dap.diagnostic}`) })}` : ''}` : '';
@@ -47,7 +52,6 @@ export function embeddedDebugger(project: string, task: string, open?: (path: st
     for (const control of controls.querySelectorAll<HTMLButtonElement>('button[data-action]')) setLocked(control, control.dataset.action === 'pause' ? session.status !== 'running' : session.status !== 'paused');
     const live = !['closed', 'failed'].includes(session.status);
     setLocked(addBreakpoint, !live); setLocked(detach, !live); setLocked(watchButton, !live || session.status !== 'paused' || watch.disabled);
-    if (session.status !== 'paused') variables.replaceChildren();
   }
   async function poll(): Promise<void> {
     if (!alive || !session) return;
@@ -55,15 +59,16 @@ export function embeddedDebugger(project: string, task: string, open?: (path: st
     finally { if (alive && session && !['closed', 'failed'].includes(session.status)) timer = window.setTimeout(() => { void run(poll); }, 250); }
   }
   const actions: { action: DebugAction; label: 'tools.pause' | 'tools.resume' | 'tools.stepOver' | 'tools.stepInto' | 'tools.stepOut' }[] = [{ action: 'pause', label: 'tools.pause' }, { action: 'resume', label: 'tools.resume' }, { action: 'stepOver', label: 'tools.stepOver' }, { action: 'stepInto', label: 'tools.stepInto' }, { action: 'stepOut', label: 'tools.stepOut' }];
-  for (const action of actions) { const control = button(t(action.label), async () => { if (!session) return; session = await request<DebugSession>('/api/debugger/action', { ...ids(), action: action.action }); render(); }); control.dataset.action = action.action; setLocked(control, true); controls.append(control); }
+  for (const action of actions) { const control = button(t(action.label), async () => { if (!session) return; clearValues(); session = await request<DebugSession>('/api/debugger/action', { ...ids(), action: action.action }); render(); }); control.dataset.action = action.action; setLocked(control, true); controls.append(control); }
   // Session-bound actions stay disabled until render() sees a live session, instead of silently doing nothing.
   const addBreakpoint = button(t('tools.breakpoint'), async () => { if (!session) return; session = await request<DebugSession>('/api/debugger/source-breakpoint', { ...ids(), path: file.value, line: Number(line.value), condition: condition.value }); render(); });
   const watchButton = button(t('debug.watch'), async () => {
     if (!session?.frames[0]) return;
+    const epoch = valueEpoch;
     const value = await request<DebugValue>('/api/debugger/watch', { ...ids(), frame: session.frames[0].id, expression: watch.value });
-    if (alive) watchResult.textContent = `${value.name}: ${value.value || value.type}`;
+    if (alive && epoch === valueEpoch) watchResult.textContent = `${value.name}: ${value.value || value.type}`;
   });
-  const detach = button(t('dap.stop'), async () => { if (!session) return; await request('/api/debugger/detach', ids()); await poll(); });
+  const detach = button(t('dap.stop'), async () => { if (!session) return; clearValues(); await request('/api/debugger/detach', ids()); await poll(); });
   for (const control of [addBreakpoint, watchButton, detach]) setLocked(control, true);
   node.append(el('h3', '', t('tools.debugger')), el('p', '', t('debug.sourceMaps')), status, controls, field(t('tools.breakpointFile'), file), field(t('tools.breakpointLine'), line), field(t('debug.condition'), condition), risk, addBreakpoint, scripts, breakpoints, stack, variables, field(t('debug.watch'), watch), watchHelp, watchButton, watchResult);
   node.append(capabilities, detach);
@@ -81,12 +86,14 @@ export function embeddedDebugger(project: string, task: string, open?: (path: st
   };
   window.addEventListener('yumeewade:debug-gutter', gutter);
   async function attach(run: string): Promise<void> {
+    clearValues();
     if (session) await request('/api/debugger/detach', ids());
     clearTimeout(timer); session = await request<DebugSession>('/api/debugger/attach', { project, task, run });
     if (!alive) { await request('/api/debugger/detach', ids()); return; }
     await poll();
   }
   async function launch(config: DapLaunch): Promise<void> {
+    clearValues();
     if (session) await request('/api/debugger/detach', ids());
     clearTimeout(timer); session = await request<DapSession>('/api/debugger/dap/launch', { project, task, launch: config });
     if (!alive) { await request('/api/debugger/detach', ids()); return; }
