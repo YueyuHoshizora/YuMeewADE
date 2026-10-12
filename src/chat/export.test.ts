@@ -12,7 +12,9 @@ test('Markdown export includes turn metadata, usage and only image basenames', (
   ];
   const text = formatTranscript('Task', rows, '/private/work');
   assert.ok(text.startsWith('# Task\n\n## 你'));
-  assert.match(text, /2026-10-11T\d{2}:\d{2}:56\.000[+-]\d{2}:\d{2}/u);
+  // Local time with its offset, which must still name the same instant (in UTC+14 the local date is already the 12th).
+  const stamp = /\n(\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}[+-]\d{2}:\d{2})\n/u.exec(text)?.[1];
+  assert.equal(new Date(stamp!).toISOString(), '2026-10-11T12:34:56.000Z');
   assert.match(text, /模型／思考：m \/ high/u);
   assert.match(text, /- a.png\n- b.png/u);
   assert.match(text, /輸入 10／輸出 20／快取 3/u);
