@@ -19,6 +19,13 @@ export function registerVerifyRoutes(router: Router, app: App): void {
 
 export function registerTestExplorerRoutes(router: Router, app: App): void {
   router.get('/api/task/tests', async ({ query }) => app.testExplorer.state(reqString(query, 'project', 120), reqString(query, 'task', 120)));
+  router.post('/api/task/tests/cancel', async ({ body }) => {
+    const project = reqString(body, 'project', 120), task = reqString(body, 'task', 120);
+    await app.trust.assertExecutable(project);
+    if (!app.testExplorer.isRunning(project, task)) throw new AppError('conflict');
+    app.verify.cancel(project, task);
+    return { ok: true };
+  });
   router.post('/api/task/tests/configure', async ({ body }) => {
     const project = reqString(body, 'project', 120), task = reqString(body, 'task', 120);
     await app.trust.assertExecutable(project);

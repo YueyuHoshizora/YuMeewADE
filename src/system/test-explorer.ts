@@ -2,6 +2,7 @@ import { createHash, randomUUID } from 'node:crypto';
 import { promises as fs } from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
+import os from 'node:os';
 import type { VerifyService } from '../git/verify.ts';
 import { verificationFingerprint } from '../git/verification-fingerprint.ts';
 import type { Workspace } from '../ledger/workspace.ts';
@@ -10,6 +11,9 @@ import type { TaskLedger } from '../ledger/tasks.ts';
 import { AppError } from '../shared/errors.ts';
 import { atomicWrite, isInside, withFileLocks } from '../shared/fsx.ts';
 import type { TestCaseNode, TestExplorerRun, TestExplorerState, TestRunnerConfiguration } from '../shared/test-explorer.ts';
+import { frameworkCommand, parseFrameworkReport } from './test-frameworks.ts';
+import { parseVerificationInputModel } from '../shared/verification.ts';
+import type { VerifyResult } from '../shared/types.ts';
 
 /** Node's indented TAP: subtest declarations precede children and the parent result. */
 export function parseNodeTap(output: string, root: string): TestCaseNode[] {
@@ -96,13 +100,21 @@ export class TestExplorerService {
   private configuration(value: unknown): TestRunnerConfiguration {
     if (!value || typeof value !== 'object') throw new AppError('bad_request');
     const v = value as TestRunnerConfiguration;
-    if (typeof v.name !== 'string' || !v.name.trim() || v.name.length > 80 || /[\0\r\n]/u.test(v.name) || !Array.isArray(v.files) || !v.files.length || v.files.length > 100 || v.files.some(file => typeof file !== 'string' || file.length > 4096 || !file || /^[\/-]/u.test(file) || /[\0\r\n*?]/u.test(file) || file.split(/[\\/]/u).includes('..'))) throw new AppError('bad_request');
-    return { name: v.name, files: [...new Set(v.files)] };
+    if (typeof v.name !== 'string' || !v.name.trim() || v.name.length > 80 || /[\0\r\n]/u.test(v.name) || !Array.isArray(v.files) || !v.files.length || v.files.length > 100 || v.files.some(file => typeof file !== 'string' || file.length > 4096 || !file || /^[\/-]/u.test(file) || /[\\\0\r\n*?:]/u.test(file) || file.split('/').some(part => part === '..' || part === '.git' || !part))) throw new AppError('bad_request');
+    const framework = v.framework ?? 'node';
+    if (!['node', 'vitest', 'jest', 'pytest', 'go'].includes(framework)) throw new AppError('bad_request');
+    if (v.config !== undefined && (typeof v.config !== 'string' || !v.config || v.config.length > 4096 || /^[\/-]/u.test(v.config) || /[\\\0\r\n*?]/u.test(v.config) || v.config.split('/').some(part => part === '..' || part === '.git'))) throw new AppError('bad_request');
+    if (framework === 'go' && v.config) throw new AppError('bad_request');
+    return { name: v.name, files: [...new Set(v.files)], framework, ...(v.config ? { config: v.config } : {}) };
   }
   async save(project: string, task: string, value: unknown, revision: string): Promise<TestExplorerState> {
     if (this.opts.isRunning(project, task) || this.isRunning(project, task)) throw new AppError('conflict');
     const config = this.configuration(value); const root = await this.cwd(project, task);
-    for (const file of config.files) { const real = await fs.realpath(path.resolve(root, file)); if (!isInside(root, real) || !(await fs.stat(real)).isFile()) throw new AppError('bad_request'); }
+    for (const file of [...config.files, ...(config.config ? [config.config] : [])]) {
+      const real = await fs.realpath(path.resolve(root, file));
+      const stat = await fs.stat(real);
+      if ((real !== root && !isInside(root, real)) || !(config.files.includes(file) && (config.framework === 'go' || config.framework === 'pytest') ? stat.isFile() || stat.isDirectory() : stat.isFile())) throw new AppError('bad_request');
+    }
     const file = await this.file(project, task);
     await withFileLocks([this.opts.ws.projectFile(project), file], async () => {
       const state = await this.state(project, task);
@@ -113,7 +125,7 @@ export class TestExplorerService {
     });
     return this.state(project, task);
   }
-  /** Explicit discovery executes the authored Node configuration; no regex guesses test names. */
+  /** Discovery is an explicit trusted execution; case names come only from runner reports. */
   async run(project: string, task: string, runner: string, selection?: string): Promise<TestExplorerRun> {
     const key = JSON.stringify([project, task]);
     if (this.pending.has(key) || this.opts.isRunning(project, task)) throw new AppError('conflict');
@@ -127,21 +139,53 @@ export class TestExplorerService {
       const find = (nodes: TestCaseNode[]): void => { for (const node of nodes) { if (node.fullName === selection) matches.push(node); find(node.children); } };
       if (selection) {
         find([...state.history].reverse().find(run => run.runner === runner && !run.selection)?.tree ?? []);
-        // Node's name filter cannot distinguish duplicate full names; refuse a fake single rerun.
+        // Name-filter runners cannot distinguish duplicate full names; never fake a single rerun.
         if (matches.length !== 1) throw new AppError('bad_request');
         selected = matches[0];
       }
-      const root = await this.cwd(project, task); const configuration = JSON.stringify(config);
-      for (const file of config.files) { const real = await fs.realpath(path.resolve(root, file)); if (!isInside(root, real) || !(await fs.stat(real)).isFile()) throw new AppError('bad_request'); }
-      const before = await verificationFingerprint(root, configuration);
-      const escaped = selected?.fullName.replace(/[.*+?^${}()|[\]\\]/gu, '\\$&');
-      const result = await this.opts.verify.runNodeTests(project, task, config.files.map(file => `./${file}`), escaped ? `^${escaped}${selected?.children.length ? '(?: |$)' : '$'}` : undefined);
+      const root = await this.cwd(project, task);
+      const projectModel = parseVerificationInputModel((await this.opts.projects.get(project)).verificationInputs);
+      const configuration = JSON.stringify([config, projectModel]);
+      for (const file of [...config.files, ...(config.config ? [config.config] : [])]) {
+        const real = await fs.realpath(path.resolve(root, file)); const stat = await fs.stat(real);
+        if ((real !== root && !isInside(root, real)) || !(config.files.includes(file) && (config.framework === 'go' || config.framework === 'pytest') ? stat.isFile() || stat.isDirectory() : stat.isFile())) throw new AppError('bad_request');
+      }
+      if (config.framework === 'pytest' && selected?.file) {
+        const real = await fs.realpath(path.resolve(root, selected.file));
+        if (!isInside(root, real) || !(await fs.stat(real)).isFile() || !config.files.some(file => file === '.' || selected.file === file || selected.file?.startsWith(`${file}/`))) throw new AppError('bad_request');
+      }
+      const before = await verificationFingerprint(root, configuration, projectModel);
+      const temporary = await fs.mkdtemp(path.join(os.tmpdir(), 'yumeewade-tests-'));
+      let result: VerifyResult;
+      let tree: TestCaseNode[] = [];
+      try {
+        const report = path.join(temporary, 'report');
+        const argv = await frameworkCommand(root, config, report, selected);
+        result = await this.opts.verify.runFrameworkTests(project, task, argv.command, argv.args);
+        if (config.framework === 'pytest' && /No module named pytest/u.test(result.output)) throw new AppError('unavailable', 'cli_unavailable', { field: 'pytest' });
+        if (!result.truncated && !result.timedOut) {
+          if (!config.framework || config.framework === 'node') tree = parseNodeTap(result.output, root);
+          else if (config.framework === 'go') {
+            const module = /^\s*module\s+(\S+)/mu.exec(await fs.readFile(path.join(root, 'go.mod'), 'utf8'))?.[1];
+            tree = parseFrameworkReport('go', result.output, root, module);
+          }
+          else {
+            const stat = await fs.lstat(report).catch(() => null);
+            if (stat?.isFile() && !stat.isSymbolicLink() && stat.size <= 4 * 1024 * 1024) tree = parseFrameworkReport(config.framework, await fs.readFile(report, 'utf8'), root);
+          }
+        }
+      } finally { await fs.rm(temporary, { recursive: true, force: true }); }
+      const cases: TestCaseNode[] = [];
+      const collectCases = (nodes: TestCaseNode[]): void => { for (const node of nodes) { cases.push(node); collectCases(node.children); } };
+      collectCases(tree);
+      if (!cases.length || cases.some(node => node.status === 'unknown') || (selection && !cases.some(node => node.fullName === selection && node.status !== 'skipped'))) result.ok = false;
       const current = await this.state(project, task);
       const currentConfig = current.configurations.find(c => c.name === runner);
-      const after = await verificationFingerprint(await this.cwd(project, task), JSON.stringify(currentConfig)).catch(() => null);
+      const currentModel = parseVerificationInputModel((await this.opts.projects.get(project)).verificationInputs);
+      const after = await verificationFingerprint(await this.cwd(project, task), JSON.stringify([currentConfig, currentModel]), currentModel).catch(() => null);
       if (result.output.length > 65536) { result.output = result.output.slice(-65536); result.truncated = true; }
       result.drifted = before !== after; if (result.drifted) result.ok = false;
-      const run: TestExplorerRun = { id: randomUUID(), at: new Date().toISOString(), runner, ...(selection ? { selection } : {}), before, after, result, tree: result.truncated ? [] : parseNodeTap(result.output, root) };
+      const run: TestExplorerRun = { id: randomUUID(), at: new Date().toISOString(), runner, ...(selection ? { selection } : {}), before, after, result, tree };
       const file = await this.file(project, task, true);
       await withFileLocks([this.opts.ws.projectFile(project), file], async () => {
         await this.opts.tasks.get(project, task);
