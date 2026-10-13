@@ -25,7 +25,8 @@ export function registerChatRoutes(router: Router, app: App): void {
     const t = reqString(query, 'task', 100);
     const task = await app.tasks.get(p, t);
     const [rows, sections] = await Promise.all([app.store.readLog(p, t), app.tasks.sections(p, t)]);
-    const text = formatTranscript(task.title, rows, app.ws.root, query.get('tools') === '1', { steps: task.steps, sections }, os.homedir());
+    const real = (folder: string) => fs.realpath(folder).catch(() => folder);
+    const text = formatTranscript(task.title, rows, [app.ws.root, await real(app.ws.root)], query.get('tools') === '1', { steps: task.steps, sections }, [os.homedir(), await real(os.homedir())]);
     const filename = encodeURIComponent(`${task.title}.md`).replace(/['()*]/gu, c => `%${c.charCodeAt(0).toString(16).toUpperCase()}`);
     res.writeHead(200, {
       'Content-Type': 'text/markdown; charset=utf-8',

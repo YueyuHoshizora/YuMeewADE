@@ -72,3 +72,14 @@ test('Markdown export masks the home folder after the workspace, only as a whole
   assert.match(text, /^# Task in ~\/Code\n/u);
   assert.match(text, /See \[工作區\]\/Projects\/P\/a\.ts, ~\/Code\/x\.ts and \(~\)\. Not \/Users\/alice\/y\.ts/u);
 });
+
+test('every spelling of the workspace root is masked: realpath, and Windows forward-slash and JSON-escaped forms', () => {
+  const rows: ChatRow[] = [
+    { role: 'assistant', at: 'now', ai: 'codex', request: 'r', ms: 1, text: 'Edited /private/var/ws/Projects/P/a.ts and /var/ws/Projects/P/b.ts' },
+    { role: 'event', at: 'now', tool: true, text: 'Read C:/Users/Alice/work/Projects/P/a.ts {"file_path":"C:\\\\Users\\\\Alice\\\\work\\\\Projects\\\\P\\\\a.ts"} C:\\Users\\Alice\\work\\x' },
+  ];
+  const posix = formatTranscript('Task', rows.slice(0, 1), ['/var/ws', '/private/var/ws']);
+  assert.match(posix, /Edited \[工作區\]\/Projects\/P\/a\.ts and \[工作區\]\/Projects\/P\/b\.ts/u);
+  const windows = formatTranscript('Task', rows.slice(1), 'C:\\Users\\Alice\\work', true);
+  assert.ok(!windows.includes('Alice'), windows);
+});

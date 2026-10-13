@@ -7,16 +7,17 @@ const RECORD_HEADINGS: [keyof TaskSections, string][] = [['done', '做了什麼'
 /**
  * `ledger` is the task file's steps and free-text sections; whatever has content precedes the conversation.
  * The export is meant to be handed to someone else: the workspace root and then the home folder (account name) are masked.
+ * Each may be given in several spellings (the configured path and its realpath: a CLI reports the resolved one).
  */
-export function formatTranscript(title: string, rows: ChatRow[], workspaceRoot: string, tools = false, ledger?: { steps: Step[]; sections: TaskSections }, home = ''): string {
+export function formatTranscript(title: string, rows: ChatRow[], workspaceRoot: string | readonly string[], tools = false, ledger?: { steps: Step[]; sections: TaskSections }, home: string | readonly string[] = ''): string {
   // Only a whole path segment counts: `/Users/al` must not eat the start of `/Users/alice`, nor `/tmp/work` of `/tmp/work-other`.
   const segment = (root: string) => new RegExp(`${root.replace(/[\\^$.*+?()[\]{}|]/gu, '\\$&')}(?![\\p{L}\\p{N}_-]|\\.[\\p{L}\\p{N}_-])`, 'gu');
-  const workspacePattern = workspaceRoot ? segment(workspaceRoot) : undefined;
-  const homePattern = home.length > 1 ? segment(home) : undefined;
-  const safe = (text: string) => {
-    const masked = workspacePattern ? text.replace(workspacePattern, '[工作區]') : text;
-    return homePattern ? masked.replace(homePattern, '~') : masked;
-  };
+  // A Windows path also appears with forward slashes and JSON-escaped (tool arguments); longer spellings are masked first.
+  const patterns = (roots: string | readonly string[]) => [...new Set((typeof roots === 'string' ? [roots] : roots).filter(root => root.length > 1)
+    .flatMap(root => root.includes('\\') ? [root, root.replaceAll('\\', '/'), root.replaceAll('\\', '\\\\')] : [root]))]
+    .sort((a, b) => b.length - a.length).map(segment);
+  const workspacePatterns = patterns(workspaceRoot); const homePatterns = patterns(home);
+  const safe = (text: string) => homePatterns.reduce((masked, pattern) => masked.replace(pattern, '~'), workspacePatterns.reduce((masked, pattern) => masked.replace(pattern, '[工作區]'), text));
   const block = (text: string) => closeFence(safe(text));
   const sections = [`# ${safe(title).replace(/[\r\n]/gu, ' ')}`];
   const record = [
