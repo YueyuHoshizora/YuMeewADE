@@ -331,6 +331,52 @@ test('editor LSP exposes completion hover formatting rename actions and project 
   } finally { editor.dispose(); }
 }));
 
+function protocolFixture(response: string): string {
+  return String.raw`
+    let buffer = Buffer.alloc(0); const documents = new Map();
+    const send = message => { const body = JSON.stringify({jsonrpc:'2.0', ...message}); process.stdout.write('Content-Length: '+Buffer.byteLength(body)+'\r\n\r\n'+body); };
+    const at = (line, character) => ({line, character});
+    const edit = (line, start, end, newText) => ({range:{start:at(line,start),end:at(line,end)},newText});
+    process.stdin.on('data', chunk => { buffer = Buffer.concat([buffer,chunk]); for (;;) {
+      const end = buffer.indexOf('\r\n\r\n'); if (end < 0) return;
+      const size = Number(/Content-Length:\s*(\d+)/i.exec(buffer.subarray(0,end).toString())[1]);
+      if (buffer.length < end+4+size) return;
+      const message = JSON.parse(buffer.subarray(end+4,end+4+size).toString()); buffer=buffer.subarray(end+4+size);
+      if (message.method==='textDocument/didOpen'||message.method==='textDocument/didChange') documents.set(message.params.textDocument.uri,message.params.textDocument.version);
+      if (!message.id) continue;
+      const uri = message.params.textDocument?.uri; const version = documents.get(uri);
+      const result = message.method==='initialize' ? {capabilities:{}} : (${response});
+      send({id:message.id,result});
+    }});
+  `;
+}
+
+test('versioned rename and code actions reject stale dirty-draft offsets', () => withTmpWorkspace(async ws => {
+  const projects = new ProjectLedger(ws); const tasks = new TaskLedger(ws); await projects.create({ name: 'P' });
+  const file = path.join(ws.projectDir('P'), 'space #%.ts'); await fs.writeFile(file, 'old');
+  const script = protocolFixture(`message.method==='textDocument/definition' ? null : (() => {
+    const mode = message.params.newName; const changes = {documentChanges:[{textDocument:{uri,version: mode==='current' ? version : mode==='unversioned' ? null : version-1},edits:[edit(0,mode==='stale' ? 0 : 3,mode==='stale' ? 3 : 6,'NEW')]}]};
+    return message.method==='textDocument/codeAction' ? [{title:'Fix',edit:{documentChanges:[{textDocument:{uri,version:version-1},edits:[edit(0,0,3,'NEW')]}]}}] : changes;
+  })()`);
+  const editor = new EditorService(new WorktreeService({ ws, projects, tasks, diffBytes: 100000 }), tasks, { typescript: [process.execPath, '-e', script] });
+  try {
+    const document = await editor.read('P', '', 'space #%.ts');
+    await editor.language('P', '', 'space #%.ts', 'old', 0, 0, 'definition');
+    for (const action of ['rename', 'codeActions'] as const) {
+      await assert.rejects(editor.language('P', '', 'space #%.ts', 'XYZold', 0, 6, action, 'stale', [], document.revision), (error: unknown) => error instanceof AppError && error.detail === 'editor_conflict');
+    }
+    for (const mode of ['current', 'unversioned']) {
+      const result = await editor.language('P', '', 'space #%.ts', 'XYZold', 0, 6, 'rename', mode, [], document.revision);
+      assert.equal(result.changes?.[0]?.text, 'XYZNEW');
+      assert.equal(result.changes?.[0]?.baseText, 'XYZold');
+      assert.equal(result.changes?.[0]?.revision, document.revision);
+    }
+    await fs.writeFile(file, 'disk changed');
+    await assert.rejects(editor.language('P', '', 'space #%.ts', 'XYZold', 0, 6, 'rename', 'current', [], document.revision), (error: unknown) => error instanceof AppError && error.detail === 'editor_conflict');
+    assert.equal(await fs.readFile(file, 'utf8'), 'disk changed');
+  } finally { editor.dispose(); }
+}));
+
 test('LSP edits inserted at the same position are applied in the order the server lists them', () => withTmpWorkspace(async ws => {
   const projects = new ProjectLedger(ws); const tasks = new TaskLedger(ws); await projects.create({ name: 'P' });
   await fs.writeFile(path.join(ws.projectDir('P'), 'a.ts'), 'abc');

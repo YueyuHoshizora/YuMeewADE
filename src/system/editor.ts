@@ -542,11 +542,11 @@ export class EditorService {
         const actions = [];
         for (const item of (Array.isArray(result) ? result : []).slice(0, 50)) {
           const value = item as { title?: string; edit?: unknown };
-          if (typeof value.title === 'string' && value.title.length <= 1000 && value.edit) actions.push({ title: value.title, changes: await this.workspaceChanges(project, task, root, value.edit, drafts) });
+          if (typeof value.title === 'string' && value.title.length <= 1000 && value.edit) actions.push({ title: value.title, changes: await this.workspaceChanges(project, task, root, value.edit, drafts, key) });
         }
         return { locations, diagnostics, actions, ...(truncated ? { truncated } : {}) };
       }
-      const changes = await this.workspaceChanges(project, task, root, action === 'format' ? { changes: { [uri]: result ?? [] } } : result, drafts);
+      const changes = await this.workspaceChanges(project, task, root, action === 'format' ? { changes: { [uri]: result ?? [] } } : result, drafts, key);
       if (format) {
         const eol = format.eol === 'preserve' ? (document.text.includes('\r\n') ? '\r\n' : '\n') : format.eol === 'crlf' ? '\r\n' : '\n';
         for (const change of changes) {
@@ -580,17 +580,21 @@ export class EditorService {
     return { locations, diagnostics, ...(truncated ? { truncated } : {}) };
     });
   }
-  private async workspaceChanges(project: string, task: string, root: string, value: unknown, drafts = new Map<string, EditorBufferSnapshot>()): Promise<EditorChange[]> {
+  private async workspaceChanges(project: string, task: string, root: string, value: unknown, drafts = new Map<string, EditorBufferSnapshot>(), clientKey?: string): Promise<EditorChange[]> {
     if (!value || typeof value !== 'object') return [];
-    const edit = value as { changes?: Record<string, unknown[]>; documentChanges?: { textDocument?: { uri: string }; edits?: unknown[] }[] };
-    const entries = Object.entries(edit.changes ?? {});
+    const edit = value as { changes?: Record<string, unknown[]>; documentChanges?: { textDocument?: { uri: string; version?: number | null }; edits?: unknown[] }[] };
+    const entries: [string, unknown[], number | null | undefined][] = Object.entries(edit.changes ?? {}).map(([uri, edits]) => [uri, edits, undefined]);
     for (const change of edit.documentChanges ?? []) {
       if (!change.textDocument || !Array.isArray(change.edits)) throw new AppError('bad_request');
-      entries.push([change.textDocument.uri, change.edits]);
+      entries.push([change.textDocument.uri, change.edits, change.textDocument.version]);
     }
     if (entries.length > 50) throw new AppError('too_large', 'editor_changes_too_many');
     const output: EditorChange[] = []; const seen = new Set<string>();
-    for (const [uri, edits] of entries) {
+    for (const [uri, edits, version] of entries) {
+      if (version !== undefined && version !== null) {
+        if (!Number.isSafeInteger(version)) throw new AppError('bad_request');
+        if (!clientKey || !this.snapshots.has(`${root}\0${uri}`) || version !== this.versions.get(`${clientKey}\0${uri}`)) throw new AppError('conflict', 'editor_conflict');
+      }
       const relative = path.relative(root, fileURLToPath(uri)).split(path.sep).join('/');
       if (seen.has(relative)) throw new AppError('bad_request'); seen.add(relative);
       const document = await this.read(project, task, relative);
