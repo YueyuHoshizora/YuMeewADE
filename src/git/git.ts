@@ -16,19 +16,27 @@ export interface GitResult {
   truncated?: boolean;
 }
 
-const ENV = minimalEnv(['SSH_AUTH_SOCK']);
-const IDENTITY = ['-c', 'user.name=YuMeewADE', '-c', 'user.email=yumeewade@localhost'];
+const ENV = minimalEnv(['SSH_AUTH_SOCK', 'GIT_CONFIG_GLOBAL', 'GIT_CONFIG_NOSYSTEM']);
 // Repository fsmonitor/textconv/external diff commands must not execute while merely reading IDE state.
 const READ_POLICY = ['-c', 'core.fsmonitor=false'];
 
 
 /** Normal local operations must finish within two minutes; tests may use a shorter deadline. */
 export const GIT_TIMEOUT_MS = 120_000;
-export function git(cwd: string, args: string[], opts: { maxBytes?: number; timeoutMs?: number; indexFile?: string } = {}): Promise<GitResult> {
-  const { promise, resolve, reject } = Promise.withResolvers<GitResult>();
+export async function git(cwd: string, args: string[], opts: { maxBytes?: number; timeoutMs?: number; indexFile?: string } = {}): Promise<GitResult> {
   const commandIndex = args.findIndex((arg, index) => !arg.startsWith('-') && !['-c', '-C', '--git-dir', '--work-tree', '--namespace', '--config-env'].includes(args[index - 1] ?? ''));
+  const identity: string[] = [];
+  // Resolve only for commands that can create commits or tag objects: reads stay cheap and config edits take effect immediately.
+  if (['commit', 'commit-tree', 'merge', 'pull', 'stash', 'rebase', 'cherry-pick', 'revert', 'am', 'tag', 'notes'].includes(args[commandIndex] ?? '')) {
+    for (const [key, fallback] of [['user.name', 'YuMeewADE'], ['user.email', 'yumeewade@localhost']]) {
+      const configured = await git(cwd, [...args.slice(0, commandIndex), 'config', '--get', key!], opts);
+      if (configured.truncated || configured.code !== 0 && configured.code !== 1) throw new AppError('internal', 'git_failed');
+      if (!configured.stdout.trim()) identity.push('-c', `${key}=${fallback}`);
+    }
+  }
+  const { promise, resolve, reject } = Promise.withResolvers<GitResult>();
   const safeArgs = ['diff', 'show', 'log'].includes(args[commandIndex] ?? '') ? [...args.slice(0, commandIndex + 1), '--no-ext-diff', '--no-textconv', ...args.slice(commandIndex + 1)] : args;
-  const child = spawn('git', [...IDENTITY, ...READ_POLICY, ...safeArgs], { cwd, env: opts.indexFile ? { ...ENV, GIT_INDEX_FILE: opts.indexFile } : ENV, stdio: ['ignore', 'pipe', 'pipe'], windowsHide: true, detached: process.platform !== 'win32' });
+  const child = spawn('git', [...identity, ...READ_POLICY, ...safeArgs], { cwd, env: opts.indexFile ? { ...ENV, GIT_INDEX_FILE: opts.indexFile } : ENV, stdio: ['ignore', 'pipe', 'pipe'], windowsHide: true, detached: process.platform !== 'win32' });
   const max = opts.maxBytes ?? 10_000_000;
   const decoder = new StringDecoder('utf8');
   let stdout = '';

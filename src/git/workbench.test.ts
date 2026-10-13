@@ -205,6 +205,8 @@ test('the diff of a file too large for line staging says when it is cut', () => 
 test('歷史、提交詳情與blame限制輸入並保護機密路徑', () => withTmpWorkspace(async ws => {
   const projects = new ProjectLedger(ws); const tasks = new TaskLedger(ws); await projects.create({ name: 'P' });
   const root = ws.projectDir('P'); const workbench = new GitWorkbench({ ws, projects, tasks, isRunning: () => false });
+  await gitOk(root, ['config', 'user.name', 'History Developer']);
+  await gitOk(root, ['config', 'user.email', 'history@example.test']);
   await fs.writeFile(path.join(root, 'history.txt'), 'first\n'); await commitAll(root, 'first history');
   await fs.appendFile(path.join(root, 'history.txt'), 'second\n'); await commitAll(root, 'second history');
   const sha = (await gitOk(root, ['rev-parse', 'HEAD'])).trim();
@@ -213,7 +215,7 @@ test('歷史、提交詳情與blame限制輸入並保護機密路徑', () => wit
   const detail = await workbench.commitDetail('P', undefined, sha);
   assert.match(detail.metadata, /second history/); assert.deepEqual(detail.files, ['history.txt']); assert.match(detail.patch, /\+second/);
   const blame = await workbench.blame('P', undefined, 'history.txt');
-  assert.deepEqual(blame.map(line => [line.line, line.text, line.author, line.summary, line.committed]), [[1, 'first', 'YuMeewADE', 'first history', true], [2, 'second', 'YuMeewADE', 'second history', true]]);
+  assert.deepEqual(blame.map(line => [line.line, line.text, line.author, line.summary, line.committed]), [[1, 'first', 'History Developer', 'first history', true], [2, 'second', 'History Developer', 'second history', true]]);
   assert.equal(blame[1]!.sha, sha);
   await assert.rejects(workbench.history('P', undefined, -1));
   await assert.rejects(workbench.commitDetail('P', undefined, '--all'));

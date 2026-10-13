@@ -2,6 +2,8 @@ import assert from 'node:assert/strict';
 import { promises as fs } from 'node:fs';
 import path from 'node:path';
 import { test } from 'node:test';
+import { execFile } from 'node:child_process';
+import { promisify } from 'node:util';
 import { AppError } from '../shared/errors.ts';
 import { withTmpWorkspace } from '../testing/tmp.ts';
 import { ensureRepo, git, gitOk } from './git.ts';
@@ -48,4 +50,32 @@ test('Git reads never execute repository fsmonitor, external diff or textconv pr
   const status = await gitOk(repo, ['status', '--porcelain']); assert.match(status, /file.txt/u);
   const diff = await gitOk(repo, ['diff', '--', 'file.txt']); assert.match(diff, /\+new/u); assert.match(diff, /-old/u);
   assert.equal(await fs.stat(marker).catch(() => null), null);
+}));
+
+for (const identity of ['local', 'global', 'name-only', 'email-only', 'missing']) test(`commit identity uses configured fields with fallback only when missing: ${identity}`, () => withTmpWorkspace(async (_ws, tmp) => {
+  const home = path.join(tmp, 'home'); await fs.mkdir(home);
+  const globalConfig = path.join(home, 'gitconfig');
+  await fs.writeFile(globalConfig, identity === 'global' ? '[user]\nname = Global Developer\nemail = global@example.test\n' : '');
+  const script = path.join(tmp, 'identity.ts');
+  const repo = path.join(tmp, 'repo'); await fs.mkdir(repo);
+  await fs.writeFile(script, `
+import assert from 'node:assert/strict';
+import { gitOk } from ${JSON.stringify(new URL('./git.ts', import.meta.url).href)};
+const repo = ${JSON.stringify(repo)};
+await gitOk(repo, ['init', '-q']);
+const identity = ${JSON.stringify(identity)};
+if (identity === 'local' || identity === 'name-only') await gitOk(repo, ['config', 'user.name', 'Actual Developer']);
+if (identity === 'local' || identity === 'email-only') await gitOk(repo, ['config', 'user.email', 'developer@example.test']);
+await gitOk(repo, ['commit', '--allow-empty', '-m', 'identity regression']);
+const name = identity === 'global' ? 'Global Developer' : identity === 'local' || identity === 'name-only' ? 'Actual Developer' : 'YuMeewADE';
+const email = identity === 'global' ? 'global@example.test' : identity === 'local' || identity === 'email-only' ? 'developer@example.test' : 'yumeewade@localhost';
+assert.equal((await gitOk(repo, ['show', '-s', '--format=%an <%ae> | %cn <%ce>', 'HEAD'])).trim(), name + ' <' + email + '> | ' + name + ' <' + email + '>');
+const tree = (await gitOk(repo, ['rev-parse', 'HEAD^{tree}'])).trim();
+const snapshot = (await gitOk(repo, ['commit-tree', tree, '-p', 'HEAD', '-m', 'snapshot'])).trim();
+assert.equal((await gitOk(repo, ['show', '-s', '--format=%an <%ae> | %cn <%ce>', snapshot])).trim(), name + ' <' + email + '> | ' + name + ' <' + email + '>');
+`);
+  const result = await promisify(execFile)(process.execPath, [script], {
+    env: { ...process.env, HOME: home, USERPROFILE: home, XDG_CONFIG_HOME: home, GIT_CONFIG_GLOBAL: globalConfig, GIT_CONFIG_NOSYSTEM: '1' },
+  });
+  assert.equal(result.stderr, '');
 }));
