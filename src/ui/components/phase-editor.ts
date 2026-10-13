@@ -23,7 +23,7 @@ export function phaseEditor(project: ProjectView, refresh: () => Promise<void>):
     setLocked(add, draft.rows.length >= PHASES_MAX);
     list.replaceChildren(...draft.rows.map((entry, index) => {
       const item = el('li');
-      const name = input(entry.name, t('phases.name')); name.setAttribute('aria-label', t('phases.name')); name.maxLength = 200;
+      const name = input(entry.name, t('phases.name')); name.setAttribute('aria-label', `${t('phases.name')} ${index + 1}`); name.maxLength = 200;
       name.oninput = () => { entry.name = name.value; touch(); };
       const move = (step: number) => { const [moved] = draft.rows.splice(index, 1); draft.rows.splice(index + step, 0, moved!); touch(); render(); };
       const up = button(t('tree.up'), () => move(-1)); up.disabled = index === 0;

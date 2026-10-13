@@ -568,7 +568,7 @@ electron 44.7.0、vite 8.3.4、electron-builder 26.15.3、typescript 7.0.2、@ty
 - 作業副本與 Git 逐檔差異加入唯讀 CodeMirror MergeView 並排切換，重用語言上色、摺疊未變區段、單一同步捲動容器與 localStorage 偏好；`GET /api/git/diff-contents` 沿用信任閘門、路徑／symlink／機密驗證，每版本上限 1 MiB，二進位／超大回旗標並保留統一差異。副本以主線 merge-base 為基底，working 以 index 為基底，staged 使用 index→HEAD 的取消暫存方向。
 - 專案範圍的前往檔案／檔案瀏覽：`GET /api/task/files` 與 `/api/task/file` 在 `task` 省略或空字串時使用專案主資料夾；保留機密排除、50 筆結果、256 KiB 讀取與 realpath 防逃逸。兩路由在執行 Git 前檢查專案信任，受限專案拒絕；作業範圍維持副本語意。
 - 工作副本維護：`GET /api/git/worktrees` 以 NUL porcelain 比對使用中／封存台帳，顯示主副本、孤立、缺失／可 prune、locked、branch 與 dirty（含 ignored）；`GET /api/git/worktrees/prune-preview` 預覽，`POST /api/git/worktrees/prune` 精確核對預覽及確認並拒絕缺失的使用中副本；`POST /api/git/worktrees/remove` 僅確認移除本專案 Work 內乾淨孤立／封存副本，絕不 force。dirty 孤立副本留在原地並說明手動備份／處理；主副本與使用中作業永不移除。全部沿用 `/api/git/` 信任閘門。
-- 跨專案總覽 `#/overview`：僅從 `/api/state` 前端彙整狀態總數、逾期、今日至七個日曆日後（含端點）的未完成期限、等待回覆／確認、執行中、未讀，以及 done/total／目前階段。重用 attention 回答判斷，封存台帳不在 state 因而不計；標籤套用所有清單、總數與進度，提供作業／專案連結、側邊欄與命令面板入口。
+- 跨專案總覽 `#/overview`：僅從 `/api/state` 前端彙整狀態總數、逾期、今日至七個日曆日後（含端點）的未完成期限、等待回覆／確認、執行中、未讀，以及 done/total。重用 attention 回答判斷，封存台帳不在 state 因而不計；標籤套用所有清單、總數與進度，提供作業／專案連結、側邊欄與命令面板入口。
 - 作業看板：專案頁清單／五狀態 kanban 切換，拖曳與鍵盤「移動至…」共用 `/api/task/update` 完成核可／重開撤銷語義；卡片顯示 AI、期限標籤、執行中／未讀。兩種檢視共用四種排序與標籤／狀態／AI／逾期／文字篩選，驗證本機儲存值、依專案保存，純函式測試涵蓋組合條件及穩定排序。
 - 作業批次操作：專案頁選取模式／組內全選（200 筆上限），狀態／階段／標籤增刪／期限設定清除。POST `/api/task/bulk` 先驗證整批輸入、逐筆回報結果；完成同單筆路由寫人工核准，標籤讀改寫在台帳鎖內。UI 封存重用單筆 archiveFlow 的確認／保存副本規則；批次封存端點保守拒絕帶副本或執行中的作業。
 - 即時 LSP 診斷：CodeMirror 未儲存 buffer 400ms debounce、每檔單一在途請求、有界內容／結果；didOpen／遞增版本 didChange、publishDiagnostics 版本快取與 pull fallback、關閉 didClose，gutter／hover／每檔問題數，缺少 server 不重試洗版。

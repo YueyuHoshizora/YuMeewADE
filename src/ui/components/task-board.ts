@@ -65,10 +65,16 @@ export function taskBoard(context: ViewContext, project: ProjectView, list: (tas
     }
     content.replaceChildren(board);
   }
-  const controls = row(field(t('board.view'), view), field(t('board.sort'), sort), field(t('overview.tagFilter'), tags), field(t('board.state'), states), field(t('board.ai'), ais), field(t('tasks.overdue'), late), field(t('board.search'), text));
+  const options = disclosure(t('board.options'), row(field(t('board.view'), view), field(t('board.sort'), sort), field(t('overview.tagFilter'), tags), field(t('board.state'), states), field(t('board.ai'), ais), field(t('tasks.overdue'), late)));
+  const summarize = () => {
+    const active = selection.view !== 'list' || selection.sort !== 'updated' || selection.tag || selection.state || selection.ai || selection.overdue;
+    options.querySelector('summary')!.textContent = t(active ? 'board.optionsActive' : 'board.options');
+  };
+  summarize();
+  const controls = row(field(t('board.search'), text), options);
   const change = () => {
     Object.assign(selection, taskSelection({ view: view.value, sort: sort.value, tag: tags.value, state: states.value, ai: ais.value, overdue: late.checked, text: text.value }));
-    storeLocal(key, selection); render();
+    storeLocal(key, selection); summarize(); render();
   };
   for (const control of [view, sort, tags, states, ais, late]) control.onchange = change;
   text.oninput = change;

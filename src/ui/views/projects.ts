@@ -21,7 +21,7 @@ import { taskTemplates } from '../components/task-templates.ts';
 import { memoryPanel } from '../components/memory.ts';
 import { activityDots, taskBoard } from '../components/task-board.ts';
 import { phaseEditor } from '../components/phase-editor.ts';
-import { PHASES_MAX, TASK_STATES, type BulkTaskAction, type BulkTaskResult } from '../../shared/types.ts';
+import { TASK_STATES, type BulkTaskAction, type BulkTaskResult } from '../../shared/types.ts';
 import type { MessageKey } from '../i18n/zh-TW.ts';
 
 async function startWithBudget(context: ViewContext, input: StartInput): Promise<void> {
@@ -67,7 +67,7 @@ export async function openProjectFromFolder(context: ViewContext): Promise<void>
   if (archivedName && archivedName !== archivedBody && await offerRestore(context, archivedName)) return;
   if (!await confirmModal(t('project.adoptTitle'), t('project.adoptMessage', { name }), t('project.adoptAccept'))) return;
   // Failures (e.g. a folder name that is not a valid project name) reach the caller's run(), which shows the translated detail.
-  const project = await api.createProject({ name, description: '', phases: lines(t('project.defaultPhases')), body: value, parent: '', related: [] });
+  const project = await api.createProject({ name, description: '', phases: [], body: value, parent: '', related: [] });
   await context.refresh(); location.hash = projectHash(project.id);
 }
 
@@ -101,12 +101,12 @@ export function newProjectView(context: ViewContext, params: URLSearchParams): V
   const node = el('div', 'page'); const name = input(); name.required = true; name.maxLength = 60;
   node.append(onboardingBanner(context));
   const first = area(); first.maxLength = context.state.limits.promptChars; const description = area(); description.maxLength = 400;
-  const phases = area(t('project.defaultPhases')); const body = input(); const related: string[] = [];
+  const body = input(); const related: string[] = [];
   const parent = select([{ value: '', label: t('common.none') }, ...context.state.projects.map(p => ({ value: p.id, label: p.name }))], params.get('parent') ?? '');
   const folder = row(body); folder.classList.add('folder-field');
   if (window.yumeewade?.pickFolder) folder.append(button(t('project.pickFolder'), async () => { const value = await window.yumeewade!.pickFolder(); if (value) body.value = value; }));
   const relations = el('div', 'check-grid'); for (const p of context.state.projects) { const check = input(); check.type = 'checkbox'; check.onchange = () => { const at = related.indexOf(p.id); if (check.checked && at < 0) related.push(p.id); else if (!check.checked && at >= 0) related.splice(at, 1); }; relations.append(field(p.name, check)); }
-  const details = disclosure(t('common.details'), field(t('project.body'), folder), field(t('project.parent'), parent), field(t('project.related'), relations)); details.open = !!params.get('parent');
+  const details = disclosure(t('projectFlow.advanced'), field(t('project.description'), description), field(t('project.parent'), parent), field(t('project.related'), relations)); details.open = !!params.get('parent');
   const form = el('form', 'form'); const submit = el('button', 'primary', t('project.create')); submit.type = 'submit';
   const existing = el('div'); existing.setAttribute('aria-live', 'polite');
   function showExisting(): boolean {
@@ -118,12 +118,11 @@ export function newProjectView(context: ViewContext, params: URLSearchParams): V
     return true;
   }
   name.oninput = () => { showExisting(); };
-  form.append(field(t('project.name'), name), existing, field(t('project.firstTask'), first), field(t('project.description'), description), field(t('project.phases'), phases), details, submit);
+  form.append(field(t('project.name'), name), existing, field(t('project.body'), folder), el('p', 'muted', t('project.bodyHint')), field(t('project.firstTask'), first), el('p', 'muted', t('projectFlow.autoLocation')), details, submit);
   form.onsubmit = event => { event.preventDefault(); void run(async () => {
     submit.disabled = true;
     try {
-      if (lines(phases.value).length > PHASES_MAX) throw new UserError(t('phases.tooMany', { n: PHASES_MAX }));
-      const project = await api.createProject({ name: name.value.trim(), description: description.value.trim(), phases: lines(phases.value), body: body.value.trim(), parent: parent.value, related });
+      const project = await api.createProject({ name: name.value.trim(), description: description.value.trim(), phases: [], body: body.value.trim(), parent: parent.value, related });
       // 建立台帳成功後立即離開此表單；即使第一輪失敗，也不能重複建立專案。
       await context.refresh(); location.hash = projectHash(project.id);
       if (first.value.trim()) await startWithBudget(context, { project: project.id, text: first.value.trim(), ...context.state.settings.initial });
@@ -141,14 +140,29 @@ export function detailedTaskForm(context: ViewContext, project: ProjectView, par
   const title = input(); title.required = true; title.maxLength = 80;
   const role = select([{ value: '', label: t('common.none') }, ...Object.keys(context.state.roles.roles).map(name => ({ value: name, label: name }))]);
   const options = [{ value: '', label: t('common.none') }, ...project.tasks.map(task => ({ value: task.id, label: task.title }))];
-  const phase = select([{ value: '', label: t('common.none') }, ...project.phases.map(p => ({ value: p.name, label: p.name }))], project.currentPhase);
+  const phase = select([{ value: '', label: t('common.none') }, ...project.phases.map(p => ({ value: p.name, label: p.name }))]);
   const parent = select(options, params.get('parent') ?? ''); const source = select(options, params.get('derived') ?? '');
   const kind = select([{ value: 'main', label: t('task.main') }, { value: 'derived', label: t('task.derived') }], params.has('derived') ? 'derived' : 'main');
   const workspace = select([{ value: 'isolated', label: t('task.isolated') }, { value: 'direct', label: t('task.direct') }], 'isolated'); const steps = area();
   const metadata = metadataFields();
   const form = el('form', 'form'); const submit = el('button', 'primary', t('task.create')); submit.type = 'submit';
-  const grid = el('div', 'form-grid'); grid.append(field(t('task.role'), role), field(t('task.phase'), phase), field(t('task.parent'), parent), field(t('task.kind'), kind), field(t('task.source'), source), field(t('task.workspace'), workspace));
-  form.append(field(t('common.title'), title), grid, metadata.node, field(t('task.stepsInput'), steps), submit);
+  const grid = el('div', 'form-grid'); grid.append(field(t('task.role'), role), field(t('task.phase'), phase), field(t('task.parent'), parent), field(t('task.kind'), kind), field(t('task.source'), source));
+  const advanced = disclosure(t('projectFlow.advanced'), grid, metadata.node); advanced.open = params.has('parent') || params.has('derived');
+  advanced.addEventListener('toggle', () => {
+    if (!advanced.open) return;
+    // The form survives overview refreshes; planning may have changed while its draft stayed open.
+    const current = context.state.projects.find(item => item.id === project.id);
+    if (!current) return;
+    const selected = phase.value;
+    const choices = [{ value: '', label: t('common.none') }, ...current.phases.map(item => ({ value: item.name, label: item.name }))];
+    if (selected && !choices.some(item => item.value === selected)) choices.push({ value: selected, label: selected });
+    phase.replaceChildren(...select(choices, selected).options);
+    phase.value = selected;
+  });
+  const locationHint = el('p', 'muted');
+  const updateLocation = () => { locationHint.textContent = t(workspace.value === 'direct' ? 'projectFlow.directHint' : 'projectFlow.isolatedHint'); };
+  workspace.onchange = updateLocation; updateLocation();
+  form.append(field(t('common.title'), title), field(t('task.stepsInput'), steps), field(t('projectFlow.location'), workspace), locationHint, advanced, submit);
   form.onsubmit = event => { event.preventDefault(); void run(async () => {
     submit.disabled = true;
     try {
@@ -168,6 +182,7 @@ export function detailedTaskForm(context: ViewContext, project: ProjectView, par
 
 export function projectView(context: ViewContext, project: ProjectView, params: URLSearchParams): View {
   const node = el('div', 'page project-page'); const overview = el('div', 'project-overview');
+  const primary = el('div', 'project-start');
   // Only this project's running/unread tasks and the related projects' names affect the page; activity elsewhere must not redraw it.
   const activityOf = (state: AppState, related: string[]) => JSON.stringify([
     state.running.filter(item => item.project === project.id).map(item => item.task),
@@ -245,7 +260,7 @@ export function projectView(context: ViewContext, project: ProjectView, params: 
     }));
     for (const task of tasks) {
       const heading = el('span', 'task-list-title'); heading.append(link(task.title, taskHash(project.id, task.id)), ...activityDots(context, project.id, task.id));
-      const item = row(heading, el('span', 'state-chip', t(`state.${task.state}`)), metadataBadge(task), ...(task.confirm ? [el('span', 'warning', t('board.approval'))] : []));
+      const item = row(heading, el('span', task.confirm ? 'warning' : 'state-chip', t(task.confirm ? 'board.approval' : `state.${task.state}`)), metadataBadge(task));
       if (selecting) {
         const check = input(); check.type = 'checkbox'; check.checked = selected.has(task.id); check.disabled = bulkBusy;
         check.setAttribute('aria-label', t('bulk.task', { title: task.title }));
@@ -363,24 +378,25 @@ export function projectView(context: ViewContext, project: ProjectView, params: 
     });
     if (project.bodyMissing) overview.append(header, el('p', 'warning', t('project.bodyMissing', { path: project.bodyPath })), row(editBody()));
     else overview.append(header);
-    overview.append(actions, disclosure(t('project.notes'), markdown(project.description + '\n\n' + project.notes), row(editDescription, editNotes, editRelated, editBody())));
+    overview.append(primary);
+    const tools = disclosure(t('projectFlow.tools'), actions, disclosure(t('project.notes'), markdown(project.description + '\n\n' + project.notes), row(editDescription, editNotes, editRelated, editBody())));
     if (project.issues.length) {
       const localIssues = el('div', 'form');
       for (const issue of project.issues) localIssues.append(el('p', '', `${issue.level ? `[${issue.level}] ` : ''}${issue.text}`));
-      overview.append(disclosure(t('github.localIssues'), localIssues));
+      tools.append(disclosure(t('github.localIssues'), localIssues));
     }
-    overview.append(rulesBox);
+    const knowledge = disclosure(t('projectFlow.context'), rulesBox, memory);
     const templatesKey = JSON.stringify(project.tasks.map(task => [task.id, task.title]));
     if (templates?.key !== templatesKey) templates = { key: templatesKey, node: taskTemplates(context, project) };
-    overview.append(templates.node);
-    overview.append(memory);
+    knowledge.append(templates.node);
+    const planning = disclosure(t('projectFlow.planning'), el('p', 'muted', t('projectFlow.planningHint')));
     if (project.phases.length) {
-      const road = el('div', 'phase-road');
-      for (const [i, phase] of project.phases.entries()) road.append(el('div', `phase ${phase.name === project.currentPhase ? 'current' : ''} ${phase.state === '完成' ? 'complete' : ''}`, `${i + 1} · ${phase.name}`));
-      overview.append(road);
+      const milestones = el('div', 'task-list');
+      for (const phase of project.phases) milestones.append(row(el('span', '', phase.name), el('span', 'state-chip', t(`state.${phase.state}`)), ...(phase.name === project.currentPhase ? [el('span', 'muted', t('projectFlow.currentMilestone'))] : [])));
+      planning.append(milestones);
     }
-    overview.append(phaseEditor(project, context.refresh));
-    if (project.phaseOffer) overview.append(card(t('project.phaseComplete'), row(
+    planning.append(phaseEditor(project, context.refresh));
+    if (project.phaseOffer) planning.append(card(t('project.phaseComplete'), row(
       button(t('project.nextPhase'), async () => { await request('/api/phase/next', { project: project.id, phase: project.currentPhase }); await context.refresh(); }, 'primary'),
       button(t('project.continuePhase'), async () => { await request('/api/phase/continue', { project: project.id, phase: project.currentPhase }); await context.refresh(); }),
     )));
@@ -388,15 +404,12 @@ export function projectView(context: ViewContext, project: ProjectView, params: 
     overview.append(bulkToolbar());
     overview.append(taskBoard(context, project, tasks => {
       const sections = el('div');
-      const active = tasks.filter(task => task.state !== '完成');
-      // A task without a phase belongs to no other phase, so it stays in the main list instead of a collapsed "none" group.
-      const inCurrent = (task: (typeof tasks)[number]) => !project.currentPhase || !task.phase || task.phase === project.currentPhase;
-      sections.append(card(t('project.activeTasks'), tasksList(active.filter(inCurrent))));
-      const other = active.filter(task => !inCurrent(task));
-      if (other.length) sections.append(disclosure(t('project.otherTasks'), ...Array.from(new Set(other.map(task => task.phase))).map(phase => disclosure(phase, tasksList(other.filter(task => task.phase === phase))))));
-      sections.append(disclosure(t('project.completedTasks'), tasksList(tasks.filter(task => task.state === '完成'))));
+      const active = tasks.filter(task => task.state !== '完成' || task.confirm);
+      sections.append(card(t('project.activeTasks'), tasksList(active)));
+      sections.append(disclosure(t('project.completedTasks'), tasksList(tasks.filter(task => task.state === '完成' && !task.confirm))));
       return sections;
     }));
+    overview.append(planning, knowledge, tools);
     for (const detail of overview.querySelectorAll('details')) detail.open = opened.has(detail.querySelector('summary')?.textContent);
     // Rebuilt controls (bulk value, board search) are found again by their label, keeping the caret where it was.
     const label = focused?.getAttribute('aria-label');
@@ -420,7 +433,7 @@ export function projectView(context: ViewContext, project: ProjectView, params: 
     await startWithBudget(context, { project: project.id, text: draft.value.trim(), ...pick.value(), images: upload.ids() }); storeLocal(draftKey, ''); await upload.clear(); draft.value = '';
   }, 'primary');
   draft.onkeydown = e => { if (shouldSend(e, readLocal('yumeewade.enterToSend', false))) { e.preventDefault(); start.click(); } };
-  node.append(card(t('project.quick'), slashCommands.node, draft, upload.node, row(pick.node, start)), detailedTaskForm(context, project, params));
+  primary.append(card(t('project.quick'), el('p', 'muted', t('projectFlow.startHint')), slashCommands.node, draft, upload.node, row(pick.node, start)), detailedTaskForm(context, project, params));
   return { node, dispose: () => { slashCommands.dispose(); upload.dispose(); disposeComposeInsert(); }, update: state => {
     context.state = state;
     const next = state.projects.find(p => p.id === project.id);

@@ -1,5 +1,5 @@
 import { TASK_STATES } from '../../shared/types.ts';
-import { labelValue, t } from '../i18n/index.ts';
+import { t } from '../i18n/index.ts';
 import { el, field, link, projectHash, row, select, taskHash, type View, type ViewContext } from '../components/dom.ts';
 import { metadataBadge } from '../components/task-metadata.ts';
 import { aggregateOverview, type OverviewTask } from './overview-logic.ts';
@@ -41,7 +41,7 @@ export function overviewView(context: ViewContext): View {
     for (const { project, done, total } of data.projects) {
       const progress = el('progress'); progress.max = total || 1; progress.value = done;
       progress.setAttribute('aria-label', `${project.name}: ${done}/${total}`);
-      projects.append(row(link(project.name, projectHash(project.id)), el('span', '', `${done}/${total}`), progress, el('span', 'muted', labelValue(t('overview.phase'), project.currentPhase || t('common.none')))));
+      projects.append(row(link(project.name, projectHash(project.id)), el('span', '', `${done}/${total}`), progress));
     }
     if (!data.projects.length) projects.append(el('p', 'muted', t('common.empty')));
     content.append(projects);
