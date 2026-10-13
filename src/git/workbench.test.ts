@@ -498,3 +498,17 @@ test('push, fetch and commit failures name their cause instead of a generic git 
   await assert.rejects(workbench.commit('P', undefined, 'blocked'), cause('git_hook_failed'));
   assert.match((await workbench.commit('P', undefined, 'bypassed', { bypassHooks: true, confirmed: true })).sha, /^[0-9a-f]{40}$/);
 }));
+
+for (const unstage of [false, true]) test(`adjacent replacements preserve order when ${unstage ? 'unstaging' : 'staging'} selected lines`, () => withTmpWorkspace(async ws => {
+  const projects = new ProjectLedger(ws); const tasks = new TaskLedger(ws); await projects.create({ name: 'P' });
+  const root = ws.projectDir('P'); const full = path.join(root, 'adjacent.txt');
+  await fs.writeFile(full, 'one\ntwo\n'); await commitAll(root, 'base');
+  const workbench = new GitWorkbench({ ws, projects, tasks, isRunning: () => false });
+  await fs.writeFile(full, 'ONE\nTWO\n');
+  if (unstage) await workbench.stage('P', undefined, 'adjacent.txt');
+  const diff = await workbench.diff('P', undefined, 'adjacent.txt', unstage);
+  const selected = diff.hunks.flatMap(h => h.lines).filter(line => line.text === 'one' || line.text === 'ONE').map(line => line.id);
+  await workbench.stageLines('P', undefined, 'adjacent.txt', unstage, diff.fingerprint, selected);
+  assert.equal(await gitOk(root, ['show', ':adjacent.txt']), unstage ? 'one\nTWO\n' : 'ONE\ntwo\n');
+  assert.equal(await fs.readFile(full, 'utf8'), 'ONE\nTWO\n');
+}));

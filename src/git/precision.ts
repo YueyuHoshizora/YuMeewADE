@@ -34,11 +34,29 @@ export function selectedPatch(patch: string, selected: number[]): string {
   const output = [header.trimEnd()]; let delta = 0;
   for (const hunk of hunks) {
     const lines: string[] = []; let oldCount = 0; let newCount = 0; let changes = 0;
-    for (const line of hunk.lines) {
-      if (line.kind === 'add') { if (ids.has(line.id)) { lines.push(`+${line.text}`); newCount++; changes++; } }
+    const emit = (line: GitDiffHunk['lines'][number]) => {
+      if (line.kind === 'add') { if (!ids.has(line.id)) return; lines.push(`+${line.text}`); newCount++; changes++; }
       else if (line.kind === 'remove' && ids.has(line.id)) { lines.push(`-${line.text}`); oldCount++; changes++; }
       else { lines.push(` ${line.text}`); oldCount++; newCount++; }
-      if (line.noNewline && (line.kind !== 'add' || ids.has(line.id))) lines.push('\\ No newline at end of file');
+      if (line.noNewline) lines.push('\\ No newline at end of file');
+    };
+    for (let index = 0; index < hunk.lines.length;) {
+      if (hunk.lines[index]!.kind === 'context') { emit(hunk.lines[index++]!); continue; }
+      const start = index; let lastRemoval = -1;
+      while (index < hunk.lines.length && hunk.lines[index]!.kind !== 'context') {
+        const line = hunk.lines[index]!;
+        if (line.kind === 'remove' && ids.has(line.id)) lastRemoval = index;
+        index++;
+      }
+      // Insert selected replacements before the preserved old lines that follow them, not at the block's end.
+      const additions = () => {
+        for (let cursor = start; cursor < index; cursor++) if (hunk.lines[cursor]!.kind === 'add') emit(hunk.lines[cursor]!);
+      };
+      for (let cursor = start; cursor < index; cursor++) {
+        if (hunk.lines[cursor]!.kind === 'remove') emit(hunk.lines[cursor]!);
+        if (cursor === lastRemoval) additions();
+      }
+      if (lastRemoval < 0) additions();
     }
     if (!changes) continue;
     const oldStart = hunk.oldStart;
