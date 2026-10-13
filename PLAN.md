@@ -432,7 +432,7 @@ electron 44.7.0、vite 8.3.4、electron-builder 26.15.3、typescript 7.0.2、@ty
 3. 流程照參考專案，視覺自行設計。
 
 ### B.2 工作區與檔案
-- `{root}/Projects/{id}/PROJECT.md` 新增 `description`、`parent`（上層專案 id）、`body`（主資料夾絕對路徑；空＝台帳資料夾本身）、`phases: [{name, state}]`（預設 計畫／實作／檢查／收尾）。舊檔缺欄位照樣可讀。
+- `{root}/Projects/{id}/PROJECT.md` 新增 `description`、`parent`（上層專案 id）、`body`（主資料夾絕對路徑；空＝台帳資料夾本身）、`phases: [{name, state}]`（選填里程碑；預設空陣列，不再建立四階段）。既有階段名稱與狀態不遷移、不改寫；舊檔缺欄位照樣可讀。
 - `.ai/tasks/{id}.md` 欄位：`id title state phase role parent kind(main|derived) derivedFrom workspace(isolated|direct) cli model effort question workdir mergeExcluded updated`；正文 `## 步驟`（勾選清單）、`## 做了什麼`、`## 下一步`、`## 注意`、`## 備註`。讀取時 `## 已完成的工作`（舊規則用語）視同 `## 做了什麼`，同類標題出現多次時合併。作業 ID 不重用（掃描 tasks／chat／Work）。
 - `.ai/chat/{id}.jsonl` 列型別：`user`（`to model effort request mode images`）、`assistant`（`ai model effort text error stopped ms request asks`）、`event`（`tool` 工具摘要）。`.json` 存各 AI 的 session 與模型；`.queue.json` 存排隊指示。`.ai/attachments/{id}/` 存圖片。
 - `{root}/.yumeewade/`：`log.jsonl`（操作紀錄）、`settings.json`（預設 AI、隱藏／排序模型、完整權限）、`models.json`（模型清單快取）、`completion.json`（完成核可、繼續標記、階段繼續標記）、`order.json`（專案排序與釘選）。
@@ -443,8 +443,8 @@ electron 44.7.0、vite 8.3.4、electron-builder 26.15.3、typescript 7.0.2、@ty
 - 每輪開始作業轉 進行中；回覆含 `[[question]]…[[/question]]` 區塊 → 解析成 `asks`，作業轉 等待回覆 並寫入 question；以 `answer` 送出的回答會清掉 question。
 - 執行中送出必須指定 `mode`：`redo`／`amend` 會停掉目前這輪，再用包裝過的指示立即開始；`queue` 會排隊，正常結束後自動出隊。停止會同時清空隊列。作業處於 等待回覆 時一般排隊指示暫停（以 `answer` 排隊的回答照常出隊），人回答後接續，或手動「開始」直接執行。
 - 完成確認：AI 寫了 `完成` 但人尚未核可，或步驟全勾且未按「繼續進行」→ `confirm`。人在 UI 把狀態改成完成即視同核可。
-- 階段：目前階段（第一個未完成）的作業全部完成 → 提示前往下一階段；最後一階段完成 → 專案完成。
-- 新作業的階段：快速開始、範本、GitHub Issue／PR 回饋建立的作業放在專案目前階段；未指定階段的子作業（流程分支、整合候選）沿用上層作業的階段。專案頁「目前階段的作業」同時列出沒有階段的作業。
+- 里程碑為選用規劃：第一個未完成項目的作業完成後，可在專案規劃區手動推進或繼續；最後一項完成仍沿用既有專案完成語義。沒有里程碑的專案不出現推進提示。
+- 新作業未指定 `phase` 一律留空，包括快速開始、範本、GitHub Issue／PR 回饋、流程分支及整合候選；不再自動繼承專案或上層作業的階段。明確指定的值與既有台帳照常保留。
 - 合併：兩邊自動儲存 → `--no-ff` 合併；衝突只中止自己開始的合併，作業轉 等待回覆；成功則移除副本與分支，作業轉完成並核可。
 - 未讀：一輪結束時若沒有客戶端開著該作業的對話流，就標未讀；開啟即清除。
 - 模型清單讀 CLI 自己的快取（codex `models_cache.json`、claude `cache/model-catalog/`），每個模型的思考強度選項也從快取取得。

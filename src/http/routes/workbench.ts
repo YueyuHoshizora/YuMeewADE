@@ -21,7 +21,7 @@ export function registerWorkbenchRoutes(router: Router, app: App): void {
     const thread = remote.thread, source = thread?.comments.find(comment => comment.id === commentId);
     if (!thread || !source || !source.url || new URL(source.url).pathname !== `/${repository}/pull/${body.number}`) throw new AppError('conflict', 'gh_pr_failed');
     busy(project);
-    const task = await app.tasks.create(project, { title: reqString(body, 'title', 300), phase: app.projects.currentPhase(await app.projects.get(project)) });
+    const task = await app.tasks.create(project, { title: reqString(body, 'title', 300) });
     const linked = await feedback.create(project, task.id, { repository, kind: 'thread', number: body.number as number, url: source.url, threadId, commentId, path: thread.path, line: thread.line, source: source.body, draft, resolved: thread.resolved, state: '', headOid: remote.headOid });
     await app.oplog.record({ action: 'github.feedback-task', project, task: task.id }); app.changed(project, task.id);
     return { task, feedback: linked };
@@ -71,7 +71,7 @@ export function registerWorkbenchRoutes(router: Router, app: App): void {
     if (!status.repository || new URL(issue.url).pathname !== `/${status.repository}/issues/${issue.number}`) throw new AppError('conflict', 'gh_pr_failed');
     const draft = body.draft === undefined ? `${issue.title}\n${issue.url}\n\n${issue.body}`.slice(0, app.config.limits.promptChars) : text(body, 'draft', app.config.limits.promptChars);
     busy(project);
-    const task = await app.tasks.create(project, { title: reqString(body, 'title', 300), issue: issue.number, issueUrl: issue.url, phase: app.projects.currentPhase(await app.projects.get(project)) });
+    const task = await app.tasks.create(project, { title: reqString(body, 'title', 300), issue: issue.number, issueUrl: issue.url });
     const linked = await feedback.create(project, task.id, { repository: status.repository, kind: 'issue', number: issue.number, url: issue.url, threadId: '', commentId: '', path: '', line: null, source: issue.body, draft, resolved: false, state: issue.state, headOid: '', ...(issue.contentVersion ? { contentVersion: issue.contentVersion } : {}) });
     await app.oplog.record({ action: 'github.issue-task', project, task: task.id });
     app.changed(project, task.id);

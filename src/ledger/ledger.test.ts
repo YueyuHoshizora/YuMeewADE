@@ -17,7 +17,7 @@ test('專案預設、階段推進、改名不搬目錄、階層與外部本體�
   const projects = new ProjectLedger(ws);
   assert.ok((await fs.stat(ws.internalDir)).isDirectory());
   const p = await projects.create({ name: 'P', description: '說明' });
-  assert.equal(p.id, 'P'); assert.equal(p.status, '進行中'); assert.equal(projects.currentPhase(p), '計畫');
+  assert.equal(p.id, 'P'); assert.equal(p.status, '進行中'); assert.deepEqual(p.phases, []); assert.equal(projects.currentPhase(p), '');
   assert.equal(projects.bodyPath(p), ws.projectDir('P'));
   const renamed = await projects.update('P', { name: '新名字' });
   assert.equal(renamed.id, 'P'); assert.equal(renamed.name, '新名字');
@@ -32,9 +32,11 @@ test('專案預設、階段推進、改名不搬目錄、階層與外部本體�
   await assert.rejects(projects.create({ name: '../escape' }));
   await assert.rejects(projects.create({ name: 'P' }));
   await assert.rejects(projects.create({ name: 'TooMany', phases: Array.from({ length: 13 }, (_, i) => String(i)) }));
-  for (let i = 0; i < 4; i++) await projects.nextPhase('P', projects.currentPhase(await projects.get('P')));
-  assert.equal((await projects.get('P')).status, '完成');
-  assert.equal(projects.currentPhase(await projects.get('P')), '');
+  const planned = await projects.create({ name: 'Planned', phases: ['A', 'B'] });
+  assert.deepEqual(planned.phases, [{ name: 'A', state: '進行中' }, { name: 'B', state: '未開始' }]);
+  for (const phase of ['A', 'B']) await projects.nextPhase('Planned', phase);
+  assert.equal((await projects.get('Planned')).status, '完成');
+  assert.equal(projects.currentPhase(await projects.get('Planned')), '');
 }));
 
 test('a still-active child of an archived project can take subprojects, and cycles are still refused', () => withTmpWorkspace(async ws => {
@@ -178,7 +180,7 @@ test('多個作業台帳同時改標題、memo 與步驟，且錯誤不阻擋後
 
 test('多個專案台帳同時更新欄位與推進階段，不覆蓋先前變更，同一階段只推進一次', () => withTmpWorkspace(async ws => {
   const one = new ProjectLedger(ws), two = new ProjectLedger(ws);
-  await one.create({ name: 'P' });
+  await one.create({ name: 'P', phases: ['計畫', '實作', '檢查', '收尾'] });
   const results = await Promise.allSettled([one.update('P', { name: '新名字' }), two.update('P', { description: '新說明' }), one.nextPhase('P', '計畫'), two.nextPhase('P', '計畫')]);
   const rejected = results.filter(result => result.status === 'rejected');
   assert.equal(rejected.length, 1);

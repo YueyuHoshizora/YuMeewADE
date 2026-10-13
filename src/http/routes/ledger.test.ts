@@ -5,7 +5,32 @@ import { test } from 'node:test';
 import { startTestServer } from '../../testing/server.ts';
 import type { Project, Task } from '../../shared/types.ts';
 
-test('從範本建立的作業落在專案目前階段，而不是「無」', async () => {
+test('fresh projects have no phases and omitted task phases stay blank after opting into planning', async () => {
+  const s = await startTestServer();
+  try {
+    const created = await s.api('POST', '/api/project/new', { name: 'Default' });
+    assert.equal(created.status, 200);
+    const project = await s.app.projects.get('Default');
+    assert.deepEqual(project.phases, []);
+    const loose = await s.api('POST', '/api/task/new', { project: project.id, title: 'Unassigned', workspace: 'direct' });
+    assert.equal(loose.status, 200);
+    const task = (await s.app.tasks.list(project.id))[0]!;
+    assert.equal(task.phase, '');
+    await s.api('POST', '/api/task/update', { project: project.id, task: task.id, patch: { state: '完成' } });
+    s.app.changed();
+    const initial = (await s.app.state()).projects.find(item => item.id === project.id)!;
+    assert.equal(initial.currentPhase, '');
+    assert.equal(initial.phaseOffer, false);
+    assert.equal((await s.api('POST', '/api/project/phases', { project: project.id, previous: [], phases: [{ name: 'Plan' }] })).status, 200);
+    assert.equal((await s.api('POST', '/api/task/new', { project: project.id, title: 'Still unassigned', workspace: 'direct' })).status, 200);
+    assert.equal((await s.app.tasks.list(project.id)).find(item => item.title === 'Still unassigned')!.phase, '');
+    assert.equal((await s.api('POST', '/api/task/new', { project: project.id, title: 'Assigned', phase: 'Plan', workspace: 'direct' })).status, 200);
+    assert.equal((await s.app.tasks.list(project.id)).find(item => item.title === 'Assigned')!.phase, 'Plan');
+    assert.equal((await s.api('POST', '/api/task/new', { project: project.id, title: 'Invalid', phase: 42 })).status, 400);
+  } finally { await s.close(); }
+});
+
+test('template-created tasks remain unassigned even in an active phased project', async () => {
   const s = await startTestServer();
   try {
     const p = (await s.api('POST', '/api/project/new', { name: 'Tpl', phases: ['計畫', '實作'] })).json as Project;
@@ -14,7 +39,10 @@ test('從範本建立的作業落在專案目前階段，而不是「無」', as
     assert.equal((await s.api('POST', '/api/phase/next', { project: p.id, phase: '計畫' })).status, 200);
     const created = await s.api('POST', '/api/task/template/create', { project: p.id, name: 'tpl', scope: 'project' });
     assert.equal(created.status, 200);
-    assert.equal((created.json as { task: Task }).task.phase, '實作');
+    assert.ok(created.json && typeof created.json === 'object' && 'task' in created.json);
+    const task = created.json.task;
+    assert.ok(task && typeof task === 'object' && 'phase' in task);
+    assert.equal(task.phase, '');
   } finally { await s.close(); }
 });
 

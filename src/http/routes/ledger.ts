@@ -80,9 +80,9 @@ export function registerLedgerRoutes(router: Router, app: App): void {
     await changed('task.template.delete', project); return { ok: true };
   });
   router.post('/api/task/template/create', async ({ body }) => {
-    const project = reqString(body, 'project', 120); const current = app.projects.currentPhase(await app.projects.get(project));
+    const project = reqString(body, 'project', 120); await app.projects.get(project);
     const template = await templates.get(project, templateScope(body.scope), reqString(body, 'name', 60));
-    const task = await app.tasks.create(project, { title: template.title, steps: template.steps, phase: current });
+    const task = await app.tasks.create(project, { title: template.title, steps: template.steps });
     await changed('task.new', project, task.id);
     return { task, instruction: template.instruction };
   });

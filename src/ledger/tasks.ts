@@ -153,8 +153,7 @@ export class TaskLedger {
     const metadata = taskMetadata(input);
     for (const key of ['role','phase','parent','derivedFrom','cli','model','effort'] as const) if (input[key] !== undefined && (typeof input[key] !== 'string' || input[key]!.length > 2000)) throw new AppError('bad_request', 'field_type', { field: key });
     if (input.issue !== undefined && (!Number.isSafeInteger(input.issue) || input.issue <= 0) || input.issueUrl !== undefined && (typeof input.issueUrl !== 'string' || input.issueUrl.length > 2000 || !/^https:\/\/[^\s]+$/.test(input.issueUrl))) throw new AppError('bad_request', 'field_type', { field: 'issue' });
-    // A child created without an explicit phase (workflow branches, integration candidates) belongs to its parent's phase, not to "none".
-    const parentPhase = input.parent ? (await this.get(project, input.parent)).phase : '';
+    if (input.parent) await this.get(project, input.parent);
     return withFileLocks([this.ws.projectFile(project)], async () => {
       if (!await pathExists(this.ws.projectFile(project))) throw new AppError('not_found', 'project_missing');
       const reservations = path.join(this.ws.internalDir, 'task-ids', project);
@@ -168,7 +167,7 @@ export class TaskLedger {
         catch (err) { if ((err as NodeJS.ErrnoException).code !== 'EEXIST') throw err; names.push(id); }
       }
       const fm = parseFrontmatter(await fs.readFile(path.join(TEMPLATES_DIR, 'task.md'), 'utf8'));
-      const values: Record<string, YamlValue> = { id, title: input.title.trim(), state: '未開始', phase: input.phase ?? parentPhase, role: input.role ?? '', parent: input.parent ?? '', kind: input.kind ?? 'main', derivedFrom: input.derivedFrom ?? '', workspace: input.workspace ?? 'isolated', cli: input.cli ?? '', model: input.model ?? '', effort: input.effort ?? '', question: '', workdir: '', mergeExcluded: false, updated: nowMinute(), due: '', tags: [], ...metadata };
+      const values: Record<string, YamlValue> = { id, title: input.title.trim(), state: '未開始', phase: input.phase ?? '', role: input.role ?? '', parent: input.parent ?? '', kind: input.kind ?? 'main', derivedFrom: input.derivedFrom ?? '', workspace: input.workspace ?? 'isolated', cli: input.cli ?? '', model: input.model ?? '', effort: input.effort ?? '', question: '', workdir: '', mergeExcluded: false, updated: nowMinute(), due: '', tags: [], ...metadata };
       if (input.issue !== undefined) { values['issue'] = input.issue; values['issueUrl'] = input.issueUrl ?? ''; }
       const steps = (input.steps ?? []).map(s => s.replace(/[\r\n]+/g, ' ').trim()).filter(Boolean);
       const part = section(fm.body, 'steps');

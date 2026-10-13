@@ -38,16 +38,23 @@ test('a chat stream refused at the SSE connection limit leaves the result unread
     assert.equal(s.app.runner.unread().length, 1);
   } finally { await holding?.body?.cancel().catch(() => {}); held.abort(); await s.close(); }
 });
-test('quickstart creates current-phase task, saves selection; settings and roles endpoints', async () => {
+test('quickstart creates an unassigned task in a phased project, saves selection; settings and roles endpoints', async () => {
   const s = await startTestServer();
   try {
-    await s.api('POST', '/api/project/new', { name: 'P' });
+    await s.api('POST', '/api/project/new', { name: 'P', phases: ['Plan', 'Build'] });
     const result = await s.api('POST', '/api/start', { project: 'P', text: 'Make this', ai: 'mock', model: 'custom', effort: 'high' }); assert.equal(result.status, 200);
-    const task = (result.json as { task: Task }).task; assert.equal(task.phase, '計畫'); assert.equal(task.title, 'Make this'); await s.app.runner.whenIdle();
+    assert.ok(result.json && typeof result.json === 'object' && 'task' in result.json);
+    const task = result.json.task;
+    assert.ok(task && typeof task === 'object' && 'phase' in task && 'title' in task);
+    assert.equal(task.phase, ''); assert.equal(task.title, 'Make this'); await s.app.runner.whenIdle();
     // A long first line is cut at 40 code units; an emoji straddling the cut is dropped whole, not saved as U+FFFD.
     const long = await s.api('POST', '/api/start/prepare', { project: 'P', text: `${'a'.repeat(39)}😀 finish`, ai: 'mock' });
-    assert.equal((long.json as { task: Task }).task.title, 'a'.repeat(39));
-    assert.equal((await s.app.tasks.get('P', (long.json as { task: Task }).task.id)).title, 'a'.repeat(39));
+    assert.ok(long.json && typeof long.json === 'object' && 'task' in long.json);
+    const prepared = long.json.task;
+    assert.ok(prepared && typeof prepared === 'object' && 'phase' in prepared && 'title' in prepared && 'id' in prepared && typeof prepared.id === 'string');
+    assert.equal(prepared.phase, '');
+    assert.equal(prepared.title, 'a'.repeat(39));
+    assert.equal((await s.app.tasks.get('P', prepared.id)).title, 'a'.repeat(39));
     assert.equal((await s.api('POST', '/api/settings', { fullAccess: { codex: false } })).status, 200);
     assert.equal((await s.api('POST', '/api/roles', { roles: [{ name: '人工', job: 'verify', main: { cli: '人', model: '', effort: '' } }] })).status, 200);
     const ai = await s.api('GET', '/api/ai'); assert.equal(ai.status, 200); assert.ok(Array.isArray(ai.json));

@@ -119,11 +119,11 @@ test('a corrupt completion or start-pick file is reported once and the rest of t
   } finally { await f.close(); }
 });
 
-test('an unfinished task without a phase keeps the next-phase offer back, like the current-phase list that shows it', async () => {
+test('an unfinished unassigned task keeps the optional next-phase offer back', async () => {
   const f = await fixture();
   try {
     f.app.close();
-    await f.app.projects.create({ name: 'Phased' });
+    await f.app.projects.create({ name: 'Phased', phases: ['A', 'B'] });
     const phase = f.app.projects.currentPhase(await f.app.projects.get('Phased'));
     const done = await f.app.tasks.create('Phased', { title: 'assigned', phase, workspace: 'direct' });
     await f.app.tasks.update('Phased', done.id, { state: '完成' });

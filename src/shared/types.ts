@@ -114,7 +114,7 @@ export const AUTO_FIX_MAX = 5;
 export interface NewProjectInput {
   name: string;
   description?: string;
-  /** 每行一個階段；省略＝預設四階段。 */
+  /** 選填里程碑；省略或空陣列＝不啟用專案規劃。 */
   phases?: string[];
   parent?: string;
   body?: string;

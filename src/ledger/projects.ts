@@ -149,7 +149,7 @@ export class ProjectLedger {
 
   async create(input: NewProjectInput): Promise<Project> {
     return withFileLocks([this.ws.projectFile(input.name), this.repositoryLock()], async () => {
-      const phases = input.phases ?? ['計畫', '實作', '檢查', '收尾'];
+      const phases = input.phases ?? [];
       if (!Array.isArray(phases) || phases.some(p => typeof p !== 'string')) throw new AppError('bad_request', 'field_type', { field: 'phases' });
       const patch = { ...input, phases: phases.map((name, i) => ({ name: name.trim(), state: i === 0 ? '進行中' as const : '未開始' as const })) };
       checkPhaseNames(patch.phases.map(phase => phase.name));

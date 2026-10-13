@@ -103,13 +103,20 @@ test('同類標題重複時，作業摘要與紀錄讀到相同內容，新備�
   assert.match((await ledger.sections('P', task.id)).memo.at(-1)!, /newest$/u);
 }));
 
-test('沒指定階段的子作業沿用上層作業的階段，明確指定（含空字串）則照指定', () => withTmpWorkspace(async ws => {
-  await new ProjectLedger(ws).create({ name: 'P' });
+test('omitted task phases stay unassigned in phased projects and child tasks; explicit phases round-trip without rewriting existing data', () => withTmpWorkspace(async ws => {
+  const projects = new ProjectLedger(ws);
+  await projects.create({ name: 'P', phases: ['計畫', '實作'] });
   const ledger = new TaskLedger(ws);
   const parent = await ledger.create('P', { title: 'Parent', phase: '實作' });
-  assert.equal((await ledger.create('P', { title: 'Child', parent: parent.id, kind: 'derived', derivedFrom: parent.id })).phase, '實作');
-  assert.equal((await ledger.create('P', { title: 'Explicit', parent: parent.id, phase: '' })).phase, '');
+  const projectBefore = await fs.readFile(ws.projectFile('P'), 'utf8');
+  const parentBefore = await ledger.readRaw('P', parent.id);
+  assert.equal((await ledger.create('P', { title: 'Child', parent: parent.id, kind: 'derived', derivedFrom: parent.id })).phase, '');
+  assert.equal((await ledger.create('P', { title: 'Explicit', parent: parent.id, phase: '實作' })).phase, '實作');
+  assert.equal((await ledger.create('P', { title: 'Cleared', parent: parent.id, phase: '' })).phase, '');
   assert.equal((await ledger.create('P', { title: 'Top' })).phase, '');
+  await assert.rejects(ledger.create('P', { title: 'Invalid', phase: 42 as unknown as string }));
+  assert.equal(await fs.readFile(ws.projectFile('P'), 'utf8'), projectBefore);
+  assert.equal(await ledger.readRaw('P', parent.id), parentBefore);
 }));
 
 test('moving a task under its own descendant is refused, while other reparenting still works', () => withTmpWorkspace(async ws => {

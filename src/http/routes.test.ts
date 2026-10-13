@@ -214,6 +214,7 @@ test('phase offer, continuation key, legacy fallback, order and pins', async () 
   const { server: s, project: p, task: t } = await setup();
   const state = async () => (await s.api('GET', '/api/state')).json as AppState;
   try {
+    await s.api('POST', '/api/project/phases', { project: p.id, previous: [], phases: [{ name: '計畫' }, { name: '實作' }] });
     await s.api('POST', '/api/task/update', { project: p.id, task: t.id, patch: { state: '完成' } });
     assert.equal((await state()).projects[0]!.phaseOffer, true);
     assert.equal((await s.api('POST', '/api/phase/continue', { project: p.id, phase: '實作' })).status, 409);
@@ -248,6 +249,7 @@ test('editing phases renames tasks along, keeps states, normalizes the current p
   const { server: s, project: p } = await setup();
   const state = async () => ((await s.api('GET', '/api/state')).json as AppState).projects[0]!;
   try {
+    await s.api('POST', '/api/project/phases', { project: p.id, previous: [], phases: ['計畫', '實作', '檢查', '收尾'].map(name => ({ name })) });
     const done = (await s.api('POST', '/api/task/new', { project: p.id, title: 'Plan', phase: '計畫' })).json as Task;
     const later = (await s.api('POST', '/api/task/new', { project: p.id, title: 'Build', phase: '實作' })).json as Task;
     await s.api('POST', '/api/phase/next', { project: p.id, phase: '計畫' });

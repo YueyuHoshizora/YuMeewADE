@@ -16,6 +16,23 @@ test('create reuses an empty leftover folder but never touches one with data', (
   assert.equal(await fs.readFile(path.join(ws.projectDir('Busy'), 'keep.txt'), 'utf8'), 'data');
 }));
 
+test('phase-free defaults do not rewrite existing phased ledgers when read or another project is created', () => withTmpWorkspace(async ws => {
+  const projects = new ProjectLedger(ws);
+  await projects.create({ name: 'Existing' });
+  const legacy = '---\nname: Existing\nstatus: 進行中\nphases:\n  - { name: 計畫, state: 完成 }\n  - { name: 實作, state: 進行中 }\n  - { name: 檢查, state: 未開始 }\n  - { name: 收尾, state: 未開始 }\n---\n# 備註\n保留原始資料\n';
+  await fs.writeFile(ws.projectFile('Existing'), legacy);
+  const existing = await projects.get('Existing');
+  assert.deepEqual(existing.phases, [
+    { name: '計畫', state: '完成' }, { name: '實作', state: '進行中' },
+    { name: '檢查', state: '未開始' }, { name: '收尾', state: '未開始' },
+  ]);
+  assert.equal(projects.currentPhase(existing), '實作');
+  assert.deepEqual((await projects.create({ name: 'Fresh' })).phases, []);
+  assert.deepEqual((await projects.create({ name: 'Empty', phases: [] })).phases, []);
+  await projects.list();
+  assert.equal(await fs.readFile(ws.projectFile('Existing'), 'utf8'), legacy);
+}));
+
 test('two concurrent moves that only form a loop together cannot both succeed', () => withTmpWorkspace(async ws => {
   const projects = new ProjectLedger(ws);
   for (const name of ['A', 'B']) await projects.create({ name });
