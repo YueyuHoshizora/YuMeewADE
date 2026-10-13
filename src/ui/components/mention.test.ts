@@ -2,6 +2,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { applyMention, attachComposeInsert, mentionAt } from './mention.ts';
+import { MENTION_PATTERN, mentionReference, mentionTarget } from '../../shared/mention-syntax.ts';
 
 test('mentionAt only fires for an @token right before the caret', () => {
   assert.deepEqual(mentionAt('看 @src/a', 8), { start: 2, query: 'src/a' });
@@ -14,10 +15,22 @@ test('mentionAt only fires for an @token right before the caret', () => {
   assert.deepEqual(mentionAt('請看（@src', 7), { start: 3, query: 'src' }, 'an opening bracket starts a mention, as the core reads it');
 });
 
-test('applyMention replaces just the token and moves the caret past the inserted path', () => {
+test('applyMention replaces the whole token the caret is in and keeps the prose after it', () => {
   const text = '請看 @src/ rest';
   const mention = mentionAt(text, 8)!;
-  assert.deepEqual(applyMention(text, mention, 8, 'src/app.ts'), { text: '請看 @src/app.ts  rest', caret: 15 });
+  assert.deepEqual(applyMention(text, mention, 8, 'src/app.ts'), { text: '請看 @src/app.ts rest', caret: 15 });
+  // Caret inside the token: the part after the caret belongs to the token being replaced.
+  const inside = 'Please inspect @src/main.ts carefully';
+  assert.equal(applyMention(inside, mentionAt(inside, 20)!, 20, 'src/main.ts').text, 'Please inspect @src/main.ts carefully');
+  const quoted = 'see @"my fi" next';
+  assert.equal(applyMention(quoted, mentionAt(quoted, 8)!, 8, 'my file.ts').text, 'see @"my file.ts" next');
+});
+
+test('a picked path containing @ or a quote is written so the core reads the same path back', () => {
+  for (const file of ['src/user@domain.ts', 'a"b.ts', '"lead.ts', 'plain/a.ts']) {
+    const matches = [...`see ${mentionReference(file)} now`.matchAll(MENTION_PATTERN)];
+    assert.deepEqual(matches.map(mentionTarget), [file], file);
+  }
 });
 
 test('compose insertion replaces selection, focuses, notifies draft persistence, scopes projects/tasks and cleans up', () => {

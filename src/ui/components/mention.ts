@@ -12,9 +12,26 @@ export function mentionAt(text: string, caret: number): Mention | null {
   return found ? { start: caret - found[1]!.length - 1, query: found[1]! } : null;
 }
 
+/** Where the reference that starts at `mention.start` ends: through its closing quote, or up to the next whitespace. */
+function mentionEnd(text: string, mention: Mention, caret: number): number {
+  if (text[mention.start + 1] === '"') {
+    for (let at = mention.start + 2; at < text.length && text[at] !== '\n'; at++) {
+      if (text[at] === '\\' && text[at + 1] === '"') { at++; continue; }
+      if (text[at] === '"') return Math.max(caret, at + 1);
+    }
+    return caret;
+  }
+  const rest = /^[^\s]*/u.exec(text.slice(caret))![0];
+  return caret + rest.length;
+}
+
+/** Replaces the whole reference token the caret is in (not just its part before the caret); following prose stays. */
 export function applyMention(text: string, mention: Mention, caret: number, file: string): { text: string; caret: number } {
   const insert = `${mentionReference(file)} `;
-  return { text: text.slice(0, mention.start) + insert + text.slice(caret), caret: mention.start + insert.length };
+  const end = mentionEnd(text, mention, caret);
+  const after = text.slice(end);
+  // The inserted reference ends with a space; do not double the one that already follows the old token.
+  return { text: text.slice(0, mention.start) + insert + (after.startsWith(' ') ? after.slice(1) : after), caret: mention.start + insert.length };
 }
 
 /** Scope the editor/palette insertion contract to the currently mounted composer. */
@@ -58,8 +75,10 @@ export function attachMention(input: HTMLTextAreaElement, load: (query: string) 
   };
   function choose(i: number): void {
     const file = items[i];
-    if (!current || file === undefined) return;
-    const applied = applyMention(input.value, current, input.selectionStart ?? current.start + 1 + current.query.length, file);
+    // The caret may have left the token without an input or click event (arrow keys, Home/End): never apply a stale range.
+    const caret = input.selectionStart ?? 0; const live = input.selectionStart === input.selectionEnd ? mentionAt(input.value, caret) : null;
+    if (!current || file === undefined || !live || live.start !== current.start) { close(); return; }
+    const applied = applyMention(input.value, live, caret, file);
     input.value = applied.text;
     input.setSelectionRange(applied.caret, applied.caret);
     close();
@@ -87,6 +106,11 @@ export function attachMention(input: HTMLTextAreaElement, load: (query: string) 
   // 清單開著時，方向鍵／Enter／Tab／Esc 歸清單；capture 讓它先於輸入框原本的「Enter 送出」。
   input.addEventListener('keydown', event => {
     if (list.hidden) return;
+    if (event.key === 'Enter' || event.key === 'Tab') {
+      const live = input.selectionStart === input.selectionEnd ? mentionAt(input.value, input.selectionStart ?? 0) : null;
+      // Navigated out of the reference: the keys keep their usual meaning (send, focus move) instead of completing.
+      if (!live || live.start !== current?.start) { close(); return; }
+    }
     if (event.key === 'ArrowDown' || event.key === 'ArrowUp') {
       event.preventDefault();
       index = (index + (event.key === 'ArrowDown' ? 1 : items.length - 1)) % items.length;

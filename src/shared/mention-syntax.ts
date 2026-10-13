@@ -7,9 +7,9 @@
  */
 export const MENTION_PATTERN = /(?:^|[\s(（「『【〈《])@(?:"((?:[^"\\\n]|\\")+)"|([^\s@"][^\s@]*?))(?=[,.;:!?)\]}'"]*(?:\s|$|[，。；：！？、）」』】〉》…]))/gu;
 
-/** Whether `target` must be written as `@"target"` to be read back whole. */
+/** Whether `target` must be written as `@"target"` to be read back whole (a bare reference cannot hold `@` or `"`). */
 export function mentionNeedsQuotes(target: string): boolean {
-  return /\s|[,.;:!?)\]}'"]$|[，。；：！？、）」』】〉》…]/u.test(target);
+  return /[\s@"]|[,.;:!?)\]}']$|[，。；：！？、）」』】〉》…]/u.test(target);
 }
 
 /** The `@` reference text for `target`, quoted (with `"` escaped) when it has to be. */
