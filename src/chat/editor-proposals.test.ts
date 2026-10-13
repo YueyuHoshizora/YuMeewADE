@@ -136,3 +136,37 @@ test('proposal history is empty for a project without an .ai folder and not foun
     await assert.rejects(service.history('Missing', ''), { status: 404, detail: 'project_missing' });
   } finally { await fs.rm(root, { recursive: true, force: true }); }
 });
+
+test('transport recovery replays the latest committed hunk from its verified predecessor', async () => {
+  const root = await fs.mkdtemp(path.join(os.tmpdir(), 'proposal-transport-'));
+  try {
+    const ws = new Workspace(root); await ws.init(); await fs.mkdir(path.join(ws.projectDir('P'), '.ai'), { recursive: true });
+    const stored = path.join(ws.projectDir('P'), '.ai', 'editor-proposals.json');
+    const id = '12345678-1234-1234-1234-123456789abc';
+    await fs.writeFile(stored, JSON.stringify([{ id, project: 'P', task: '', version: 1, ai: 'codex', instruction: 'replace', createdAt: new Date().toISOString(), files: [{ path: 'a.txt', revision: 'r1', base: 'a b 😀', local: 'a b 😀', current: 'a b 😀', edits: [{ id: '0', from: 0, to: 1, text: 'AAA', state: 'pending' }, { id: '1', from: 2, to: 3, text: 'CCC', state: 'pending' }, { id: '2', from: 4, to: 6, text: '🦊', state: 'pending' }] }] }]));
+    let revision = 'r1';
+    const service = new EditorProposalService({ providers: {}, editor: { read: async (_project, _task, file): Promise<EditorDocument> => ({ path: file, text: 'a b 😀', revision, language: 'text', size: 8, binary: false, truncated: false, readonly: false, languageAvailable: false }) }, ws, settings: new SettingsStore(ws, DEFAULT_CONFIG), assertExecutable: async () => {}, isBusy: () => false, concurrentRuns: 1, runSeconds: 10 });
+    const snapshot = (text: string) => ({ path: 'a.txt', revision: 'r1', text });
+    const first = await service.decide('P', '', id, { version: 1, accept: true, snapshots: [snapshot('a b 😀')], target: { path: 'a.txt', edit: '0' } });
+    assert.equal(first.proposal.files[0]!.current, 'AAA b 😀');
+    const second = await service.decide('P', '', id, { version: 2, accept: true, snapshots: [snapshot('AAA b 😀')], target: { path: 'a.txt', edit: '1' } });
+    assert.equal(second.proposal.files[0]!.current, 'AAA CCC 😀');
+    // Lose the second response: the browser still holds the first committed draft.
+    const recovered = await service.recover('P', '', id, 3, [snapshot('AAA b 😀')]);
+    assert.deepEqual(recovered.changes, [{ expected: snapshot('AAA b 😀'), edits: [{ from: 0, to: 8, text: 'AAA CCC 😀' }] }]);
+    await assert.rejects(service.recover('P', '', id, 3, [snapshot('arbitrary dirty text')]), { status: 409, detail: 'editor_conflict' });
+    revision = 'r2';
+    await assert.rejects(service.recover('P', '', id, 3, [snapshot('AAA b 😀')]), { status: 409, detail: 'editor_conflict' });
+    revision = 'r1';
+    const third = await service.decide('P', '', id, { version: 3, accept: true, snapshots: [snapshot('AAA CCC 😀')], target: { path: 'a.txt', edit: '2' } });
+    assert.equal(third.proposal.files[0]!.current, 'AAA CCC 🦊');
+    await assert.rejects(service.recover('P', '', id, 4, [snapshot('AAA b 😀')]), { status: 409, detail: 'editor_conflict' });
+    assert.equal((await service.recover('P', '', id, 4, [snapshot('AAA CCC 😀')])).changes[0]!.edits[0]!.text, 'AAA CCC 🦊');
+    const rows = JSON.parse(await fs.readFile(stored, 'utf8'));
+    assert.deepEqual(rows[0].files[0].previous, { text: 'AAA CCC 😀', edits: ['2'] });
+    rows[0].files[0].previous.text = 'arbitrary dirty text';
+    await fs.writeFile(stored, JSON.stringify(rows));
+    await assert.rejects(service.history('P', ''), { status: 400 });
+    await service.close();
+  } finally { await fs.rm(root, { recursive: true, force: true }); }
+});

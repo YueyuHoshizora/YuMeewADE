@@ -58,8 +58,8 @@ export function mountEditorProposals(context: WorkbenchPanelContext): HTMLElemen
       const snapshots = editor.snapshots(); const changes = [];
       for (const file of proposal.files.filter(file => file.edits.some(edit => edit.state === 'accepted'))) {
         const snapshot = snapshots.find(snapshot => snapshot.path === file.path);
-        // Recovery may replay into the original local draft, never overwrite newer dirty text.
-        if (!snapshot || snapshot.revision !== file.revision || (snapshot.text !== file.local && snapshot.text !== file.current)) { status.textContent = t('proposal.conflict'); return; }
+        // Replay only a verified original, current, or latest pre-decision draft (the server validates `previous`).
+        if (!snapshot || snapshot.revision !== file.revision || (snapshot.text !== file.local && snapshot.text !== file.current && snapshot.text !== file.previous?.text)) { status.textContent = t('proposal.conflict'); return; }
         changes.push({ expected: { path: snapshot.path, revision: snapshot.revision, text: snapshot.text }, edits: [{ from: 0, to: snapshot.text.length, text: file.current }] });
       }
       if (!await confirmModal(t('proposal.restore'), t('proposal.restoreConfirm'), t('proposal.restore'))) return;

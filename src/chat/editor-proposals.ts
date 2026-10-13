@@ -152,6 +152,15 @@ export class EditorProposalService {
         let current = file.local;
         for (const edit of [...file.edits].reverse()) if (edit.state === 'accepted') current = current.slice(0,edit.from) + edit.text + current.slice(edit.to);
         if (current !== file.current) throw new AppError('bad_request');
+        const previous = file.previous;
+        if (previous !== undefined) {
+          if (!previous || typeof previous !== 'object' || typeof previous.text !== 'string' || !Array.isArray(previous.edits)
+            || !previous.edits.length || new Set(previous.edits).size !== previous.edits.length
+            || previous.edits.some(id => typeof id !== 'string' || !file.edits.some(edit => edit.id === id && edit.state !== 'pending'))) throw new AppError('bad_request');
+          let predecessor = file.local;
+          for (const edit of [...file.edits].reverse()) if (edit.state === 'accepted' && !previous.edits.includes(edit.id)) predecessor = predecessor.slice(0,edit.from) + edit.text + predecessor.slice(edit.to);
+          if (previous.text !== predecessor) throw new AppError('bad_request');
+        }
       }
       if (p.version !== 1 + decisions || totalEdits > 64 || totalBytes > MAX_TEXT) throw new AppError('bad_request');
     }
@@ -252,8 +261,10 @@ export class EditorProposalService {
         });
         changes.push({ expected: { path: file.path, revision: file.revision, text: file.current }, edits: input.accept ? replacements : [] });
       }
+      for (const file of proposal.files) delete file.previous;
       for (const [index, file] of affected.entries()) {
         const pending = file.edits.filter(edit => edit.state === 'pending' && (!input.target || edit.id === input.target.edit));
+        file.previous = { text: file.current, edits: pending.map(edit => edit.id) };
         for (const edit of pending) edit.state = input.accept ? 'accepted' : 'rejected';
         for (const edit of [...changes[index]!.edits].reverse()) file.current = file.current.slice(0,edit.from) + edit.text + file.current.slice(edit.to);
         if (Buffer.byteLength(file.current) > MAX_TEXT) throw new AppError('too_large');
@@ -275,7 +286,7 @@ export class EditorProposalService {
       for (const file of files) {
         const snapshot = snapshots.find(snapshot => snapshot.path === file.path);
         const disk = await this.deps.editor.read(project, task, file.path);
-        if (!snapshot || snapshot.revision !== file.revision || (snapshot.text !== file.local && snapshot.text !== file.current) || disk.path !== file.path || disk.revision !== file.revision) throw new AppError('conflict', 'editor_conflict');
+        if (!snapshot || snapshot.revision !== file.revision || (snapshot.text !== file.local && snapshot.text !== file.current && snapshot.text !== file.previous?.text) || disk.path !== file.path || disk.revision !== file.revision) throw new AppError('conflict', 'editor_conflict');
         changes.push({ expected: snapshot, edits: [{ from: 0, to: snapshot.text.length, text: file.current }] });
       }
       return { proposal, changes };
