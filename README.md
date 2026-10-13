@@ -174,7 +174,7 @@ npm run desktop      # 桌面版（開發機）
 - 封存不是刪除：作業封存到 `Projects/{專案}/.ai/trash/`，專案封存到 `Projects/.trash/`。
 - 開發模式：`npm run dev`（tsc／vite watch，核心自動重啟）。
 - 打包目前平台：`npm run dist`（會先執行 `npm run build`）→ `release/`。CI 可選提供平台簽名／公證及 manifest 簽章憑證；目前未提供，維持 ad-hoc／unsigned，不聲稱官方發布者簽名。三平台工作流程不等於本次新增三平台通過證據。
-- `node-pty@1.1.0` 是唯一批准的額外執行期相依。前端編輯器使用 2026-10-12 批准的 CodeMirror 6（`devDependencies` 確切版本，由 Vite 打包進前端，不是核心執行期相依）。安裝／建置以 `npm run prepare:pty` 在打包前準備 Darwin helper 執行權限，不在 runtime chmod 已簽章 App。批准的局部 `sprintf-js@1.1.3` precision guard 以精確來源 SHA256、原子／冪等修補，來源漂移 fail closed（`npm run patch:build-deps`）；上游 advisory 仍開放，不宣稱 `npm audit` 清零。
+- `node-pty@1.1.0` 是唯一批准的額外執行期相依。前端編輯器使用 2026-10-12 批准的 CodeMirror 6（`devDependencies` 確切版本，由 Vite 打包進前端，不是核心執行期相依）。安裝／建置以 `npm run prepare:pty` 在打包前準備 Darwin helper 執行權限，不在 runtime chmod 已簽章 App。打包工具的 `@electron/get@3.1.0` 透過 scoped override 固定使用 `global-agent@4.1.3`，移除含 GHSA-hp3w-g68c-fv3c 的 `roarr → sprintf-js` 相依鏈，不再需要本地 precision patch；Electron／electron-builder 版本不變。
 
 ## `config.yaml`
 

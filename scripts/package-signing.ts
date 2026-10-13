@@ -1,10 +1,7 @@
 import { spawnSync } from 'node:child_process';
 import { createRequire } from 'node:module';
-import { patchInstalledSprintf } from './patch-sprintf.ts';
 import './prepare-pty.ts';
 import { signingPlan } from './signing-plan.ts';
-
-await patchInstalledSprintf();
 
 const args = [createRequire(import.meta.url).resolve('electron-builder/cli.js'), '--config', 'electron-builder.yml', '--publish', 'never'];
 const env = { ...process.env, CSC_IDENTITY_AUTO_DISCOVERY: 'false' };

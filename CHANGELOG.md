@@ -4,6 +4,9 @@
 
 ## [Unreleased]
 
+### 相依安全性
+- 將打包用 `@electron/get@3.1.0` 的 `global-agent` 精確覆寫為 `4.1.3`，移除 `roarr → sprintf-js` 漏洞相依鏈（GHSA-hp3w-g68c-fv3c）；不升級 Electron／electron-builder，也不新增執行期相依。移除已無用途的本地 patch、測試與 CI 步驟；實際代理／NO_PROXY 下載與 SHA256 驗證通過，`npm audit` 回報零漏洞。
+
 ### 帳號額度與憑證
 - Claude 額度改由核心自動更新即將到期的 OAuth 憑證，保留 token 輪替與 metadata；401 最多更新／重查一次，網路／403／限流不冒充登入失效。更新後原子寫入受管環境並加密保存，不碰原始 CLI 登入。
 - 選用帳號與預設槽共用原生憑證環境與進行中的額度查詢，避免 Claude／Gemini 同一登入重複查詢、平行換發及舊副本覆蓋。Gemini 保留原生 `agy` 的自動更新與回存。
