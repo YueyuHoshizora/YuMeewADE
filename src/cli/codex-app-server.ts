@@ -229,11 +229,7 @@ export function codexAppServerRun(cfg: CliCommandConfig, opts: SendOptions, env:
   // A review runs as a child turn whose rootTurnId is the turn review/start returned; both ids belong to this run.
   const turns = new Set<string>();
   const ownTurn = (id: unknown) => turns.size === 0 || (typeof id === 'string' && turns.has(id));
-  const runId = randomUUID();
-  // Clock starts at the first turn/started, not at process spawn (initialize + thread/start are not output time).
-  let started = 0;
-  // `tokenUsage.last` is one model request; `total` is the whole thread. The run's usage is total minus the thread's total before it.
-  let base: { input: number; output: number; cached: number } | null = null;
+  const started = Date.now(); const runId = randomUUID();
   const pending = new Map<number, { method: string; resolve: (value: unknown) => void; reject: (error: Error) => void; timer: ReturnType<typeof setTimeout> }>();
   const approvals = new Map<string | number, { deny: () => void }>();
   const streamedItems = new Set<string>();
@@ -310,7 +306,7 @@ export function codexAppServerRun(cfg: CliCommandConfig, opts: SendOptions, env:
       const active = object(params['turn']); if (typeof active['id'] !== 'string') throw new Error('Missing turn id');
       const root = typeof active['rootTurnId'] === 'string' ? active['rootTurnId'] : active['id'];
       if (turns.size && !turns.has(root) && !turns.has(active['id'])) throw new Error('Notification turn mismatch');
-      turns.add(active['id']); turns.add(root); turn ||= root; started ||= Date.now();
+      turns.add(active['id']); turns.add(root); turn ||= root;
       if (stopped) void request('turn/interrupt', { threadId: thread, turnId: turn }).catch(fail);
     }
     // Review mode streams the reviewer's raw output; only the exitedReviewMode summary is the answer.
@@ -341,19 +337,11 @@ export function codexAppServerRun(cfg: CliCommandConfig, opts: SendOptions, env:
       if (typeof params['delta'] !== 'string') throw new Error('Invalid tool output'); onEvent({ type: 'tool', text: params['delta'].slice(0, 2000) });
     }
     if (method === 'thread/tokenUsage/updated') {
-      const tokenUsage = object(params['tokenUsage']);
-      const read = (value: unknown): { input: number; output: number; cached: number } => {
-        const u = object(value); const input = u['inputTokens']; const output = u['outputTokens']; const cached = u['cachedInputTokens'];
-        const valid = (n: unknown): n is number => typeof n === 'number' && Number.isSafeInteger(n) && n >= 0;
-        if (!valid(input) || !valid(output) || !valid(cached)) throw new Error('Invalid usage');
-        return { input, output, cached };
-      };
-      const last = read(tokenUsage['last']); const total = read(tokenUsage['total']);
-      base ??= { input: Math.max(0, total.input - last.input), output: Math.max(0, total.output - last.output), cached: Math.max(0, total.cached - last.cached) };
-      const usage = { input: Math.max(0, total.input - base.input), output: Math.max(0, total.output - base.output), cached: Math.max(0, total.cached - base.cached) };
-      onEvent({ type: 'usage', usage });
-      const at = Date.now(); started ||= at;
-      onEvent({ type: 'tokens', runId, count: usage.output, spanMs: Math.max(1, at - started), at });
+      const usage = object(object(params['tokenUsage'])['last']);
+      const input = usage['inputTokens']; const output = usage['outputTokens']; const cached = usage['cachedInputTokens'];
+      if (![input, output, cached].every(n => typeof n === 'number' && Number.isSafeInteger(n) && n >= 0)) throw new Error('Invalid usage');
+      onEvent({ type: 'usage', usage: { input: input as number, output: output as number, cached: cached as number } });
+      onEvent({ type: 'tokens', runId, count: output as number, spanMs: Math.max(1, Date.now() - started), at: Date.now() });
     }
     if (method === 'turn/completed') {
       const result = object(params['turn']); if (result['id'] !== turn) { if (turns.has(String(result['id']))) return; throw new Error('Completed turn mismatch'); }

@@ -1,7 +1,7 @@
 import type { Ask } from '../shared/types.ts';
 
 /** Markdown code: fenced blocks (an unclosed fence runs to the end, as in CommonMark), then inline spans on one line. */
-const FENCE = /^ {0,3}((`|~)\2{2,})[^\n]*(?:\n(?:[\s\S]*?\n)?? {0,3}\1\2*[ \t]*(?=\n|$)|[\s\S]*)/gmu;
+const FENCE = /^[ \t]*((`|~)\2{2,})[^\n]*(?:\n(?:[\s\S]*?\n)??[ \t]*\1\2*[ \t\r]*(?=\n|$)|[\s\S]*)/gmu;
 const INLINE = /(`+)(?:[^`\n]|[^`\n][^\n]*?[^`\n])\1(?!`)/gu;
 const SLOT = /\uE000(\d+)\uE001/gu;
 

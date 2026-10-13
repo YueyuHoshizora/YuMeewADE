@@ -57,34 +57,6 @@ test('app-server disconnect and invalid JSON fail closed',async()=>{
   assert.equal(result.ok,false);assert.ok(events.some(e=>e.type==='error'));
  }}finally{await fs.rm(dir,{recursive:true,force:true});}
 });
-// codex-cli 0.162.1: `last` is one model request, `total` the whole thread (rollout token_count: 131/131, 94/225, …).
-test('app-server reports the run\'s own output across model requests, timed from turn start', async () => {
- const dir=await fs.mkdtemp(path.join(os.tmpdir(),'codex-tokens-'));
- try {
-  const file=path.join(dir,'fixture.ts');
-  await fs.writeFile(file,`import {createInterface} from 'node:readline';
-const send=x=>console.log(JSON.stringify(x));
-const u=(i,o,c)=>({inputTokens:i,outputTokens:o,cachedInputTokens:c,reasoningOutputTokens:0,totalTokens:i+o});
-const usage=(last,total)=>send({method:'thread/tokenUsage/updated',params:{threadId:'thread',turnId:'turn',tokenUsage:{last,total,modelContextWindow:null}}});
-createInterface({input:process.stdin}).on('line',line=>{const m=JSON.parse(line);
- if(m.method==='initialize')send({id:m.id,result:{}});
- else if(m.method==='thread/resume')setTimeout(()=>send({id:m.id,result:{thread:{id:'thread'}}}),300);
- else if(m.method==='turn/start'){send({id:m.id,result:{turn:{id:'turn'}}});send({method:'turn/started',params:{threadId:'thread',turn:{id:'turn'}}});
-  setTimeout(()=>usage(u(100,40,10),u(1100,540,510)),100);
-  setTimeout(()=>{usage(u(150,60,90),u(1250,600,600));send({method:'turn/completed',params:{threadId:'thread',turn:{id:'turn',status:'completed',error:null}}});},200);}
-}).on('close',()=>process.exit(0));`);
-  const provider=new CodexCliProvider({...DEFAULT_CONFIG.cli.codex,command:process.execPath,appServerArgs:[file]},[]);
-  const events:CliEvent[]=[];
-  assert.equal((await provider.send({prompt:'x',cwd:dir,resumeId:'thread'},e=>events.push(e)).done).ok,true);
-  // Earlier turns (500 out) are excluded; both requests (40 + 60) count.
-  assert.deepEqual(events.filter(e=>e.type==='usage').map(e=>e.usage),[{input:100,output:40,cached:10},{input:250,output:100,cached:100}]);
-  const tokens=events.filter(e=>e.type==='tokens');
-  assert.deepEqual(tokens.map(e=>e.count),[40,100]);
-  // The 300 ms thread/resume wait is not output time.
-  for(const e of tokens) assert.ok(e.spanMs<280,`span ${e.spanMs}`);
-  assert.ok(tokens[1]!.spanMs>tokens[0]!.spanMs);
- }finally{await fs.rm(dir,{recursive:true,force:true});}
-});
 // Mirrors codex-cli 0.162.1: review/start returns the root turn; the work runs in a child turn whose rootTurnId points back.
 const commandFixture = `import {createInterface} from 'node:readline';
 const send = x => console.log(JSON.stringify(x));

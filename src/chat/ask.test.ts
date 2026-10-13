@@ -59,3 +59,23 @@ test('question tags quoted in fenced or inline code stay visible and are not ask
   const parsed = parseAsk('```\n```\n[[question]]\nRun `npm test`?\n1. Yes `now`\n[[/question]]');
   assert.deepEqual(parsed, { text: '```\n```', asks: [{ question: 'Run `npm test`?', options: ['Yes `now`'], multi: false }] });
 });
+
+test('question tags in list-indented fences stay byte-for-byte content while questions outside remain live', () => {
+  for (const indent of ['    ', '        ', '\t']) {
+    for (const fence of ['```', '~~~~']) {
+      for (const newline of ['\n', '\r\n']) {
+        const other = fence[0] === '`' ? '~~~' : '```';
+        const sample = [
+          '- Example question syntax:', '', `${indent}${fence}text`,
+          `${indent}[[question]]`, `${indent}Which database?`, `${indent}1. SQLite`,
+          `${indent}${other}`, `${indent}${fence.slice(1)}`, `${indent}[[/question]]`,
+          `${indent}${fence}${fence[0]}`, 'Done.',
+        ].join(newline);
+        assert.deepEqual(parseAsk(sample), { text: sample, asks: [] });
+        assert.deepEqual(parseAsk(`${sample}\n[[question]]\nReal question?\n1. Yes\n[[/question]]`), {
+          text: sample, asks: [{ question: 'Real question?', options: ['Yes'], multi: false }],
+        });
+      }
+    }
+  }
+});
