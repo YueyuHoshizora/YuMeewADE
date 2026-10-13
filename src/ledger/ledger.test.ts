@@ -37,6 +37,18 @@ test('專案預設、階段推進、改名不搬目錄、階層與外部本體�
   assert.equal(projects.currentPhase(await projects.get('P')), '');
 }));
 
+test('a still-active child of an archived project can take subprojects, and cycles are still refused', () => withTmpWorkspace(async ws => {
+  const projects = new ProjectLedger(ws);
+  await projects.create({ name: 'Parent' });
+  await projects.create({ name: 'Child', parent: 'Parent' });
+  await projects.create({ name: 'Other' });
+  await projects.archive('Parent');
+  assert.equal((await projects.update('Other', { parent: 'Child' })).parent, 'Child');
+  assert.equal((await projects.create({ name: 'Grandchild', parent: 'Child' })).parent, 'Child');
+  await assert.rejects(projects.update('Child', { parent: 'Grandchild' }), (error: AppError) => error.field === 'parent');
+  await assert.rejects(projects.update('Other', { parent: 'Parent' }), (error: AppError) => error.detail === 'project_missing');
+}));
+
 test('a second project cannot take a main folder in a repository another project already uses', () => withTmpWorkspace(async (ws, dir) => {
   const projects = new ProjectLedger(ws);
   const repo = path.join(dir, 'repo'); await fs.mkdir(path.join(repo, 'packages', 'web'), { recursive: true });

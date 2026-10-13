@@ -124,7 +124,11 @@ export class ProjectLedger {
         if (parent.id === id || seen.has(parent.id)) throw new AppError('bad_request', 'field_type', { field: 'parent' });
         seen.add(parent.id);
         if (!parent.parent) break;
-        parent = await this.get(parent.parent);
+        // A higher ancestor that was archived or removed ends the chain (the tree shows its child as a root): no cycle
+        // can pass through it. The chosen parent itself must still exist.
+        const next = await this.get(parent.parent).catch((error: unknown) => { if (error instanceof AppError && error.detail === 'project_missing') return undefined; throw error; });
+        if (!next) break;
+        parent = next;
       }
     }
     if (patch.related !== undefined && (!Array.isArray(patch.related) || patch.related.length > RELATED_MAX || patch.related.some(v => typeof v !== 'string' || !isValidProjectName(v) || v === id) || new Set(patch.related).size !== patch.related.length)) throw new AppError('bad_request', 'field_type', { field: 'related' });
