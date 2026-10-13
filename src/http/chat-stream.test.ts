@@ -4,6 +4,8 @@ import { test } from 'node:test';
 import { MockCliProvider } from '../cli/mock.ts';
 import type { ChatEvent, ChatHistory, ChatRow, Task } from '../shared/types.ts';
 import { startTestServer } from '../testing/server.ts';
+import path from 'node:path';
+import { taskKey } from './sse.ts';
 
 interface CollectedStream {
   events: ChatEvent[];
@@ -129,11 +131,11 @@ test('snapshot buffering includes rows published outside the chat runner', { tim
     await entered.promise;
     const row: ChatRow = { role: 'event', at: 'now', text: 'review result', request: 'review' };
     const position = await s.app.store.append('P', task.id, row);
-    s.app.sse.publish(`P\0${task.id}`, { event: 'row', data: { ...row, position } });
+    s.app.sse.publish(taskKey(s.app.ws.root, 'P', task.id), { event: 'row', data: { ...row, position } });
     release.resolve(); stream = await collect(await response);
     await stream.waitFor(() => stream!.events.some(event => event.event === 'snapshot'));
     // This later frame is an ordering barrier, not a guessed network drain delay.
-    s.app.sse.publish(`P\0${task.id}`, { event: 'idle', data: { request: 'barrier' } });
+    s.app.sse.publish(taskKey(s.app.ws.root, 'P', task.id), { event: 'idle', data: { request: 'barrier' } });
     await stream.waitFor(() => stream!.events.some(event => event.event === 'idle' && event.data.request === 'barrier'));
     const snapshot = stream.events[0];
     assert.ok(snapshot?.event === 'snapshot');
@@ -159,12 +161,12 @@ test('a queue change published while the snapshot reads the queue still reaches 
       if (!changed) {
         changed = true;
         const next = await s.app.store.updateQueue(p, t, q => [...q, { id: 'q1', text: 'queued meanwhile', ai: 'codex', at: 'now' }]);
-        s.app.sse.publish(`${p}\0${t}`, { event: 'queue', data: next });
+        s.app.sse.publish(taskKey(s.app.ws.root, p, t), { event: 'queue', data: next });
       }
       return queue;
     };
     stream = await collect(await fetch(`${s.base}/api/chat/stream?project=P&task=${task.id}`));
-    s.app.sse.publish(`P\0${task.id}`, { event: 'idle', data: { request: 'barrier' } });
+    s.app.sse.publish(taskKey(s.app.ws.root, 'P', task.id), { event: 'idle', data: { request: 'barrier' } });
     await stream.waitFor(() => stream!.events.some(event => event.event === 'idle' && event.data.request === 'barrier'));
     const snapshot = stream.events[0];
     assert.ok(snapshot?.event === 'snapshot'); assert.deepEqual(snapshot.data.queue, []);
@@ -183,4 +185,36 @@ test('an unpersisted error reply is displayed without advancing the history end'
   receiveRow({ event: 'row', data: { ...row, position: 3 } }, { start: 3 }, rows, displayed);
   assert.deepEqual(displayed, [-1, 3]);
   assert.equal(rows.length, 1);
+});
+
+test('task streams never receive rows from another workspace reusing project and task IDs', { timeout: 10000 }, async () => {
+  const s = await startTestServer('', { providers: { mock: new MockCliProvider({ chunkMs: 1, text: 'new reply' }) } });
+  let stream: CollectedStream | undefined;
+  const old = s.app;
+  let channel = '';
+  const open = old.sse.open.bind(old.sse);
+  old.sse.open = (req, res, key, ...args) => { channel = key; open(req, res, key, ...args); };
+  try {
+    await s.api('POST', '/api/project/new', { name: 'P' });
+    const task = (await s.api('POST', '/api/task/new', { project: 'P', title: 'Old', cli: 'mock', workspace: 'direct' })).json as Task;
+    stream = await collect(await fetch(`${s.base}/api/chat/stream?project=P&task=${task.id}`));
+    await stream.waitFor(() => stream!.events.some(event => event.event === 'snapshot'));
+    assert.equal((await s.api('POST', '/api/workspace', { root: path.join(s.dir, 'next') })).status, 200);
+    await s.api('POST', '/api/project/new', { name: 'P' });
+    const next = (await s.api('POST', '/api/task/new', { project: 'P', title: 'New', cli: 'mock', workspace: 'direct' })).json as Task;
+    assert.equal(next.id, task.id);
+    assert.equal((await s.api('POST', '/api/chat/send', { project: 'P', task: next.id, ai: 'mock', text: 'new workspace prompt' })).status, 200);
+    await s.app.runner.whenIdle();
+    // Same-connection ordering barrier proves all earlier published rows have reached this reader.
+    old.sse.publish(channel, { event: 'idle', data: { request: 'barrier' } });
+    await stream.waitFor(() => stream!.events.some(event => event.event === 'idle' && event.data.request === 'barrier'));
+    assert.deepEqual(stream.events.filter(event => event.event === 'row'), []);
+    const current = await collect(await fetch(`${s.base}/api/chat/stream?project=P&task=${next.id}`));
+    try {
+      await current.waitFor(() => current.events.some(event => event.event === 'snapshot'));
+      const snapshot = current.events.find(event => event.event === 'snapshot');
+      assert.ok(snapshot?.event === 'snapshot');
+      assert.ok(snapshot.data.rows.some(row => row.text === 'new workspace prompt'));
+    } finally { await current.close(); }
+  } finally { await stream?.close(); await s.close(); }
 });

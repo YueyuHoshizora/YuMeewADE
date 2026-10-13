@@ -89,9 +89,9 @@ export class SseHub {
   }
 }
 
-/** 作業對話流的 key。 */
-export function taskKey(project: string, task: string): string {
-  return `${project}\u0000${task}`;
+/** 工作區內作業對話流的 key；全域流在切換工作區時仍沿用。 */
+export function taskKey(root: string, project: string, task: string): string {
+  return `${root}\u0000${project}\u0000${task}`;
 }
 
 function format(ev: { event: string; data: unknown }): string {

@@ -299,7 +299,7 @@ Roles   { models, roles: { role: { main, backup, job } }, permissions }   // rol
 - 讀取順序：`YUMEEWADE_CONFIG` → `./config.yaml` → `~/.yumeewade/config.yaml` → 內建預設（與倉庫根 `config.yaml` 範本相同）。桌面 App 啟動時若使用者設定目錄沒有 `config.yaml`，複製範本過去並以 `YUMEEWADE_CONFIG` 指向它。
 - 區塊：`server{host,port}`、`workspace{root}`、`cli{claude{command,baseArgs,fullAccess,fullAccessArgs,safeArgs},codex{…},envPassthrough}`、`limits{bodyBytes,promptChars,sendPerMinute,concurrentRuns,sseConnections,queueLength,handoffChars,heartbeatSeconds,diffBytes,uploadBytes,imagesPerSend}`。
 - `server.host` 非 loopback 時啟動失敗（安全節 1）。
-- 工作區根目錄可在設定頁切換（`POST /api/workspace`）：先建好新工作區，再只改寫設定檔的 `workspace.root` 那一行（其他內容與註解保留；全用預設時寫到 `~/.yumeewade/config.yaml`），最後換上新的 App。SSE 連線由核心持有、切換時沿用；AI 執行中回 409，原工作區檔案不搬移。
+- 工作區根目錄可在設定頁切換（`POST /api/workspace`）：先建好新工作區，再只改寫設定檔的 `workspace.root` 那一行（其他內容與註解保留；全用預設時寫到 `~/.yumeewade/config.yaml`），最後換上新的 App。SSE 連線由核心持有、切換時沿用：全域事件流照常延續，作業對話流的頻道包含工作區根目錄，舊工作區的對話流不會收到新工作區同名作業的內容；AI 執行中回 409，原工作區檔案不搬移。切換期間收到關閉訊號時，關閉會等待切換結束，新 App 不再被換上並釋放其資源與 `core.lock`。
 
 ### A.2 工作區配置
 ```

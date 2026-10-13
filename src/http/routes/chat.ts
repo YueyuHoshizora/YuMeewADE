@@ -52,7 +52,7 @@ export function registerChatRoutes(router: Router, app: App): void {
       // This subscription is to a task key, which only carries chat events.
       buffered.push(structuredClone(event) as ChatEvent);
     };
-    const unsubscribe = app.sse.subscribe(taskKey(p, t), collect);
+    const unsubscribe = app.sse.subscribe(taskKey(app.ws.root, p, t), collect);
     try {
       const snapshot = await app.runner.snapshot(p, t, stage => {
         // Queue changes published before the queue read are reflected by it; later ones are replayed in order, so the
@@ -62,7 +62,7 @@ export function registerChatRoutes(router: Router, app: App): void {
       // No await between opening and replay: new events now flow through the hub.
       const end = snapshot.start + snapshot.rows.length;
       const replay = buffered.filter(event => event.event !== 'row' || event.data.position === undefined || event.data.position >= end);
-      app.sse.open(req, res, taskKey(p, t), { event: 'snapshot', data: snapshot }, replay);
+      app.sse.open(req, res, taskKey(app.ws.root, p, t), { event: 'snapshot', data: snapshot }, replay);
     } finally {
       unsubscribe();
     }

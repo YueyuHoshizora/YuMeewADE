@@ -226,7 +226,7 @@ export class App {
       beforeRun: async (project, task, ai, account) => { await this.trust.assertExecutable(project); await this.usageHistory.assertProceed({ project, task: this.workflows.budgetTask(project, task), ai, account }, this.usage.snapshot()); },
       onCompleted: input => this.usageHistory.record({ ...input, ...(input.usage?.claudeUsd !== undefined ? { claudeUsd: input.usage.claudeUsd } : {}), ...(input.usage?.codexCredits !== undefined ? { codexCredits: input.usage.codexCredits } : {}) }),
       isRunning: (p, t) => this.runner.isRunning(p, t) || this.execution.isRunning(p, t) || this.terminal.isRunning(p, t) || this.debugger.isRunning(p, t) || this.embeddedPreview.isRunning(p, t) || this.verify.isRunning(p, t) || this.testExplorer.isRunning(p, t) || this.editorProposals.isBusy(p, t),
-      publish: (p, t, event) => this.sse.publish(taskKey(p, t), event) });
+      publish: (p, t, event) => this.sse.publish(taskKey(this.ws.root, p, t), event) });
     this.runner = new ChatRunner({
       ws: this.ws,
       store: this.store,
@@ -251,7 +251,7 @@ export class App {
       roles: () => this.roles(),
       providers: this.providers,
       limits: config.limits,
-      publish: (project, task, ev) => this.sse.publish(taskKey(project, task), ev),
+      publish: (project, task, ev) => this.sse.publish(taskKey(this.ws.root, project, task), ev),
       onChanged: (project, task) => this.changed(project, task),
       onUsage: (ai, ev, account) => this.usage.record(ai, ev, account),
     });
@@ -433,7 +433,7 @@ export class App {
   close(): void {
     this.verify.close();
     void this.editorProposals.close().catch(error => log.error('編輯器提案停止失敗', error));
-    this.editor.dispose();
+    this.editor.shutdown();
     this.execution.close();
     this.terminal.close();
     this.debugger.close();

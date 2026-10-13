@@ -9,6 +9,8 @@ import type { AppState, Project, Task } from '../shared/types.ts';
 import { startTestServer } from '../testing/server.ts';
 import { withTmpWorkspace } from '../testing/tmp.ts';
 import { CoreHost } from './host.ts';
+import { App } from './app.ts';
+import { withFileLocks } from '../shared/fsx.ts';
 
 test('切換工作區：新根目錄立即生效並寫回設定檔，舊資料留在原處', async () => {
   const s = await startTestServer();
@@ -121,3 +123,73 @@ test('切換工作區：換上新工作區後紀錄寫入失敗仍回報成功�
     await s.close();
   }
 });
+
+test('an admitted language request cannot start an old workspace LSP after switching', { timeout: 10000 }, async () => {
+  const s = await startTestServer();
+  const old = s.app;
+  const release = Promise.withResolvers<void>();
+  const locked = Promise.withResolvers<void>();
+  let held: Promise<unknown> | undefined;
+  try {
+    await s.api('POST', '/api/project/new', { name: 'P' });
+    const file = path.join(old.ws.projectDir('P'), 'a.ts');
+    const marker = path.join(s.dir, 'lsp-started');
+    await fs.writeFile(file, 'const a = 1;');
+    old.editor.commands.typescript = [process.execPath, '-e', `require('node:fs').writeFileSync(${JSON.stringify(marker)}, 'started');let b=Buffer.alloc(0);process.stdin.on('data',c=>{b=Buffer.concat([b,c]);for(;;){let e=b.indexOf('\\r\\n\\r\\n');if(e<0)return;let n=Number(/Content-Length:\\s*(\\d+)/i.exec(b.subarray(0,e).toString())[1]);if(b.length<e+4+n)return;let m=JSON.parse(b.subarray(e+4,e+4+n));b=b.subarray(e+4+n);if(m.id!==undefined){let x=JSON.stringify({jsonrpc:'2.0',id:m.id,result:m.method==='initialize'?{capabilities:{}}:null});process.stdout.write('Content-Length: '+Buffer.byteLength(x)+'\\r\\n\\r\\n'+x);}}});`];
+    held = withFileLocks([await fs.realpath(file)], async () => { locked.resolve(); await release.promise; });
+    await locked.promise;
+    const entered = Promise.withResolvers<void>();
+    const language = old.editor.language.bind(old.editor);
+    old.editor.language = (...args) => { entered.resolve(); return language(...args); };
+    const pending = s.api('POST', '/api/editor/language', { project: 'P', path: 'a.ts', text: 'const a = 1;', line: 0, character: 0, action: 'hover' });
+    await entered.promise;
+    assert.equal((await s.api('POST', '/api/workspace', { root: path.join(s.dir, 'next') })).status, 200);
+    release.resolve(); await held;
+    const result = await pending;
+    assert.equal(result.status, 503);
+    assert.ok(result.json && typeof result.json === 'object' && 'detail' in result.json);
+    assert.equal(result.json.detail, 'editor_language_unavailable');
+    await assert.rejects(fs.access(marker), 'a closed editor must not spawn a language process');
+  } finally { release.resolve(); await held; old.editor.dispose(); await s.close(); }
+});
+
+test('shutdown waits for pending relocation and prevents its App from being installed', { timeout: 10000 }, () => withTmpWorkspace(async (ws, dir) => {
+  const configFile = path.join(dir, 'config.yaml');
+  const text = `workspace:\n  root: ${JSON.stringify(ws.root)}\nupdate:\n  enabled: false\n`;
+  await fs.writeFile(configFile, text);
+  const host = new CoreHost(parseConfig(text, configFile), { app: { providers: { mock: new MockCliProvider() }, home: path.join(dir, 'home') } });
+  await host.init();
+  const old = host.app;
+  const root = path.join(dir, 'next');
+  const init = App.prototype.init;
+  const initialized = Promise.withResolvers<App>();
+  const resume = Promise.withResolvers<void>();
+  let relocating: Promise<string> | undefined;
+  let stopped: Promise<void> | undefined;
+  try {
+    App.prototype.init = async function () {
+      await init.call(this);
+      if (this.ws.root === root) { initialized.resolve(this); await resume.promise; }
+    };
+    relocating = host.relocate(root);
+    const next = await initialized.promise;
+    const outcome = relocating.then(() => 'committed', () => 'cancelled');
+    let returned = false;
+    stopped = host.shutdown().then(() => { returned = true; });
+    const tick = Promise.withResolvers<void>();
+    setImmediate(tick.resolve); await tick.promise;
+    assert.equal(returned, false, 'shutdown must await pending relocation cleanup');
+    resume.resolve();
+    assert.equal(await outcome, 'cancelled');
+    await stopped;
+    assert.equal(host.app, old);
+    await assert.rejects(fs.access(path.join(root, '.yumeewade', 'core.lock')));
+    await assert.rejects(fs.access(path.join(old.ws.root, '.yumeewade', 'core.lock')));
+    await assert.rejects(fetch(next.embeddedPreview.gatewayOrigin()));
+    await assert.rejects(host.relocate(root), { code: 'unavailable' });
+  } finally {
+    resume.resolve(); App.prototype.init = init;
+    await relocating?.catch(() => undefined); await stopped;
+    await host.shutdown(); host.close();
+  }
+}));

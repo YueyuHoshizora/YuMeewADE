@@ -91,6 +91,7 @@ export function completionCandidates(items: unknown[], text: string, line: numbe
 }
 export class EditorService {
   private clients = new Map<string, LanguageClient>();
+  private closed = false;
   private versions = new Map<string, number>();
   private snapshots = new Map<string, { root: string; uri: string; language: string; text: string }>();
   readonly commands: Record<string, string[]>;
@@ -440,6 +441,7 @@ export class EditorService {
     const command = (await this.configured(project)).commands[document.language];
     if (!command) throw new AppError('unavailable', 'editor_language_unavailable');
     const key = `${root}\0${document.language}`;
+    if (this.closed) throw new AppError('unavailable', 'editor_language_unavailable');
     let client = this.clients.get(key);
     if (!client) {
       if (this.clients.size >= 16) throw new AppError('unavailable');
@@ -825,5 +827,6 @@ export class EditorService {
     if (this.failed.size < 1000) this.failed.add(key);
     for (const versionKey of this.versions.keys()) if (versionKey.startsWith(`${key}\0`)) this.versions.delete(versionKey);
   }
+  shutdown(): void { this.closed = true; this.dispose(); }
   dispose(): void { for (const client of this.clients.values()) client.dispose(); this.clients.clear(); this.versions.clear(); this.snapshots.clear(); }
 }

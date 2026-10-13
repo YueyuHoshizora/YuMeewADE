@@ -24,6 +24,9 @@ export class CoreHost {
   private readonly options: HostOptions;
   private readonly sse: SseHub;
   private relocating = false;
+  private relocationDone: Promise<void> | undefined;
+  private closing = false;
+  private shutdownDone: Promise<void> | undefined;
   private releaseLock: (() => Promise<void>) | undefined;
 
   constructor(config: Config, options: HostOptions = {}) {
@@ -58,6 +61,7 @@ export class CoreHost {
    * 原工作區的檔案不搬移也不刪除。
    */
   async relocate(input: string): Promise<string> {
+    if (this.closing) throw new AppError('unavailable');
     const expanded = expandHome(input.trim());
     if (!path.isAbsolute(expanded)) throw new AppError('bad_request', 'root_not_absolute');
     const root = path.resolve(expanded);
@@ -65,6 +69,8 @@ export class CoreHost {
     if (root === old.ws.root) return root;
     if (this.relocating || old.isBusy() || old.mutations.busy) throw new AppError('conflict', 'relocate_busy');
     this.relocating = true;
+    const done = Promise.withResolvers<void>();
+    this.relocationDone = done.promise;
     try {
       const stat = await fs.stat(root).catch((err: NodeJS.ErrnoException) => { if (err.code === 'ENOENT') return null; throw err; });
       if (stat && !stat.isDirectory()) throw new AppError('bad_request', 'root_not_directory');
@@ -78,7 +84,9 @@ export class CoreHost {
         throw new AppError('bad_request', 'root_unwritable', { cause });
       }
       try {
+        if (this.closing) throw new AppError('unavailable');
         await saveWorkspaceRoot(configWriteTarget(old.config), root);
+        if (this.closing) throw new AppError('unavailable');
       } catch (err) {
         try { await next.shutdown(); }
         finally { await releaseNext(); }
@@ -102,10 +110,18 @@ export class CoreHost {
       return root;
     } finally {
       this.relocating = false;
+      this.relocationDone = undefined;
+      done.resolve();
     }
   }
 
-  async shutdown(): Promise<void> {
+  shutdown(): Promise<void> {
+    this.closing = true;
+    return this.shutdownDone ??= this.finishShutdown();
+  }
+
+  private async finishShutdown(): Promise<void> {
+    await this.relocationDone;
     try { await this.current.shutdown(); }
     finally {
       this.sse.closeAll();
@@ -116,6 +132,7 @@ export class CoreHost {
 
   /** 不等 AI 停止，直接釋放計時器與連線（測試收尾用）。 */
   close(): void {
+    this.closing = true;
     this.current.close();
     this.sse.closeAll();
     const release = this.releaseLock;
