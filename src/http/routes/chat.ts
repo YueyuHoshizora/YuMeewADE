@@ -54,9 +54,10 @@ export function registerChatRoutes(router: Router, app: App): void {
     };
     const unsubscribe = app.sse.subscribe(taskKey(p, t), collect);
     try {
-      const snapshot = await app.runner.snapshot(p, t, () => {
-        // State events before the synchronous capture are already represented by it.
-        buffered = buffered.filter(event => event.event === 'row');
+      const snapshot = await app.runner.snapshot(p, t, stage => {
+        // Queue changes published before the queue read are reflected by it; later ones are replayed in order, so the
+        // last one wins. Busy/idle/delta before the state copy are reflected by it. Rows are filtered by position below.
+        buffered = buffered.filter(event => event.event === 'row' || (stage === 'state' && event.event === 'queue'));
       });
       // No await between opening and replay: new events now flow through the hub.
       const end = snapshot.start + snapshot.rows.length;

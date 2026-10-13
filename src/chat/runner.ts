@@ -220,16 +220,18 @@ export class ChatRunner extends EventEmitter {
     }
   }
 
-  async snapshot(p: string, t: string, captured?: () => void): Promise<{
+  /** `captured` marks the live-event boundaries: `queue` just before the queue file is read, `state` when busy/partial are copied. */
+  async snapshot(p: string, t: string, captured?: (stage: 'queue' | 'state') => void): Promise<{
     rows: ChatRow[]; start: number; busy: Busy | null; partial: string; queue: QueueItem[];
   }> {
     await this.deps.tasks.get(p, t);
     const rows = await this.deps.store.readLog(p, t);
+    captured?.('queue');
     const queue = await this.deps.store.readQueue(p, t);
     const s = this.slots.get(`${p}\0${t}`);
     const start = Math.max(0, rows.length - HISTORY_PAGE);
     // No await after this boundary: buffered state events are reflected in this capture.
-    captured?.();
+    captured?.('state');
     return {
       rows: rows.slice(start),
       start,
