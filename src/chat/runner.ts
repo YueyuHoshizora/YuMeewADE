@@ -522,13 +522,15 @@ export class ChatRunner extends EventEmitter {
   /** `afterCommand`: a queued command (`/fast`) ran instead of a turn, so `s.text` (the last turn, '' once stopped or failed) says nothing about it. */
   private trackQueuedRun(p: string, t: string, s: Slot, afterCommand = false): void {
     const job = s.finished.then(async () => {
-      const sent = await this.lock(p, t, async () => {
+      const queueEmpty = await this.lock(p, t, async () => {
         if (s.busy || this.shuttingDown) return false;
         const queue = await this.deps.store.readQueue(p, t);
-        const first = queue[0];
-        if (!first || first.error || !afterCommand && s.text === '') return false;
-        // An open question needs the human first, as for auto-fix and workflows: only a queued answer may proceed.
-        if (!first.answer && (await this.deps.tasks.get(p, t)).state === '等待回覆') return false;
+        if (queue.length === 0) return true;
+        if (!afterCommand && s.text === '') return false;
+        // Ordinary instructions pause for the human; the first queued answer may bypass them without reordering the rest.
+        const awaitingReply = (await this.deps.tasks.get(p, t)).state === '等待回覆';
+        const first = awaitingReply ? queue.find(item => item.answer) : queue[0];
+        if (!first || first.error) return false;
         try {
           await this.sendLocked({ project: p, task: t, text: first.text, fromQueue: first.id });
         } catch (err) {
@@ -537,10 +539,10 @@ export class ChatRunner extends EventEmitter {
           this.publish(p, t, { event: 'queue', data: q });
           this.deps.onChanged(p, t);
         }
-        return true;
+        return false;
       });
       // 只有人下的指令正常做完、隊列已空時才驗證；失敗、被停止、等人回答都不驗證。
-      if (!sent && s.text !== '') await this.autoFix(p, t);
+      if (queueEmpty && s.text !== '') await this.autoFix(p, t);
     }).catch(err => {
       log.error('對話收尾失敗', err, { project: p, task: t });
     }).finally(() => {
@@ -558,6 +560,7 @@ export class ChatRunner extends EventEmitter {
     const project = await this.deps.projects.get(p);
     const task = await this.deps.tasks.get(p, t);
     if (!project.verify.trim() || project.autoFix < 1 || task.state === '等待回覆') { this.autoFixes.delete(key); return; }
+    if (this.slot(p, t).busy || (await this.deps.store.readQueue(p, t)).length) return;
     const result = await verify(p, t).catch(err => { log.warn('自動驗證失敗', { project: p, task: t, err: String(err) }); return null; });
     if (version !== (this.stopVersions.get(key) ?? 0)) return;
     const used = this.autoFixes.get(key) ?? 0;
@@ -566,7 +569,7 @@ export class ChatRunner extends EventEmitter {
       // 用完次數仍失敗：交還給人，讓作業顯示成「等你回覆」並觸發通知。
       this.autoFixes.delete(key);
       await this.lock(p, t, async () => {
-        if (this.slot(p, t).busy || this.shuttingDown || version !== (this.stopVersions.get(key) ?? 0)) return;
+        if (this.slot(p, t).busy || this.shuttingDown || (await this.deps.store.readQueue(p, t)).length || version !== (this.stopVersions.get(key) ?? 0)) return;
         await this.deps.tasks.update(p, t, { state: '等待回覆', question: `驗證在 ${used} 次自動修正後仍失敗，請接手` });
         this.deps.onChanged(p, t);
       });

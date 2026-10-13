@@ -292,6 +292,32 @@ test('an open question pauses ordinary queued instructions until it is answered;
   assert.equal(s.calls.length, 5);
   assert.equal((await s.tasks.get('P', s.task.id)).question, '');
 }));
+test('a queued answer bypasses ordinary instructions during reply wait, then resumes their FIFO order once', () => withTmpWorkspace(async ws => {
+  const s = await setup(ws, { chunkMs: 2, text: opts => opts.prompt.includes('[ask-me]') ? 'done\n[[question]]\nWhich branch?\n1. A\n2. B\n[[/question]]' : 'ok' });
+  await s.send('[ask-me] [slow]');
+  await s.send('ordinary first', { mode: 'queue' });
+  await s.send('ordinary second', { mode: 'queue' });
+  await s.send('answer A', { mode: 'queue', answer: true });
+  await s.runner.whenIdle();
+  const rows = await s.store.readLog('P', s.task.id);
+  assert.deepEqual(rows.filter(row => row.role === 'user').map(row => row.text), [
+    '[ask-me] [slow]', 'answer A', 'ordinary first', 'ordinary second',
+  ]);
+  assert.equal(s.calls.length, 4, 'every instruction launches exactly once');
+  assert.deepEqual(s.events.filter(event => event.event === 'queue').map(event => event.data.map(item => item.text)), [
+    ['ordinary first'],
+    ['ordinary first', 'ordinary second'],
+    ['ordinary first', 'ordinary second', 'answer A'],
+    ['ordinary first', 'ordinary second'],
+    ['ordinary second'],
+    [],
+  ]);
+  assert.deepEqual(await s.store.readQueue('P', s.task.id), []);
+  assert.deepEqual(JSON.parse(await fs.readFile(ws.chatFile('P', s.task.id, 'queue.json'), 'utf8')), []);
+  const task = await s.tasks.get('P', s.task.id);
+  assert.equal(task.question, '');
+  assert.equal(task.state, '進行中');
+}));
 test('mode required; redo/amend stop prior run and keep queue; normal finish drains', () => withTmpWorkspace(async ws => {
   const s = await setup(ws, { chunkMs: 5, stopMs: 2 });
   await s.send('first [slow]'); await assert.rejects(s.send('missing'), /取消重做/u);
@@ -682,6 +708,53 @@ test('驗證通過就不再修正；人下新指示後次數重新計算', () =>
   await s.send('second'); await s.runner.whenIdle();
   assert.equal((await s.users()).length, 4);
   assert.deepEqual(s.verified, ['fail', 'ok', 'fail', 'fail']);
+}));
+
+test('automatic verification waits for an empty queue, including errored and unavailable queued instructions', () => withTmpWorkspace(async ws => {
+  const s = await autoFixSetup(ws, 1, [true], { chunkMs: 2 });
+  await s.send('initial [slow]');
+  await s.send('pending instruction', { mode: 'queue' });
+  await s.store.updateQueue('P', s.task.id, queue => queue.map(item => ({ ...item, error: 'unavailable' })));
+  await s.runner.whenIdle();
+  assert.deepEqual(s.verified, []);
+  assert.equal(s.calls.length, 1);
+  assert.equal((await s.store.readQueue('P', s.task.id)).length, 1);
+  assert.equal((await s.tasks.get('P', s.task.id)).state, '進行中');
+}));
+
+test('automatic verification rechecks the queue after reading its configuration', () => withTmpWorkspace(async ws => {
+  const s = await autoFixSetup(ws, 1, [true]);
+  const get = s.projects.get.bind(s.projects);
+  let finished = false;
+  s.runner.on('event', (_p, _t, event: ChatEvent) => { if (event.event === 'idle') finished = true; });
+  s.projects.get = async project => {
+    const result = await get(project);
+    if (finished) {
+      await s.store.updateQueue('P', s.task.id, () => [{ id: 'newly-queued', text: 'pending', ai: 'codex', at: 'now', error: 'unavailable' }]);
+    }
+    return result;
+  };
+  await s.send('initial'); await s.runner.whenIdle();
+  assert.deepEqual(s.verified, []);
+  assert.equal((await s.store.readQueue('P', s.task.id)).length, 1);
+}));
+
+test('automatic-fix exhaustion does not pause a task when an instruction arrives during verification', () => withTmpWorkspace(async ws => {
+  let verifications = 0;
+  const s = await setup(ws, {}, 600, { verify: async () => {
+    if (++verifications === 2) {
+      await s.store.updateQueue('P', s.task.id, () => [{ id: 'newly-queued', text: 'pending', ai: 'codex', at: 'now', error: 'unavailable' }]);
+    }
+    return { ok: false, exitCode: 1, timedOut: false, ms: 1, output: 'failed', truncated: false };
+  } });
+  await s.projects.update('P', { verify: 'verify', autoFix: 1 });
+  await s.send('initial'); await s.runner.whenIdle();
+  assert.equal(verifications, 2);
+  assert.equal(s.calls.length, 2);
+  const task = await s.tasks.get('P', s.task.id);
+  assert.equal(task.state, '進行中');
+  assert.equal(task.question, '');
+  assert.equal((await s.store.readQueue('P', s.task.id)).length, 1);
 }));
 
 for (const [name, autoFix, text, instruction] of [
