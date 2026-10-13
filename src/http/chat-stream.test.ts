@@ -145,6 +145,34 @@ test('snapshot buffering includes rows published outside the chat runner', { tim
   } finally { release.resolve(); await stream?.close(); await s.close(); }
 });
 
+test('a queue change published while the snapshot reads the queue still reaches the new stream', { timeout: 10000 }, async () => {
+  const s = await startTestServer();
+  let stream: CollectedStream | undefined;
+  try {
+    await s.api('POST', '/api/project/new', { name: 'P' });
+    const task = (await s.api('POST', '/api/task/new', { project: 'P', title: 'T', workspace: 'direct' })).json as Task;
+    const readQueue = s.app.store.readQueue.bind(s.app.store);
+    let changed = false;
+    // The snapshot has read the queue (still empty) when another request queues an instruction and publishes it.
+    s.app.store.readQueue = async (p, t) => {
+      const queue = await readQueue(p, t);
+      if (!changed) {
+        changed = true;
+        const next = await s.app.store.updateQueue(p, t, q => [...q, { id: 'q1', text: 'queued meanwhile', ai: 'codex', at: 'now' }]);
+        s.app.sse.publish(`${p}\0${t}`, { event: 'queue', data: next });
+      }
+      return queue;
+    };
+    stream = await collect(await fetch(`${s.base}/api/chat/stream?project=P&task=${task.id}`));
+    s.app.sse.publish(`P\0${task.id}`, { event: 'idle', data: { request: 'barrier' } });
+    await stream.waitFor(() => stream!.events.some(event => event.event === 'idle' && event.data.request === 'barrier'));
+    const snapshot = stream.events[0];
+    assert.ok(snapshot?.event === 'snapshot'); assert.deepEqual(snapshot.data.queue, []);
+    const last = stream.events.filter(event => event.event === 'queue').at(-1);
+    assert.ok(last?.event === 'queue'); assert.deepEqual(last.data.map(item => item.text), ['queued meanwhile']);
+  } finally { await stream?.close(); await s.close(); }
+});
+
 test('an unpersisted error reply is displayed without advancing the history end', async () => {
   const receiveRow = await rowConsumer();
   const rows: ChatRow[] = []; const displayed: number[] = [];
