@@ -135,6 +135,24 @@ test('an unfinished task without a phase keeps the next-phase offer back, like t
   } finally { await f.close(); }
 });
 
+test('finished tasks without a phase count toward the current phase even when another phase has assigned tasks', async () => {
+  const f = await fixture();
+  try {
+    f.app.close();
+    await f.app.projects.create({ name: 'Phased', phases: ['A', 'B'] });
+    // A is finished; its task is assigned to A. The current phase B lists only an unassigned, finished task.
+    const assigned = await f.app.tasks.create('Phased', { title: 'A work', phase: 'A', workspace: 'direct' });
+    await f.app.tasks.update('Phased', assigned.id, { state: '完成' });
+    await f.app.projects.nextPhase('Phased', 'A');
+    const loose = await f.app.tasks.create('Phased', { title: 'no phase', workspace: 'direct' });
+    await f.app.tasks.update('Phased', loose.id, { state: '完成' });
+    f.app.changed();
+    const project = (await f.app.state()).projects.find(item => item.id === 'Phased')!;
+    assert.equal(project.currentPhase, 'B');
+    assert.equal(project.phaseOffer, true);
+  } finally { await f.close(); }
+});
+
 test('concurrent rebuilds share a snapshot and invalidation during a build cannot cache stale data', async () => {
   const f = await fixture();
   try {

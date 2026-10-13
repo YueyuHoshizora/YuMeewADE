@@ -6,11 +6,14 @@ import path from 'node:path';
 import { pathExists, readJson } from '../shared/fsx.ts';
 import { phaseKey, stepsHash } from '../ledger/completion.ts';
 
-/** Legacy projects without any matching phase assignments use all their tasks. */
+/**
+ * The current phase's tasks, as the project page lists them: those assigned to it plus those without a phase. Legacy
+ * projects without any matching phase assignments use all their tasks.
+ */
 export function phaseTasks(project: Project, tasks: Task[]): Task[] {
   const names = new Set(project.phases.map((phase) => phase.name));
   const current = project.phases.find((phase) => phase.state !== '完成')?.name;
-  return tasks.some((task) => names.has(task.phase)) ? tasks.filter((task) => task.phase === current) : tasks;
+  return tasks.some((task) => names.has(task.phase)) ? tasks.filter((task) => task.phase === current || !task.phase) : tasks;
 }
 
 async function hasChat(file: string): Promise<boolean> {
@@ -58,8 +61,7 @@ export async function buildState(app: App): Promise<StateSnapshot> {
       completion(app.completion.phaseContinued(project.id), undefined),
       fs.stat(bodyPath).catch(() => null),
     ]);
-    // Tasks without a phase are listed with the current phase's tasks, so an unfinished one still holds the phase open.
-    const phaseDone = group.length > 0 && group.every((task) => task.state === '完成') && !tasks.some((task) => !task.phase && task.state !== '完成');
+    const phaseDone = group.length > 0 && group.every((task) => task.state === '完成');
     return { ...project, tasks: taskViews, currentPhase, phaseOffer: Boolean(currentPhase) && phaseDone && continued !== phaseKey(group), isGit, bodyPath, bodyMissing: !body?.isDirectory(), dir: app.ws.projectDir(project.id), startPick, pinned: savedOrder.pins.includes(project.id) };
   }));
   // Keyed by project name, which may be `constructor` or `__proto__`: no inherited keys may stand in for a parent.
