@@ -27,7 +27,7 @@ type Ai = 'claude' | 'codex' | 'grok' | 'gemini';
 const HOME_VARIABLE: Record<Ai, string> = { claude: 'CLAUDE_CONFIG_DIR', codex: 'CODEX_HOME', grok: 'GROK_HOME', gemini: 'HOME' };
 const GEMINI_TOKEN = path.join('.gemini', 'antigravity-cli', 'antigravity-oauth-token');
 interface Profile { ai: Ai; source: string; key: string; runtime: string; authSource: string }
-interface RuntimeLease { env: NodeJS.ProcessEnv; authFile: string; text: string; refs: number; unlock: () => Promise<void>; service?: string; socketDirectory?: string }
+interface RuntimeLease { env: NodeJS.ProcessEnv; authFile: string; text: string; refs: number; unlock: () => Promise<void>; service?: string; socketDirectory?: string; removed?: boolean }
 const runtimeAuthFile = (profile: Profile) => path.join(profile.runtime, profile.ai === 'claude' ? '.credentials.json' : profile.ai === 'gemini' ? GEMINI_TOKEN : 'auth.json');
 /** Claude on macOS keeps its runtime OAuth in a keychain item derived from the config directory, not in a file. */
 const managedKeychainService = (profile: Profile) => `Claude Code-credentials-${createHash('sha256').update(profile.runtime.normalize('NFC')).digest('hex').slice(0, 8)}`;
@@ -113,6 +113,31 @@ export class CredentialAccounts {
    * while linked, the account reads and writes the slot's record, and gets it back when another account takes the slot.
    */
   private readonly linked = new Map<Ai, string>();
+  private readonly owners = new Map<Ai, string>();
+
+  /** Slot ownership and credentials share one encrypted row, so a restart cannot relabel another login. */
+  private async readRecord(ai: Ai, key: string): Promise<string | null> {
+    const text = await this.vault.read(ai, key);
+    if (key !== this.profile(ai).key) return text;
+    if (text === null) { this.owners.delete(ai); return null; }
+    const value: unknown = JSON.parse(text);
+    if (object(value) && value['slotVersion'] === 1 && typeof value['credential'] === 'string') {
+      const owner = value['owner'];
+      if (owner !== null && typeof owner !== 'string') throw new Error(FAILURE);
+      if (typeof owner === 'string') this.owners.set(ai, owner);
+      else this.owners.delete(ai);
+      return value['credential'];
+    }
+    // Old raw slots have no provable owner; never compare them with an unrelated account.
+    this.owners.delete(ai);
+    return text;
+  }
+
+  private writeRecord(ai: Ai, key: string, text: string): Promise<void> {
+    return this.vault.write(ai, key, key === this.profile(ai).key
+      ? JSON.stringify({ slotVersion: 1, owner: this.owners.get(ai) ?? null, credential: text })
+      : text);
+  }
 
   constructor(vault: CredentialVault, dataDir: string, envPassthrough: string[]) {
     this.vault = vault;
@@ -158,8 +183,9 @@ export class CredentialAccounts {
     const profile = this.profile(ai, configDir);
     await this.serial(profile, async () => {
       try {
-        if (replace && this.runtimes.has(profile.runtime)) throw new Error(FAILURE);
-        const current = await this.vault.read(profile.ai, this.record(profile));
+        const lease = this.runtimes.get(profile.runtime);
+        if (lease?.removed || (replace && lease)) throw new Error(FAILURE);
+        const current = await this.readRecord(profile.ai, this.record(profile));
         if (current !== null && !replace) { validate(profile.ai, current); return; }
         let text: string;
         if (profile.ai === 'claude') {
@@ -193,13 +219,14 @@ export class CredentialAccounts {
           // The slot now holds the CLI's own login, no longer the linked account's.
           await this.handBack(slot);
           this.linked.delete(slot.ai);
-          await this.vault.write(slot.ai, slot.key, text);
+          this.owners.delete(slot.ai);
+          await this.writeRecord(slot.ai, slot.key, text);
         } else await this.serial(slot, async () => {
           if (this.record(profile) === slot.key) {
             if (this.runtimes.has(slot.runtime)) throw new Error(FAILURE);
             await this.discardRuntimeAuth(slot);
           }
-          await this.vault.write(profile.ai, this.record(profile), text);
+          await this.writeRecord(profile.ai, this.record(profile), text);
         });
       } catch { throw new Error(FAILURE); }
     });
@@ -216,7 +243,14 @@ export class CredentialAccounts {
   async remove(ai: string, configDir?: string): Promise<void> {
     const profile = this.profile(ai, configDir);
     await this.serial(profile, async () => {
-      if (this.runtimes.has(profile.runtime)) throw new Error(FAILURE);
+      const lease = this.runtimes.get(profile.runtime);
+      if (lease) {
+        if (configDir === undefined) throw new Error(FAILURE);
+        // Delete authorization now; the existing consumer can finish, but cannot resurrect the record on release.
+        await this.vault.remove(profile.ai, profile.key);
+        lease.removed = true;
+        return;
+      }
       try {
         await this.discardRuntimeAuth(profile);
         if (configDir === undefined) await this.handBack(profile);
@@ -224,6 +258,7 @@ export class CredentialAccounts {
       // Either way the slot no longer holds a registered account; settings replaces or empties its copy.
       if (configDir === undefined || this.linked.get(profile.ai) === profile.source) this.linked.delete(profile.ai);
       await this.vault.remove(profile.ai, profile.key);
+      if (configDir === undefined) this.owners.delete(profile.ai);
     });
   }
 
@@ -240,15 +275,16 @@ export class CredentialAccounts {
     await this.serial(slot, async () => {
       try {
         if (this.runtimes.has(slot.runtime)) throw new Error(FAILURE);
-        holder = this.linked.get(slot.ai);
-        previous = await this.vault.read(slot.ai, slot.key);
+        previous = await this.readRecord(slot.ai, slot.key);
+        holder = this.owners.get(slot.ai);
         // Re-selecting the linked account keeps the slot's copy: its own record is the older one.
         const text = holder === source.source && previous !== null ? previous : await this.vault.read(source.ai, source.key);
         if (text === null) throw new Error(FAILURE);
         validate(source.ai, text);
         if (holder !== source.source) await this.handBack(slot);
         await this.discardRuntimeAuth(slot);
-        await this.vault.write(slot.ai, slot.key, text);
+        this.owners.set(slot.ai, source.source);
+        await this.writeRecord(slot.ai, slot.key, text);
         this.linked.set(slot.ai, source.source);
       } catch { throw new Error(FAILURE); }
     });
@@ -257,7 +293,11 @@ export class CredentialAccounts {
         if (this.runtimes.has(slot.runtime)) throw new Error(FAILURE);
         await this.discardRuntimeAuth(slot);
         if (previous === null) await this.vault.remove(slot.ai, slot.key);
-        else await this.vault.write(slot.ai, slot.key, previous);
+        else {
+          if (holder === undefined) this.owners.delete(slot.ai);
+          else this.owners.set(slot.ai, holder);
+          await this.writeRecord(slot.ai, slot.key, previous);
+        }
         if (holder === undefined) this.linked.delete(slot.ai);
         else this.linked.set(slot.ai, holder);
       } catch { throw new Error(FAILURE); }
@@ -265,8 +305,7 @@ export class CredentialAccounts {
   }
 
   /**
-   * Records which account the default slot holds (the workspace's selection, at startup). Copies that diverged before
-   * the link existed keep the newer one in the slot.
+   * Links the workspace selection to the slot. Only copies with the same persisted owner may compete by refresh time.
    */
   async link(ai: string, configDir: string | undefined): Promise<void> {
     const slot = this.profile(ai);
@@ -274,12 +313,16 @@ export class CredentialAccounts {
     const account = this.profile(ai, configDir);
     await this.serial(slot, async () => {
       try {
-        const shared = await this.vault.read(slot.ai, slot.key);
+        const shared = await this.readRecord(slot.ai, slot.key);
+        const holder = this.owners.get(slot.ai);
         const own = await this.vault.read(account.ai, account.key);
-        if (own !== null && (shared === null || refreshedAt(slot.ai, own) > refreshedAt(slot.ai, shared))) {
-          if (this.runtimes.has(slot.runtime)) throw new Error(FAILURE);
+        if (holder !== account.source || shared === null || (own !== null && refreshedAt(slot.ai, own) > refreshedAt(slot.ai, shared))) {
+          if (this.runtimes.has(slot.runtime) || this.runtimes.has(account.runtime)) throw new Error(FAILURE);
+          if (own === null) throw new Error(FAILURE);
+          if (holder !== account.source) await this.handBack(slot);
           await this.discardRuntimeAuth(slot);
-          await this.vault.write(slot.ai, slot.key, own);
+          this.owners.set(slot.ai, account.source);
+          await this.writeRecord(slot.ai, slot.key, own);
         }
         this.linked.set(slot.ai, account.source);
       } catch { throw new Error(FAILURE); }
@@ -293,9 +336,9 @@ export class CredentialAccounts {
 
   /** Gives the slot's record back to the linked account as its own; the caller holds the slot's queue and ends or moves the link. */
   private async handBack(slot: Profile): Promise<void> {
-    const holder = this.linked.get(slot.ai);
+    const shared = await this.readRecord(slot.ai, slot.key);
+    const holder = this.owners.get(slot.ai);
     if (holder === undefined) return;
-    const shared = await this.vault.read(slot.ai, slot.key);
     if (shared === null) return;
     validate(slot.ai, shared);
     await this.vault.write(slot.ai, this.profile(slot.ai, holder).key, shared);
@@ -304,12 +347,12 @@ export class CredentialAccounts {
   /** Saves a refreshed record; a linked account's goes to the slot under the slot's queue so a switch cannot interleave. */
   private async store(profile: Profile, text: string): Promise<void> {
     const slot = this.profile(profile.ai);
-    if (profile.key === slot.key) await this.vault.write(slot.ai, slot.key, text);
-    else await this.serial(slot, () => this.vault.write(profile.ai, this.record(profile), text), true);
+    if (profile.key === slot.key) await this.writeRecord(slot.ai, slot.key, text);
+    else await this.serial(slot, () => this.writeRecord(profile.ai, this.record(profile), text), true);
   }
 
   private async credential(profile: Profile): Promise<string> {
-    const text = await this.vault.read(profile.ai, this.record(profile));
+    const text = await this.readRecord(profile.ai, this.record(profile));
     if (text === null) throw new Error(FAILURE);
     validate(profile.ai, text);
     return text;
@@ -353,7 +396,11 @@ export class CredentialAccounts {
 
   private async acquire(profile: Profile): Promise<RuntimeLease> {
     const shared = this.runtimes.get(profile.runtime);
-    if (shared) { shared.refs++; return shared; }
+    if (shared) {
+      if (shared.removed) throw new Error(FAILURE);
+      shared.refs++;
+      return shared;
+    }
     let text = await this.credential(profile);
     let lease: RuntimeLease | undefined;
     try {
@@ -403,6 +450,7 @@ export class CredentialAccounts {
   private release(profile: Profile, lease: RuntimeLease): Promise<void> {
     return this.serial(profile, async () => {
       try {
+        if (lease.removed) return;
         const updated = lease.service ? await readKeychain(lease.service, lease.env) ?? await readBounded(lease.authFile) : await readBounded(lease.authFile);
         if (updated !== lease.text) {
           validate(profile.ai, updated);

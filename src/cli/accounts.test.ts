@@ -7,6 +7,7 @@ import { CredentialVault } from '../credentials/vault.ts';
 import { DEFAULT_CONFIG } from '../shared/config.ts';
 import { CredentialAccounts } from './accounts.ts';
 import { createProviders } from './providers.ts';
+import { App } from '../server/app.ts';
 
 const codexRecord = (name: string) => JSON.stringify({ tokens: { access_token: `${name}-access`, refresh_token: `${name}-refresh`, id_token: `${name}-id`, account_id: name }, last_refresh: '2026-10-01T00:00:00Z', extension: { preserved: true } });
 const grokRecord = (name: string) => JSON.stringify({ 'https://auth.x.ai::b1a00492-073a-47ea-816f-4c329264a828': { key: `${name}-token`, auth_mode: 'oidc', user_id: name, create_time: '2026-10-01T00:00:00Z', expires_at: '2099-01-01T00:00:00Z', oidc_issuer: 'https://auth.x.ai', refresh_token: `${name}-refresh`, extension: { preserved: true } } });
@@ -44,6 +45,91 @@ async function fixture() {
   };
   return { root, accounts, vault, source, cleanup };
 }
+
+test('workspace linking never relabels a newer slot belonging to another account, including after restart', async () => {
+  const f = await fixture();
+  let restarted: CredentialAccounts | undefined;
+  try {
+    const a = path.join(f.root, 'workspace-a');
+    const b = path.join(f.root, 'workspace-b');
+    const newerA = codexRecord('account-A').replace('2026-10-01', '2026-10-12');
+    await f.source('codex', a, newerA);
+    await f.source('codex', b, codexRecord('account-B'));
+    await f.accounts.import('codex', a);
+    await f.accounts.import('codex', b);
+    await f.accounts.activate('codex', a);
+    const check = async (accounts: CredentialAccounts, directory: string | undefined, expected: string) => {
+      const actual = await accounts.withEnv('codex', directory, async env => {
+        const value = JSON.parse(await fs.readFile(path.join(env['CODEX_HOME']!, 'auth.json'), 'utf8'));
+        return value.tokens.account_id as string;
+      });
+      assert.equal(actual, expected);
+    };
+    await f.accounts.link('codex', b);
+    await check(f.accounts, undefined, 'account-B');
+    await check(f.accounts, b, 'account-B');
+    await f.accounts.link('codex', a);
+    await check(f.accounts, b, 'account-B');
+    await f.accounts.close();
+    restarted = new CredentialAccounts(f.vault, path.join(f.root, 'app'), []);
+    await restarted.link('codex', b);
+    await check(restarted, undefined, 'account-B');
+    await check(restarted, a, 'account-A');
+    await restarted.link('codex', a);
+    await check(restarted, b, 'account-B');
+  } finally { await restarted?.close(); await f.cleanup(); }
+});
+
+test('legacy raw slots with unknown ownership never override a selected account by refresh time', async () => {
+  const f = await fixture();
+  try {
+    const b = path.join(f.root, 'b');
+    await f.source('codex', b, codexRecord('B'));
+    await f.accounts.import('codex', b);
+    const key = JSON.stringify(['default', path.join(f.root, '.codex'), '']);
+    await f.vault.write('codex', key, codexRecord('A').replace('2026-10-01', '2026-10-12'));
+    await f.accounts.link('codex', b);
+    const actual = await f.accounts.withEnv('codex', undefined, async env =>
+      fs.readFile(path.join(env['CODEX_HOME']!, 'auth.json'), 'utf8'));
+    assert.equal(actual, codexRecord('B'));
+  } finally { await f.cleanup(); }
+});
+
+test('removing a leased account deletes its authorization and cannot resurrect it or reuse it on reimport', async () => {
+  const f = await fixture();
+  const app = new App({ ...DEFAULT_CONFIG, workspace: { root: path.join(f.root, 'workspace') } }, { accounts: f.accounts, providers: {}, home: f.root });
+  const entered = Promise.withResolvers<void>();
+  const release = Promise.withResolvers<void>();
+  let running: Promise<unknown> | undefined;
+  try {
+    await app.ws.init();
+    const [a, b] = [path.join(f.root, 'a'), path.join(f.root, 'b')];
+    await f.source('codex', a, codexRecord('A'));
+    const file = await f.source('codex', b, codexRecord('B-old'));
+    await app.settings.addAccount('codex', 'A', a);
+    const settings = await app.settings.addAccount('codex', 'B', b);
+    const id = settings.accounts.codex!.find(account => account.name === 'B')!.id;
+    running = f.accounts.withEnv('codex', b, async env => {
+      entered.resolve();
+      await release.promise;
+      await fs.writeFile(path.join(env['CODEX_HOME']!, 'auth.json'), codexRecord('B-refreshed'));
+    });
+    await entered.promise;
+    const removed = await app.settings.removeAccount('codex', id);
+    assert.equal(removed.accounts.codex!.some(account => account.id === id), false);
+    assert.equal(f.accounts.hasStored('codex', b), false);
+    await assert.rejects(f.accounts.import('codex', b), /Account credentials unavailable/);
+    await assert.rejects(f.accounts.withEnv('codex', b, async () => assert.fail('removed lease must not be acquired')), /Account credentials unavailable/);
+    release.resolve();
+    await running;
+    assert.equal(f.accounts.hasStored('codex', b), false);
+    await fs.writeFile(file, codexRecord('B-new'));
+    await app.settings.addAccount('codex', 'B readded', b);
+    await f.accounts.withEnv('codex', b, async env => {
+      assert.equal(await fs.readFile(path.join(env['CODEX_HOME']!, 'auth.json'), 'utf8'), codexRecord('B-new'));
+    });
+  } finally { release.resolve(); await running?.catch(() => {}); app.close(); await f.cleanup(); }
+});
 
 test('import is DB-authoritative; default and explicit profiles never share identity or mutate originals', async () => {
   const f = await fixture();

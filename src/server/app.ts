@@ -154,7 +154,7 @@ export class App {
         return async () => { try { await undo(); } catch { throw new AppError('unavailable', 'credentials_unavailable'); } };
       } catch { throw new AppError('unavailable', 'credentials_unavailable'); }
     }, async (ai, directory) => {
-      // Best effort: the account is already gone from settings; a copy still held by a running CLI stays encrypted in the vault.
+      // Removal deletes the vault record even during a lease; the lease cleans up without writing it back.
       try { await this.accounts?.remove(ai, directory); }
       catch { log.warn('移除帳號後的憑證副本未清除', { ai }); }
     });
