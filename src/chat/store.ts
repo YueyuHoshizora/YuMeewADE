@@ -10,7 +10,8 @@ import type { Busy, ChatRow, QueueItem } from '../shared/types.ts';
 export interface ChatMeta {
   sessions: Record<string, string>;
   models: Record<string, string>;
-  seen: Record<string, string>;
+  /** Last assistant request each CLI has seen; a number is a legacy row count from older files. */
+  seen: Record<string, string | number>;
   /** Human attention only; independent of the AI handoff cursors in `seen`. */
   unread?: true;
   /** Session ownership; absent legacy entries belong to the implicit default account. */

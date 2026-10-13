@@ -350,7 +350,7 @@ updated: 2026-10-10 12:00
 ```
 - 作業狀態轉移由 UI 下拉或 `POST /api/task/update` 設定；核心只在「開始執行且狀態為未開始」時自動改為「進行中」。
 - `.ai/chat/{作業ID}.jsonl` 每行 `{ at, role: user|assistant|error, text, cli, model?, request, cancelled?, interrupted? }`。
-- `.ai/chat/{作業ID}.json`：`{ sessions: { claude?: id, codex?: id }, models: { claude?: m, codex?: m }, seen: { claude?: n, codex?: n }, unread?: true, accounts?: { [ai]: 帳號 }, fast?: { [ai]: boolean }, running?: { request, ai, model?, effort?, startedAt } }`，`seen[cli]` 為該 CLI 已看過的 JSONL 行數，用來決定交接包內容。`unread` 只代表人的未讀：寫入 assistant 列（含重啟補上的 `interrupted` 列）時設為 true，作業頁回報已看過（或封存）時移除，核心重啟後依此還原未讀；省略＝已讀（含舊檔），與 AI 的 `seen` 無關。`fast` 為 `/fast` 保存的作業層級 Fast 模式（見 B.8），省略＝依 CLI 自身設定。`running` 為執行中的標記：開始執行時寫入、結束時清除；核心重啟時若發現殘留標記，補一列 `error: 'interrupted'` 的 assistant 列並清除（不自動重跑）。
+- `.ai/chat/{作業ID}.json`：`{ sessions: { claude?: id, codex?: id }, models: { claude?: m, codex?: m }, seen: { claude?: request, codex?: request }, unread?: true, accounts?: { [ai]: 帳號 }, fast?: { [ai]: boolean }, running?: { request, ai, model?, effort?, startedAt } }`，`seen[cli]` 為該 CLI 已看過的最後一則 assistant 列的 `request`（舊檔的數字為已看過的列數，仍相容），用來決定交接包內容。`unread` 只代表人的未讀：寫入 assistant 列（含重啟補上的 `interrupted` 列）時設為 true，作業頁回報已看過（或封存）時移除，核心重啟後依此還原未讀；省略＝已讀（含舊檔），與 AI 的 `seen` 無關。`fast` 為 `/fast` 保存的作業層級 Fast 模式（見 B.8），省略＝依 CLI 自身設定。`running` 為執行中的標記：開始執行時寫入、結束時清除；核心重啟時若發現殘留標記，補一列 `error: 'interrupted'` 的 assistant 列並清除（不自動重跑）。
 - `.ai/chat/{作業ID}.queue.json`：`[{ request, text, cli, model?, effort?, at }]`。
 
 ### A.4 roles.yaml

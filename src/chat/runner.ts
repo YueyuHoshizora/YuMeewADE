@@ -883,6 +883,8 @@ export class ChatRunner extends EventEmitter {
 export function unseenRows(rows: ChatRow[], meta: ChatMeta, ai: string): ChatRow[] {
   const mark = meta.seen[ai];
   if (!mark) return rows;
+  // Files from before request-id cursors stored how many rows that CLI had seen.
+  if (typeof mark === 'number') return Number.isSafeInteger(mark) && mark > 0 ? rows.slice(mark) : rows;
   const index = rows.findLastIndex(r => r.role === 'assistant' && r.request === mark);
   return index < 0 ? rows : rows.slice(index + 1);
 }

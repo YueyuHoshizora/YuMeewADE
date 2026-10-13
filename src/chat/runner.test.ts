@@ -12,14 +12,14 @@ import { loadRoles } from '../roles/roles.ts';
 import { withTmpWorkspace } from '../testing/tmp.ts';
 import type { Workspace } from '../ledger/workspace.ts';
 import { WorktreeService } from '../git/worktree.ts';
-import type { ChatEvent, VerifyResult } from '../shared/types.ts';
+import type { ChatEvent, ChatRow, VerifyResult } from '../shared/types.ts';
 import { HISTORY_PAGE } from '../shared/types.ts';
 import { promises as fs } from 'node:fs';
 import path from 'node:path';
 import { registerChatRoutes } from '../http/routes/chat.ts';
 import type { Ctx, Handler, Router } from '../http/router.ts';
 import { App } from '../server/app.ts';
-import { ChatRunner } from './runner.ts';
+import { ChatRunner, unseenRows } from './runner.ts';
 import type { RunnerDeps } from './runner.ts';
 import { ChatStore } from './store.ts';
 import { WorkflowService } from './workflows.ts';
@@ -1154,3 +1154,12 @@ test('an answer queued behind a running turn still answers the question when it 
   const answer = (await s.store.readLog('P', s.task.id)).find(row => row.role === 'user' && row.text === 'A');
   assert.ok(answer?.role === 'user'); assert.equal(answer.mode, 'answer');
 }));
+
+test('a resumed CLI is handed only rows it has not seen, for request cursors and legacy row counts', () => {
+  const row = (role: 'user' | 'assistant', request: string): ChatRow => role === 'user' ? { role, at: 'now', text: request, request } as ChatRow : { role, at: 'now', ai: 'claude', text: request, request, ms: 0 } as ChatRow;
+  const rows = [row('user', 'r1'), row('assistant', 'r1'), row('user', 'r2'), row('assistant', 'r2')];
+  const meta = (seen: string | number) => ({ sessions: {}, models: {}, seen: { claude: seen } });
+  assert.deepEqual(unseenRows(rows, meta('r1'), 'claude').map(r => r.text), ['r2', 'r2']);
+  assert.deepEqual(unseenRows(rows, meta(2), 'claude').map(r => r.text), ['r2', 'r2']);
+  assert.equal(unseenRows(rows, meta('gone'), 'claude').length, 4);
+});
