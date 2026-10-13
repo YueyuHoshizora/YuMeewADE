@@ -186,3 +186,21 @@ test('作業標題在建立與改名時同樣以 300 字為上限', () => withTm
   await assert.rejects(ledger.update('P', task.id, { title: 'y'.repeat(301) }));
   assert.equal((await ledger.update('P', task.id, { title: 'y'.repeat(300) })).title.length, 300);
 }));
+
+test('closed list-continuation fences never expose or edit example steps or headings', () => withTmpWorkspace(async ws => {
+  await new ProjectLedger(ws).create({ name: 'P' });
+  const ledger = new TaskLedger(ws); const task = await ledger.create('P', { title: 'T' });
+  for (const indent of ['    ', '\t', '        ']) {
+    for (const marker of ['```', '~~~~']) {
+      const example = `${indent}${marker}md\n${indent}- [ ] example only\n## Memo\n${indent}${marker[0]!.repeat(marker.length + 1)}\n`;
+      const body = `## Steps\n- [x] Implement\n${example}- [ ] Test\n`;
+      await fs.writeFile(ws.taskFile('P', task.id), `---\ntitle: T\n---\n${body}`);
+      assert.deepEqual((await ledger.get('P', task.id)).steps, [{ text: 'Implement', done: true }, { text: 'Test', done: false }]);
+      await ledger.setStep('P', task.id, 1, true, 'Test');
+      assert.equal((await ledger.readRaw('P', task.id)).split('---\n').at(-1), body.replace('- [ ] Test', '- [x] Test'));
+      await assert.rejects(ledger.setStep('P', task.id, 1, true, 'example only'), { detail: 'step_changed' });
+      await fs.writeFile(ws.taskFile('P', task.id), `---\ntitle: T\n---\n## Steps\n- [x] Implement\n${indent}${marker}md\n${indent}- [ ] unclosed example\n`);
+      assert.deepEqual((await ledger.get('P', task.id)).steps, [{ text: 'Implement', done: true }, { text: 'unclosed example', done: false }]);
+    }
+  }
+}));

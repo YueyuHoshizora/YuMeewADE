@@ -45,10 +45,10 @@ const SECTION_LINE_CHARS = 2000;
 function fencedRows(rows: string[]): boolean[] {
   const fenced = rows.map(() => false);
   for (let i = 0; i < rows.length; i++) {
-    const open = /^ {0,3}(`{3,}|~{3,})/.exec(rows[i]!)?.[1];
+    const open = /^(`{3,}|~{3,})/.exec(rows[i]!.trimStart())?.[1];
     if (!open) continue;
     let close = i + 1;
-    for (; close < rows.length; close++) { const marker = /^ {0,3}(`{3,}|~{3,})\s*$/.exec(rows[close]!)?.[1]; if (marker && marker[0] === open[0] && marker.length >= open.length) break; }
+    for (; close < rows.length; close++) { const marker = /^(`{3,}|~{3,})\s*$/.exec(rows[close]!.trimStart())?.[1]; if (marker && marker[0] === open[0] && marker.length >= open.length) break; }
     if (close < rows.length) { fenced.fill(true, i, close + 1); i = close; }
   }
   return fenced;
