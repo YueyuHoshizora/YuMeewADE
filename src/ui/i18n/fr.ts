@@ -236,6 +236,7 @@ export const fr: Record<MessageKey, string> = {
 'ai.fullAccess': 'Accès complet',
 'ai.warning': 'L’accès complet désactive les confirmations pour les commandes et l’accès aux fichiers. L’IA peut modifier des fichiers et exécuter des commandes avec tes droits. À activer uniquement pour les projets de confiance.',
 'settings.tabs': 'Sections des réglages', 'settings.tab.ai': 'Outils IA et modèles', 'settings.tab.usage': 'Usage', 'settings.tab.editor': 'Éditeur', 'settings.tab.maintenance': 'Maintenance',
+'settings.tab.accounts': 'Gestion des comptes',
 'settings.general': 'Général',
 'settings.language': 'Langue',
 'settings.root': 'Racine de l’espace de travail',

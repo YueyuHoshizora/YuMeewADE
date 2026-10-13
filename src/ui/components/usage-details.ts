@@ -46,13 +46,8 @@ function accountUsage(usage: AiUsage | undefined): HTMLElement {
 }
 
 /** Read live UI state only; quota queries remain owned by the core scheduler. */
-export function openUsageDetails(getState: () => AppState, getUsage: () => UsageState, refresh: () => Promise<void>, selectedAi?: string, addAccount = false, manageAccounts = addAccount): void {
-  const dialog = el('dialog', 'modal usage-details');
-  const title = el('h2', '', t('usage.details')); title.id = 'usage-details-title';
-  dialog.setAttribute('aria-labelledby', title.id);
+export function usageDetailsPanel(getState: () => AppState, getUsage: () => UsageState, refresh: () => Promise<void>, selectedAi?: string, addAccount = false, manageAccounts = true): { node: HTMLElement; update: () => void } {
   const content = el('div', 'usage-details-content');
-  const close = iconButton('×', t('common.close'), () => dialog.close());
-  close.classList.add('usage-details-close');
   const accounts = el('div', 'usage-accounts');
   const add = el('details', 'disclosure'); add.append(el('summary', '', t('usage.addAccount')));
   add.open = addAccount;
@@ -92,11 +87,11 @@ export function openUsageDetails(getState: () => AppState, getUsage: () => Usage
   }); };
   add.append(el('p', 'muted', t('usage.accountHelp')), form);
   const reload = button(t('usage.refresh'), async () => { await request<UsageState>('/api/accounts/refresh', {}); await refresh(); render(); });
-  content.append(title);
+  content.append(el('h2', '', t(manageAccounts ? 'settings.tab.accounts' : 'usage.details')));
   if (manageAccounts) content.append(el('p', 'muted', t('usage.accountNotice')));
-  content.append(reload, accounts);
+  content.append(reload);
   if (manageAccounts) content.append(add);
-  dialog.append(content, close);
+  content.append(accounts);
   let previous = '';
   function render(): void {
     const state = getState(); const usage = getUsage();
@@ -124,7 +119,18 @@ export function openUsageDetails(getState: () => AppState, getUsage: () => Usage
     accounts.replaceChildren(...sections);
     if (focused) { const target = Array.from(accounts.querySelectorAll<HTMLElement>('[data-account-action]')).find(node => node.dataset['accountAction'] === focused); (target ?? reload).focus(); }
   }
-  render(); document.body.append(dialog); dialog.showModal();
-  const timer = window.setInterval(render, 500);
+  render();
+  return { node: content, update: render };
+}
+
+export function openUsageDetails(getState: () => AppState, getUsage: () => UsageState, refresh: () => Promise<void>, selectedAi?: string, addAccount = false): void {
+  const dialog = el('dialog', 'modal usage-details');
+  dialog.setAttribute('aria-label', t(addAccount ? 'settings.tab.accounts' : 'usage.details'));
+  const panel = usageDetailsPanel(getState, getUsage, refresh, selectedAi, addAccount, addAccount);
+  const close = iconButton('×', t('common.close'), () => dialog.close());
+  close.classList.add('usage-details-close');
+  dialog.append(panel.node, close);
+  document.body.append(dialog); dialog.showModal();
+  const timer = window.setInterval(panel.update, 500);
   dialog.addEventListener('close', () => { window.clearInterval(timer); dialog.remove(); }, { once: true });
 }

@@ -236,6 +236,7 @@ export const de: Record<MessageKey, string> = {
 'ai.fullAccess': 'Voller Zugriff',
 'ai.warning': 'Voller Zugriff überspringt Bestätigungen für Befehle und Dateizugriffe. Die KI kann mit deinen Rechten Dateien ändern und Befehle ausführen. Nur für vertrauenswürdige Projekte aktivieren.',
 'settings.tabs': 'Einstellungsbereiche', 'settings.tab.ai': 'KI-Werkzeuge & Modelle', 'settings.tab.usage': 'Nutzung', 'settings.tab.editor': 'Editor', 'settings.tab.maintenance': 'Wartung',
+'settings.tab.accounts': 'Kontoverwaltung',
 'settings.general': 'Allgemein',
 'settings.language': 'Sprache',
 'settings.root': 'Arbeitsbereich-Stammordner',

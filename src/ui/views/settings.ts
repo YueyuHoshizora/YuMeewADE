@@ -12,13 +12,13 @@ import { mcpPanel } from '../components/mcp-management.ts';
 import { editorPreferencesPanel } from '../components/editor-preferences-panel.ts';
 import { editorLspPanel } from '../components/editor-lsp-panel.ts';
 import { mountProviderCapabilities } from '../components/provider-capabilities.ts';
-import { openUsageDetails } from '../components/usage-details.ts';
+import { usageDetailsPanel } from '../components/usage-details.ts';
 import { budgetSettingsPanel, usageHistoryPanel } from '../components/usage-history.ts';
-type SettingsTab = 'general' | 'ai' | 'roles' | 'usage' | 'editor' | 'mcp' | 'maintenance' | 'log';
+type SettingsTab = 'general' | 'accounts' | 'ai' | 'roles' | 'usage' | 'editor' | 'mcp' | 'maintenance' | 'log';
 
 export function settingsView(context: ViewContext, redraw: () => void): View {
   const { state } = context; const node = el('div', 'page settings-page'); node.append(el('h1', '', t('nav.settings')));
-  const sections: Record<SettingsTab, HTMLElement> = { general: el('div'), ai: el('div'), roles: el('div'), usage: el('div'), editor: el('div'), mcp: el('div'), maintenance: el('div'), log: el('div') };
+  const sections: Record<SettingsTab, HTMLElement> = { general: el('div'), accounts: el('div'), ai: el('div'), roles: el('div'), usage: el('div'), editor: el('div'), mcp: el('div'), maintenance: el('div'), log: el('div') };
   const language = select(LOCALES.map(value => ({ value, label: localeName(value) })), getLocale());
   language.onchange = () => { setLocale(language.value as Locale); redraw(); };
   const theme = select(
@@ -41,7 +41,9 @@ export function settingsView(context: ViewContext, redraw: () => void): View {
   sections.general.append(card(t('settings.general'), field(t('settings.language'), language), field(t('settings.theme'), theme), field(t('settings.enterToSend'), enter), field(t('settings.notifications'), notifications), permission, field(t('settings.root'), root), row(...pickRoot, applyRoot), el('p', 'muted', t('settings.rootHint'))));
   sections.maintenance.append(carePanel(context), archiveButton(context));
   sections.ai.append(cliGuidance(context));
-  sections.usage.append(card(t('usage.details'), button(t('usage.details'), () => openUsageDetails(() => context.state, () => context.state.usage, context.refresh, undefined, false, true))), usageHistoryPanel(), budgetSettingsPanel());
+  const accounts = usageDetailsPanel(() => context.state, () => context.state.usage, context.refresh);
+  sections.accounts.append(accounts.node);
+  sections.usage.append(usageHistoryPanel(), budgetSettingsPanel());
   const mcp = mcpPanel(context); sections.mcp.append(mcp.node);
   sections.editor.append(editorPreferencesPanel(), editorLspPanel(context));
   const initial = aiPicker(state, state.settings.initial);
@@ -160,7 +162,7 @@ export function settingsView(context: ViewContext, redraw: () => void): View {
     return cut > 0 && hasMessage(family) ? `${t(family)}（${action.slice(cut + 1)}）` : action;
   };
   void run(async () => { const entries = await api.log(); if (!alive) return; for (const entry of entries) { const line = el('div', 'log-entry'); line.append(el('time', 'muted', localTime(entry.at)), el('strong', '', actionLabel(entry.action)), el('span', '', [entry.project, entry.task].filter(Boolean).join(' / '))); logs.append(line); } if (!entries.length) logs.append(el('p', 'muted', t('common.empty'))); }); sections.log.append(card(t('settings.log'), logs));
-  const labels: Record<SettingsTab, string> = { general: t('settings.general'), ai: t('settings.tab.ai'), roles: t('settings.roles'), usage: t('settings.tab.usage'), editor: t('settings.tab.editor'), mcp: t('mcp.title'), maintenance: t('settings.tab.maintenance'), log: t('settings.log') };
+  const labels: Record<SettingsTab, string> = { general: t('settings.general'), accounts: t('settings.tab.accounts'), ai: t('settings.tab.ai'), roles: t('settings.roles'), usage: t('settings.tab.usage'), editor: t('settings.tab.editor'), mcp: t('mcp.title'), maintenance: t('settings.tab.maintenance'), log: t('settings.log') };
   const keys = Object.keys(sections) as SettingsTab[];
   const tabList = el('div', 'row settings-tabs'); tabList.setAttribute('role', 'tablist'); tabList.setAttribute('aria-label', t('settings.tabs'));
   const tabs = keys.map(key => {
@@ -190,7 +192,7 @@ export function settingsView(context: ViewContext, redraw: () => void): View {
   const saved = readLocal<string>('yumeewade.settingsTab', 'general');
   showTab(keys.find(key => key === saved) ?? 'general');
   return { node, dispose: () => { alive = false; }, update: state => {
-    context.state = state; mcp.update(state); for (const follow of modelPanels) follow(state);
+    context.state = state; accounts.update(); mcp.update(state); for (const follow of modelPanels) follow(state);
     if (JSON.stringify(state.roles.roles) !== rolesBase && formValue() === rolesForm && !roleList.contains(document.activeElement)) buildRoles(state);
   } };
 }
