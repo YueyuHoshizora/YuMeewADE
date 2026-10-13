@@ -96,6 +96,32 @@ test('verify bounds the combined output tail', () => withTmpWorkspace(async ws =
   } finally { await service.stopAll(); }
 }));
 
+test('verify decodes split UTF-8 independently before combining stdout and stderr', () => withTmpWorkspace(async ws => {
+  // Real child/OS pipe delivery must split the writes across separate reads; parent fake timers cannot drive those pipes.
+  const { service, task } = await setup(ws, nodeCommand("process.stdout.write(Buffer.from([0xe4]));setTimeout(()=>process.stderr.write('ERR'),150);setTimeout(()=>process.stdout.write(Buffer.from([0xb8,0xad])),300)"));
+  try {
+    const result = await service.run('P', task.id);
+    assert.equal(result.ok, true);
+    assert.equal(result.truncated, false);
+    assert.equal(result.output, 'ERR中');
+    assert.equal(result.steps?.[0]?.output, 'ERR中');
+    const framework = await service.runFrameworkTests('P', task.id, process.execPath, ['-e', "process.stderr.write(Buffer.from([0xe4]));setTimeout(()=>process.stdout.write('OUT'),150);setTimeout(()=>process.stderr.write(Buffer.from([0xb8,0xad])),300)"]);
+    assert.equal(framework.output, 'OUT中');
+    assert.equal(framework.truncated, false);
+  } finally { await service.stopAll(); }
+}));
+
+test('verify omits a partial UTF-8 character at the combined byte-tail boundary', () => withTmpWorkspace(async ws => {
+  const { service, task } = await setup(ws, nodeCommand("process.stdout.write('中TAIL')"), 'limits:\n  verifyOutputBytes: 6\n');
+  try {
+    const result = await service.run('P', task.id);
+    assert.equal(result.ok, true);
+    assert.equal(result.truncated, true);
+    assert.equal(result.output, 'TAIL');
+    assert.ok(Buffer.byteLength(result.output) <= 6);
+  } finally { await service.stopAll(); }
+}));
+
 test('verify filters ambient secrets', () => withTmpWorkspace(async ws => {
   const previous = process.env['YUMEEWADE_VERIFY_CANARY'];
   process.env['YUMEEWADE_VERIFY_CANARY'] = 'secret-canary';
@@ -251,6 +277,34 @@ test('verification history survives restart but never verifies changed content',
     await assert.rejects(restored.requireCurrentPass('P', task.id), { status: 409 });
     assert.equal((await restored.history('P', task.id)).length, 1);
   } finally { await restored.stopAll(); }
+}));
+
+test('restored merge gate rejects a pass after the effective inherited environment changes', () => withTmpWorkspace(async ws => {
+  const previous = process.env['LANG'];
+  process.env['LANG'] = 'yume-verify-passing-locale';
+  const { service, projects, tasks, task } = await setup(ws, nodeCommand("process.exit(process.env.LANG === 'yume-verify-passing-locale' ? 0 : 7)"));
+  let restored: VerifyService | undefined;
+  try {
+    await projects.update('P', { requireVerification: true });
+    assert.equal((await service.run('P', task.id)).ok, true);
+    await service.stopAll();
+    restored = new VerifyService({ ws, projects, tasks, config: parseConfig('', null), isRunning: () => false });
+    await restored.requireCurrentPass('P', task.id);
+    const history = await restored.history('P', task.id);
+    assert.equal(history[0]?.configuration.includes('"LANG"'), false);
+    process.env['LANG'] = 'yume-verify-failing-locale';
+    assert.equal(await restored.status('P', task.id), null);
+    await assert.rejects(restored.requireCurrentPass('P', task.id), { status: 409, detail: 'verification_required' });
+    const result = await restored.run('P', task.id);
+    assert.equal(result.ok, false);
+    assert.equal(result.exitCode, 7);
+    assert.equal((await restored.history('P', task.id))[1]?.configuration.includes('yume-verify-failing-locale'), false);
+  } finally {
+    await service.stopAll();
+    await restored?.stopAll();
+    if (previous === undefined) delete process.env['LANG'];
+    else process.env['LANG'] = previous;
+  }
 }));
 
 test('a pass recorded with an environment passthrough no longer counts after that setting or its value changes', () => withTmpWorkspace(async ws => {
