@@ -27,7 +27,7 @@ export interface RouterOptions {
   bodyBytes: number;
 }
 
-export function sendJson(res: ServerResponse, status: number, data: unknown): void {
+function prepareJson(res: ServerResponse, status: number, data: unknown): string {
   const payload = JSON.stringify(data);
   res.writeHead(status, {
     'Content-Type': 'application/json; charset=utf-8',
@@ -35,7 +35,45 @@ export function sendJson(res: ServerResponse, status: number, data: unknown): vo
     'Cache-Control': 'no-store',
     'X-Content-Type-Options': 'nosniff',
   });
-  res.end(payload);
+  return payload;
+}
+
+export function sendJson(res: ServerResponse, status: number, data: unknown): void {
+  res.end(prepareJson(res, status, data));
+}
+
+/** Keep the response readable while an ordinary uploader is still writing, without retaining its rejected body. */
+function sendTooLarge(req: IncomingMessage, res: ServerResponse, err: AppError): void {
+  res.setHeader('Connection', 'close');
+  res.write(prepareJson(res, err.status, err.toJSON()));
+  if (req.destroyed || req.readableEnded) {
+    res.end();
+    return;
+  }
+  // Ending a Connection: close response also destroys Node's socket. Defer that
+  // until the unread body drains, but bound both the bytes discarded and time.
+  const socket = req.socket;
+  let discarded = 0;
+  const finish = () => {
+    clearTimeout(timer);
+    req.off('data', discard);
+    req.off('end', finish);
+    req.off('error', finish);
+    socket.off('close', finish);
+    req.pause();
+    res.end();
+  };
+  const discard = (chunk: Buffer) => {
+    discarded += chunk.length;
+    if (discarded >= 32 * 1024 * 1024) finish();
+  };
+  const timer = setTimeout(finish, 2_000);
+  timer.unref();
+  req.on('data', discard);
+  req.once('end', finish);
+  req.once('error', finish);
+  socket.once('close', finish);
+  req.resume();
 }
 
 export function sendError(res: ServerResponse, err: unknown): void {
@@ -185,9 +223,8 @@ export class Router {
       if (result !== undefined && !res.headersSent) sendJson(res, 200, result);
     } catch (err) {
       if (err instanceof AppError && err.code === 'too_large' && !res.headersSent) {
-        // 先回 413 再斷線，避免客戶端只看到連線重設
-        res.setHeader('Connection', 'close');
-        res.once('finish', () => (res.socket as { destroy(): void } | null)?.destroy());
+        sendTooLarge(req, res, err);
+        return true;
       }
       if (!res.headersSent) sendError(res, err);
       else {
