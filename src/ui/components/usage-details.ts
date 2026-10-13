@@ -114,6 +114,8 @@ export function usageDetailsPanel(getState: () => AppState, getUsage: () => Usag
         }); remove.dataset['accountAction'] = `${ai}:${profile.id}:remove`; heading.append(remove); }
         card.append(heading, accountUsage(usage.ais.find(entry => entry.ai === ai && entry.account === profile.id))); section.append(card);
       }
+      // A provider heading with nothing under it reads like a rendering fault; say there is no account yet.
+      if (!profiles.length) section.append(el('p', 'muted', t('usage.noAccounts')));
       return section;
     });
     accounts.replaceChildren(...sections);

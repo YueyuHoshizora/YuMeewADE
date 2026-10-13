@@ -638,3 +638,14 @@ body.terminal-dock-open { grid-template-rows: 64px minmax(0, 1fr) var(--terminal
 .task-browser-controls > .row { margin-left: auto; flex-wrap: wrap; }
 /* The status sits at the row's end instead of floating between the title and the metadata. */
 .task-list > .row > .task-list-title { flex: 1; }
+/* Settings: headed groups and one-line provider rows keep long panels scannable. */
+.care-section { padding: 14px 0 4px; border-top: 1px solid var(--border); }
+.care-section:first-of-type { border-top: 0; padding-top: 0; }
+.care-section > h3 { margin: 0 0 8px; font-size: 14px; }
+.cli-guide { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 8px 16px; padding: 12px 0; border-top: 1px solid var(--border); }
+.cli-guide:first-child { border-top: 0; }
+.cli-guide-about h3 { margin: 0; font-size: 14px; }
+.cli-guide-about p { margin: 2px 0 0; font-size: 12px; }
+.cli-guide > .row { flex-wrap: wrap; gap: 6px; }
+.cli-guide input[readonly] { min-width: 260px; font-family: ui-monospace, monospace; font-size: 12px; }
+.usage-provider > p.muted { margin: 4px 0 12px; font-size: 12px; }

@@ -164,7 +164,7 @@ function load(quiet: boolean): Promise<void> {
         if (!draw && text === stateText) { usage = next.usage; drawFooter(); continue; }
         stateText = text; state = next; usage = next.usage; drawShell();
         navigate(); view?.update?.(state);
-        if (!initialCareShown) { initialCareShown = true; showInitialCare({ state, refresh }); }
+        if (!initialCareShown) { initialCareShown = true; showInitialCare(); }
       } while (refreshAgain);
     } catch (error) {
       showError(error); if (!view) main.replaceChildren(button(t('common.loading'), refresh, 'retry'));
