@@ -275,7 +275,8 @@ export function taskView(
     try {
       if (!retry) await upload.ready();
       const images = retry ? (retry.images ?? []).map(path => path.split(/[\\/]/).pop()!) : answer ? [] : upload.ids();
-      const selection = retry ? { ai: retry.to, ...(retry.model ? { model: retry.model } : {}), ...(retry.effort ? { effort: retry.effort } : {}) } : pick.value();
+      // An empty model/effort was an explicit "CLI default" and is resent as such; only rows that never recorded one omit it.
+      const selection = retry ? { ai: retry.to, ...(retry.model !== undefined ? { model: retry.model } : {}), ...(retry.effort !== undefined ? { effort: retry.effort } : {}) } : pick.value();
       if (!text && !images.length) {
         toast(t('chat.needText'));
         return false;
