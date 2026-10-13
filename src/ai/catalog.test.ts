@@ -39,6 +39,9 @@ async function fixture(t: { after(fn: () => Promise<void>): void }) {
   config.cli.grok.command = path.join(root, 'missing-grok');
   config.cli.gemini.command = path.join(root, 'missing-gemini');
   const settings: Settings = { initial: { ai: 'codex', model: 'gpt-6.1-sol', effort: 'high' }, hiddenModels: {}, modelOrder: {}, fullAccess: {}, accounts: {}, activeAccounts: {} };
+  // Keep inherited CLI-home pointers from reaching the developer's real profiles.
+  settings.accounts.claude = [{ id: 'default', name: 'Default', configDir: path.join(home, '.claude') }];
+  settings.accounts.codex = [{ id: 'default', name: 'Default', configDir: path.join(home, '.codex') }];
   const deps = { config, ws, home, settings: { async get() { return settings; } } };
   return { root, home, ws, config, settings, deps, catalog: new AiCatalog(deps) };
 }
@@ -245,6 +248,72 @@ test('Gemini discovery follows the selected account and scopes persisted models 
   const saved = JSON.parse(await fs.readFile(path.join(f.ws.internalDir, 'models.json'), 'utf8'));
   assert.equal(saved.gemini.profile, JSON.stringify(['first', firstHome]));
 });
+
+for (const ai of ['claude', 'codex'] as const) {
+  const cacheFile = (home: string) => path.join(home, ai === 'claude' ? 'cache/model-catalog/models.json' : 'models_cache.json');
+  const cache = (id: string) => ai === 'claude'
+    ? { catalog: { config: { models: [{ id, name: id, section: 'main' }] } } }
+    : { models: [{ slug: id, display_name: id, visibility: 'list' }] };
+
+  test(`${ai} initial lookup and refresh read the selected account config directory`, async (t) => {
+    const f = await fixture(t);
+    const selected = path.join(f.root, 'selected');
+    await put(cacheFile(path.join(f.home, `.${ai}`)), cache('default-model'));
+    await put(cacheFile(selected), cache('selected-model'));
+    f.settings.accounts[ai] = [{ id: 'selected', name: 'Selected', configDir: selected }];
+    f.settings.activeAccounts[ai] = 'selected';
+    const command = path.join(f.root, 'catalog-cli');
+    await fs.writeFile(command, `#!${process.execPath}\nimport fs from 'node:fs';\nif (process.argv[2] === '--version') console.log('cli 1.2.3');\nelse console.log(fs.readFileSync(process.env.CODEX_HOME + '/models_cache.json', 'utf8'));\n`, { mode: 0o755 });
+    f.config.cli[ai].command = command;
+    assert.deepEqual((await f.catalog.get(ai)).models.map(model => model.id), ['selected-model']);
+    await put(cacheFile(selected), cache('refreshed-model'));
+    assert.deepEqual((await f.catalog.refresh(ai)).models.map(model => model.id), ['refreshed-model']);
+    await fs.rm(cacheFile(selected));
+    assert.deepEqual((await new AiCatalog(f.deps).get(ai)).models.map(model => model.id), ['refreshed-model']);
+  });
+
+  test(`${ai} refreshed catalogs never leak across account switches or restarts`, async (t) => {
+    const f = await fixture(t);
+    const first = path.join(f.home, `.${ai}`);
+    const second = path.join(f.root, 'second');
+    await put(cacheFile(first), cache('first-model'));
+    await put(cacheFile(second), cache('second-model'));
+    f.settings.accounts[ai] = [{ id: 'default', name: 'Default', configDir: first }, { id: 'second', name: 'Second', configDir: second }];
+    const command = path.join(f.root, 'catalog-cli');
+    await fs.writeFile(command, `#!${process.execPath}\nimport fs from 'node:fs';\nif (process.argv[2] === '--version') console.log('cli 1.2.3');\nelse console.log(fs.readFileSync(process.env.CODEX_HOME + '/models_cache.json', 'utf8'));\n`, { mode: 0o755 });
+    f.config.cli[ai].command = command;
+    // Exercise the credential lease seam as well as the no-accounts path above.
+    const accounts = Object.create(CredentialAccounts.prototype) as CredentialAccounts;
+    accounts.withEnv = async <T>(_ai: string, configDir: string | undefined, query: (env: NodeJS.ProcessEnv) => Promise<T>) => query({ HOME: f.home, CODEX_HOME: configDir ?? first });
+    const deps = { ...f.deps, accounts };
+    const catalog = new AiCatalog(deps);
+    const refreshed = await catalog.refresh(ai);
+    assert.deepEqual(refreshed.models.map(model => model.id), ['first-model']);
+    await fs.rm(cacheFile(first));
+    assert.deepEqual((await new AiCatalog(deps).get(ai)).models, refreshed.models);
+    f.settings.activeAccounts[ai] = 'second';
+    // A restart must reject the first account's saved catalog before any live lookup replaces it.
+    assert.deepEqual((await new AiCatalog(deps).get(ai)).models.map(model => model.id), ['second-model']);
+    assert.deepEqual((await catalog.get(ai)).models.map(model => model.id), ['second-model']);
+    await fs.rm(cacheFile(second));
+    assert.deepEqual((await new AiCatalog(deps).get(ai)).models.map(model => model.id), ['second-model']);
+    f.settings.activeAccounts[ai] = 'default';
+    assert.equal((await catalog.get(ai)).source, 'builtin');
+    assert.equal((await new AiCatalog(deps).get(ai)).source, 'builtin');
+  });
+
+  test(`${ai} rejects legacy unscoped saved models rather than assigning them to the active account`, async (t) => {
+    const f = await fixture(t);
+    const selected = path.join(f.root, 'selected');
+    await put(cacheFile(selected), cache('selected-model'));
+    f.settings.accounts[ai] = [{ id: 'selected', name: 'Selected', configDir: selected }];
+    f.settings.activeAccounts[ai] = 'selected';
+    await put(path.join(f.ws.internalDir, 'models.json'), {
+      [ai]: { models: [{ id: 'other-account-model', label: 'Other', efforts: [], defaultEffort: '' }], source: 'cli', refreshedAt: '2026-10-10T00:00:00.000Z' },
+    });
+    assert.deepEqual((await f.catalog.get(ai)).models.map(model => model.id), ['selected-model']);
+  });
+}
 
 test('CLI version retains SemVer prerelease and build identifiers with or without a v prefix', async (t) => {
   const f = await fixture(t);

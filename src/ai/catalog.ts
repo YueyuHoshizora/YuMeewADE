@@ -138,6 +138,9 @@ export class AiCatalog {
     if (name === 'gemini' && this.cache.gemini?.profile !== this.geminiProfile(settings)) {
       await this.loadGemini(settings, false);
     }
+    if ((name === 'claude' || name === 'codex') && this.cache[name]?.profile !== this.localProfile(name, settings)) {
+      await this.loadLocal(name, settings);
+    }
     const cached = this.cache[name]!;
     return { name, ...status, models: structuredClone(cached.models), source: cached.source, refreshedAt: cached.refreshedAt, fullAccess: settings.fullAccess[name] ?? this.config.cli[name].fullAccess };
   }
@@ -147,6 +150,7 @@ export class AiCatalog {
     await this.init();
     let models: ModelInfo[];
     let source = 'cli-cache';
+    const settings = await this.settings.get();
     if (name === 'grok') {
       await this.loadGrok(await this.settings.get(), true);
       return this.get(name);
@@ -157,21 +161,20 @@ export class AiCatalog {
     }
     if (name === 'codex') {
       const query = (env: NodeJS.ProcessEnv) => captureCommand({ command: this.config.cli[name].command, args: ['debug', 'models', '-c', 'cli_auth_credentials_store="file"'], env, timeoutMs: 120_000 });
-      const settings = await this.settings.get();
-      const result = this.accounts ? await this.accounts.withEnv(name, this.configDir(name, settings), query) : await query(this.env());
+      const result = this.accounts ? await this.accounts.withEnv(name, this.configDir(name, settings), query) : await query({ ...this.env(), CODEX_HOME: this.localHome(name, settings) });
       if (!result.ok) throw new AppError('unavailable', 'cli_unavailable', { field: name, cause: result.reason });
       try { models = parseModels(name, JSON.parse(result.stdout)); }
       catch (cause) { throw new AppError('internal', 'bad_json', { cause }); }
       if (!models.length) throw new AppError('internal', 'bad_json');
       source = 'cli';
     } else {
-      models = await this.localModels(name);
+      models = await this.localModels(name, this.localHome(name, settings));
       if (!models.length) {
         models = BUILTIN[name].map(([id, label]) => ({ id, label, efforts: [...EFFORTS], defaultEffort: 'medium' }));
         source = 'builtin';
       }
     }
-    await this.persist(name, { models, source, refreshedAt: new Date().toISOString() });
+    await this.persist(name, { models, source, refreshedAt: new Date().toISOString(), profile: this.localProfile(name, settings) });
     return this.get(name);
   }
 
@@ -198,6 +201,22 @@ export class AiCatalog {
     return settings.accounts[ai]?.find(account => account.id === active)?.configDir;
   }
   private env(): NodeJS.ProcessEnv { return { ...minimalEnv(this.config.cli.envPassthrough), HOME: this.home }; }
+  private localHome(ai: 'claude' | 'codex', settings: Settings): string {
+    const variable = ai === 'claude' ? 'CLAUDE_CONFIG_DIR' : 'CODEX_HOME';
+    return path.resolve(this.configDir(ai, settings) ?? this.env()[variable] ?? path.join(this.home, `.${ai}`));
+  }
+  private localProfile(ai: 'claude' | 'codex', settings: Settings): string {
+    return JSON.stringify([settings.activeAccounts[ai] ?? 'default', this.localHome(ai, settings)]);
+  }
+  private async loadLocal(ai: 'claude' | 'codex', settings: Settings): Promise<void> {
+    const models = await this.localModels(ai, this.localHome(ai, settings));
+    await this.persist(ai, {
+      models: models.length ? models : BUILTIN[ai].map(([id, label]) => ({ id, label, efforts: [...EFFORTS], defaultEffort: 'medium' })),
+      source: models.length ? 'cli-cache' : 'builtin',
+      refreshedAt: new Date().toISOString(),
+      profile: this.localProfile(ai, settings),
+    });
+  }
   private grokHome(settings: Settings): string {
     const active = settings.activeAccounts.grok ?? 'default';
     return settings.accounts.grok?.find((account) => account.id === active)?.configDir || this.env()['GROK_HOME'] || path.join(this.home, '.grok');
@@ -255,11 +274,10 @@ export class AiCatalog {
     return { available: true, version: result.ok ? /(?<![\w.+-])v?(\d+\.\d+\.\d+(?:-[0-9A-Za-z-]+(?:\.[0-9A-Za-z-]+)*)?(?:\+[0-9A-Za-z-]+(?:\.[0-9A-Za-z-]+)*)?)(?![\w.+-])/.exec(result.stdout + '\n' + result.stderr)?.[1] ?? '' : '' };
   }
   /** The CLI's own model cache; one it cannot read (missing, a folder, no permission) counts as absent so builtins apply. */
-  private async localModels(ai: CatalogAi): Promise<ModelInfo[]> {
-    if (ai === 'grok' || ai === 'gemini') return [];
+  private async localModels(ai: 'claude' | 'codex', home: string): Promise<ModelInfo[]> {
     try {
-      if (ai === 'codex') return parseModels(ai, await json(path.join(this.home, '.codex', 'models_cache.json')));
-      const dir = path.join(this.home, '.claude', 'cache', 'model-catalog');
+      if (ai === 'codex') return parseModels(ai, await json(path.join(home, 'models_cache.json')));
+      const dir = path.join(home, 'cache', 'model-catalog');
       const files = (await fs.readdir(dir)).filter((file) => file.endsWith('.json'));
       const candidates = await Promise.all(files.map(async (file) => {
         try { const stat = await fs.stat(path.join(dir, file)); return { file, mtime: stat.isFile() ? stat.mtimeMs : -1 }; }
@@ -273,6 +291,7 @@ export class AiCatalog {
   private init(): Promise<void> {
     this.initialized ??= (async () => {
       const saved = object(await json(this.file));
+      const settings = await this.settings.get();
       for (const name of NAMES) {
         if (name === 'gemini') {
           const existing = savedCache(saved.gemini);
@@ -287,12 +306,15 @@ export class AiCatalog {
           continue;
         }
         const existing = savedCache(saved[name]);
-        if (existing) { this.cache[name] = existing; continue; }
-        const models = await this.localModels(name);
+        const profile = this.localProfile(name, settings);
+        // Older unscoped catalogs cannot establish which account supplied their models.
+        if (existing?.profile === profile) { this.cache[name] = existing; continue; }
+        const models = await this.localModels(name, this.localHome(name, settings));
         this.cache[name] = {
           models: models.length ? models : BUILTIN[name].map(([id, label]) => ({ id, label, efforts: [...EFFORTS], defaultEffort: 'medium' })),
           source: models.length ? 'cli-cache' : 'builtin',
           refreshedAt: new Date().toISOString(),
+          profile,
         };
       }
       await writeJson(this.file, this.cache);
