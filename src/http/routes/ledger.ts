@@ -37,6 +37,27 @@ export function registerLedgerRoutes(router: Router, app: App): void {
     app.changed(project, task);
   }
   const ids = (body: Record<string, unknown>) => ({ project: reqString(body, 'project', 120), task: reqString(body, 'task', 120) });
+  async function taskChange<T>(project: string, task: string, action: string, approved: boolean, commit: () => Promise<T>): Promise<T> {
+    return app.completion.withTask(project, task, async () => {
+      if (approved && app.aiBusy(project, task)) throw new AppError('conflict', 'complete_while_running');
+      let committed = false;
+      let result: T;
+      try {
+        await app.completion.withApproval(project, task, approved, async () => {
+          result = await commit();
+          committed = true;
+          return result;
+        });
+      } catch (error) {
+        if (!committed) throw error;
+        // The ledger already changed: report its outcome honestly even if secondary bookkeeping cannot be saved.
+        log.error('作業完成紀錄儲存失敗', error);
+      }
+      try { await changed(action, project, task); }
+      catch (error) { log.error('作業操作紀錄儲存失敗', error); app.changed(project, task); }
+      return result!;
+    });
+  }
   const templates = new TaskTemplates(app.ws);
   const templateScope = (value: unknown): 'project' | 'workspace' => {
     if (value !== 'project' && value !== 'workspace') throw new AppError('bad_request', 'field_type', { field: 'scope' });
@@ -210,13 +231,10 @@ export function registerLedgerRoutes(router: Router, app: App): void {
     const fields = ['title', 'state', 'phase', 'role', 'parent', 'cli', 'model', 'effort', 'question', 'due', 'tags'];
     if (Object.keys(patch).some((key) => !fields.includes(key))) throw new AppError('bad_request');
     if (patch.role && !(await app.roles()).roles[patch.role]) throw new AppError('bad_request', 'role_missing');
-    // Choosing 完成 approves completion, so it follows the same rule as the confirmation button.
-    if (patch.state === '完成' && app.aiBusy(project, task)) throw new AppError('conflict', 'complete_while_running');
-    const result = await app.tasks.update(project, task, patch);
     if (patch.state !== undefined) {
-      if (patch.state === '完成') await app.completion.approve(project, task);
-      else await app.completion.revoke(project, task);
+      return taskChange(project, task, 'task.update', patch.state === '完成', () => app.tasks.update(project, task, patch));
     }
+    const result = await app.tasks.update(project, task, patch);
     await changed('task.update', project, task);
     return result;
   });
@@ -249,11 +267,9 @@ export function registerLedgerRoutes(router: Router, app: App): void {
           const patch: TaskPatch = validated.kind === 'state' ? { state: validated.value }
             : validated.kind === 'phase' ? { phase: validated.value }
             : validated.kind === 'due' ? { due: validated.value } : {};
-          if (patch.state === '完成' && app.aiBusy(project, task)) throw new AppError('conflict', 'complete_while_running');
-          await app.tasks.update(project, task, patch, validated.kind === 'addTag' || validated.kind === 'removeTag' ? { tag: validated.value, add: validated.kind === 'addTag' } : undefined);
-          if (patch.state === '完成') await app.completion.approve(project, task);
-          else if (patch.state !== undefined) await app.completion.revoke(project, task);
-          await changed('task.update', project, task);
+          const commit = () => app.tasks.update(project, task, patch, validated.kind === 'addTag' || validated.kind === 'removeTag' ? { tag: validated.value, add: validated.kind === 'addTag' } : undefined);
+          if (patch.state !== undefined) await taskChange(project, task, 'task.update', patch.state === '完成', commit);
+          else { await commit(); await changed('task.update', project, task); }
         }
         results.push({ task, ok: true });
       } catch (error) {
@@ -292,10 +308,7 @@ export function registerLedgerRoutes(router: Router, app: App): void {
     const current = await app.tasks.get(project, task);
     let result = current;
     if (body.action === 'approve') {
-      // A turn still running can uncheck steps or ask a question; the human confirms finished work, not work in progress.
-      if (app.aiBusy(project, task)) throw new AppError('conflict', 'complete_while_running');
-      result = await app.tasks.update(project, task, { state: '完成' });
-      await app.completion.approve(project, task);
+      return taskChange(project, task, 'task.approve', true, () => app.tasks.update(project, task, { state: '完成' }));
     } else if (body.action === 'continue') {
       await app.completion.setContinued(project, task, stepsHash(current.steps));
       if (current.state === '完成') result = await app.tasks.update(project, task, { state: '進行中' });
@@ -314,10 +327,10 @@ export function registerLedgerRoutes(router: Router, app: App): void {
       if (preview.unavailable.length) throw new AppError('conflict', 'archive_cannot_preserve');
       await app.worktree.abandon(project, task);
     }
-    await app.runner.markRead(project, task);
-    await app.tasks.archive(project, task);
-    await app.completion.revoke(project, task);
-    await changed('task.archive', project, task);
+    await taskChange(project, task, 'task.archive', false, async () => {
+      await app.runner.markRead(project, task);
+      await app.tasks.archive(project, task);
+    });
     return { archived: true };
   }
   router.post('/api/task/archive', async ({ body }) => archiveTask(body));

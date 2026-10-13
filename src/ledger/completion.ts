@@ -1,6 +1,6 @@
 import path from 'node:path';
 import { createHash } from 'node:crypto';
-import { readJson, updateJson } from '../shared/fsx.ts';
+import { readJson, updateJson, withFileLocks, writeJson } from '../shared/fsx.ts';
 import type { Step, Task } from '../shared/types.ts';
 import type { Workspace } from './workspace.ts';
 
@@ -13,7 +13,23 @@ export function phaseKey(tasks: Task[]): string {
 const dict = (value: Record<string, string> | undefined): Record<string, string> => Object.assign(Object.create(null) as Record<string, string>, value);
 export class CompletionStore {
   readonly file: string;
-  constructor(ws: Workspace) { this.file = path.join(ws.internalDir, 'completion.json'); }
+  private readonly ws: Workspace;
+  constructor(ws: Workspace) { this.file = path.join(ws.internalDir, 'completion.json'); this.ws = ws; }
+  /** Admission and human completion share a short-lived lock, never the lifetime of a CLI turn. */
+  async withTask<T>(p: string, t: string, change: () => Promise<T>): Promise<T> {
+    return withFileLocks([`${this.ws.taskFile(p, t)}.completion.lock`], change);
+  }
+  /** Read before committing the ledger change; retain the store lock until bookkeeping is persisted. */
+  async withApproval<T>(p: string, t: string, approved: boolean, commit: () => Promise<T>): Promise<T> {
+    return withFileLocks([this.file], async () => {
+      const data = await this.data();
+      const result = await commit();
+      if (approved) data.approved[`${p}/${t}`] = new Date().toISOString();
+      else delete data.approved[`${p}/${t}`];
+      await writeJson(this.file, data);
+      return result;
+    });
+  }
   private async data(): Promise<CompletionData> {
     const value = await readJson<Partial<CompletionData>>(this.file, {});
     return { approved: dict(value.approved), continued: dict(value.continued), phaseContinued: dict(value.phaseContinued) };

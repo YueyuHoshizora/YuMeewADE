@@ -389,12 +389,17 @@ export class ChatRunner extends EventEmitter {
     await this.deps.beforeLaunch?.(p, t, item.ai, accountId);
     if (this.running().length >= this.deps.limits.concurrentRuns) throw new AppError('unavailable', 'runs_limit');
     assertActive();
-    // 先佔槽，再做工作目錄與檔案 I/O，避免跨作業同時超過執行上限。
-    s.busy = {
-      request: item.id, ai: item.ai, model: pick.model, effort: pick.effort,
-      startedAt: new Date().toISOString(),
-      ...(chosen.answer ? { mode: 'answer' } : chosen.mode ? { mode: chosen.mode } : {}),
-    };
+    // Completion holds this same lock through its ledger write and approval.
+    const busy = await this.deps.completion.withTask(p, t, async () => {
+      if (this.running().length >= this.deps.limits.concurrentRuns) throw new AppError('unavailable', 'runs_limit');
+      assertActive();
+      s.busy = {
+        request: item.id, ai: item.ai, model: pick.model, effort: pick.effort,
+        startedAt: new Date().toISOString(),
+        ...(chosen.answer ? { mode: 'answer' } : chosen.mode ? { mode: chosen.mode } : {}),
+      };
+      return s.busy;
+    });
     // Dequeue only once the user row is about to be written; a failure before that point must not lose the instruction.
     let dequeued: QueueItem | undefined; let appended = false; let launched = false;
     try {
@@ -428,7 +433,7 @@ export class ChatRunner extends EventEmitter {
       assertActive();
       // Only an admitted turn may touch the task: a stop during the startup I/O above must leave an unanswered
       // question and a completed state exactly as they were.
-      if (task.state === '完成') await this.deps.completion.revoke(p, t);
+      if ((await this.deps.tasks.get(p, t)).state === '完成') await this.deps.completion.revoke(p, t);
       await this.deps.tasks.update(p, t, {
         state: '進行中', cli: pick.cli, model: pick.model, effort: pick.effort,
         ...(chosen.answer ? { question: '' } : {}),
@@ -436,14 +441,14 @@ export class ChatRunner extends EventEmitter {
       const user: ChatRow = {
         at: item.at, role: 'user', text: item.text, to: item.ai,
         model: pick.model, effort: pick.effort, request: item.id,
-        ...(s.busy.mode ? { mode: s.busy.mode } : {}),
+        ...(busy.mode ? { mode: busy.mode } : {}),
         ...(images.length ? { images } : {}),
         ...(checkpoint ? { checkpoint } : {}),
         ...(currentMentions.length ? { mentions: currentMentions } : {}),
       };
       meta.running = {
         request: item.id, ai: item.ai, model: pick.model,
-        effort: pick.effort, startedAt: s.busy.startedAt,
+        effort: pick.effort, startedAt: busy.startedAt,
       };
       if (input.fromQueue) {
         const q = await this.deps.store.updateQueue(p, t, q => { dequeued = q.find(x => x.id === input.fromQueue); return q.filter(x => x.id !== input.fromQueue); });
@@ -452,7 +457,7 @@ export class ChatRunner extends EventEmitter {
       const position = await this.deps.store.append(p, t, user);
       appended = true;
       this.publish(p, t, { event: 'row', data: { ...user, position } });
-      this.publish(p, t, { event: 'busy', data: s.busy });
+      this.publish(p, t, { event: 'busy', data: busy });
       s.text = item.text;
       s.partial = '';
       await this.deps.oplog.record({

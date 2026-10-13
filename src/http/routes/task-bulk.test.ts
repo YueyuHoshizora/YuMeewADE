@@ -3,6 +3,9 @@ import { test } from 'node:test';
 import { startTestServer } from '../../testing/server.ts';
 import type { Project } from '../../shared/types.ts';
 import { MockCliProvider } from '../../cli/mock.ts';
+import { promises as fs } from 'node:fs';
+import { setTimeout as delay } from 'node:timers/promises';
+import { withFileLocks } from '../../shared/fsx.ts';
 
 test('bulk validates whole request before writes and reports missing tasks independently', async () => {
   const s = await startTestServer();
@@ -60,3 +63,75 @@ test('bulk archive retains per-task running and working-copy safeguards', async 
     await s.app.runner.whenIdle();
   } finally { await s.close(); }
 });
+
+for (const action of [{ kind: 'state', value: '暫停' }, { kind: 'archive', confirm: true }]) {
+  test(`bulk ${action.kind} with corrupt completion data fails before changing the task`, async () => {
+    const s = await startTestServer();
+    try {
+      const p = (await s.api('POST', '/api/project/new', { name: 'Corrupt bulk' })).json as Project;
+      const task = await s.app.tasks.create(p.id, { title: 'unchanged' });
+      await fs.writeFile(s.app.completion.file, '{broken');
+      const response = await s.api('POST', '/api/task/bulk', { project: p.id, tasks: [task.id], action });
+      assert.deepEqual(response.json, { results: [{ task: task.id, ok: false, error: 'internal', detail: 'file_corrupt' }] });
+      assert.equal((await s.app.tasks.get(p.id, task.id)).state, '未開始');
+    } finally { await s.close(); }
+  });
+}
+
+test('bulk reports committed changes and publishes them when later completion bookkeeping fails', async () => {
+  const s = await startTestServer();
+  try {
+    const p = (await s.api('POST', '/api/project/new', { name: 'Late bookkeeping' })).json as Project;
+    const task = await s.app.tasks.create(p.id, { title: 'committed' });
+    const update = s.app.tasks.update.bind(s.app.tasks);
+    s.app.tasks.update = async (...args) => {
+      const result = await update(...args);
+      // A directory at the destination makes the atomic completion rename fail, after validation succeeded.
+      await fs.mkdir(s.app.completion.file);
+      return result;
+    };
+    const changes: string[] = [];
+    const changed = s.app.changed.bind(s.app);
+    s.app.changed = (project, id) => { if (id) changes.push(id); changed(project, id); };
+    const response = await s.api('POST', '/api/task/bulk', { project: p.id, tasks: [task.id], action: { kind: 'state', value: '暫停' } });
+    assert.deepEqual(response.json, { results: [{ task: task.id, ok: true }] });
+    assert.equal((await s.app.tasks.get(p.id, task.id)).state, '暫停');
+    assert.ok(changes.includes(task.id));
+    assert.ok((await s.app.oplog.recent()).some(entry => entry.action === 'task.update' && entry.task === task.id));
+  } finally { await s.close(); }
+});
+
+for (const endpoint of ['bulk', 'completion', 'update']) {
+  test(`${endpoint} completion and AI admission cannot leave approval on an active turn`, async () => {
+    const provider = new MockCliProvider(100);
+    const s = await startTestServer('', { providers: { mock: provider } });
+    const release = Promise.withResolvers<void>();
+    let lock: Promise<void> | undefined;
+    try {
+      const p = (await s.api('POST', '/api/project/new', { name: `Admission ${endpoint}` })).json as Project;
+      const task = await s.app.tasks.create(p.id, { title: 'race', cli: 'mock', workspace: 'direct' });
+      const entered = Promise.withResolvers<void>();
+      lock = withFileLocks([s.app.ws.taskFile(p.id, task.id)], async () => { entered.resolve(); await release.promise; });
+      await entered.promise;
+      const writing = Promise.withResolvers<void>();
+      const update = s.app.tasks.update.bind(s.app.tasks);
+      s.app.tasks.update = async (...args) => { if (args[2].state === '完成') writing.resolve(); return update(...args); };
+      const approve = s.api('POST', `/api/task/${endpoint}`, {
+        project: p.id, task: task.id,
+        ...(endpoint === 'bulk' ? { tasks: [task.id], action: { kind: 'state', value: '完成' } }
+          : endpoint === 'update' ? { patch: { state: '完成' } } : { action: 'approve' }),
+      });
+      await Promise.race([writing.promise, approve.then(response => { throw new Error(`approval ended before write: ${JSON.stringify(response)}`); })]);
+      const send = s.api('POST', '/api/chat/send', { project: p.id, task: task.id, ai: 'mock', text: '[slow] work' });
+      await delay(50);
+      release.resolve();
+      await lock;
+      assert.equal((await approve).status, 200);
+      assert.equal((await send).status, 200);
+      assert.equal(s.app.aiBusy(p.id, task.id), true);
+      assert.equal(await s.app.completion.isApproved(p.id, task.id), false);
+      await s.api('POST', '/api/chat/stop', { project: p.id, task: task.id });
+      await s.app.runner.whenIdle();
+    } finally { release.resolve(); await lock; await s.close(); }
+  });
+}
