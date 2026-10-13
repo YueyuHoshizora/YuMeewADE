@@ -158,16 +158,27 @@ export class WorktreeService {
   async listFiles(project: string, task: string): Promise<string[]> {
     const root = await this.viewRoot(project, task);
     if (!(await isRepo(root))) return [];
-    const tracked = splitNull(await gitOk(root, ['ls-files', '-z']));
+    // `--stage` gives each tracked path's mode, so only symbolic links (120000) need resolving; new files are few and lstat'ed.
+    const staged = splitNull(await gitOk(root, ['ls-files', '--stage', '-z'])).map(entry => ({ link: entry.startsWith('120000 '), file: entry.slice(entry.indexOf('\t') + 1) }));
     const fresh = splitNull(await gitOk(root, ['ls-files', '--others', '--exclude-standard', '-z']));
-    return [...new Set([...tracked, ...fresh])].filter(file => !isLocalSecret(file)).sort();
+    const base = await fs.realpath(root);
+    const links = new Set(staged.filter(entry => entry.link).map(entry => entry.file));
+    await Promise.all(fresh.map(async file => { if ((await fs.lstat(path.join(base, file)).catch(() => null))?.isSymbolicLink()) links.add(file); }));
+    // A link to a local secret (`settings.txt -> .env.local`) exposes the secret as much as the secret itself.
+    const secretLink = async (file: string) => {
+      const target = await fs.realpath(path.join(base, file)).catch(() => null);
+      return !!target && isInside(base, target) && isLocalSecret(path.relative(base, target));
+    };
+    const files = [...new Set([...staged.map(entry => entry.file), ...fresh])].filter(file => !isLocalSecret(file));
+    const hidden = new Set((await Promise.all([...links].map(async file => await secretLink(file) ? file : null))).filter(file => file !== null));
+    return files.filter(file => !hidden.has(file)).sort();
   }
   /** 唯讀取檔：路徑必須在 listFiles 內、解析後仍在根目錄內（擋符號連結逃出）、只取前 FILE_VIEW_MAX 位元組。 */
   async readFile(project: string, task: string, relative: string): Promise<FileView> {
     if (!(await this.listFiles(project, task)).includes(relative)) throw new AppError('not_found', 'file_missing');
     const root = await fs.realpath(await this.viewRoot(project, task));
     const full = await fs.realpath(path.join(root, relative)).catch(() => null);
-    if (!full || !isInside(root, full)) throw new AppError('not_found', 'file_missing');
+    if (!full || !isInside(root, full) || isLocalSecret(path.relative(root, full))) throw new AppError('not_found', 'file_missing');
     const handle = await fs.open(full, 'r');
     try {
       const stat = await handle.stat();

@@ -710,3 +710,22 @@ test('automatic saves never conclude a merge or rebase the user left unfinished'
   assert.equal((await gitOk(dir, ['rev-parse', 'HEAD'])).trim(), copyHead);
   assert.equal((await git(dir, ['rev-parse', '--verify', '-q', 'MERGE_HEAD'])).code, 0);
 }));
+
+test('secret aliases are excluded from file listings and reads', () => withTmpWorkspace(async ws => {
+  const projects = new ProjectLedger(ws); const tasks = new TaskLedger(ws);
+  await projects.create({ name: 'P' });
+  const task = await tasks.create('P', { title: 'Secret aliases' });
+  const wt = new WorktreeService({ ws, projects, tasks, diffBytes: 100_000 });
+  const dir = await wt.prepare('P', task.id);
+  await fs.writeFile(path.join(dir, '.env.local'), 'TOKEN=private-canary\n');
+  await fs.writeFile(path.join(dir, 'public.txt'), 'public\n');
+  await fs.symlink('.env.local', path.join(dir, 'tracked-settings.txt'));
+  await gitOk(dir, ['add', 'tracked-settings.txt']);
+  await fs.symlink('.env.local', path.join(dir, 'settings.txt'));
+  await fs.symlink('public.txt', path.join(dir, 'public-alias.txt'));
+  for (const alias of ['settings.txt', 'tracked-settings.txt']) {
+    await assert.rejects(wt.readFile('P', task.id, alias), (error: unknown) => error instanceof AppError && error.detail === 'file_missing');
+    assert.ok(!(await wt.listFiles('P', task.id)).includes(alias));
+  }
+  assert.equal((await wt.readFile('P', task.id, 'public-alias.txt')).text, 'public\n');
+}));
