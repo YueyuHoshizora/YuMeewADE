@@ -514,3 +514,21 @@ for (const unstage of [false, true]) test(`adjacent replacements preserve order 
   assert.equal(await gitOk(root, ['show', ':adjacent.txt']), unstage ? 'one\nTWO\n' : 'ONE\ntwo\n');
   assert.equal(await fs.readFile(full, 'utf8'), 'ONE\nTWO\n');
 }));
+
+test('branch switching refuses to overwrite ignored local files and creation preserves them', () => withTmpWorkspace(async ws => {
+  const projects = new ProjectLedger(ws); const tasks = new TaskLedger(ws); await projects.create({ name: 'P' });
+  const root = ws.projectDir('P'); const full = path.join(root, 'personal.config');
+  const branch = (await gitOk(root, ['branch', '--show-current'])).trim();
+  await gitOk(root, ['switch', '-c', 'tracked-config']);
+  await fs.writeFile(full, 'tracked defaults\n'); await commitAll(root, 'tracked config');
+  await gitOk(root, ['switch', branch]);
+  await fs.appendFile(path.join(root, '.gitignore'), '\npersonal.config\n'); await commitAll(root, 'ignore local config');
+  await fs.writeFile(full, 'unsaved personal settings\n');
+  const workbench = new GitWorkbench({ ws, projects, tasks, isRunning: () => false });
+  await assert.rejects(workbench.branch('P', undefined, 'tracked-config', false), (error: unknown) => error instanceof AppError && error.detail === 'git_pull_local_changes');
+  assert.equal(await fs.readFile(full, 'utf8'), 'unsaved personal settings\n');
+  assert.equal((await gitOk(root, ['branch', '--show-current'])).trim(), branch);
+  await workbench.branch('P', undefined, 'local-config', true);
+  assert.equal(await fs.readFile(full, 'utf8'), 'unsaved personal settings\n');
+  assert.equal((await gitOk(root, ['branch', '--show-current'])).trim(), 'local-config');
+}));

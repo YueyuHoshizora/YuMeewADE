@@ -446,7 +446,14 @@ export class GitWorkbench {
     if (!branchName(name)) throw new AppError('bad_request', 'git_branch_invalid');
     return this.locked(project, task, true, async root => {
       if ((await git(root, ['check-ref-format', '--branch', name])).code !== 0) throw new AppError('bad_request', 'git_branch_invalid');
-      await this.command(root, create ? ['switch', '-c', name] : ['switch', name]);
+      const switched = await this.run(root, create ? ['switch', '--no-overwrite-ignore', '-c', name] : ['switch', '--no-overwrite-ignore', name]);
+      if (switched.code !== 0 || switched.truncated) {
+        // Classify ignored-file collisions from paths, without depending on Git's localized error text.
+        const ignored = split(await this.command(root, ['ls-files', '-z', '--others', '--ignored', '--exclude-standard', '--directory'])).map(entry => entry.replace(/\/$/u, ''));
+        const target = await this.run(root, ['ls-tree', '-r', '--name-only', '-z', create ? 'HEAD' : name]);
+        if (target.code === 0 && !target.truncated && split(target.stdout).some(file => ignored.some(entry => file === entry || file.startsWith(`${entry}/`) || entry.startsWith(`${file}/`)))) throw new AppError('conflict', 'git_pull_local_changes');
+        throw new AppError('conflict', 'git_failed');
+      }
     });
   }
   private async validateRemote(root: string, name: string): Promise<void> {
