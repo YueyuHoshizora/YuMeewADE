@@ -753,7 +753,10 @@ export function openFileBrowser(project: string, task: string, workspace = activ
         let text = expected.text;
         for (const edit of [...sorted].reverse()) text = text.slice(0, edit.from) + edit.text + text.slice(edit.to);
         buffer!.text = text;
-        for (const view of views) if (view.path === expected.path) { view.content.view.dispatch({ changes: sorted.map(edit => ({ from: edit.from, to: edit.to, insert: edit.text })), annotations: isolateHistory.of('full') }); view.preview.update(text); }
+        for (const view of views) if (view.path === expected.path) { view.content.applyEdits(sorted); view.preview.update(text); }
+        for (const tabs of paneTabs) for (const tab of tabs) if (tab.path === expected.path) tab.preview = false;
+        const state = live.get(expected.path); if (state) state.diagnostics = [];
+        renderDiagnostics(expected.path);
         scheduleDiagnostics(expected.path);
       }
       persist(); refreshTabs(); return true;

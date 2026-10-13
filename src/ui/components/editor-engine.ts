@@ -1,7 +1,7 @@
 import { basicSetup } from 'codemirror';
 import { EditorState, EditorSelection, Compartment } from '@codemirror/state';
 import { EditorView, keymap, rectangularSelection, crosshairCursor, gutter, GutterMarker, ViewPlugin, Decoration, WidgetType, type DecorationSet } from '@codemirror/view';
-import { indentWithTab } from '@codemirror/commands';
+import { indentWithTab, isolateHistory } from '@codemirror/commands';
 import { javascript } from '@codemirror/lang-javascript';
 import { python } from '@codemirror/lang-python';
 import { rust } from '@codemirror/lang-rust';
@@ -205,6 +205,14 @@ export class EditorContent {
   forget(path: string): void { this.states.delete(path); if (this.path === path) this.path = ''; }
   get value(): string { return this.view.state.doc.toString(); }
   set value(text: string) { if (text === this.value) return; this.replacing = true; this.view.dispatch({ changes: { from: 0, to: this.view.state.doc.length, insert: text } }); this.replacing = false; }
+  /** Apply an isolated hunk without notifying the workbench's ordinary sibling mirroring. */
+  applyEdits(edits: { from: number; to: number; text: string }[]): void {
+    const replacing = this.replacing;
+    this.replacing = true;
+    try {
+      this.view.dispatch({ changes: edits.map(edit => ({ from: edit.from, to: edit.to, insert: edit.text })), annotations: isolateHistory.of('full') });
+    } finally { this.replacing = replacing; }
+  }
   get readOnly(): boolean { return this.view.state.readOnly; }
   set readOnly(value: boolean) { this.view.dispatch({ effects: this.editable.reconfigure([EditorState.readOnly.of(value), EditorView.editable.of(!value)]) }); }
   get selectionStart(): number { return this.view.state.selection.main.from; }
