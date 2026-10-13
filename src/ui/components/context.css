@@ -1,0 +1,47 @@
+.context-editor {
+  display: grid;
+  gap: 1rem;
+}
+.context-controls {
+  display: grid;
+  gap: .75rem;
+  min-width: 0;
+  padding: 0;
+  border: 0;
+}
+.context-sources {
+  display: grid;
+  gap: .75rem;
+}
+.context-source {
+  display: grid;
+  gap: .5rem;
+  padding: .75rem;
+  border: 1px solid var(--border);
+  border-radius: .5rem;
+}
+.context-source .row > .field {
+  flex: 1;
+  min-width: 6rem;
+}
+.context-source .disclosure {
+  display: block;
+}
+.context-file-choices {
+  display: flex;
+  flex-wrap: wrap;
+  gap: .4rem;
+  max-height: 12rem;
+  overflow: auto;
+}
+.context-file-choices button {
+  max-width: 100%;
+  overflow-wrap: anywhere;
+  text-align: start;
+}
+.context-preview pre {
+  max-height: 24rem;
+  overflow: auto;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
