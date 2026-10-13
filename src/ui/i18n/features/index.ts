@@ -49,6 +49,7 @@ import * as oplog from './oplog.ts';
 import * as phases from './phases.ts';
 import * as projectDetails from './project-details.ts';
 import * as labelValue from './label-value.ts';
+import * as taskFocus from './task-focus.ts';
 import * as delivery from './delivery.ts';
 
 export const featureZhTW = {
@@ -104,6 +105,7 @@ export const featureZhTW = {
   ...phases.featureZhTW,
   ...projectDetails.featureZhTW,
   ...labelValue.featureZhTW,
+  ...taskFocus.featureZhTW,
   ...delivery.featureZhTW,
 };
 export const featureZhCN = {
@@ -159,6 +161,7 @@ export const featureZhCN = {
   ...phases.featureZhCN,
   ...projectDetails.featureZhCN,
   ...labelValue.featureZhCN,
+  ...taskFocus.featureZhCN,
   ...delivery.featureZhCN,
 };
 export const featureEn = {
@@ -214,6 +217,7 @@ export const featureEn = {
   ...phases.featureEn,
   ...projectDetails.featureEn,
   ...labelValue.featureEn,
+  ...taskFocus.featureEn,
   ...delivery.featureEn,
 };
 export const featureJa = {
@@ -269,6 +273,7 @@ export const featureJa = {
   ...phases.featureJa,
   ...projectDetails.featureJa,
   ...labelValue.featureJa,
+  ...taskFocus.featureJa,
   ...delivery.featureJa,
 };
 export const featureDe = {
@@ -324,6 +329,7 @@ export const featureDe = {
   ...phases.featureDe,
   ...projectDetails.featureDe,
   ...labelValue.featureDe,
+  ...taskFocus.featureDe,
   ...delivery.featureDe,
 };
 export const featureFr = {
@@ -379,6 +385,7 @@ export const featureFr = {
   ...phases.featureFr,
   ...projectDetails.featureFr,
   ...labelValue.featureFr,
+  ...taskFocus.featureFr,
   ...delivery.featureFr,
 };
 export const featureIt = {
@@ -434,5 +441,6 @@ export const featureIt = {
   ...phases.featureIt,
   ...projectDetails.featureIt,
   ...labelValue.featureIt,
+  ...taskFocus.featureIt,
   ...delivery.featureIt,
 };

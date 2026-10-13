@@ -289,6 +289,29 @@
 .workbench-group>summary::after{content:" ▾";color:var(--muted)}
 .workbench-group[open]{flex-basis:100%}
 .workbench-group[open]>summary{display:inline-block;margin-bottom:8px;border-color:var(--accent)}
+.task-tools{padding:4px 8px;margin:0}
+.task-tools[open]{flex-basis:100%}
+.task-tools>.row{margin-top:8px;flex-wrap:wrap}
+.task-focus{margin-top:8px;padding:10px 12px;border:1px solid var(--border);border-radius:10px;background:var(--panel)}
+.task-focus-summary{display:flex;flex-wrap:wrap;gap:4px 10px;font-size:12px}
+.task-focus-stage{color:var(--accent)}
+.task-focus-stage.stage-attention{color:var(--yellow)}
+.task-focus-next{margin:4px 0;font-size:12px;overflow-wrap:anywhere}
+.task-focus>.row{margin-top:6px;gap:6px;flex-wrap:wrap}
+.task-focus button{padding:5px 9px;font-size:12px}
+.task-header:has(.task-focus){max-height:42%}
+.task-footer:has(.task-management){max-height:32%;overflow:auto}
+.task-footer .task-management{display:block;margin:0;white-space:normal}
+.task-management-body{padding-top:8px}
+.task-management-body>.row{flex-wrap:wrap}
+.task-footer .task-management .steps-detail[open]>.step-list{position:static;max-height:28dvh;margin-top:8px}
+.task-management .task-notes{white-space:normal}
+@container (max-width:480px){
+  .task-column .task-header:has(.task-focus){max-height:38%}
+  .task-focus{padding:6px 8px}
+  .task-focus-summary{font-size:11px}
+  .task-column .task-footer:has(.task-management[open]){max-height:26%}
+}
 /* 固定外殼尺寸；只有各畫面的捲動區能捲動，聊天控制項不擠壓整個頁面。 */
 html, body { width: 100%; height: 100%; overflow: hidden; }
 body { height: 100dvh; display: grid; grid-template-rows: 64px minmax(0, 1fr) auto; }

@@ -39,6 +39,8 @@ import { confirmUsageRound } from '../components/usage-history.ts';
 import { projectTrustButton } from '../components/project-trust.ts';
 import { testExplorerButton, verificationHistoryButton } from '../components/test-explorer.ts';
 import { githubLinkedFeedbackPanel } from '../components/github-feedback.ts';
+import { taskStage } from '../components/task-stage.ts';
+import { openDeliveryReview, type DeliveryReview } from '../components/delivery.ts';
 
 export function taskView(
   context: ViewContext,
@@ -74,13 +76,15 @@ export function taskView(
     focusIndex = -1;
     window.setTimeout(() => target.classList.remove('search-highlight'), 2500);
   }
-  let busy: Busy | null = null;
+  let busy: Busy | null = context.state.running.find(item => item.project === project.id && item.task === task.id && !item.kind) ?? null;
   let partial = '';
   let queue: QueueItem[] = [];
   let following = true;
   const node = el('div', 'task-page');
   const header = el('header', 'task-header');
   const work = el('div', 'work-info');
+  const focus = el('section', 'task-focus');
+  let delivery: DeliveryReview | undefined;
   const title = input(task.title);
   title.className = 'title-input';
   title.maxLength = 80;
@@ -136,7 +140,7 @@ export function taskView(
   }
   const gitPanelKey = 'yumeewade.gitPanel';
   // 第一次使用時，寬螢幕預設展開、窄螢幕預設收起；之後沿用使用者的選擇。
-  let gitOpen = readLocal<boolean | null>(gitPanelKey, null) ?? window.matchMedia('(min-width: 1000px)').matches;
+  let gitOpen = params.get('panel') === 'review' || (readLocal<boolean | null>(gitPanelKey, null) ?? window.matchMedia('(min-width: 1000px)').matches);
   const gitPanel = el('aside', 'git-panel');
   gitPanel.id = 'git-panel';
   gitPanel.setAttribute('aria-label', t('git.title'));
@@ -160,23 +164,21 @@ export function taskView(
   setGitPanel(gitOpen, false);
   const exportLink = link(t('chat.export'), query('/api/chat/export', { project: project.id, task: task.id }), 'export-chat');
   exportLink.download = `${task.title}.md`;
+  const tools = disclosure(t('focus.tools'), row(
+    button(t('common.open'), () => request('/api/open', { path: task.workdir || project.bodyPath })),
+    exportLink,
+    testExplorerButton(project.id, task.id),
+    verificationHistoryButton(project.id, task.id),
+    executionButton(context, project.id, task.id),
+    gitWorkbenchButton(context, project.id, task.id),
+    projectTrustButton(project.id, task.id),
+    workflowButton(context, project.id, task.id),
+  ));
+  tools.classList.add('task-tools');
   header.append(
     link(t('common.back', { name: project.name }), projectHash(project.id), 'back-link'),
-    row(
-      title,
-      stateChip,
-      button(t('common.open'), () => request('/api/open', { path: task.workdir || project.bodyPath })),
-      exportLink,
-      verifyButton,
-      testExplorerButton(project.id, task.id),
-      verificationHistoryButton(project.id, task.id),
-      button(t('files.open'), () => openFileBrowser(project.id, task.id)),
-      executionButton(context, project.id, task.id),
-      gitWorkbenchButton(context, project.id, task.id),
-      projectTrustButton(project.id, task.id),
-      workflowButton(context, project.id, task.id),
-      gitToggle
-    ));
+    row(title, stateChip, button(t('files.open'), () => openFileBrowser(project.id, task.id)), gitToggle, tools),
+    focus);
   if (task.issue) {
     const chip = task.issueUrl ? link(`#${task.issue}`, task.issueUrl, 'state-chip') : el('span', 'state-chip', `#${task.issue}`);
     chip.setAttribute('aria-label', `${t('github.issue')} #${task.issue}`);
@@ -190,7 +192,7 @@ export function taskView(
   const announcer = statusRegion();
   node.append(announcer);
   const approvalHost = el('div', 'tool-approvals');
-  node.append(approvalHost);
+  header.append(approvalHost);
   const transcriptRows = el('div', 'transcript-rows');
   const virtualHost = el('div', 'transcript-window');
   transcriptRows.append(virtualHost);
@@ -316,6 +318,7 @@ export function taskView(
     clock();
     renderQueue();
     updateHeaderActions();
+    renderFocus();
   }
   function clock(): void {
     if (!busy) {
@@ -899,6 +902,12 @@ export function taskView(
     if (preview.mainDirty) info.append(el('p', 'muted', t('copy.mainDirty')));
   }
   const footer = el('div', 'task-footer');
+  const management = disclosure(t('focus.manage'));
+  management.classList.add('task-management');
+  management.open = params.has('record');
+  const managementBody = el('div', 'task-management-body');
+  management.append(managementBody);
+  footer.append(management);
   // Text inputs live across footer redraws: the AI checking a step or another tab saving must not wipe what the user is typing.
   const addStep = input('', t('task.addStep')); addStep.maxLength = 2000;
   const addStepButton = button(t('common.add'), async () => {
@@ -939,6 +948,7 @@ export function taskView(
       });
     };
     const steps = el('div', 'step-list');
+    steps.append(el('p', 'muted', t('focus.criteriaHint')));
     task.steps.forEach((step, index) => {
       const check = input();
       check.type = 'checkbox';
@@ -1003,12 +1013,46 @@ export function taskView(
     const metadataKey = JSON.stringify([task.due, task.tags]);
     if (metadata?.key !== metadataKey) metadata = { key: metadataKey, node: metadataEditor(project.id, task, () => context.refresh()) };
     const focused = footer.contains(document.activeElement) ? document.activeElement as HTMLElement : null;
-    // The ledger keeps the AI's "next" section and the memo log; show the first next step and the newest memo instead of hiding them in a tooltip.
-    const notes = [task.next && labelValue(t('tasks.next'), task.next), task.memo && labelValue(t('tasks.latestMemo'), task.memo)].filter(Boolean) as string[];
-    footer.replaceChildren(...notes.map(text => { const line = el('p', 'muted task-notes', text); line.title = text; return line; }), row(state, phase, detail, memo, leaveMemo), record, metadata.node);
+    const notes = task.memo ? [labelValue(t('tasks.latestMemo'), task.memo)] : [];
+    managementBody.replaceChildren(...notes.map(text => { const line = el('p', 'muted task-notes', text); line.title = text; return line; }), row(state, phase, detail, memo, leaveMemo), record, metadata.node);
     // Rebuilt step buttons are found again by label, so ↑/↓ keeps keyboard focus on the moved step.
     const label = focused?.getAttribute('aria-label');
     (focused?.isConnected ? focused : label ? footer.querySelector<HTMLElement>(`[aria-label="${CSS.escape(label)}"]`) : null)?.focus();
+  }
+  function openCriteria(): void {
+    management.open = true;
+    const detail = footer.querySelector<HTMLDetailsElement>('details.steps-detail');
+    if (detail) detail.open = true;
+    addStep.focus();
+  }
+  let focusKey = '';
+  function renderFocus(): void {
+    const stage = taskStage(task, busy);
+    const next = task.next || task.steps.find(step => !step.done)?.text || '';
+    const key = JSON.stringify([stage, next, task.steps, verifying, hasVerification(), !!busy?.approvals?.length]);
+    if (key === focusKey) return;
+    focusKey = key;
+    const summary = el('div', 'task-focus-summary');
+    summary.append(el('strong', `task-focus-stage stage-${stage}`, t(`focus.${stage}`)), el('span', 'muted', t(`focus.${stage}Hint`)));
+    const primary = stage === 'prepare'
+      ? button(t('focus.criteria'), openCriteria, 'primary')
+      : stage === 'attention'
+        ? button(t('focus.attend'), () => {
+          const target = busy?.approvals?.length ? approvalHost : question;
+          target.scrollIntoView({ block: 'nearest' });
+          target.querySelector<HTMLElement>('button,textarea,input')?.focus();
+        }, 'primary')
+        : stage === 'running'
+          ? button(t('focus.live'), () => { following = true; transcript.scrollTop = transcript.scrollHeight; }, 'primary')
+          : button(t('delivery.review'), () => {
+            delivery?.dispose();
+            delivery = openDeliveryReview(context, project, task, task.copy ? { viewDiff: () => openDiff() } : {});
+          }, 'primary');
+    const criteria = button(task.steps.length
+      ? t('task.steps', { done: task.steps.filter(step => step.done).length, total: task.steps.length })
+      : t('focus.noCriteria'), openCriteria, 'subtle');
+    criteria.title = t('focus.criteriaHint');
+    focus.replaceChildren(summary, ...(next ? [el('p', 'task-focus-next', labelValue(t('tasks.next'), next))] : []), row(primary, criteria, verifyButton));
   }
   const composerControls = row(pick.node, upload.node, snippetsButton(draft), contextButton(project.id, task.id, () => pick.value()));
   void run(async () => {
@@ -1130,6 +1174,7 @@ export function taskView(
     node,
     dispose: () => {
       alive = false;
+      delivery?.dispose();
       window.removeEventListener('focus', onAttention); document.removeEventListener('visibilitychange', onAttention);
       source.close();
       removeLive();
@@ -1169,6 +1214,8 @@ export function taskView(
       if (document.activeElement !== title) title.value = task.title;
       renderQuestion();
       updateHeaderActions();
+      renderFocus();
+      delivery?.update();
       if (footerChanged) renderFooter();
       if (stateChanged) renderQueue();
       if (workChanged) void run(renderWork);
