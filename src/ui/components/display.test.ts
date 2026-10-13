@@ -4,7 +4,7 @@ import assert from 'node:assert/strict';
 Object.defineProperty(globalThis, 'localStorage', { value: { getItem: () => null }, configurable: true });
 Object.defineProperty(globalThis, 'navigator', { value: { language: 'en' }, configurable: true });
 // Locale initialization reads browser globals, so import only after installing the fixture.
-const { formatBytes, localTime, localDateTime } = await import('./display.ts');
+const { formatBytes, localTime, localDateTime, workspacePath } = await import('./display.ts');
 
 test('sizes switch unit at 1024 and stay at terabytes for huge values', () => {
   assert.equal(formatBytes(0, 'en'), '0 byte');
@@ -23,4 +23,14 @@ test('date-only ledger values stay plain dates instead of becoming UTC midnight 
   const todayDate = `${today.getFullYear()}-${pad(today.getMonth() + 1)}-${pad(today.getDate())}`;
   assert.equal(localTime(todayDate), todayDate);
   assert.equal(localTime('2020-03-04 16:43'), '2020-03-04 16:43');
+});
+
+test('work locations inside the workspace read relative, while look-alike prefixes and outside paths stay absolute', () => {
+  assert.equal(workspacePath('/ws', '/ws/Work/P/T'), 'Work/P/T');
+  assert.equal(workspacePath('/ws/', '/ws/Work/P/T'), 'Work/P/T');
+  assert.equal(workspacePath('C:\\ws', 'C:\\ws\\Work\\P\\T'), 'Work\\P\\T');
+  assert.equal(workspacePath('/ws', '/ws-old/Work/P/T'), '/ws-old/Work/P/T');
+  assert.equal(workspacePath('/ws', '/ws'), '/ws');
+  assert.equal(workspacePath('/ws', '/elsewhere/repo'), '/elsewhere/repo');
+  assert.equal(workspacePath('', '/ws/Work'), '/ws/Work');
 });

@@ -17,7 +17,7 @@ import {
   projectHash, readLocal, row, run, select, statusRegion, storeLocal, taskHash, textModal, toast, workspaceLocalKey,
   type View, type ViewContext,
 } from '../components/dom.ts';
-import { aiLabel, effortLabel, localTime, modelLabel } from '../components/display.ts';
+import { aiLabel, effortLabel, localTime, modelLabel, workspacePath } from '../components/display.ts';
 import { shouldSend } from '../components/composer.ts';
 import { stream } from '../components/stream.ts';
 import { parseDiff, type DiffLine } from '../components/diff.ts';
@@ -85,13 +85,18 @@ export function taskView(
   const work = el('div', 'work-info');
   const focus = el('section', 'task-focus');
   let delivery: DeliveryReview | undefined;
-  const title = input(task.title);
+  // A one-row textarea that grows with its text: long titles wrap and stay readable instead of being clipped by the header buttons.
+  const title = area(task.title);
+  title.rows = 1;
   title.className = 'title-input';
   title.maxLength = 80;
   title.setAttribute('aria-label', t('task.titleEdit'));
+  title.onkeydown = event => { if (event.key === 'Enter' && !event.isComposing) { event.preventDefault(); title.blur(); } };
   title.onchange = () => {
+    const value = title.value.replace(/\s*\n\s*/g, ' ').trim();
+    title.value = value;
     void run(async () => {
-      await request('/api/task/update', { project: project.id, task: task.id, patch: { title: title.value.trim() } });
+      await request('/api/task/update', { project: project.id, task: task.id, patch: { title: value } });
       await context.refresh();
     });
   };
@@ -1041,7 +1046,10 @@ export function taskView(
     const summary = el('div', 'task-focus-summary');
     summary.append(el('strong', `task-activity activity-${activity}`, t(`focus.activity.${activity}`)));
     const where = el('div', 'task-work-location');
-    where.append(el('span', 'muted', t('focus.location')), el('code', '', location || t(task.copyMissing ? 'copy.missing' : 'focus.locationPending')));
+    // Inside the workspace the root prefix repeats on every task; show the part that differs, keep the full path on hover.
+    const shown = el('code', '', location ? workspacePath(context.state.root, location) : t(task.copyMissing ? 'copy.missing' : 'focus.locationPending'));
+    if (location) shown.title = location;
+    where.append(el('span', 'muted', t('focus.location')), shown);
     const review = button(t('focus.results'), () => {
       delivery?.dispose();
       delivery = openDeliveryReview(context, project, task, task.copy ? { viewDiff: () => openDiff() } : {});

@@ -18,6 +18,8 @@ export function searchView(context: ViewContext, params: URLSearchParams): View 
   const scoped = input(); scoped.type = 'checkbox'; scoped.checked = !!task;
   node.append(el('h1', '', t('search.title')), search, ...(task ? [field(t('search.scopeTask', { title: task.title }), scoped)] : []), status, results);
   scoped.onchange = () => search.dispatchEvent(new Event('input'));
+  // Opening search means typing next; focus the box once the page is in the document.
+  requestAnimationFrame(() => { if (search.isConnected && !node.contains(document.activeElement)) search.focus({ preventScroll: true }); });
   let alive = true;
   let serial = 0;
   let timer = 0;

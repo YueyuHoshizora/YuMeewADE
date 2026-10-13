@@ -64,6 +64,16 @@ export function formatBytes(bytes: number, locale = getLocale()): string {
   while (value >= 1024 && unit < units.length - 1) { value /= 1024; unit++; }
   return new Intl.NumberFormat(locale, { style: 'unit', unit: units[unit], unitDisplay: 'short', maximumFractionDigits: unit ? 1 : 0 }).format(value);
 }
+/**
+ * A path inside the workspace root shown relative to it (`Work/P/T`); anything else stays absolute. Only a whole
+ * leading directory counts, so `/ws-old/x` is not mistaken for a child of `/ws`.
+ */
+export function workspacePath(root: string, value: string): string {
+  const base = root.replace(/[\\/]+$/, '');
+  if (!base || value.length <= base.length + 1 || !value.startsWith(base)) return value;
+  const separator = value[base.length];
+  return separator === '/' || separator === '\\' ? value.slice(base.length + 1) : value;
+}
 
 export function localTime(value: string): string {
   if (!value) return '—';
