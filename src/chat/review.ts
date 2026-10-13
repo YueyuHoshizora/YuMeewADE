@@ -58,7 +58,7 @@ export class ReviewService {
     return record.workspace === 'isolated' && record.workdir ? record.workdir : this.deps.worktree.bodyPath(project);
   }
   async history(project: string, task: string): Promise<ReviewHistory> {
-    const fingerprint = await reviewFingerprint(await this.cwd(project, task));
+    const fingerprint = await reviewFingerprint(await this.cwd(project, task), this.deps.ws.projectDir(project));
     const history = await readJson<ReviewHistory>(this.file(project, task), { snapshots: [], requireApproval: false, stale: true });
     const latest = history.snapshots.at(-1);
     return { ...history, stale: !latest || latest.content !== fingerprint.content || latest.revision !== fingerprint.revision };
@@ -109,7 +109,7 @@ export class ReviewService {
       let failure = false; let timer: NodeJS.Timeout | undefined; let appended = false;
       try {
         const cwd = await this.cwd(project, task);
-        const fingerprint = await reviewFingerprint(cwd);
+        const fingerprint = await reviewFingerprint(cwd, this.deps.ws.projectDir(project));
         const settings = await this.deps.settings.get();
         if (!await provider.available()) throw new AppError('bad_request', 'cli_unavailable');
         if (entry.stopped || this.closed) throw new AppError('conflict');
@@ -142,7 +142,7 @@ export class ReviewService {
           ...(failure ? { error: 'review_failed' } : {}), ...(entry.stopped ? { stopped: true } : {}), ...(asks ? { asks } : {}) });
         appended = false;
         const parsed = parseReviewOutput(text);
-        const current = await reviewFingerprint(cwd);
+        const current = await reviewFingerprint(cwd, this.deps.ws.projectDir(project));
         const ok = !failure && !entry.stopped;
         const snapshot: ReviewSnapshot = { id: request, request, ai: input.ai, at: new Date().toISOString(), ...fingerprint, text, ok,
           ...parsed, approved: ok && parsed.approved && !asks?.length && current.content === fingerprint.content && current.revision === fingerprint.revision };

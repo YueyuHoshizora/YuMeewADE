@@ -30,9 +30,12 @@ export function parseReviewOutput(text: string): { structured: boolean; approved
 /**
  * Hash the complete tracked/nonignored content, not timestamps or a truncated diff. Every entry is one JSON record with
  * its own content digest, so bytes in one file can never pass for another file's name or metadata. A submodule counts by
- * the commit staged for it and, recursively, by its own content.
+ * the commit staged for it and, recursively, by its own content. `ledger`: the project's ledger folder; only when `cwd`
+ * is that folder is its top-level `.ai/` (chat, tasks, reviews — rewritten by the review itself) left out. A project's
+ * own `.ai` directories elsewhere are content like any other.
  */
-export async function reviewFingerprint(cwd: string): Promise<{ revision: string; content: string }> {
+export async function reviewFingerprint(cwd: string, ledger?: string): Promise<{ revision: string; content: string }> {
+  const skipLedger = ledger !== undefined && await fs.realpath(ledger).catch(() => path.resolve(ledger)) === await fs.realpath(cwd).catch(() => path.resolve(cwd));
   const head = await git(cwd, ['rev-parse', '--verify', 'HEAD']);
   const revision = head.code === 0 ? head.stdout.trim() : 'unborn';
   const files: string[] = [];
@@ -49,7 +52,7 @@ export async function reviewFingerprint(cwd: string): Promise<{ revision: string
     while (pending.length) {
       const relative = pending.pop()!;
       for (const entry of await fs.readdir(path.join(cwd, relative), { withFileTypes: true })) {
-        if (entry.name === '.ai' || entry.name === '.git') continue;
+        if ((relative === '' && entry.name === '.ai' && skipLedger) || entry.name === '.git') continue;
         const name = path.join(relative, entry.name);
         if (entry.isDirectory()) pending.push(name); else files.push(name);
         if (files.length + pending.length > 50000) throw new AppError('conflict');
@@ -60,7 +63,7 @@ export async function reviewFingerprint(cwd: string): Promise<{ revision: string
   const outer = createHash('sha256'); let bytes = 0;
   const root = await fs.realpath(cwd); const absoluteRoot = path.resolve(cwd);
   for (const name of [...new Set(files)].sort()) {
-    if (name.split('/').includes('.ai')) continue;
+    if (skipLedger && name.split(/[\\/]/)[0] === '.ai') continue;
     const file = path.resolve(cwd, name);
     if (!isInside(absoluteRoot, file)) throw new AppError('conflict');
     const parent = await fs.realpath(path.dirname(file)).catch((error: NodeJS.ErrnoException) => { if (error.code === 'ENOENT') return null; throw error; });

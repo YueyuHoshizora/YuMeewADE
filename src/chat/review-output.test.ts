@@ -34,6 +34,21 @@ test('content fingerprints detect same-size edits, new files and deletions witho
     await fs.unlink(path.join(dir, 'b.ts')); assert.equal((await reviewFingerprint(dir)).content, after.content);
   } finally { await fs.rm(dir, { recursive: true, force: true }); }
 });
+test('a project\'s own .ai files count as content; only the ledger folder\'s top-level .ai is left out', async () => {
+  const dir = await fs.mkdtemp(path.join(os.tmpdir(), 'review-ai-'));
+  try {
+    await fs.mkdir(path.join(dir, '.ai'), { recursive: true }); await fs.mkdir(path.join(dir, 'pkg', '.ai'), { recursive: true });
+    await fs.writeFile(path.join(dir, '.ai', 'rules.md'), 'one'); await fs.writeFile(path.join(dir, 'pkg', '.ai', 'x.md'), 'one');
+    const external = await reviewFingerprint(dir, path.join(os.tmpdir(), 'some-other-ledger'));
+    await fs.writeFile(path.join(dir, '.ai', 'rules.md'), 'two');
+    assert.notEqual((await reviewFingerprint(dir, path.join(os.tmpdir(), 'some-other-ledger'))).content, external.content);
+    const ledger = await reviewFingerprint(dir, dir);
+    await fs.writeFile(path.join(dir, '.ai', 'rules.md'), 'three');
+    assert.equal((await reviewFingerprint(dir, dir)).content, ledger.content, 'ledger bookkeeping is not reviewed content');
+    await fs.writeFile(path.join(dir, 'pkg', '.ai', 'x.md'), 'two');
+    assert.notEqual((await reviewFingerprint(dir, dir)).content, ledger.content, 'nested .ai directories are project content');
+  } finally { await fs.rm(dir, { recursive: true, force: true }); }
+});
 test('bytes moved between files never reproduce a fingerprint, and a staged submodule commit changes it', async () => {
   const dir = await fs.mkdtemp(path.join(os.tmpdir(), 'review-frames-'));
   try {
