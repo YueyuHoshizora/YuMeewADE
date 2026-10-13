@@ -39,7 +39,7 @@ import { confirmUsageRound } from '../components/usage-history.ts';
 import { projectTrustButton } from '../components/project-trust.ts';
 import { testExplorerButton, verificationHistoryButton } from '../components/test-explorer.ts';
 import { githubLinkedFeedbackPanel } from '../components/github-feedback.ts';
-import { taskStage } from '../components/task-stage.ts';
+import { taskActivity } from '../components/task-activity.ts';
 import { openDeliveryReview, type DeliveryReview } from '../components/delivery.ts';
 
 export function taskView(
@@ -95,7 +95,6 @@ export function taskView(
       await context.refresh();
     });
   };
-  const stateChip = el('span', 'state-chip', t(`state.${task.state}`));
   let verifying = false;
   const verifyButton = button(t('verify.run'), async () => {
     if (busy || verifying) return;
@@ -139,12 +138,12 @@ export function taskView(
     for (const retry of transcriptRows.querySelectorAll<HTMLButtonElement>('.retry-message')) retry.hidden = !!busy;
   }
   const gitPanelKey = 'yumeewade.gitPanel';
-  // 第一次使用時，寬螢幕預設展開、窄螢幕預設收起；之後沿用使用者的選擇。
-  let gitOpen = params.get('panel') === 'review' || (readLocal<boolean | null>(gitPanelKey, null) ?? window.matchMedia('(min-width: 1000px)').matches);
+  // Changes are opened on demand; an explicit review link or saved preference still wins.
+  let gitOpen = params.get('panel') === 'review' || readLocal<boolean>(gitPanelKey, false);
   const gitPanel = el('aside', 'git-panel');
   gitPanel.id = 'git-panel';
   gitPanel.setAttribute('aria-label', t('git.title'));
-  const gitToggle = button('Git', () => setGitPanel(!gitOpen), 'git-toggle');
+  const gitToggle = button(t('focus.changes'), () => setGitPanel(!gitOpen), 'git-toggle');
   gitToggle.setAttribute('aria-controls', 'git-panel');
   function setGitPanel(open: boolean, persist = true): void {
     gitOpen = open;
@@ -155,7 +154,7 @@ export function taskView(
     gitToggle.classList.toggle('active', open);
   }
   function setGitBadge(changes = 0, conflict = false): void {
-    gitToggle.textContent = changes ? `Git · ${changes}` : 'Git';
+    gitToggle.textContent = changes ? `${t('focus.changes')} · ${changes}` : t('focus.changes');
     gitToggle.classList.toggle('git-conflict', conflict);
   }
   const gitPanelHead = el('div', 'git-panel-head');
@@ -177,7 +176,7 @@ export function taskView(
   tools.classList.add('task-tools');
   header.append(
     link(t('common.back', { name: project.name }), projectHash(project.id), 'back-link'),
-    row(title, stateChip, button(t('files.open'), () => openFileBrowser(project.id, task.id)), gitToggle, tools),
+    row(title, button(t('files.open'), () => openFileBrowser(project.id, task.id)), gitToggle, tools),
     focus);
   if (task.issue) {
     const chip = task.issueUrl ? link(`#${task.issue}`, task.issueUrl, 'state-chip') : el('span', 'state-chip', `#${task.issue}`);
@@ -266,6 +265,7 @@ export function taskView(
     slashCommands.refresh();
     reviewControl?.dispatchEvent(new Event('review-pick-change'));
   }, false, true);
+  pick.node.addEventListener('change', () => renderAccount());
   const upload = attachments(project.id, context.state.limits, draft, task.id);
   const actions = el('div', 'send-actions');
   const running = el('p', 'running-line');
@@ -308,12 +308,14 @@ export function taskView(
     if (busy) {
       actions.replaceChildren(
         button(t('chat.stop'), () => request('/api/chat/stop', { project: project.id, task: task.id }), 'danger'),
-        button(t('chat.redo'), () => send('redo'), 'danger'),
-        button(t('chat.amend'), () => send('amend')),
+        disclosure(t('focus.runOptions'), row(
+          button(t('chat.redo'), () => send('redo'), 'danger'),
+          button(t('chat.amend'), () => send('amend')),
+        )),
         button(t('chat.queue'), () => send('queue'), 'primary'),
       );
     } else {
-      actions.replaceChildren();
+      actions.replaceChildren(button(t('chat.send'), () => send(), 'primary'));
     }
     clock();
     renderQueue();
@@ -986,7 +988,7 @@ export function taskView(
       ));
     });
     steps.append(row(addStep, addStepButton));
-    const detail = disclosure(t('task.steps', { done: task.steps.filter(s => s.done).length, total: task.steps.length }), steps);
+    const detail = disclosure(`${t('focus.criteria')} · ${task.steps.filter(s => s.done).length}/${task.steps.length}`, steps);
     detail.open = footer.querySelector<HTMLDetailsElement>('details.steps-detail')?.open ?? false;
     detail.classList.add('steps-detail');
     // The free-text sections the AI maintains are loaded only when opened; they can be long and are not part of /api/state.
@@ -1014,57 +1016,66 @@ export function taskView(
     if (metadata?.key !== metadataKey) metadata = { key: metadataKey, node: metadataEditor(project.id, task, () => context.refresh()) };
     const focused = footer.contains(document.activeElement) ? document.activeElement as HTMLElement : null;
     const notes = task.memo ? [labelValue(t('tasks.latestMemo'), task.memo)] : [];
-    managementBody.replaceChildren(...notes.map(text => { const line = el('p', 'muted task-notes', text); line.title = text; return line; }), row(state, phase, detail, memo, leaveMemo), record, metadata.node);
+    managementBody.replaceChildren(...notes.map(text => { const line = el('p', 'muted task-notes', text); line.title = text; return line; }), row(state, ...(project.phases.length || task.phase ? [phase] : []), memo, leaveMemo), record, metadata.node);
+    footer.replaceChildren(detail, management);
     // Rebuilt step buttons are found again by label, so ↑/↓ keeps keyboard focus on the moved step.
     const label = focused?.getAttribute('aria-label');
     (focused?.isConnected ? focused : label ? footer.querySelector<HTMLElement>(`[aria-label="${CSS.escape(label)}"]`) : null)?.focus();
   }
   function openCriteria(): void {
-    management.open = true;
+    // Criteria are optional and available without opening advanced task management.
     const detail = footer.querySelector<HTMLDetailsElement>('details.steps-detail');
     if (detail) detail.open = true;
     addStep.focus();
   }
   let focusKey = '';
   function renderFocus(): void {
-    const stage = taskStage(task, busy);
-    const next = task.next || task.steps.find(step => !step.done)?.text || '';
-    const key = JSON.stringify([stage, next, task.steps, verifying, hasVerification(), !!busy?.approvals?.length]);
+    const latest = rows.findLast(entry => entry.role !== 'event');
+    const activity = taskActivity(task, busy, latest);
+    const location = task.copyMissing ? '' : task.workdir || (task.workspace === 'direct' ? project.bodyPath : '');
+    const key = JSON.stringify([activity, location, task.copyMissing, task.confirm, task.memo, task.next, task.steps, verifying, hasVerification(), !!busy?.approvals?.length]);
     if (key === focusKey) return;
     focusKey = key;
     const summary = el('div', 'task-focus-summary');
-    summary.append(el('strong', `task-focus-stage stage-${stage}`, t(`focus.${stage}`)), el('span', 'muted', t(`focus.${stage}Hint`)));
-    const primary = stage === 'prepare'
-      ? button(t('focus.criteria'), openCriteria, 'primary')
-      : stage === 'attention'
-        ? button(t('focus.attend'), () => {
-          const target = busy?.approvals?.length ? approvalHost : question;
-          target.scrollIntoView({ block: 'nearest' });
-          target.querySelector<HTMLElement>('button,textarea,input')?.focus();
-        }, 'primary')
-        : stage === 'running'
-          ? button(t('focus.live'), () => { following = true; transcript.scrollTop = transcript.scrollHeight; }, 'primary')
-          : button(t('delivery.review'), () => {
-            delivery?.dispose();
-            delivery = openDeliveryReview(context, project, task, task.copy ? { viewDiff: () => openDiff() } : {});
-          }, 'primary');
-    const criteria = button(task.steps.length
-      ? t('task.steps', { done: task.steps.filter(step => step.done).length, total: task.steps.length })
-      : t('focus.noCriteria'), openCriteria, 'subtle');
+    summary.append(el('strong', `task-activity activity-${activity}`, t(`focus.activity.${activity}`)));
+    const where = el('div', 'task-work-location');
+    where.append(el('span', 'muted', t('focus.location')), el('code', '', location || t(task.copyMissing ? 'copy.missing' : 'focus.locationPending')));
+    const review = button(t('focus.results'), () => {
+      delivery?.dispose();
+      delivery = openDeliveryReview(context, project, task, task.copy ? { viewDiff: () => openDiff() } : {});
+    }, task.confirm ? 'primary' : '');
+    const attention = activity === 'waiting' ? [button(t('focus.attend'), () => {
+      const target = busy?.approvals?.length ? approvalHost : question;
+      target.scrollIntoView({ block: 'nearest' });
+      target.querySelector<HTMLElement>('button,textarea,input')?.focus();
+    }, 'primary')] : [];
+    const criteria = button(t('focus.criteria'), openCriteria, 'subtle');
     criteria.title = t('focus.criteriaHint');
-    focus.replaceChildren(summary, ...(next ? [el('p', 'task-focus-next', labelValue(t('tasks.next'), next))] : []), row(primary, criteria, verifyButton));
+    focus.replaceChildren(summary, where,
+      ...(task.confirm ? [el('p', 'warning', t('focus.claim'))] : []),
+      ...(task.memo || task.next ? [disclosure(t('focus.background'),
+        ...(task.memo ? [el('p', '', task.memo)] : []),
+        ...(task.next ? [el('p', '', labelValue(t('tasks.next'), task.next))] : []))] : []),
+      row(...attention, review, criteria, verifyButton));
   }
-  const composerControls = row(pick.node, upload.node, snippetsButton(draft), contextButton(project.id, task.id, () => pick.value()));
+  const composerExtras = row(upload.node, snippetsButton(draft), contextButton(project.id, task.id, () => pick.value()));
+  const accountSummary = el('span', 'muted composer-account');
+  function renderAccount(): void {
+    const ai = pick.value().ai;
+    accountSummary.textContent = labelValue(t('focus.account'), context.state.settings.activeAccounts[ai] ?? 'default');
+  }
+  const composerControls = row(pick.node, accountSummary, disclosure(t('focus.composeTools'), composerExtras));
   void run(async () => {
     const control = await reviewButton(project.id, task.id,
       () => ({ ...pick.value(), text: draft.value.trim() || t('readonlyReview.prompt') }),
       () => { if (alive) void run(() => context.refresh()); }, ai => context.state.settings.activeAccounts[ai] ?? 'default');
     if (!alive) return;
     reviewControl = control;
-    composerControls.append(control);
+    composerExtras.append(control);
     control.dispatchEvent(new Event('review-pick-change'));
   });
   composerControls.classList.add('composer-controls');
+  renderAccount();
   const mentions = attachMention(draft, async q => (await request<{ files: string[] }>(query('/api/task/files', { project: project.id, task: task.id, q }))).files);
   const slashCommands = attachSlashCommands(draft, () => {
     const ai = pick.value().ai;
@@ -1201,19 +1212,19 @@ export function taskView(
         nextProject.verify, nextProject.checks, nextProject.requireVerification,
       ]);
       const footerChanged = JSON.stringify([
-        task.state, task.phase, task.steps, task.memo, task.next, task.due, task.tags,
+        task.state, task.phase, task.steps, task.memo, task.next, task.due, task.tags, project.phases,
       ]) !== JSON.stringify([
-        nextTask.state, nextTask.phase, nextTask.steps, nextTask.memo, nextTask.next, nextTask.due, nextTask.tags,
+        nextTask.state, nextTask.phase, nextTask.steps, nextTask.memo, nextTask.next, nextTask.due, nextTask.tags, nextProject.phases,
       ]);
       const stateChanged = task.state !== nextTask.state;
       project = nextProject;
       task = nextTask;
       slashCommands.refresh();
-      stateChip.textContent = t(`state.${task.state}`);
       reviewControl?.dispatchEvent(new Event('review-pick-change'));
       if (document.activeElement !== title) title.value = task.title;
       renderQuestion();
       updateHeaderActions();
+      renderAccount();
       renderFocus();
       delivery?.update();
       if (footerChanged) renderFooter();
