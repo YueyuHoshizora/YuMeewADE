@@ -17,6 +17,8 @@ export class LedgerWatcher {
   private timer: NodeJS.Timeout | null = null;
   private rebuilding = false;
   private dirty = false;
+  /** Whether each task's chat log exists and is non-empty (`hasChat` in /api/state), so only a change of that is broadcast. */
+  private readonly chatPresence = new Map<string, boolean>();
 
   constructor(ws: Workspace, changed: (project?: string, task?: string) => void) {
     this.ws = ws;
@@ -77,11 +79,24 @@ export class LedgerWatcher {
       this.schedule();
       return;
     }
-    // .jsonl 每個工具事件都會追加；/api/state 只用它判斷「有沒有對話」，那由 runner 自己通知，不必每次追加都廣播。
+    // .jsonl 每個工具事件都會追加；/api/state 只用它判斷「有沒有對話」，所以只在有無改變時通知（例如手動刪除或搬走）。
+    if (target.kind === 'chat' && filename.endsWith('.jsonl')) {
+      const task = filename.slice(0, -'.jsonl'.length);
+      if (isValidTaskId(task)) void this.chatLog(target.project!, task, path.join(this.ws.projectDir(target.project!), '.ai', 'chat', filename));
+      return;
+    }
     const suffix = target.kind === 'tasks' ? /\.md$/u : /\.(?:queue\.json|json)$/u;
     if (!suffix.test(filename)) return;
     const task = filename.replace(suffix, '');
     if (isValidTaskId(task)) this.changed(target.project, task);
+  }
+
+  private async chatLog(project: string, task: string, file: string): Promise<void> {
+    const present = await fs.stat(file).then(stat => stat.size > 0, () => false);
+    const key = `${project}\0${task}`;
+    if (this.closed || this.chatPresence.get(key) === present) return;
+    this.chatPresence.set(key, present);
+    this.changed(project, task);
   }
 
   private async rebuild(): Promise<void> {

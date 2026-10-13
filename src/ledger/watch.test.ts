@@ -80,3 +80,29 @@ test('a task directory replaced at the same path (moved away and recreated) is w
     await fs.rm(root, { recursive: true, force: true });
   }
 });
+
+test('chat log appends are not broadcast, but a log deleted by hand changes whether the task has a conversation', async () => {
+  const root = await fs.mkdtemp(path.join(os.tmpdir(), 'ledger-watch-'));
+  const ws = new Workspace(root);
+  const events: Array<{ project?: string; task?: string }> = [];
+  const watcher = new LedgerWatcher(ws, (project, task) => events.push({ ...(project ? { project } : {}), ...(task ? { task } : {}) }));
+  const log = ws.chatFile('P', 'task-1', 'jsonl');
+  const forTask = () => events.filter(event => event.task === 'task-1').length;
+  try {
+    await ws.init();
+    await fs.mkdir(path.dirname(log), { recursive: true });
+    await watcher.start();
+    // The first event teaches the watcher that the log exists (FSEvents may also miss the very first write).
+    await until(() => forTask() > 0, async () => { await fs.appendFile(log, '{}\n'); });
+    let before = -1;
+    while (before !== forTask()) { before = forTask(); await delay(200); }
+    for (let index = 0; index < 5; index++) { await fs.appendFile(log, '{}\n'); await delay(20); }
+    await delay(200);
+    assert.equal(forTask(), before, 'appends that keep the log non-empty are not broadcast');
+    await fs.rm(log);
+    await until(() => forTask() > before);
+  } finally {
+    watcher.close();
+    await fs.rm(root, { recursive: true, force: true });
+  }
+});
