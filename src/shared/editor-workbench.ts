@@ -10,7 +10,8 @@ export interface EditorHistoryEntry { id: string; path: string; revision: string
 export type EditorAction = 'definition' | 'references' | 'diagnostics' | 'completion' | 'hover' | 'rename' | 'format' | 'codeActions' | 'documentSymbols' | 'workspaceSymbols' | 'signatureHelp' | 'implementation' | 'callHierarchy' | 'inlayHints';
 export interface EditorBufferSnapshot { path: string; revision: string; text: string }
 export interface EditorChange { path: string; revision: string; text: string; baseText?: string }
-export interface EditorSuggestion { label: string; detail?: string; insertText: string; start?: number; end?: number }
+/** Completion edits use UTF-16 offsets in the same original draft; apply them together, without shifting offsets. */
+export interface EditorSuggestion { label: string; detail?: string; insertText: string; start?: number; end?: number; additionalTextEdits?: { start: number; end: number; insertText: string }[] }
 export interface EditorSymbol extends EditorLocation { name: string; kind: number; container?: string }
 /** `truncated`: the server listed more symbols than are returned (only the first 500 are kept). */
 export interface EditorActionResult { locations: EditorLocation[]; diagnostics: EditorDiagnostic[]; hover?: string; suggestions?: EditorSuggestion[]; changes?: EditorChange[]; actions?: { title: string; changes: EditorChange[] }[]; symbols?: EditorSymbol[]; truncated?: boolean; signatureHelp?: { signatures: { label: string; documentation?: string; parameters?: string[] }[]; activeSignature: number; activeParameter: number }; inlayHints?: { line: number; character: number; label: string }[]; callHierarchy?: (EditorLocation & { name: string; direction: 'incoming' | 'outgoing' })[] }

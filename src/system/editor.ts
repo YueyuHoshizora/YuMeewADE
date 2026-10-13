@@ -523,18 +523,34 @@ export class EditorService {
       }
       if (action === 'completion') {
         const items = completionCandidates(Array.isArray(result) ? result : (result as { items?: unknown[] } | null)?.items ?? [], text, line, character);
+        const lines = text.split('\n'); const starts: number[] = []; let next = 0;
+        for (const row of lines) { starts.push(next); next += row.length + 1; }
+        const offset = (position: { line: number; character: number }): number => {
+          if (!position || !Number.isSafeInteger(position.line) || !Number.isSafeInteger(position.character) || position.line < 0 || position.line >= lines.length || position.character < 0 || position.character > lines[position.line]!.length) throw new AppError('bad_request');
+          return starts[position.line]! + position.character;
+        };
+        const caret = offset({ line, character });
+        const prefixStart = caret - (/[\w$]*$/u.exec(lines[line]!.slice(0, character))?.[0].length ?? 0);
         return { locations, diagnostics, suggestions: items.map(value => {
-          const item = value as { label: string; detail?: string; insertText?: string; insertTextFormat?: number; textEdit?: { newText: string; range?: { start: { line: number; character: number }; end: { line: number; character: number } }; replace?: { start: { line: number; character: number }; end: { line: number; character: number } } } };
+          const item = value as { label: string; detail?: string; insertText?: string; insertTextFormat?: number; additionalTextEdits?: { range: { start: { line: number; character: number }; end: { line: number; character: number } }; newText: string }[]; textEdit?: { newText: string; range?: { start: { line: number; character: number }; end: { line: number; character: number } }; replace?: { start: { line: number; character: number }; end: { line: number; character: number } } } };
           if (typeof item.label !== 'string' || item.label.length > 1000 || (item.detail?.length ?? 0) > 2000) throw new AppError('bad_request');
           const range = item.textEdit?.range ?? item.textEdit?.replace;
-          const offset = (position: { line: number; character: number }): number => {
-            const lines = text.split('\n');
-            if (!Number.isSafeInteger(position.line) || !Number.isSafeInteger(position.character) || position.line < 0 || position.line >= lines.length || position.character < 0 || position.character > lines[position.line]!.length) throw new AppError('bad_request');
-            return lines.slice(0, position.line).reduce((sum, line) => sum + line.length + 1, 0) + position.character;
-          };
           const insertText = item.insertTextFormat === 2 ? item.label : item.textEdit?.newText ?? item.insertText ?? item.label;
           if (typeof insertText !== 'string' || insertText.length > this.MAX) throw new AppError('bad_request');
-          return { label: item.label, ...(typeof item.detail === 'string' ? { detail: item.detail } : {}), insertText, ...(range ? { start: offset(range.start), end: offset(range.end) } : {}) };
+          const end = range ? offset(range.end) : caret;
+          const start = range ? offset(range.start) : prefixStart;
+          if (end < start || (item.additionalTextEdits !== undefined && !Array.isArray(item.additionalTextEdits))) throw new AppError('bad_request');
+          if ((item.additionalTextEdits?.length ?? 0) > 10000) throw new AppError('too_large');
+          const additionalTextEdits = (item.additionalTextEdits ?? []).map(edit => {
+            if (!edit?.range || typeof edit.newText !== 'string' || edit.newText.length > this.MAX) throw new AppError('bad_request');
+            return { start: offset(edit.range.start), end: offset(edit.range.end), insertText: edit.newText };
+          });
+          const ranges = [{ start, end }, ...additionalTextEdits].sort((a, b) => a.start - b.start || a.end - b.end);
+          for (let index = 0; index < ranges.length; index++) {
+            const current = ranges[index]!; const previous = ranges[index - 1];
+            if (current.end < current.start || (previous && (current.start < previous.end || current.start === previous.start))) throw new AppError('bad_request');
+          }
+          return { label: item.label, ...(typeof item.detail === 'string' ? { detail: item.detail } : {}), insertText, ...(range || additionalTextEdits.length ? { start, end } : {}), ...(additionalTextEdits.length ? { additionalTextEdits } : {}) };
         }) };
       }
       if (action === 'codeActions') {

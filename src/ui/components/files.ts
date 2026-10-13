@@ -1,6 +1,7 @@
 import type { EditorDiagnostic, EditorDocument, EditorAction, EditorActionResult, EditorChange, EditorMutation, EditorSearchResult, EditorProblem, EditorRecovery, TaskContext, EditorResolvedFormatPreferences } from '../../shared/types.ts';
 import { query, request } from '../api.ts';
 import { isolateHistory } from '@codemirror/commands';
+import { completionChanges } from './editor-completion.ts';
 import { t } from '../i18n/index.ts';
 import { el, input, area, button, row, confirmModal, errorMessage, readLocal, run, storeLocal, toast, UserError } from './dom.ts';
 import { EditorContent } from './editor-engine.ts';
@@ -356,7 +357,7 @@ export function openFileBrowser(project: string, task: string, workspace = activ
       try {
         const result = await request<EditorActionResult>('/api/editor/language', { ...ids, path, text: context.state.doc.toString(), line: line.number - 1, character: context.pos - line.from, action: 'completion' });
         if (context.aborted || content.value !== context.state.doc.toString()) return null;
-        return { from: word?.from ?? context.pos, options: (result.suggestions ?? []).map(item => ({ label: item.label, ...(item.detail ? { detail: item.detail } : {}), apply: (view, _completion, from, to) => view.dispatch({ changes: { from: item.start ?? from, to: item.end ?? to, insert: item.insertText } }) })) };
+        return { from: word?.from ?? context.pos, options: (result.suggestions ?? []).map(item => ({ label: item.label, ...(item.detail ? { detail: item.detail } : {}), apply: (view, _completion, from, to) => view.dispatch({ changes: completionChanges(item, from, to) }) })) };
       } catch { return null; }
     };
     content.onfocus = () => { focused = index; const buffer = views[index]!.path ? buffers.get(views[index]!.path!) : undefined; encoding.value = buffer?.encoding ?? buffer?.document.encoding ?? 'UTF8'; encoding.disabled = content.readOnly; schedulePersist(); };
@@ -496,7 +497,9 @@ export function openFileBrowser(project: string, task: string, workspace = activ
     for (const suggestion of result.suggestions ?? []) output.append(button(`${suggestion.label} ${suggestion.detail ?? ''}`, () => {
       if (editReserved || buffer.text !== snapshot) throw new UserError(t('detail.editor_conflict'));
       activate(buffer.document.path);
-      const view = views[focused]!; view.content.setRangeText(suggestion.insertText, suggestion.start ?? start, suggestion.end ?? end, 'end'); view.content.dispatchEvent(new Event('input'));
+      const editor = views[focused]!.content.view; const changes = editor.state.changes(completionChanges(suggestion, start, end));
+      // Caret after the inserted completion, as before; the import edits elsewhere shift it through the change set.
+      editor.dispatch({ changes, selection: { anchor: changes.mapPos(suggestion.end ?? end, 1) } });
     }));
     if (result.changes?.length) await apply(result.changes);
     for (const action of result.actions ?? []) output.append(button(action.title, () => apply(action.changes)));

@@ -377,6 +377,43 @@ test('versioned rename and code actions reject stale dirty-draft offsets', () =>
   } finally { editor.dispose(); }
 }));
 
+test('completion preserves auto-import edits in the original UTF-16 draft', () => withTmpWorkspace(async ws => {
+  const projects = new ProjectLedger(ws); const tasks = new TaskLedger(ws); await projects.create({ name: 'P' });
+  await fs.writeFile(path.join(ws.projectDir('P'), 'a.ts'), '');
+  const script = protocolFixture(`message.method==='textDocument/completion' ? [{label:'readFile',textEdit:edit(1,2,6,'readFile'),additionalTextEdits:[edit(0,0,0,'import { readFile } from "node:fs";\\n'),edit(1,7,7,';')]}] : null`);
+  const editor = new EditorService(new WorktreeService({ ws, projects, tasks, diffBytes: 100000 }), tasks, { typescript: [process.execPath, '-e', script] });
+  try {
+    const result = await editor.language('P', '', 'a.ts', '// 😀\n  read()', 1, 6, 'completion');
+    assert.deepEqual(result.suggestions, [{ label: 'readFile', insertText: 'readFile', start: 8, end: 12, additionalTextEdits: [
+      { start: 0, end: 0, insertText: 'import { readFile } from "node:fs";\n' },
+      { start: 13, end: 13, insertText: ';' }
+    ] }]);
+  } finally { editor.dispose(); }
+}));
+
+test('completion rejects out-of-bounds, reversed and overlapping additional edits', () => withTmpWorkspace(async ws => {
+  const projects = new ProjectLedger(ws); const tasks = new TaskLedger(ws); await projects.create({ name: 'P' });
+  await fs.writeFile(path.join(ws.projectDir('P'), 'a.ts'), '');
+  const script = protocolFixture(`message.method==='textDocument/completion' ? (() => {
+    const index = documents.get('completion') ?? 0; documents.set('completion',index+1);
+    const mode = ['bounds','reversed','primary','additional','same','implicit'][index];
+    return [{
+    label:'readFile',textEdit:edit(0,4,8,'readFile'),
+    additionalTextEdits: ({
+      bounds:[edit(0,99,99,'x')], reversed:[edit(0,3,1,'x')],
+      primary:[edit(0,5,6,'x')], additional:[edit(0,0,3,'x'),edit(0,2,4,'y')],
+      same:[edit(0,0,0,'x'),edit(0,0,0,'y')], implicit:[edit(0,6,6,'x')]
+    })[mode],
+    ...(mode==='implicit' ? {textEdit:undefined,insertText:'readFile'} : {})
+  }]; })() : null`);
+  const editor = new EditorService(new WorktreeService({ ws, projects, tasks, diffBytes: 100000 }), tasks, { typescript: [process.execPath, '-e', script] });
+  try {
+    for (const mode of ['bounds', 'reversed', 'primary', 'additional', 'same', 'implicit']) {
+      await assert.rejects(editor.language('P', '', 'a.ts', '    read()', 0, 8, 'completion'), (error: unknown) => error instanceof AppError && error.code === 'bad_request', mode);
+    }
+  } finally { editor.dispose(); }
+}));
+
 test('LSP edits inserted at the same position are applied in the order the server lists them', () => withTmpWorkspace(async ws => {
   const projects = new ProjectLedger(ws); const tasks = new TaskLedger(ws); await projects.create({ name: 'P' });
   await fs.writeFile(path.join(ws.projectDir('P'), 'a.ts'), 'abc');
