@@ -1,6 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { promises as fs } from 'node:fs';
+import { watch } from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { CodexCliProvider } from './codex.ts';
@@ -253,5 +254,79 @@ createInterface({input:process.stdin}).on('line', line => {
   assert.deepEqual(Object.keys(permission.input).sort(), ['diff', 'files', 'reason']);
   assert.equal(permission.input['files'], 'update /repo/a.txt\nadd /repo/run.sh');
   assert.match(String(permission.input['diff']), /\+curl x \| sh/);
+ } finally { await fs.rm(dir, { recursive: true, force: true }); }
+});
+test('app-server only announces a new session once its first turn is accepted, retaining resumed sessions on stop', { timeout: 10_000 }, async () => {
+ const dir = await fs.mkdtemp(path.join(os.tmpdir(), 'codex-session-start-'));
+ try {
+  const file = path.join(dir, 'fixture.ts');
+  await fs.writeFile(file, `import {createInterface} from 'node:readline';
+import fs from 'node:fs';
+const send=x=>console.log(JSON.stringify(x));
+createInterface({input:process.stdin}).on('line',line=>{const m=JSON.parse(line);
+ if(m.method==='initialize')send({id:m.id,result:{}});
+ else if(m.method==='thread/start'||m.method==='thread/resume'){
+  if(process.env.PHASE==='thread'){const gate=fs.watch(process.env.GATE,()=>{if(fs.existsSync(process.env.RELEASE)){gate.close();send({id:m.id,result:{thread:{id:'thread'}}});}});fs.writeFileSync(process.env.MARKER,'ready');}
+  else send({id:m.id,result:{thread:{id:'thread'}}});
+ } else if(m.method==='turn/start'){
+  if(process.env.PHASE==='reject'){send({id:m.id,error:{code:-1,message:'failed'}});return;}
+  const gate=fs.watch(process.env.GATE,()=>{if(fs.existsSync(process.env.RELEASE)){gate.close();send({id:m.id,result:{turn:{id:'turn'}}});send({method:'turn/started',params:{threadId:'thread',turn:{id:'turn'}}});}});fs.writeFileSync(process.env.MARKER,'ready');
+ } else if(m.method==='turn/interrupt'){send({id:m.id,result:{}});send({method:'turn/completed',params:{threadId:'thread',turn:{id:'turn',status:'interrupted',error:null}}});}
+}).on('close',()=>process.exit(0));`);
+  for (const [phase, resumeId, sessions] of [
+   ['thread', undefined, []], ['thread', 'thread', ['thread']], ['turn', undefined, ['thread']], ['reject', undefined, []],
+  ] as const) {
+   const marker = path.join(dir, `${phase}-${resumeId ?? 'new'}`);
+   const release = `${marker}-release`;
+   const ready = Promise.withResolvers<void>();
+   const watcher = watch(dir, (_event, name) => { if (name === path.basename(marker)) ready.resolve(); });
+   const provider = new CodexCliProvider({ ...DEFAULT_CONFIG.cli.codex, command: process.execPath, appServerArgs: [file] }, [], { PATH: process.env.PATH, PHASE: phase, MARKER: marker, RELEASE: release, GATE: dir });
+   const events: CliEvent[] = [];
+   const run = provider.send({ prompt: 'x', cwd: dir, ...(resumeId ? { resumeId } : {}) }, event => events.push(event));
+   if (phase !== 'reject') {
+    await ready.promise;
+    assert.deepEqual(events.filter(event => event.type === 'session').map(event => event.id), [], 'no session before the delayed thread/turn response');
+    run.stop();
+    await fs.writeFile(release, 'continue');
+   }
+   watcher.close();
+   const outcome = await run.done;
+   assert.equal(outcome.ok, false);
+   assert.equal(outcome.stopped, phase !== 'reject');
+   assert.deepEqual(events.filter(event => event.type === 'session').map(event => event.id), sessions, `${phase}: only resumable sessions are announced`);
+  }
+ } finally { await fs.rm(dir, { recursive: true, force: true }); }
+});
+for (const timing of ['before-start', 'after-start', 'before-response', 'review-child'] as const) test(`app-server ignores previous-turn notifications ${timing} and preserves attributed output`, async () => {
+ const dir = await fs.mkdtemp(path.join(os.tmpdir(), 'codex-turn-scope-'));
+ try {
+  const file = path.join(dir, 'fixture.ts');
+  await fs.writeFile(file, `import {createInterface} from 'node:readline';
+const send=x=>console.log(JSON.stringify(x));
+const delta=(turnId,itemId,text)=>send({method:'item/agentMessage/delta',params:{threadId:'thread',turnId,itemId,delta:text}});
+const started=(id,rootTurnId)=>send({method:'turn/started',params:{threadId:'thread',turn:{id,rootTurnId}}});
+const stale=()=>{started('previous','previous');delta('previous','old','OLD ANSWER');send({method:'error',params:{threadId:'thread',turnId:'previous'}});send({method:'turn/completed',params:{threadId:'thread',turn:{id:'previous',status:'failed',error:{message:'old failure'}}}});};
+createInterface({input:process.stdin}).on('line',line=>{const m=JSON.parse(line);const timing=process.env.TIMING;
+ if(m.method==='initialize')send({id:m.id,result:{}});
+ else if(m.method==='thread/resume'){send({id:m.id,result:{thread:{id:'thread'}}});if(timing==='before-start')delta('previous','old','OLD ANSWER');}
+ else if(m.method==='turn/start'||m.method==='review/start'){
+  if(timing==='before-response'||timing==='review-child'){
+   stale();started('new','new');
+   if(timing==='review-child'){started('child','new');send({method:'item/completed',params:{threadId:'thread',turnId:'child',item:{id:'review',type:'exitedReviewMode',review:'NEW ANSWER'}}});}
+   else delta('new','new','NEW ANSWER');
+  }
+  send({id:m.id,result:{turn:{id:'new'}}});
+  if(timing==='after-start')stale();
+  if(timing==='before-start'||timing==='after-start'){started('new','new');delta('new','new','NEW ANSWER');}
+  send({method:'turn/completed',params:{threadId:'thread',turn:{id:'new',status:'completed',error:null}}});
+ }
+}).on('close',()=>process.exit(0));`);
+  const provider = new CodexCliProvider({ ...DEFAULT_CONFIG.cli.codex, command: process.execPath, appServerArgs: [file] }, [], { PATH: process.env.PATH, TIMING: timing });
+  const events: CliEvent[] = [];
+  const outcome = await provider.send({ prompt: 'x', cwd: dir, resumeId: 'thread', ...(timing === 'review-child' ? { slashCommand: '/review' } : {}) }, event => events.push(event)).done;
+  assert.equal(outcome.ok, true);
+  assert.deepEqual(events.filter(event => event.type === 'delta').map(event => event.text), ['NEW ANSWER']);
+  assert.deepEqual(events.filter(event => event.type === 'result'), [{ type: 'result', text: 'NEW ANSWER' }]);
+  assert.deepEqual(events.filter(event => event.type === 'error'), []);
  } finally { await fs.rm(dir, { recursive: true, force: true }); }
 });

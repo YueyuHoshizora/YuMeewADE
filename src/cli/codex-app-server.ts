@@ -228,7 +228,10 @@ export function codexAppServerRun(cfg: CliCommandConfig, opts: SendOptions, env:
   let controlling = false; let goalTimer: NodeJS.Timeout | undefined;
   // A review runs as a child turn whose rootTurnId is the turn review/start returned; both ids belong to this run.
   const turns = new Set<string>();
-  const ownTurn = (id: unknown) => turns.size === 0 || (typeof id === 'string' && turns.has(id));
+  const ownTurn = (id: unknown) => typeof id === 'string' && turns.has(id);
+  let automaticTurn = false;
+  let notificationBytes = 0;
+  const notifications: Record<string, unknown>[] = [];
   const runId = randomUUID();
   // Clock starts at the first turn/started, not at process spawn (initialize + thread/start are not output time).
   let started = 0;
@@ -267,6 +270,18 @@ export function codexAppServerRun(cfg: CliCommandConfig, opts: SendOptions, env:
     interruptTimer = setTimeout(() => { if (child) cancelTermination = terminateTree(child, () => finish({ ok: false, stopped: true })); else finish({ ok: false, stopped: true }); }, 2000);
   };
   const deadline = setTimeout(fail, 7_200_000);
+  const drainNotifications = () => {
+    // A child may have streamed before the root's RPC response. Attribute all such children before replaying.
+    for (const message of notifications) {
+      if (message['method'] !== 'turn/started') continue;
+      const params = object(message['params'] ?? {});
+      if (params['threadId'] !== undefined && params['threadId'] !== thread) continue;
+      const active = object(params['turn']);
+      if (ownTurn(active['rootTurnId']) && typeof active['id'] === 'string') turns.add(active['id']);
+    }
+    const queued = notifications.splice(0); notificationBytes = 0;
+    for (const message of queued) handle(message);
+  };
   const handle = (value: unknown) => {
     const message = object(value);
     if (typeof message['method'] !== 'string') {
@@ -277,6 +292,8 @@ export function codexAppServerRun(cfg: CliCommandConfig, opts: SendOptions, env:
       if (!message['error'] && (item.method === 'turn/start' || item.method === 'review/start')) {
         const active = object(object(message['result'])['turn']); if (typeof active['id'] !== 'string') throw new Error('Missing turn id');
         turns.add(active['id']); turn = active['id'];
+        if (!opts.resumeId && command !== 'side' && command !== 'btw') onEvent({ type: 'session', id: thread });
+        drainNotifications();
       }
       pending.delete(id); clearTimeout(item.timer);
       if (message['error']) item.reject(new Error('App-server request failed')); else item.resolve(message['result']); return;
@@ -303,13 +320,32 @@ export function codexAppServerRun(cfg: CliCommandConfig, opts: SendOptions, env:
       const changes = method === 'item/fileChange/requestApproval' ? fileChanges.get(String(params['itemId'])) : undefined;
       onEvent({ type: 'permission', id: `codex:${String(id)}`, tool: method === 'item/fileChange/requestApproval' ? 'fileChange' : 'commandExecution', input: { ...shown, ...changes }, respond: answer }); return;
     }
-    if (params['threadId'] !== undefined && thread && params['threadId'] !== thread) throw new Error('Notification scope mismatch');
-    if (params['turnId'] !== undefined && !ownTurn(params['turnId'])) throw new Error('Notification turn mismatch');
+    if (params['threadId'] !== undefined && thread && params['threadId'] !== thread) return;
+    const notificationTurn = method === 'turn/started' || method === 'turn/completed'
+      ? object(params['turn'])['id'] : params['turnId'];
+    if (method === 'turn/started') {
+      const active = object(params['turn']);
+      if (typeof active['id'] !== 'string') throw new Error('Missing turn id');
+      if (ownTurn(active['rootTurnId'])) turns.add(active['id']);
+      else if (!turns.size && automaticTurn) {
+        const root = typeof active['rootTurnId'] === 'string' ? active['rootTurnId'] : active['id'];
+        turns.add(root); turns.add(active['id']); turn = root;
+        drainNotifications();
+      }
+    }
+    if (notificationTurn !== undefined && !ownTurn(notificationTurn)) {
+      if (!turns.size) {
+        notificationBytes += Buffer.byteLength(JSON.stringify(message));
+        if (notificationBytes > 2_097_152) throw new Error('Output too large');
+        notifications.push(message);
+      }
+      return;
+    }
     if (method === 'error') { fail(); return; }
     if (method === 'turn/started') {
       const active = object(params['turn']); if (typeof active['id'] !== 'string') throw new Error('Missing turn id');
       const root = typeof active['rootTurnId'] === 'string' ? active['rootTurnId'] : active['id'];
-      if (turns.size && !turns.has(root) && !turns.has(active['id'])) throw new Error('Notification turn mismatch');
+      if (!turns.has(root) && !turns.has(active['id'])) return;
       turns.add(active['id']); turns.add(root); turn ||= root; started ||= Date.now();
       if (stopped) void request('turn/interrupt', { threadId: thread, turnId: turn }).catch(fail);
     }
@@ -356,7 +392,7 @@ export function codexAppServerRun(cfg: CliCommandConfig, opts: SendOptions, env:
       onEvent({ type: 'tokens', runId, count: usage.output, spanMs: Math.max(1, at - started), at });
     }
     if (method === 'turn/completed') {
-      const result = object(params['turn']); if (result['id'] !== turn) { if (turns.has(String(result['id']))) return; throw new Error('Completed turn mismatch'); }
+      const result = object(params['turn']); if (result['id'] !== turn) return;
       denyAll();
       if (stopped || result['status'] === 'interrupted') { stopped = true; }
       else if (result['status'] !== 'completed' || result['error']) { fail(); return; }
@@ -394,14 +430,15 @@ export function codexAppServerRun(cfg: CliCommandConfig, opts: SendOptions, env:
       ? await request('thread/fork', { ...common, threadId: opts.resumeId, ephemeral: true, excludeTurns: true })
       : await request(opts.resumeId ? 'thread/resume' : 'thread/start', { ...common, ...(opts.resumeId ? { threadId: opts.resumeId, excludeTurns: true } : {}) }));
     const metadata = object(response['thread']); if (typeof metadata['id'] !== 'string' || !metadata['id']) throw new Error('Missing thread id');
-    thread = metadata['id']; if (!side) onEvent({ type: 'session', id: thread });
+    thread = metadata['id']; if (!side && opts.resumeId) onEvent({ type: 'session', id: thread });
     if (stopped) { child.stdin.end(); return; }
     const turnStart = (input: unknown[]) => request('turn/start', { threadId: thread, cwd: opts.cwd, model: opts.model ?? null, effort: opts.effort ?? null, approvalPolicy: common.approvalPolicy, approvalsReviewer: 'user', sandboxPolicy: full ? { type: 'dangerFullAccess' } : { type: 'workspaceWrite', writableRoots: [opts.cwd, ...(opts.addDirs ?? [])], networkAccess: false, excludeTmpdirEnvVar: true, excludeSlashTmp: true }, input: [...input, ...(opts.images ?? []).map(image => ({ type: 'localImage', path: image }))] });
     const prompt = (tail: string) => ({ type: 'text', text: tail ? `${opts.prompt}\n${tail}` : opts.prompt, text_elements: [] });
     // thread/compact/start answers `{}`; its turn id arrives with turn/started. Started turns are registered by handle().
-    if (command === 'compact') await request('thread/compact/start', { threadId: thread });
+    if (command === 'compact') { automaticTurn = true; await request('thread/compact/start', { threadId: thread }); }
     else if (command === 'review') await request('review/start', { threadId: thread, delivery: 'inline', target: reviewInstructions ? { type: 'custom', instructions: reviewInstructions } : { type: 'uncommittedChanges' } });
     else if (command === 'goal') {
+      automaticTurn = true;
       // Setting an active goal makes Codex start a turn toward it by itself; that turn (possibly already
       // streamed before this response is processed) is the answer. No turn means the goal itself is.
       const goal = object(await request('thread/goal/set', { threadId: thread, objective: argument, origin: 'user' }))['goal'];
