@@ -401,14 +401,13 @@ export function projectView(context: ViewContext, project: ProjectView, params: 
       button(t('project.continuePhase'), async () => { await request('/api/phase/continue', { project: project.id, phase: project.currentPhase }); await context.refresh(); }),
     )));
     for (const id of selected) if (!project.tasks.some(task => task.id === id)) selected.delete(id);
-    overview.append(bulkToolbar());
     overview.append(taskBoard(context, project, tasks => {
       const sections = el('div');
       const active = tasks.filter(task => task.state !== '完成' || task.confirm);
       sections.append(card(t('project.activeTasks'), tasksList(active)));
       sections.append(disclosure(t('project.completedTasks'), tasksList(tasks.filter(task => task.state === '完成' && !task.confirm))));
       return sections;
-    }));
+    }, bulkToolbar()));
     overview.append(planning, knowledge, tools);
     for (const detail of overview.querySelectorAll('details')) detail.open = opened.has(detail.querySelector('summary')?.textContent);
     // Rebuilt controls (bulk value, board search) are found again by their label, keeping the caret where it was.

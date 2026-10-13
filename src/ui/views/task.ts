@@ -458,15 +458,14 @@ export function taskView(
     const item = el('article', `chat-card ${entry.role}`);
     item.dataset['index'] = String(index);
     const metadata = el('div', 'chat-meta');
+    // Per-message tools (restore, branch, context, copy) stay out of the way until the card is hovered or focused.
+    const actions = el('span', 'chat-actions');
+    const joined = (...parts: string[]) => parts.filter(Boolean).join(' · ');
     if (entry.role === 'user') {
       metadata.append(
         el('strong', '', t('chat.you')),
         el('time', '', localTime(entry.at)),
-        el(
-          'span',
-          '',
-          `→ ${aiLabel(entry.to)} · ${modelLabel(context.state, entry.to, entry.model)} · ${effortLabel(entry.effort)}`
-        ));
+        el('span', '', `→ ${joined(aiLabel(entry.to), modelLabel(context.state, entry.to, entry.model), effortLabel(entry.effort))}`));
       if (entry.mode) metadata.append(el('span', 'mode-tag', t(`chat.mode.${entry.mode}`)));
       for (const mention of entry.mentions ?? []) metadata.append(el('span', 'mode-tag', `@${mention.token} · ${t(`mention.${mention.status}`)}`));
       if (entry.checkpoint) {
@@ -476,7 +475,7 @@ export function taskView(
           toast(t('chat.rollbackDone'));
         }), 'retry-message');
         undo.hidden = !!busy;
-        metadata.append(undo);
+        actions.append(undo);
         const branch = button(t('chat.fork'), () => run(async () => {
           if (busy) return;
           const created = await request<Task>('/api/chat/fork', { project: project.id, task: task.id, request: entry.request });
@@ -485,7 +484,7 @@ export function taskView(
           location.hash = taskHash(project.id, created.id);
         }), 'retry-message');
         branch.hidden = !!busy;
-        metadata.append(branch);
+        actions.append(branch);
       }
       item.append(metadata, el('p', 'user-text', entry.text));
       if (entry.images?.length) {
@@ -511,11 +510,13 @@ export function taskView(
         item.append(images);
       }
     } else {
+      const model = joined(modelLabel(context.state, entry.ai, entry.model), effortLabel(entry.effort));
       metadata.append(
         el('strong', '', aiLabel(entry.ai)),
-        el('span', '', `${modelLabel(context.state, entry.ai, entry.model)} · ${effortLabel(entry.effort)}`),
+        ...(model ? [el('span', '', model)] : []),
         el('time', '', localTime(entry.at)),
-        el('span', '', t('chat.duration', { seconds: Math.round(entry.ms / 1000) })));
+        // A sub-second turn would read "0 s"; the duration is only shown once it says something.
+        ...(entry.ms >= 1000 ? [el('span', '', t('chat.duration', { seconds: Math.round(entry.ms / 1000) }))] : []));
       if (entry.changes) {
         const { files, added, removed } = entry.changes;
         metadata.append(button(t('chat.changes', { files, added, removed }), () => run(() => openDiff('', () => request(query('/api/chat/turn-diff', { project: project.id, task: task.id, request: entry.request })))), 'turn-changes'));
@@ -553,11 +554,12 @@ export function taskView(
       }
       item.append(metadata, markdown(entry.text));
     }
-    if (entry.request) metadata.append(contextManifestButton(project.id, task.id, entry.request));
-    metadata.append(button(t('chat.copy'), async () => {
+    if (entry.request) actions.append(contextManifestButton(project.id, task.id, entry.request));
+    actions.append(button(t('chat.copy'), async () => {
       try { await copyText(entry.text); toast(t('markdown.copied')); }
       catch { toast(t('markdown.copyFailed')); }
     }, 'copy-message'));
+    metadata.append(actions);
     target.insertBefore(item, before);
   }
   let lastToolUnit: { key: number; entries: ChatRow[] } | null = null;

@@ -608,8 +608,13 @@ body.terminal-dock-open { grid-template-rows: 64px minmax(0, 1fr) var(--terminal
 .turn-button { display: inline-flex; align-items: center; gap: 6px; }
 .turn-count { min-width: 18px; padding: 0 5px; border-radius: 9px; background: var(--accent); color: var(--c-10121b); font-size: 11px; font-weight: 600; line-height: 18px; text-align: center; }
 .tree-row > .badges { flex-shrink: 0; flex-wrap: nowrap; padding: 0; }
+.chat-actions { display: flex; flex-wrap: wrap; gap: 6px; margin-left: auto; }
+/* Author, time and model read as one group on the left; the per-message tools own the right edge. */
+.chat-meta time { margin-left: 0; }
+.chat-meta .chat-actions .copy-message { margin-left: 0; }
 @media (hover: hover) {
   .tree-row:not(:hover):not(:focus-within):not(.selected) > .context-menu:not([open]) > summary { opacity: 0; }
+  .chat-card:not(:hover):not(:focus-within) .chat-actions { opacity: 0; }
 }
 .turn-clear { margin-top: 12px; padding: 20px; border: 1px solid var(--border); border-radius: 12px; background: var(--panel); }
 .turn-clear h2 { margin: 0 0 4px; font-size: 16px; }
@@ -620,3 +625,16 @@ body.terminal-dock-open { grid-template-rows: 64px minmax(0, 1fr) var(--terminal
 .turn-recent-item .muted { flex-shrink: 0; font-size: 12px; }
 .state-chip.running { color: var(--accent); border-color: var(--accent); }
 .overview-quiet { margin: 0; font-size: 12px; }
+.composer-controls .compact-picker select:nth-child(2) { max-width: 280px; }
+/* Criteria and advanced settings share one line while closed; whichever opens takes the full width. */
+.task-footer:has(.task-management) { display: flex; flex-wrap: wrap; gap: 6px; align-items: flex-start; }
+.task-footer > .steps-detail, .task-footer > .task-management { flex: 1 1 220px; }
+.task-footer > .steps-detail[open], .task-footer > .task-management[open] { flex-basis: 100%; }
+/* Search, filters and bulk selection form one toolbar; an opened panel takes its own line. */
+.task-browser > .task-browser-controls { align-items: center; flex-wrap: wrap; gap: 8px; }
+.task-browser-controls > input[type="search"] { flex: 0 1 280px; }
+.task-browser-controls > .disclosure { margin: 0; padding: 5px 10px; }
+.task-browser-controls > .disclosure[open] { flex-basis: 100%; order: 1; }
+.task-browser-controls > .row { margin-left: auto; flex-wrap: wrap; }
+/* The status sits at the row's end instead of floating between the title and the metadata. */
+.task-list > .row > .task-list-title { flex: 1; }

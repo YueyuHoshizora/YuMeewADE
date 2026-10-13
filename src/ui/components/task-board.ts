@@ -12,7 +12,8 @@ export function activityDots(context: ViewContext, project: string, task: string
     [context.state.unread.some(item => item.project === project && item.task === task), 'unread', 'board.unread'],
   ] as const).filter(([active]) => active).map(([, kind, label]) => { const dot = el('span', `dot ${kind}`); dot.title = t(label); dot.setAttribute('aria-label', t(label)); dot.setAttribute('role', 'img'); return dot; });
 }
-export function taskBoard(context: ViewContext, project: ProjectView, list: (tasks: TaskView[]) => HTMLElement): HTMLElement {
+/** `actions` (the project page's bulk selection) shares the search row, so the list has one toolbar instead of two. */
+export function taskBoard(context: ViewContext, project: ProjectView, list: (tasks: TaskView[]) => HTMLElement, actions?: HTMLElement): HTMLElement {
   const key = `yumeewade.task-board.${project.id}`;
   const selection = taskSelection(readLocal<unknown>(key, null));
   const node = el('section', 'task-browser');
@@ -23,7 +24,7 @@ export function taskBoard(context: ViewContext, project: ProjectView, list: (tas
   const states = select([{ value: '', label: t('board.all') }, ...TASK_STATES.map(value => ({ value, label: t(`state.${value}`) }))], selection.state);
   const ais = select([{ value: '', label: t('board.all') }, ...[...new Set([...project.tasks.map(task => task.cli).filter(Boolean), ...(selection.ai ? [selection.ai] : [])])].sort().map(value => ({ value, label: value }))], selection.ai);
   const late = input(); late.type = 'checkbox'; late.checked = selection.overdue;
-  const text = input(selection.text); text.type = 'search'; text.maxLength = 200; text.setAttribute('aria-label', t('board.search'));
+  const text = input(selection.text, t('board.search')); text.type = 'search'; text.maxLength = 200; text.setAttribute('aria-label', t('board.search'));
   let moving = false;
   async function move(task: TaskView, state: TaskState): Promise<void> {
     if (moving || (task.state === state && !task.confirm)) return;
@@ -71,7 +72,8 @@ export function taskBoard(context: ViewContext, project: ProjectView, list: (tas
     options.querySelector('summary')!.textContent = t(active ? 'board.optionsActive' : 'board.options');
   };
   summarize();
-  const controls = row(field(t('board.search'), text), options);
+  const controls = row(text, options, ...(actions ? [actions] : []));
+  controls.classList.add('task-browser-controls');
   const change = () => {
     Object.assign(selection, taskSelection({ view: view.value, sort: sort.value, tag: tags.value, state: states.value, ai: ais.value, overdue: late.checked, text: text.value }));
     storeLocal(key, selection); summarize(); render();
