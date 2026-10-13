@@ -50,6 +50,12 @@ export class WorkflowService {
     if (task !== undefined) return this.jobs.has(this.key(project, task)) || [...this.jobs].some(([key, job]) => key.startsWith(`${project}\0`) && job.branches.has(task));
     return [...this.jobs.keys()].some(key => key.startsWith(`${project}\0`));
   }
+  /** Preflight and launch use the workflow owner; execution and usage records keep the branch identity. */
+  budgetTask(project: string, task: string): string {
+    const prefix = `${project}\0`;
+    for (const [key, job] of this.jobs) if (key.startsWith(prefix) && job.branches.has(task)) return key.slice(prefix.length);
+    return task;
+  }
   async assertCanSend(p: string, t: string, workflow: boolean): Promise<void> {
     if (!workflow && this.isBusy(p, t)) throw new AppError('conflict', 'workflow_busy');
     await this.assertDependencies(p, t);

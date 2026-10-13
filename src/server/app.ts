@@ -223,7 +223,7 @@ export class App {
     });
     this.review = new ReviewService({ ws: this.ws, providers: this.providers, store: this.store, worktree: this.worktree, tasks: this.tasks,
       settings: this.settings, limits: config.limits, onChanged: (p, t) => this.changed(p, t),
-      beforeRun: async (project, task, ai, account) => { await this.trust.assertExecutable(project); await this.usageHistory.assertProceed({ project, task, ai, account }, this.usage.snapshot()); },
+      beforeRun: async (project, task, ai, account) => { await this.trust.assertExecutable(project); await this.usageHistory.assertProceed({ project, task: this.workflows.budgetTask(project, task), ai, account }, this.usage.snapshot()); },
       onCompleted: input => this.usageHistory.record({ ...input, ...(input.usage?.claudeUsd !== undefined ? { claudeUsd: input.usage.claudeUsd } : {}), ...(input.usage?.codexCredits !== undefined ? { codexCredits: input.usage.codexCredits } : {}) }),
       isRunning: (p, t) => this.runner.isRunning(p, t) || this.execution.isRunning(p, t) || this.terminal.isRunning(p, t) || this.debugger.isRunning(p, t) || this.embeddedPreview.isRunning(p, t) || this.verify.isRunning(p, t) || this.testExplorer.isRunning(p, t) || this.editorProposals.isBusy(p, t),
       publish: (p, t, event) => this.sse.publish(taskKey(p, t), event) });
@@ -244,7 +244,7 @@ export class App {
         if (this.execution.isRunning(p, t) || this.terminal.isRunning(p, t) || this.debugger.isRunning(p, t) || this.embeddedPreview.isRunning(p, t) || this.review.isBusy(p, t) || this.verify.isRunning(p, t) || this.testExplorer.isRunning(p, t) || this.editorProposals.isBusy(p, t)) throw new AppError('conflict', 'task_busy');
         await this.workflows.assertCanSend(p, t, workflow);
       },
-      beforeLaunch: (project, task, ai, account) => this.usageHistory.assertProceed({ project, task, ai, account }, this.usage.snapshot()),
+      beforeLaunch: (project, task, ai, account) => this.usageHistory.assertProceed({ project, task: this.workflows.budgetTask(project, task), ai, account }, this.usage.snapshot()),
       resolveFullAccess: (project, ai, inherited) => this.trust.fullAccess(project, ai, inherited),
       onCompleted: input => this.usageHistory.record({ ...input, ...(input.usage?.claudeUsd !== undefined ? { claudeUsd: input.usage.claudeUsd } : {}), ...(input.usage?.codexCredits !== undefined ? { codexCredits: input.usage.codexCredits } : {}) }),
       onUsageFailure: () => this.sse.publish(GLOBAL, { event: 'usage_record_failed', data: {} }),
