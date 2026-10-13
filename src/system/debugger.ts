@@ -18,7 +18,7 @@ function record(value: unknown): Record<string, unknown> { return value !== null
 const text = (value: unknown): string => typeof value === 'string' ? value.slice(0, 8192) : '';
 function location(value: unknown): DebugLocation { const v = record(value); return { scriptId: text(v.scriptId), line: typeof v.lineNumber === 'number' ? v.lineNumber + 1 : 1, column: typeof v.columnNumber === 'number' ? v.columnNumber + 1 : 1 }; }
 interface Pending { resolve: (value: Record<string, unknown>) => void; reject: (reason: Error) => void; timer: NodeJS.Timeout }
-interface Entry { view: DebugSession; root: string; socket: WebSocket; next: number; pending: Map<number, Pending>; objects: Set<string>; breakpointPending: Set<string>; pauseVersion: number; closed: boolean; maps: Map<string, DebugSourceMap>; loading: Promise<void>[]; metadata?: string }
+interface Entry { view: DebugSession; root: string; socket: WebSocket; next: number; pending: Map<number, Pending>; objects: Set<string>; breakpointPending: Set<string>; pauseVersion: number; closed: boolean; maps: Map<string, DebugSourceMap>; loading: Promise<void>[]; metadata?: string; mainContext?: number }
 export interface DebuggerOptions { metadataFile?: (project: string, task: string) => Promise<string>; beforeMutate?: (project: string, task: string) => Promise<void>; beforeLaunch?: (project: string, task: string) => Promise<void> }
 
 /** Only attaches to inspectors started by this app; no arbitrary host, port, or remote evaluation endpoint. */
@@ -101,7 +101,14 @@ export class DebuggerService {
       return;
     }
     const params = record(message.params);
-    if (message.method === 'Debugger.scriptParsed') {
+    if (message.method === 'Runtime.executionContextCreated') {
+      const context = record(params.context);
+      if (record(context.auxData).isDefault === true && Number.isSafeInteger(context.id)) e.mainContext = context.id as number;
+    } else if (message.method === 'Runtime.executionContextDestroyed') {
+      // Node keeps the process alive for the Inspector after its main context has finished.
+      // VM/worker context teardown must not disconnect a still-running main context.
+      if (e.mainContext !== undefined && params.executionContextId === e.mainContext) this.disconnect(e);
+    } else if (message.method === 'Debugger.scriptParsed') {
       const url = text(params.url); const id = text(params.scriptId);
       if (!url.startsWith('file:') || !id || e.view.scripts.length + e.loading.length >= 256) return;
       let file: string; try { file = fileURLToPath(url); } catch { return; }
@@ -252,7 +259,12 @@ export class DebuggerService {
       const point = record(value);
       if (typeof point.path !== 'string' || !Number.isSafeInteger(point.line) || (point.line as number) < 1 || (point.line as number) > 1000000) throw new AppError('bad_request');
       const condition = debugCondition(point.condition);
-      await debugFile(e.root, point.path);
+      try { await debugFile(e.root, point.path); }
+      catch (error) {
+        const code = record(error).code;
+        if (code === 'ENOENT' || code === 'ENOTDIR') continue;
+        throw error;
+      }
       result.push({ path: point.path, line: point.line as number, ...(condition ? { condition } : {}) });
     }
     return result;
