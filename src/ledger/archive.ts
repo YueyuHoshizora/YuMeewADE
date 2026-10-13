@@ -79,6 +79,9 @@ export class ArchiveService {
         for (const entry of await fs.readdir(path.join(dir, relative), { withFileTypes: true })) {
           if (!relative && entry.name === '.git') continue;
           const file = path.join(relative, entry.name);
+          // Nested repository registrations may point into worktree metadata that removal deletes.
+          // Retaining their working files alone cannot produce a usable restored submodule.
+          if (entry.name === '.git') { result.unavailable.push(prefix + relative); continue; }
           if (entry.isDirectory()) await walk(file);
           else if (entry.isFile() || entry.isSymbolicLink()) {
             if (entry.isSymbolicLink() && !isInside(dir, path.resolve(path.dirname(path.join(dir, file)), await fs.readlink(path.join(dir, file))))) {

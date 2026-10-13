@@ -451,15 +451,20 @@ export class WorktreeService {
         if (await pathExists(target)) {
           if ((await fs.lstat(target)).isSymbolicLink() || (await fs.lstat(path.dirname(target))).isSymbolicLink() || !isInside(await fs.realpath(this.ws.workDir), await fs.realpath(target))) throw new AppError('conflict', 'archive_unsafe_path');
           const dead = await deadGitfile(target);
+          let commit: { repo: string; sha: string } | undefined;
           if (!dead) {
             await this.verifyFamily(repo, target);
             const head = await git(target, ['symbolic-ref', '--short', '-q', 'HEAD']);
             if (head.stdout.trim() !== this.branch(task)) throw new AppError('conflict', 'worktree_wrong_branch');
+            for (const module of await gitlinkPaths(target)) {
+              if (await pathExists(path.join(target, module, '.git'))) throw new AppError('conflict', 'archive_cannot_preserve');
+            }
             await commitAll(target, `${record.title}（封存前儲存）`);
+            commit = { repo, sha: (await gitOk(target, ['rev-parse', 'HEAD'])).trim() };
           }
           // Rename retains ignored files, secrets and late writes without following symlinks.
           // If retention fails the source remains; never fall back to deleting the source.
-          await new RecoveryStore(this.ws).preserve(project, task, target);
+          await new RecoveryStore(this.ws).preserve(project, task, target, commit);
           const removed = await git(repo, ['worktree', 'remove', '--force', target]);
           if (removed.code !== 0 && !dead) {
             await gitOk(repo, ['worktree', 'prune', '--expire', 'now']);
@@ -482,11 +487,12 @@ export class WorktreeService {
       if (!snapshots.length && !(await isRepo(repo))) return;
       const retainedBranch = await branchExists(repo, this.branch(task));
       if (!retainedBranch && !snapshots.length) return;
+      const originalHead = retainedBranch ? undefined : await recovery.retainedHead(project, task, repo);
       await fs.mkdir(path.dirname(dir), { recursive: true });
       await gitOk(repo, ['worktree', 'prune', '--expire', 'now']);
       await gitOk(repo, retainedBranch
         ? ['worktree', 'add', '-q', dir, this.branch(task)]
-        : ['worktree', 'add', '-q', '-b', this.branch(task), dir, 'HEAD']);
+        : ['worktree', 'add', '-q', '-b', this.branch(task), dir, originalHead!]);
       try {
         await recovery.restoreFreshCheckout(project, task, dir);
         await this.tasks.update(project, task, { workdir: dir });

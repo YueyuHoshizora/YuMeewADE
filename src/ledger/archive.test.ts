@@ -3,7 +3,7 @@ import { promises as fs } from 'node:fs';
 import path from 'node:path';
 import { test } from 'node:test';
 import { withTmpWorkspace } from '../testing/tmp.ts';
-import { git, gitOk } from '../git/git.ts';
+import { commitAll, git, gitOk } from '../git/git.ts';
 import { WorktreeService } from '../git/worktree.ts';
 import { RecoveryStore } from '../git/recovery.ts';
 import { ProjectLedger } from './projects.ts';
@@ -244,4 +244,25 @@ test('restored recovery bytes never overlay a later archive after a successful m
   const savedFiles = (await fs.readdir(recovery, { recursive: true })).filter(file => file.endsWith('value.txt'));
   const retained = await Promise.all(savedFiles.map(file => fs.readFile(path.join(recovery, file), 'utf8')));
   assert.ok(retained.includes('old recovery A'));
+}));
+
+test('archive preview reports initialized submodules as unavailable instead of promising recovery', () => withTmpWorkspace(async (ws, tmp) => {
+  const { projects, tasks, worktree, archive } = services(ws);
+  await projects.create({ name: 'P' });
+  const source = path.join(tmp, 'module-source');
+  await fs.mkdir(source);
+  await gitOk(source, ['init', '-q']);
+  await fs.writeFile(path.join(source, 'module.txt'), 'module\n');
+  await commitAll(source, 'module');
+  const repo = ws.projectDir('P');
+  await gitOk(repo, ['-c', 'protocol.file.allow=always', 'submodule', 'add', '-q', source, 'lib']);
+  await commitAll(repo, 'submodule');
+  const task = await tasks.create('P', { title: 'Unpreservable submodule' });
+  const dir = await worktree.prepare('P', task.id);
+  assert.deepEqual((await archive.preview('P', task.id)).unavailable, []);
+  await gitOk(dir, ['-c', 'protocol.file.allow=always', 'submodule', 'update', '--init']);
+  const preview = await archive.preview('P', task.id);
+  assert.deepEqual(preview.unavailable, ['lib']);
+  assert.ok(!preview.preserved.includes('lib/.git'));
+  assert.deepEqual((await archive.preview('P')).unavailable, [`${task.id}/lib`]);
 }));

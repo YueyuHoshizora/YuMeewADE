@@ -4,6 +4,7 @@ import { randomUUID } from 'node:crypto';
 import type { Workspace } from '../ledger/workspace.ts';
 import { AppError } from '../shared/errors.ts';
 import { isInside } from '../shared/fsx.ts';
+import { git, gitOk } from './git.ts';
 
 /** Recovery owns the original directory, not a best-effort copy of files that git excludes. */
 export class RecoveryStore {
@@ -32,15 +33,31 @@ export class RecoveryStore {
       if (create) await fs.chmod(current, 0o700);
     }
   }
-  async preserve(project: string, task: string, source: string): Promise<string> {
+  async preserve(project: string, task: string, source: string, commit?: { repo: string; sha: string }): Promise<string> {
     const expected = this.ws.worktreeDir(project, task);
     if (path.resolve(source) !== expected || (await fs.lstat(source)).isSymbolicLink() || !isInside(await fs.realpath(this.ws.workDir), await fs.realpath(source))) throw new AppError('conflict', 'archive_unsafe_path');
     const root = this.root(project, task);
     await this.safeDirectory(root, true);
-    const destination = path.join(root, `${Date.now()}-${randomUUID()}`);
-    await fs.rename(source, destination);
+    const generation = `${Date.now()}-${randomUUID()}`;
+    const destination = path.join(root, generation);
+    // A private ref keeps this generation's original ancestry reachable even if its task branch is deleted.
+    const ref = `refs/yumeewade/recovery/${generation}`;
+    if (commit) await gitOk(commit.repo, ['update-ref', ref, commit.sha]);
+    try { await fs.rename(source, destination); }
+    catch (error) {
+      if (commit) await gitOk(commit.repo, ['update-ref', '-d', ref]);
+      throw error;
+    }
     await fs.chmod(destination, 0o700);
     return destination;
+  }
+  async retainedHead(project: string, task: string, repo: string): Promise<string> {
+    const generation = (await this.snapshots(project, task))[0];
+    if (!generation) throw new AppError('conflict', 'checkpoint_missing');
+    const result = await git(repo, ['rev-parse', '--verify', `refs/yumeewade/recovery/${generation}^{commit}`]);
+    const sha = result.stdout.trim();
+    if (result.code !== 0 || result.truncated || !/^[0-9a-f]{40}$/.test(sha)) throw new AppError('conflict', 'checkpoint_missing');
+    return sha;
   }
   /** Retain the bytes but retire this generation from automatic future restores. */
   async retireRestored(project: string, task: string): Promise<void> {
@@ -64,6 +81,7 @@ export class RecoveryStore {
     const copy = async (relative: string): Promise<void> => {
       for (const entry of await fs.readdir(path.join(source, relative), { withFileTypes: true })) {
         if (entry.name === '.git' && !relative) continue;
+        if (entry.name === '.git') throw new AppError('conflict', 'archive_cannot_preserve');
         const rel = path.join(relative, entry.name);
         // Targets are built under the canonical root: on macOS `/var/…` is `/private/var/…`, and a link resolved from the
         // alias would look as if it pointed outside the copy.

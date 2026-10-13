@@ -9,6 +9,7 @@ import { AppError } from '../shared/errors.ts';
 import { withTmpWorkspace } from '../testing/tmp.ts';
 import { commitAll, git, gitOk } from './git.ts';
 import { copyLocalSecrets, MergeConflictError, WorktreeService } from './worktree.ts';
+import { RecoveryStore } from './recovery.ts';
 
 // All fixtures exercise real repositories, linked worktrees and on-disk ledgers.
 test('isolated prepare, preview, diff, merge and automatic cleanup', () => withTmpWorkspace(async ws => {
@@ -780,4 +781,82 @@ test('prepare skips secrets in uninitialized submodules so local initialization 
   await fs.rm(path.join(repo, '.env.local'));
   assert.deepEqual(await copyLocalSecrets(repo, dir), ['lib/.env.local']);
   assert.equal(await fs.readFile(path.join(dir, 'lib/.env.local'), 'utf8'), 'TOKEN=module-private\n');
+}));
+
+test('revive recreates a deleted branch from archived ancestry without reverting later main changes', () => withTmpWorkspace(async ws => {
+  const projects = new ProjectLedger(ws), tasks = new TaskLedger(ws);
+  await projects.create({ name: 'P' });
+  const repo = ws.projectDir('P');
+  await fs.writeFile(path.join(repo, 'main.txt'), 'original\n');
+  await commitAll(repo, 'base');
+  const task = await tasks.create('P', { title: 'Archived ancestry' });
+  const wt = new WorktreeService({ ws, projects, tasks, diffBytes: 100_000 });
+  const dir = await wt.prepare('P', task.id);
+  await fs.writeFile(path.join(dir, 'feature.txt'), 'task\n');
+  await wt.abandon('P', task.id);
+  const original = (await gitOk(repo, ['rev-parse', wt.branch(task.id)])).trim();
+  await gitOk(repo, ['branch', '-D', wt.branch(task.id)]);
+  await fs.writeFile(path.join(repo, 'main.txt'), 'later main\n');
+  await fs.writeFile(path.join(repo, 'later.txt'), 'new main file\n');
+  await commitAll(repo, 'later main');
+  await gitOk(repo, ['reflog', 'expire', '--expire=now', '--all']);
+  await gitOk(repo, ['gc', '--prune=now']);
+  await wt.revive('P', task.id);
+  assert.equal((await gitOk(dir, ['rev-parse', 'HEAD'])).trim(), original);
+  assert.equal(await gitOk(dir, ['status', '--porcelain']), '');
+  await wt.merge('P', task.id);
+  assert.equal(await fs.readFile(path.join(repo, 'main.txt'), 'utf8'), 'later main\n');
+  assert.equal(await fs.readFile(path.join(repo, 'later.txt'), 'utf8'), 'new main file\n');
+  assert.equal(await fs.readFile(path.join(repo, 'feature.txt'), 'utf8'), 'task\n');
+}));
+
+test('revive refuses a legacy snapshot without recorded ancestry when its branch is missing', () => withTmpWorkspace(async ws => {
+  const projects = new ProjectLedger(ws), tasks = new TaskLedger(ws);
+  await projects.create({ name: 'P' });
+  const task = await tasks.create('P', { title: 'Legacy snapshot' });
+  const wt = new WorktreeService({ ws, projects, tasks, diffBytes: 100_000 });
+  const dir = await wt.prepare('P', task.id), repo = ws.projectDir('P');
+  await fs.writeFile(path.join(dir, '.env.audit'), 'retained\n');
+  const snapshot = await new RecoveryStore(ws).preserve('P', task.id, dir);
+  await gitOk(repo, ['worktree', 'prune', '--expire', 'now']);
+  await gitOk(repo, ['branch', '-D', wt.branch(task.id)]);
+  await assert.rejects(wt.revive('P', task.id), { detail: 'checkpoint_missing' });
+  await assert.rejects(fs.access(dir));
+  assert.equal(await fs.readFile(path.join(snapshot, '.env.audit'), 'utf8'), 'retained\n');
+  assert.notEqual((await git(repo, ['rev-parse', '--verify', `refs/heads/${wt.branch(task.id)}`])).code, 0);
+}));
+
+test('revive refuses a recovery generation whose recorded commit is gone', () => withTmpWorkspace(async ws => {
+  const projects = new ProjectLedger(ws), tasks = new TaskLedger(ws);
+  await projects.create({ name: 'P' });
+  const task = await tasks.create('P', { title: 'Missing recovery commit' });
+  const wt = new WorktreeService({ ws, projects, tasks, diffBytes: 100_000 });
+  const dir = await wt.prepare('P', task.id), repo = ws.projectDir('P');
+  await wt.abandon('P', task.id);
+  await gitOk(repo, ['branch', '-D', wt.branch(task.id)]);
+  const generation = (await new RecoveryStore(ws).snapshots('P', task.id))[0]!;
+  const ref = path.join(repo, '.git', 'refs', 'yumeewade', 'recovery', generation);
+  await fs.mkdir(path.dirname(ref), { recursive: true });
+  await fs.writeFile(ref, `${'f'.repeat(40)}\n`);
+  await assert.rejects(wt.revive('P', task.id), { detail: 'checkpoint_missing' });
+  await assert.rejects(fs.access(dir));
+}));
+
+test('abandon refuses initialized submodules before damaging their repository registration', () => withTmpWorkspace(async (ws, tmp) => {
+  const projects = new ProjectLedger(ws), tasks = new TaskLedger(ws);
+  await projects.create({ name: 'P' });
+  const repo = ws.projectDir('P');
+  await addLocalSubmodule(repo, tmp);
+  const task = await tasks.create('P', { title: 'Archive submodule' });
+  const wt = new WorktreeService({ ws, projects, tasks, diffBytes: 100_000 });
+  const dir = await wt.prepare('P', task.id);
+  await gitOk(dir, ['-c', 'protocol.file.allow=always', 'submodule', 'update', '--init']);
+  await fs.writeFile(path.join(dir, 'lib/module.txt'), 'unique module edits\n');
+  const registration = await fs.readFile(path.join(dir, 'lib/.git'), 'utf8');
+  await assert.rejects(wt.abandon('P', task.id), { detail: 'archive_cannot_preserve' });
+  assert.equal((await tasks.get('P', task.id)).workdir, dir);
+  assert.equal(await fs.readFile(path.join(dir, 'lib/module.txt'), 'utf8'), 'unique module edits\n');
+  assert.equal(await fs.readFile(path.join(dir, 'lib/.git'), 'utf8'), registration);
+  assert.match(await gitOk(dir, ['status', '--porcelain']), /lib/);
+  assert.equal((await new RecoveryStore(ws).snapshots('P', task.id)).length, 0);
 }));
