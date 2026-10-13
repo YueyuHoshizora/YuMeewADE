@@ -10,7 +10,10 @@ import { parseConfig } from '../shared/config.ts';
 
 async function fixture() {
   const root = await fs.mkdtemp(path.join(os.tmpdir(), 'state-cache-'));
-  const app = new App(parseConfig(`workspace:\n  root: ${JSON.stringify(root)}\n`, path.join(root, 'config.yaml')), {
+  const config = parseConfig(`workspace:\n  root: ${JSON.stringify(root)}\n`, path.join(root, 'config.yaml'));
+  // State discovery must not launch installed CLIs (some start background updaters).
+  for (const ai of ['claude', 'codex', 'grok', 'gemini'] as const) config.cli[ai].command = path.join(root, 'unavailable-cli');
+  const app = new App(config, {
     providers: { mock: new MockCliProvider(5) }, home: path.join(root, 'home'),
   });
   await app.init();
