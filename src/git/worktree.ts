@@ -315,6 +315,14 @@ export class WorktreeService {
       const { repo, dir } = await this.copy(project, task);
       if (!dir || !(await pathExists(path.join(dir, '.git')))) throw new AppError('not_found', 'worktree_missing');
       await this.verifyFamily(repo, dir);
+      // The AI may have stopped mid-rebase/merge (the turn then got no checkpoint): end that operation first so the reset
+      // lands on the task branch, not a detached rebase HEAD, and later turns get checkpoints again.
+      if (await operationInProgress(dir)) {
+        const marker = async (name: string) => fs.lstat((await gitOk(dir, ['rev-parse', '--path-format=absolute', '--git-path', name])).trim()).then(() => true, () => false);
+        if (await marker('rebase-merge') || await marker('rebase-apply')) await git(dir, [await marker('rebase-apply/applying') ? 'am' : 'rebase', '--abort']);
+        for (const [name, command] of [['MERGE_HEAD', 'merge'], ['CHERRY_PICK_HEAD', 'cherry-pick'], ['REVERT_HEAD', 'revert']] as const) if (await marker(name)) await git(dir, [command, '--abort']);
+        if (await marker('rebase-merge') || await marker('rebase-apply')) throw new AppError('conflict', 'git_failed');
+      }
       const reachable = await git(dir, ['merge-base', '--is-ancestor', sha, 'HEAD']);
       if (reachable.code !== 0) throw new AppError('not_found', 'checkpoint_missing');
       // reset --hard deletes tracked files the checkpoint lacks, so local secrets added since (even staged or committed by

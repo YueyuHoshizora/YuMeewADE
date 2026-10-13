@@ -7,7 +7,7 @@ import { TaskLedger } from '../ledger/tasks.ts';
 import { CompletionStore } from '../ledger/completion.ts';
 import { AppError } from '../shared/errors.ts';
 import { withTmpWorkspace } from '../testing/tmp.ts';
-import { commitAll, git, gitOk } from './git.ts';
+import { commitAll, git, gitOk, operationInProgress } from './git.ts';
 import { copyLocalSecrets, MergeConflictError, WorktreeService } from './worktree.ts';
 import { RecoveryStore } from './recovery.ts';
 
@@ -710,6 +710,31 @@ test('automatic saves never conclude a merge or rebase the user left unfinished'
   assert.equal(await wt.checkpoint('P', task.id), undefined);
   assert.equal((await gitOk(dir, ['rev-parse', 'HEAD'])).trim(), copyHead);
   assert.equal((await git(dir, ['rev-parse', '--verify', '-q', 'MERGE_HEAD'])).code, 0);
+}));
+
+test('rollback during an unfinished rebase or merge ends it and lands on the task branch', () => withTmpWorkspace(async ws => {
+  const projects = new ProjectLedger(ws); const tasks = new TaskLedger(ws);
+  await projects.create({ name: 'P' });
+  const repo = ws.projectDir('P');
+  await fs.writeFile(path.join(repo, 'content.txt'), 'base\n'); await commitAll(repo, 'base');
+  await gitOk(repo, ['branch', 'topic']);
+  await gitOk(repo, ['checkout', '-q', 'topic']); await fs.writeFile(path.join(repo, 'content.txt'), 'topic\n'); await commitAll(repo, 'topic');
+  await gitOk(repo, ['checkout', '-q', '-']);
+  const wt = new WorktreeService({ ws, projects, tasks, diffBytes: 100_000 });
+  for (const start of [['rebase', 'topic'], ['merge', 'topic']]) {
+    const task = await tasks.create('P', { title: start[0]! });
+    const dir = await wt.prepare('P', task.id);
+    const branch = (await gitOk(dir, ['symbolic-ref', '--short', 'HEAD'])).trim();
+    const sha = (await wt.checkpoint('P', task.id))!;
+    await fs.writeFile(path.join(dir, 'content.txt'), 'turn\n'); await commitAll(dir, 'turn');
+    assert.notEqual((await git(dir, ['-c', 'core.editor=true', ...start])).code, 0);
+    await wt.restore('P', task.id, sha);
+    assert.equal(await operationInProgress(dir), false);
+    assert.equal((await gitOk(dir, ['symbolic-ref', '--short', 'HEAD'])).trim(), branch, 'back on the task branch');
+    assert.equal((await gitOk(dir, ['rev-parse', 'HEAD'])).trim(), sha);
+    assert.equal(await fs.readFile(path.join(dir, 'content.txt'), 'utf8'), 'base\n');
+    assert.notEqual(await wt.checkpoint('P', task.id), undefined, 'later turns get checkpoints again');
+  }
 }));
 
 test('secret aliases are excluded from file listings and reads', () => withTmpWorkspace(async ws => {
