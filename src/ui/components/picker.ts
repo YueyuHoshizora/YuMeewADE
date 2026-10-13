@@ -12,28 +12,30 @@ export function aiPicker(state: AppState, initial: AiPick, onChange?: (pick: AiP
   } else if (!ai.value) ai.selectedIndex = 0;
   const model = select([]); const effort = select([]);
   const value = (): AiPick => ({ ai: ai.value, model: model.value, effort: effort.value });
-  function fillModels(keep = ''): void {
+  function fillModels(keep?: string): void {
     const info = state.ais.find(a => a.name === ai.value);
     const hidden = state.settings.hiddenModels[ai.value] ?? [];
     const order = state.settings.modelOrder[ai.value] ?? [];
     const models = [...(info?.models ?? [])].filter(m => !hidden.includes(m.id) || m.id === keep).sort((a, b) => {
       const aa = order.indexOf(a.id); const bb = order.indexOf(b.id); return (aa < 0 ? Infinity : aa) - (bb < 0 ? Infinity : bb);
     });
-    model.replaceChildren(...models.map(m => { const o = el('option', '', m.label); o.value = m.id; return o; }));
+    const defaultOption = el('option', '', t('ai.default')); defaultOption.value = '';
+    model.replaceChildren(defaultOption, ...models.map(m => { const o = el('option', '', m.label); o.value = m.id; return o; }));
     if (keep && !models.some(m => m.id === keep)) { const option = el('option', '', keep); option.value = keep; model.append(option); }
-    if (!model.options.length && ai.value !== '人') { const option = el('option', '', t('ai.default')); option.value = ''; model.append(option); }
-    model.value = keep || models[0]?.id || ''; if (!model.value) model.selectedIndex = 0;
+    // Empty is a saved CLI-default choice; only an omitted choice selects the first model.
+    model.value = keep ?? models[0]?.id ?? '';
     model.disabled = ai.value === '人'; fillEfforts();
   }
-  function fillEfforts(keep = ''): void {
+  function fillEfforts(keep?: string): void {
     const m = state.ais.find(a => a.name === ai.value)?.models.find(m => m.id === model.value);
     const choices = m?.efforts ?? [];
-    effort.replaceChildren(...choices.map(e => { const o = el('option', '', effortLabel(e)); o.value = e; return o; }));
-    effort.value = choices.includes(keep) ? keep : m?.defaultEffort ?? choices[0] ?? '';
+    const defaultOption = el('option', '', t('ai.default')); defaultOption.value = '';
+    effort.replaceChildren(defaultOption, ...choices.map(e => { const o = el('option', '', effortLabel(e)); o.value = e; return o; }));
+    effort.value = keep === '' || (keep !== undefined && choices.includes(keep)) ? keep : m?.defaultEffort ?? choices[0] ?? '';
     effort.disabled = !choices.length;
   }
   const sameAi = ai.value === initial.ai;
-  fillModels(sameAi ? initial.model : ''); fillEfforts(sameAi ? initial.effort : '');
+  fillModels(sameAi ? initial.model : undefined); fillEfforts(sameAi ? initial.effort : undefined);
   ai.onchange = () => { fillModels(); onChange?.(value()); };
   model.onchange = () => { fillEfforts(); onChange?.(value()); };
   effort.onchange = () => onChange?.(value());
