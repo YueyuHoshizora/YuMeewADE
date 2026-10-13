@@ -1,14 +1,15 @@
-import { request } from '../api.ts';
 import { labelValue, t } from '../i18n/index.ts';
 import { turnItems } from '../components/tree.ts';
 import { button, el, link, row, taskHash, type View, type ViewContext } from '../components/dom.ts';
 import { onboardingBanner } from '../components/onboarding.ts';
+import { openDeliveryReview, type DeliveryReview } from '../components/delivery.ts';
 import { openProjectFromFolder } from './projects.ts';
 
 export function turnView(context: ViewContext): View {
   const node = el('div', 'page'); const tabs = el('div', 'tabs'); const list = el('div', 'turn-list'); const hint = el('p', 'muted'); let selected: 'reply' | 'confirm' = 'reply';
   // Until the user picks a tab, show whichever one has work instead of an empty "reply" list.
   let picked = false;
+  let review: DeliveryReview | undefined;
   // A workspace without projects has nothing to triage; point at the two ways to get one instead of an empty list.
   const welcome = el('section', 'card welcome');
   welcome.append(el('h2', '', t('turn.welcomeTitle')), el('p', 'muted', t('turn.welcomeBody')), row(button(t('project.new'), () => { location.hash = '#/new'; }, 'primary'), button(t('project.openExisting'), () => openProjectFromFolder(context))));
@@ -28,10 +29,14 @@ export function turnView(context: ViewContext): View {
         // Progress and the AI's own "next" line help decide between approving and asking to continue.
         const progress = [task.steps.length ? t('task.steps', { done: task.steps.filter(step => step.done).length, total: task.steps.length }) : '', task.next ? labelValue(t('tasks.next'), task.next) : ''].filter(Boolean);
         if (progress.length) item.append(el('p', 'muted', progress.join(' · ')));
-        item.append(row(button(t('turn.approve'), async () => { await request('/api/task/completion', { project: project.id, task: task.id, action: 'approve' }); await context.refresh(); }, 'primary'), button(t('turn.continue'), async () => { await request('/api/task/completion', { project: project.id, task: task.id, action: 'continue' }); await context.refresh(); })));
+        item.append(row(button(t('delivery.review'), () => {
+          review?.dispose();
+          review = openDeliveryReview(context, project, task);
+        }, 'primary')));
       }
       return item;
     })); if (!list.childNodes.length) list.append(el('p', 'empty', t('common.empty')));
   }
-  node.append(welcome, heading, tabs, hint, list); render(); return { node, update: state => { context.state = state; render(); } };
+  node.append(welcome, heading, tabs, hint, list); render();
+  return { node, update: state => { context.state = state; review?.update(); render(); }, dispose: () => review?.dispose() };
 }
