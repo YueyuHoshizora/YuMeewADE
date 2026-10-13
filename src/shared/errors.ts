@@ -70,6 +70,7 @@ export const DETAIL_MESSAGES = {
   field_too_long: '{field} 過長',
   field_type: '{field} 的格式或型別不正確',
   queue_full: '排隊指示已達上限',
+  templates_full: '這個範圍的範本已達 200 個上限，請先刪除不需要的範本',
   runs_limit: '同時執行中的對話已達上限',
   sse_limit: 'SSE 連線數已達上限',
   git_failed: 'git 指令失敗',

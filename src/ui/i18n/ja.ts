@@ -295,6 +295,7 @@ export const ja: Record<MessageKey, string> = {
 'detail.field_too_long': '{field} が長すぎます',
 'detail.field_type': '{field} の形式または型が正しくありません',
 'detail.queue_full': '指示キューが上限に達しました',
+'detail.templates_full': 'この範囲のテンプレートは上限の 200 件に達しています。不要なテンプレートを先に削除してください',
 'detail.runs_limit': '同時実行中のチャットが上限に達しました',
 'detail.sse_limit': 'リアルタイム接続数が上限に達しました',
 'detail.git_failed': 'Git 操作に失敗しました。ローカルログを確認してください',

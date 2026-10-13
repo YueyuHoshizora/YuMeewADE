@@ -295,6 +295,7 @@ export const fr: Record<MessageKey, string> = {
 'detail.field_too_long': '{field} est trop long',
 'detail.field_type': '{field} a un format ou un type invalide',
 'detail.queue_full': 'La file d’instructions est pleine',
+'detail.templates_full': 'Cette portée contient déjà le maximum de 200 modèles ; supprimez d’abord ceux dont vous n’avez plus besoin',
 'detail.runs_limit': 'Limite de conversations simultanées atteinte',
 'detail.sse_limit': 'Limite de connexions en temps réel atteinte',
 'detail.git_failed': 'Échec de l’opération Git ; consulte le journal local',

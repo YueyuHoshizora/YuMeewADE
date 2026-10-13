@@ -9,6 +9,9 @@ import { parseSteps, STEP_TEXT_MAX, STEPS_MAX, TaskLedger, TITLE_MAX } from './t
 
 /** A template (or its folder) deleted outside the app is simply not there. */
 const notFound = missingAs(() => new AppError('not_found'));
+/** Templates listed (and so savable) per scope, and files read while looking for them past malformed hand-edited ones. */
+const TEMPLATES_MAX = 200;
+const TEMPLATE_FILES_MAX = 1000;
 export class TaskTemplates {
   private readonly ws: Workspace;
   constructor(ws: Workspace) { this.ws = ws; }
@@ -40,13 +43,16 @@ export class TaskTemplates {
     return { name, scope, title: data['title'], instruction: typeof data['instruction'] === 'string' ? data['instruction'] : '', steps };
   }
   async list(project: string): Promise<TaskTemplate[]> {
+    return [...await this.scoped(project, 'project'), ...await this.scoped(project, 'workspace')];
+  }
+  /** Up to TEMPLATES_MAX valid templates of one scope; malformed hand-edited files are skipped before counting. */
+  private async scoped(project: string, scope: 'project' | 'workspace'): Promise<TaskTemplate[]> {
+    let names: string[];
+    try { names = await fs.readdir(await this.directory(project, scope)); } catch (err) { if ((err as NodeJS.ErrnoException).code === 'ENOENT') return []; throw err; }
     const rows: TaskTemplate[] = [];
-    for (const scope of ['project', 'workspace'] as const) {
-      let names: string[];
-      try { names = await fs.readdir(await this.directory(project, scope)); } catch (err) { if ((err as NodeJS.ErrnoException).code === 'ENOENT') continue; throw err; }
-      for (const file of names.filter(name => name.endsWith('.md')).sort().slice(0, 200)) {
-        try { rows.push(await this.get(project, scope, file.slice(0, -3))); } catch { /* 手工範本的錯誤不妨礙其他範本。 */ }
-      }
+    for (const file of names.filter(name => name.endsWith('.md')).sort().slice(0, TEMPLATE_FILES_MAX)) {
+      if (rows.length === TEMPLATES_MAX) break;
+      try { rows.push(await this.get(project, scope, file.slice(0, -3))); } catch { /* 手工範本的錯誤不妨礙其他範本。 */ }
     }
     return rows;
   }
@@ -57,6 +63,8 @@ export class TaskTemplates {
       const source = await new TaskLedger(this.ws).get(project, task);
       if (source.steps.length > STEPS_MAX || source.steps.some(step => step.text.length > STEP_TEXT_MAX) || source.title.length > TITLE_MAX) throw new AppError('bad_request', 'field_type');
       try { await fs.lstat(file); throw new AppError('conflict'); } catch (err) { if ((err as NodeJS.ErrnoException).code !== 'ENOENT') throw err; }
+      // The manager lists at most TEMPLATES_MAX per scope; a save it could not show would be unreachable.
+      if ((await this.scoped(project, scope)).length >= TEMPLATES_MAX) throw new AppError('conflict', 'templates_full');
       const text = serializeFrontmatter(patchHeaderLines([], { title: source.title, instruction }), `## 步驟\n${source.steps.map(step => `- [ ] ${step.text}`).join('\n')}\n`);
       if (Buffer.byteLength(text, 'utf8') > 65536) throw new AppError('bad_request', 'field_type');
       await atomicWrite(file, text);

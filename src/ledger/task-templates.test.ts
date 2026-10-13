@@ -54,3 +54,16 @@ test('templates with more steps than a task may have are neither saved nor liste
   await fs.writeFile(path.join(ws.projectDir('P'), '.ai', 'templates', 'Hand.md'), `---\ntitle: Hand\n---\n## 步驟\n${Array.from({ length: 501 }, (_, i) => `- [ ] s${i}`).join('\n')}\n`);
   assert.deepEqual(await templates.list('P'), []);
 }));
+
+test('malformed hand-edited templates do not hide valid ones, and a save the manager could not list is refused', () => withTmpWorkspace(async ws => {
+  await new ProjectLedger(ws).create({ name: 'P' });
+  const tasks = new TaskLedger(ws); const templates = new TaskTemplates(ws);
+  const source = await tasks.create('P', { title: 'Source' });
+  const dir = path.join(ws.projectDir('P'), '.ai', 'templates'); await fs.mkdir(dir, { recursive: true });
+  for (let index = 0; index < 200; index++) await fs.writeFile(path.join(dir, `a${String(index).padStart(3, '0')}.md`), 'not a template');
+  await templates.saveFromTask('P', source.id, 'zz-valid', '', 'project');
+  assert.deepEqual((await templates.list('P')).map(template => template.name), ['zz-valid']);
+  for (let index = 0; index < 200; index++) await fs.writeFile(path.join(dir, `a${String(index).padStart(3, '0')}.md`), `---\ntitle: T${index}\n---\n`);
+  assert.equal((await templates.list('P')).length, 200);
+  await assert.rejects(templates.saveFromTask('P', source.id, 'zz-more', '', 'project'), { detail: 'templates_full' });
+}));

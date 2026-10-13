@@ -138,6 +138,7 @@ export const zhTW = {
 'detail.field_too_long': '{field} 過長',
 'detail.field_type': '{field} 的格式或型別不正確',
 'detail.queue_full': '排隊指示已達上限',
+'detail.templates_full': '這個範圍的範本已達 200 個上限，請先刪除不需要的範本',
 'detail.runs_limit': '同時執行中的對話已達上限',
 'detail.sse_limit': '即時連線數已達上限',
 'detail.git_failed': 'Git 操作失敗，請檢查本地日誌',

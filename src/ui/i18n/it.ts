@@ -295,6 +295,7 @@ export const it: Record<MessageKey, string> = {
 'detail.field_too_long': '{field} è troppo lungo',
 'detail.field_type': '{field} ha un formato o un tipo non valido',
 'detail.queue_full': 'La coda delle istruzioni è piena',
+'detail.templates_full': 'Questo ambito ha già il massimo di 200 modelli; elimina prima quelli che non ti servono più',
 'detail.runs_limit': 'Limite di conversazioni simultanee raggiunto',
 'detail.sse_limit': 'Limite di connessioni in tempo reale raggiunto',
 'detail.git_failed': 'Operazione Git non riuscita; controlla il registro locale',

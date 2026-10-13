@@ -295,6 +295,7 @@ export const en: Record<MessageKey, string> = {
 'detail.field_too_long': '{field} is too long',
 'detail.field_type': '{field} has an invalid format or type',
 'detail.queue_full': 'Instruction queue is full',
+'detail.templates_full': 'This scope already has the maximum of 200 templates; delete ones you no longer need first',
 'detail.runs_limit': 'Concurrent chat limit reached',
 'detail.sse_limit': 'Live connection limit reached',
 'detail.git_failed': 'Git operation failed; check the local log',

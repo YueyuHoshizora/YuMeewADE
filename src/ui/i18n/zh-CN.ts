@@ -295,6 +295,7 @@ export const zhCN: Record<MessageKey, string> = {
 'detail.field_too_long': '{field} 过长',
 'detail.field_type': '{field} 的格式或类型不正确',
 'detail.queue_full': '排队指令已达上限',
+'detail.templates_full': '这个范围的模板已达 200 个上限，请先删除不需要的模板',
 'detail.runs_limit': '同时运行的对话已达上限',
 'detail.sse_limit': '实时连接数已达上限',
 'detail.git_failed': 'Git 操作失败，请检查本地日志',
