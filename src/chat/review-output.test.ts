@@ -20,7 +20,8 @@ test('findings require evidence, safe location and severity; major findings veto
   const result = parse(finding);
   assert.equal(result.structured, true); assert.equal(result.approved, false);
   assert.equal(result.findings[0]?.state, 'open'); assert.deepEqual(result.findings[0]?.transitions, []);
-  for (const invalid of [{ ...finding, path: '../outside' }, { ...finding, evidence: '' }, { ...finding, line: 0 }, { ...finding, severity: 'urgent' }]) assert.equal(parse(invalid).structured, false);
+  for (const invalid of [{ ...finding, path: '../outside' }, { ...finding, evidence: '' }, { ...finding, line: 0 }, { ...finding, severity: 'urgent' }, { ...finding, severity: ['critical'] }, { ...finding, severity: ['major'] }]) assert.equal(parse(invalid).structured, false);
+  assert.equal(parseReviewOutput(JSON.stringify({ schema: 1, approved: true, findings: [{ ...finding, severity: ['critical'] }] })).approved, false);
 });
 test('content fingerprints detect same-size edits, new files and deletions without git', async () => {
   const dir = await fs.mkdtemp(path.join(os.tmpdir(), 'review-content-'));

@@ -18,7 +18,7 @@ export function parseReviewOutput(text: string): { structured: boolean; approved
   for (const item of record.findings) {
     if (!item || typeof item !== 'object') return invalid;
     const f = item as Record<string, unknown>;
-    if (!['critical', 'major', 'minor', 'info'].includes(String(f.severity)) || typeof f.path !== 'string' || !f.path || f.path.length > 1000
+    if (typeof f.severity !== 'string' || !['critical', 'major', 'minor', 'info'].includes(f.severity) || typeof f.path !== 'string' || !f.path || f.path.length > 1000
       || f.path.startsWith('/') || f.path.includes('\\') || /^[A-Za-z]:/.test(f.path) || f.path.split('/').some(p => p === '..' || p === '.' || !p)
       || !Number.isSafeInteger(f.line) || Number(f.line) < 1 || typeof f.message !== 'string' || !f.message.trim() || f.message.length > 10000
       || typeof f.evidence !== 'string' || !f.evidence.trim() || f.evidence.length > 10000) return invalid;
