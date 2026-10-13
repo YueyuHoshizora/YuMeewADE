@@ -43,8 +43,8 @@ async function commitHooks(root: string): Promise<boolean> {
   return false;
 }
 export class GitWorkbench {
-  private readonly deps: { ws: Workspace; projects: ProjectLedger; tasks: TaskLedger; isRunning: (project: string, task: string) => boolean; ghCommand?: string };
-  constructor(deps: { ws: Workspace; projects: ProjectLedger; tasks: TaskLedger; isRunning: (project: string, task: string) => boolean; ghCommand?: string }) { this.deps = deps; }
+  private readonly deps: { ws: Workspace; projects: ProjectLedger; tasks: TaskLedger; isRunning: (project: string, task?: string) => boolean; ghCommand?: string };
+  constructor(deps: { ws: Workspace; projects: ProjectLedger; tasks: TaskLedger; isRunning: (project: string, task?: string) => boolean; ghCommand?: string }) { this.deps = deps; }
   private run(root: string, args: string[]): Promise<GitResult> {
     // Stash internally uses magic pathspecs to remove saved untracked files.
     return git(root, args[0] === 'stash' ? args : ['--literal-pathspecs', ...args]);
@@ -74,7 +74,7 @@ export class GitWorkbench {
   private async locked<T>(project: string, task: string | undefined, write: boolean, action: (root: string) => Promise<T>): Promise<T> {
     const { main } = await this.location(project, task);
     return withFileLocks([main], async () => {
-      if (write && (await this.deps.tasks.list(project)).some(item => this.deps.isRunning(project, item.id))) throw new AppError('conflict', 'git_workbench_running');
+      if (write && (this.deps.isRunning(project) || (await this.deps.tasks.list(project)).some(item => this.deps.isRunning(project, item.id)))) throw new AppError('conflict', 'git_workbench_running');
       return action((await this.location(project, task)).root);
     });
   }
@@ -218,6 +218,7 @@ export class GitWorkbench {
         if (action === 'cherry-pick' ? !/^[a-f0-9]{40,64}$/.test(target) : !branchName(target)) throw new AppError('bad_request', 'git_branch_invalid');
         if (action === 'rebase') await this.command(root, ['show-ref', '--verify', `refs/heads/${target}`]);
       }
+      if (action === 'continue') await this.assertNoStagedSecrets(root);
       const result = await git(root, ['-c', 'core.editor=true', '-c', 'sequence.editor=true', action === 'cherry-pick' ? 'cherry-pick' : 'rebase', ...(action === 'continue' || action === 'abort' ? [`--${action}`] : [target])]);
       if (result.code !== 0 || result.truncated) {
         if (action === 'cherry-pick') { await this.command(root, ['cherry-pick', '--abort']); throw new AppError('conflict', 'merge_conflict'); }
@@ -439,13 +440,16 @@ export class GitWorkbench {
       await this.command(root, ['add', '--', relative]);
     });
   }
+  private async assertNoStagedSecrets(root: string, files?: GitWorkbenchFile[]): Promise<void> {
+    if ((files ?? await this.files(root)).some(file => file.staged && file.secret) || split(await this.command(root, ['diff', '--cached', '--name-only', '-z'])).some(isLocalSecret)) throw new AppError('forbidden', 'git_workbench_secret');
+  }
   async commit(project: string, task: string | undefined, message: string, options: { bypassHooks?: boolean; confirmed?: boolean } = {}): Promise<{ sha: string }> {
     if (!message.trim() || message.length > 10_000 || message.includes('\0')) throw new AppError('bad_request', 'git_commit_message');
     if (options.bypassHooks && !options.confirmed) throw new AppError('bad_request', 'git_confirm_required');
     return this.locked(project, task, true, async root => {
       const files = await this.files(root);
       if (files.some(file => file.conflict)) throw new AppError('conflict', 'merge_conflict');
-      if (files.some(file => file.staged && file.secret) || split(await this.command(root, ['diff', '--cached', '--name-only', '-z'])).some(isLocalSecret)) throw new AppError('forbidden', 'git_workbench_secret');
+      await this.assertNoStagedSecrets(root, files);
       // A merge whose conflicts were resolved in favour of this side changes no file, yet still needs its merge commit.
       if (!files.some(file => file.staged) && (await git(root, ['rev-parse', '-q', '--verify', 'MERGE_HEAD'])).code !== 0) throw new AppError('conflict', 'git_nothing_staged');
       const committed = await this.run(root, [...(options.bypassHooks ? ['-c', 'core.hooksPath=/dev/null'] : []), 'commit', ...(options.bypassHooks ? ['--no-verify'] : []), '-m', message]);

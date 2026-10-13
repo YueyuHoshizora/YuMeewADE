@@ -75,6 +75,36 @@ test('comparison headers remove Unicode checkout roots for text and binary files
   for (const file of result.files) assert.equal(file.patch.includes(ws.root), false);
 }));
 
+test('rebase continue refuses staged secrets and preserves the rebase and index', () => withTmpWorkspace(async ws => {
+  const projects = new ProjectLedger(ws); const tasks = new TaskLedger(ws); await projects.create({ name: 'P' });
+  const root = ws.projectDir('P'); const file = path.join(root, 'file.txt');
+  await fs.writeFile(file, 'base\n'); await commitAll(root, 'base');
+  await gitOk(root, ['switch', '-c', 'topic']); await fs.writeFile(file, 'topic\n'); await commitAll(root, 'topic');
+  await gitOk(root, ['switch', 'main']); await fs.writeFile(file, 'main\n'); await commitAll(root, 'main');
+  await gitOk(root, ['switch', 'topic']);
+  const workbench = new GitWorkbench({ ws, projects, tasks, isRunning: () => false });
+  assert.deepEqual(await workbench.rewrite('P', undefined, 'rebase', 'main', true), { conflicts: true });
+  await fs.writeFile(file, 'resolved\n'); await workbench.resolve('P', undefined, 'file.txt');
+  await fs.writeFile(path.join(root, '.env'), 'private\n'); await gitOk(root, ['add', '-f', '--', '.env']);
+  const head = await gitOk(root, ['rev-parse', 'HEAD']); const index = await gitOk(root, ['write-tree']);
+  await assert.rejects(workbench.rewrite('P', undefined, 'continue', '', true), (error: unknown) => error instanceof AppError && error.detail === 'git_workbench_secret');
+  assert.equal(await gitOk(root, ['rev-parse', 'HEAD']), head); assert.equal(await gitOk(root, ['write-tree']), index);
+  await fs.access(path.join(root, '.git', 'rebase-merge'));
+  await gitOk(root, ['reset', '--', '.env']);
+  assert.deepEqual(await workbench.rewrite('P', undefined, 'continue', '', true), { conflicts: false });
+  assert.notEqual((await git(root, ['cat-file', '-e', 'HEAD:.env'])).code, 0);
+}));
+
+test('project-scoped busy guard rejects writes even without tasks', () => withTmpWorkspace(async ws => {
+  const projects = new ProjectLedger(ws); const tasks = new TaskLedger(ws); await projects.create({ name: 'P' });
+  let busy = true;
+  const workbench = new GitWorkbench({ ws, projects, tasks, isRunning: project => project === 'P' && busy });
+  assert.equal((await tasks.list('P')).length, 0);
+  await assert.rejects(workbench.branch('P', undefined, 'blocked', true), (error: unknown) => error instanceof AppError && error.detail === 'git_workbench_running');
+  assert.equal((await workbench.status('P')).branch, 'main');
+  busy = false; await workbench.branch('P', undefined, 'allowed', true);
+  assert.equal((await workbench.status('P')).branch, 'allowed');
+}));
 test('人工暫存、取消、提交、fetch與非強制push僅使用tmp bare remote', () => withTmpWorkspace(async ws => {
   const projects = new ProjectLedger(ws); const tasks = new TaskLedger(ws);
   await projects.create({ name: 'P' }); const root = ws.projectDir('P');
