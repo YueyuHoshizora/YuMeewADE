@@ -10,6 +10,7 @@ class Element {
   className = '';
   href = '';
   style: Record<string, string> = {};
+  start?: number;
   constructor(tag: string) { this.tag = tag; }
   append(...nodes: Element[]): void { this.children.push(...nodes); }
 }
@@ -25,7 +26,7 @@ Object.defineProperty(globalThis, 'document', {
 // Locale initialization reads browser globals at import time; load after the fixture exists.
 const { markdown, copyText } = await import('./markdown.ts');
 function shape(node: Element): unknown {
-  return [node.tag, node.textContent, node.href, node.style, node.children.map(shape)];
+  return [node.tag, node.textContent, node.href, node.style, node.start, node.children.map(shape)];
 }
 function elements(node: Element): Element[] {
   return [node, ...node.children.flatMap(elements)];
@@ -51,6 +52,10 @@ test('incremental blank-line blocks produce exactly the full markdown children',
     'a\r\n\r\nb\n\n',
     // A fence line right after table rows ends the table even when it contains `|`.
     '| A |\n| --- |\n``` | row\n\n```js\none\n\ntwo\n```\n',
+    '````markdown\n# Example\n```ts\nconst value = 1;\n```\n\ninside\n````\n\nafter',
+    '- Example\n    ```ts\n    const x = 1;\n\n    const y = 2;\n    ```\n\nAfter example.',
+    '- Parent\n  - Child\n  3. Nested ordered\n- Other\n1. First\n2. Second\n\nend',
+    '  ~~~~ts\n  a\n  ```\n  ~~~\n  ~~~~ trailing\n\n  b\n  ~~~~~\n\nafter',
   ]) {
     for (const size of [1, 3, 11, source.length]) {
       const buffer = new MarkdownStream();
@@ -131,4 +136,53 @@ test('a link whose text differs from its target also shows the real host, so a l
   assert.equal((disguised as unknown as { title: string }).title, 'https://attacker.example/?d=1');
   // A bare URL already shows where it goes.
   assert.doesNotMatch(shown, /\(example\.org\)/);
+});
+
+function text(node: Element): string {
+  return node.textContent + node.children.map(text).join('');
+}
+
+test('link destinations preserve balanced and escaped parentheses without stray delimiters', () => {
+  const root = markdown('[Wikipedia](https://en.wikipedia.org/wiki/Function_(mathematics)) [escaped](https://example.org/a\\)b\\(c)') as unknown as Element;
+  assert.deepEqual(elements(root).filter(node => node.tag === 'a').map(node => node.href), [
+    'https://en.wikipedia.org/wiki/Function_(mathematics)', 'https://example.org/a)b(c',
+  ]);
+  assert.equal(text(root), 'Wikipedia (en.wikipedia.org) escaped (example.org)');
+});
+
+test('fences close only on matching characters and sufficient length with no trailing content', () => {
+  for (const [source, expected] of [
+    ['````markdown\n# Example\n```ts\nconst value = 1;\n```\n````\n\nAfter example.', '# Example\n```ts\nconst value = 1;\n```'],
+    ['  ~~~~ts\n  a\n  ```\n  ~~~\n  ~~~~ trailing\n  b\n  ~~~~~\n\nAfter example.', 'a\n```\n~~~\n~~~~ trailing\nb'],
+  ]) {
+    const root = markdown(source!) as unknown as Element;
+    assert.deepEqual(elements(root).filter(node => node.tag === 'code').map(text), [expected]);
+    assert.deepEqual(root.children.filter(node => node.tag === 'p').map(text), ['After example.']);
+  }
+});
+
+test('list continuation fences render inside their item and strip opening indentation', () => {
+  const root = markdown('- Example\n    ```ts\n    const x = 1;\n  short\n      extra\n    ```\n\nAfter example.') as unknown as Element;
+  const item = root.children[0]!.children[0]!;
+  assert.equal(item.tag, 'li');
+  assert.deepEqual(elements(item).filter(node => node.tag === 'code').map(text), ['const x = 1;\nshort\n  extra']);
+  assert.deepEqual(root.children.filter(node => node.tag === 'p').map(text), ['After example.']);
+});
+
+test('mixed list kinds stay separate and indented lists attach to their parent item', () => {
+  const root = markdown('- Parent\n  - Child\n  3. Nested ordered\n- Other\n4. First\n5. Second') as unknown as Element;
+  assert.deepEqual(root.children.map(node => node.tag), ['ul', 'ol']);
+  assert.equal(root.children[1]!.start, 4);
+  const parent = root.children[0]!.children[0]!;
+  assert.deepEqual(parent.children.filter(node => node.tag === 'ul' || node.tag === 'ol').map(node => node.tag), ['ul', 'ol']);
+  assert.equal(parent.children.find(node => node.tag === 'ol')!.start, 3);
+  assert.deepEqual(root.children[0]!.children.map(node => node.children[0]!.textContent), ['Parent', 'Other']);
+  assert.deepEqual(root.children[1]!.children.map(text), ['First', 'Second']);
+});
+
+test('list nesting is bounded to eight levels', () => {
+  const source = Array.from({ length: 20 }, (_, i) => `${'  '.repeat(i)}- item ${i}`).join('\n');
+  const root = markdown(source) as unknown as Element;
+  assert.equal(elements(root).filter(node => node.tag === 'ul').length, 8);
+  assert.equal(elements(root).filter(node => node.tag === 'li').length, 20);
 });
