@@ -16,6 +16,8 @@ let empty: HTMLElement | undefined;
 function refreshControls(): void {
   if (openHere) openHere.hidden = !scope[1] || groups.has(JSON.stringify(scope));
   if (empty) empty.hidden = groups.size > 0;
+  // With no terminal yet the chooser is an empty dropdown; it appears once there is something to choose.
+  if (chooser) chooser.hidden = groups.size === 0;
 }
 export function setTerminalScope(project: string, task: string): void { scope = [project, task]; refreshControls(); }
 let workspaceEpoch = 0;

@@ -166,7 +166,7 @@ export function taskView(
   gitPanelHead.append(el('h2', '', t('git.title')), iconButton('×', t('git.hide'), () => setGitPanel(false), 'subtle'));
   gitPanel.append(gitPanelHead, work);
   setGitPanel(gitOpen, false);
-  const exportLink = link(t('chat.export'), query('/api/chat/export', { project: project.id, task: task.id }), 'export-chat');
+  const exportLink = link(t('chat.export'), query('/api/chat/export', { project: project.id, task: task.id }), 'button export-chat');
   exportLink.download = `${task.title}.md`;
   const tools = disclosure(t('focus.tools'), row(
     button(t('common.open'), () => request('/api/open', { path: task.workdir || project.bodyPath })),
