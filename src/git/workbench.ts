@@ -150,17 +150,25 @@ export class GitWorkbench {
     return this.locked(project, task, false, async root => {
       if (relative) await this.safePath(root, relative);
       if (!await hasCommits(root)) return { graph: '', next: null };
-      const graph = await this.command(root, ['log', '--graph', '--date=iso-strict', '--format=%H %P%n%an <%ae> %ad%n%s', '--max-count=51', `--skip=${skip}`, ...(relative ? ['--follow', '--', relative] : [])]);
-      const count = Number((await this.command(root, ['rev-list', '--count', 'HEAD', ...(relative ? ['--', relative] : [])])).trim());
+      if (relative) {
+        // --skip prevents --follow from traversing the rename; slice the same bounded stream for every page.
+        const followed = await this.command(root, ['log', '--graph', '--date=iso-strict', '--format=%x00%H %P%n%an <%ae> %ad%n%s', `--max-count=${skip + 52}`, '--follow', '--', relative]);
+        const records = followed.split(/(?=^[|\\/* ]*\0)/m).filter(Boolean);
+        return { graph: records.slice(skip, skip + 51).join('').replaceAll('\0', ''), next: records.length > skip + 51 ? skip + 51 : null };
+      }
+      const graph = await this.command(root, ['log', '--graph', '--date=iso-strict', '--format=%H %P%n%an <%ae> %ad%n%s', '--max-count=51', `--skip=${skip}`]);
+      const count = Number((await this.command(root, ['rev-list', '--count', 'HEAD'])).trim());
       return { graph, next: skip + 51 < count ? skip + 51 : null };
     });
   }
   async commitDetail(project: string, task: string | undefined, sha: string): Promise<{ metadata: string; files: string[]; patch: string }> {
     if (!/^[a-f0-9]{40,64}$/.test(sha)) throw new AppError('bad_request');
     return this.locked(project, task, false, async root => {
-      const files = split(await this.command(root, ['diff-tree', '--root', '--no-commit-id', '--name-only', '-r', '-z', sha]));
+      const parents = (await this.command(root, ['show', '-s', '--format=%P', sha])).trim();
+      const revisions = parents ? [parents.split(' ')[0]!, sha] : [sha];
+      const files = split(await this.command(root, ['diff-tree', '--root', '--no-commit-id', '--name-only', '-r', '-z', ...revisions]));
       const safe = files.filter(file => !isLocalSecret(file));
-      return { metadata: await this.command(root, ['show', '-s', '--format=fuller', sha]), files: safe, patch: safe.length ? await this.command(root, ['show', '--format=', sha, '--', ...safe]) : '' };
+      return { metadata: await this.command(root, ['show', '-s', '--format=fuller', sha]), files: safe, patch: safe.length ? await this.command(root, parents ? ['diff', ...revisions, '--', ...safe] : ['show', '--format=', sha, '--', ...safe]) : '' };
     });
   }
   async blame(project: string, task: string | undefined, relative: string): Promise<BlameLine[]> {
@@ -401,14 +409,18 @@ export class GitWorkbench {
         const a = await content(left); const b = await content(right);
         if (a === null && b === null || a !== null && b !== null && a.equals(b)) continue;
         if (files.length >= 100) { truncated = true; break; }
-        const result = await git(left, ['diff', '--no-index', '--no-ext-diff', '--no-textconv', '--', a === null ? '/dev/null' : path.join(left, relative), b === null ? '/dev/null' : path.join(right, relative)], { maxBytes: 1024 * 1024 });
+        const result = await git(left, ['-c', 'core.quotePath=false', 'diff', '--no-index', '--no-ext-diff', '--no-textconv', '--', a === null ? '/dev/null' : path.join(left, relative), b === null ? '/dev/null' : path.join(right, relative)], { maxBytes: 1024 * 1024 });
         if (result.truncated || result.code !== 1) throw new AppError('conflict', 'git_failed');
         bytes += Buffer.byteLength(result.stdout);
         if (bytes > 2 * 1024 * 1024) { truncated = true; break; }
         // Headers carry the absolute copy paths (`a/<left>/x`; git may print Windows roots with forward slashes);
         // strip the roots, longest first should one contain the other.
-        const roots = [...new Set([left, right].flatMap(root => [root, root.replaceAll('\\', '/')]))].sort((x, y) => y.length - x.length);
-        files.push({ path: relative, patch: result.stdout.split('\n').map(line => /^(?:diff --git |--- |\+\+\+ |Binary files )/.test(line) ? roots.reduce((text, root) => text.replaceAll(`${root}/`, '/'), line) : line).join('\n') });
+        const quoted = (value: string) => value.replace(/["\\\x00-\x1f\x7f]/g, char => {
+          const escapes: Record<string, string> = { '"': '\\"', '\\': '\\\\', '\x07': '\\a', '\b': '\\b', '\t': '\\t', '\n': '\\n', '\v': '\\v', '\f': '\\f', '\r': '\\r' };
+          return escapes[char] ?? `\\${char.charCodeAt(0).toString(8).padStart(3, '0')}`;
+        });
+        const roots = [...new Set([left, right].flatMap(root => [root, root.replaceAll('\\', '/')]).flatMap(root => [root, quoted(root)]))].sort((x, y) => y.length - x.length);
+        files.push({ path: relative, patch: result.stdout.split('\n').map(line => /^(?:diff --git |--- |\+\+\+ |Binary files |rename from |rename to )/.test(line) ? roots.reduce((text, root) => text.replaceAll(`${root}/`, '/'), line) : line).join('\n') });
       }
       return { leftTask, rightTask, leftBranch, rightBranch, files, ...(truncated ? { truncated } : {}) };
     });

@@ -10,6 +10,71 @@ import { GitWorkbench } from './workbench.ts';
 import { WorktreeService } from './worktree.ts';
 import { AppError } from '../shared/errors.ts';
 
+
+test('file history pages follow renames without losing older commits', () => withTmpWorkspace(async ws => {
+  const projects = new ProjectLedger(ws); const tasks = new TaskLedger(ws); await projects.create({ name: 'P' });
+  const root = ws.projectDir('P'); await gitOk(root, ['config', 'maintenance.auto', 'false']);
+  for (let i = 0; i < 55; i++) {
+    await fs.writeFile(path.join(root, 'old 中文.txt'), `line ${i}\n`);
+    await commitAll(root, `old-file-${i}`);
+  }
+  await gitOk(root, ['mv', 'old 中文.txt', 'new 中文.txt']); await commitAll(root, 'rename');
+  const workbench = new GitWorkbench({ ws, projects, tasks, isRunning: () => false });
+  const expected = (await gitOk(root, ['log', '--follow', '--format=%H', '--', 'new 中文.txt'])).trim().split('\n');
+  const first = await workbench.history('P', undefined, 0, 'new 中文.txt');
+  assert.equal(first.next, 51);
+  const second = await workbench.history('P', undefined, 51, 'new 中文.txt');
+  const hashes = (graph: string) => [...graph.matchAll(/^\* ([a-f0-9]{40}) /gm)].map(match => match[1]);
+  assert.equal(hashes(first.graph).length, 51); assert.equal(hashes(second.graph).length, 5);
+  assert.deepEqual([...hashes(first.graph), ...hashes(second.graph)], expected);
+  assert.equal(second.next, null);
+  assert.deepEqual(await workbench.history('P', undefined, 56, 'new 中文.txt'), { graph: '', next: null });
+}));
+
+test('merge commit details show first-parent changes and filter secrets', () => withTmpWorkspace(async ws => {
+  const projects = new ProjectLedger(ws); const tasks = new TaskLedger(ws); await projects.create({ name: 'P' });
+  const root = ws.projectDir('P');
+  await fs.writeFile(path.join(root, 'base.txt'), 'base\n'); await commitAll(root, 'base');
+  await gitOk(root, ['switch', '-c', 'side']);
+  await fs.writeFile(path.join(root, 'side.txt'), 'side contribution\n');
+  await fs.writeFile(path.join(root, '.env.private'), 'not-for-display\n');
+  await gitOk(root, ['add', '-f', '--', '.env.private', 'side.txt']); await gitOk(root, ['commit', '-m', 'side']);
+  await gitOk(root, ['switch', 'main']);
+  await fs.writeFile(path.join(root, 'main.txt'), 'main contribution\n'); await commitAll(root, 'main');
+  await gitOk(root, ['merge', '--no-ff', '--no-edit', 'side']);
+  const workbench = new GitWorkbench({ ws, projects, tasks, isRunning: () => false });
+  const detail = await workbench.commitDetail('P', undefined, (await gitOk(root, ['rev-parse', 'HEAD'])).trim());
+  assert.deepEqual(detail.files, ['side.txt']);
+  assert.match(detail.patch, /\+side contribution/);
+  assert.equal(detail.patch.includes('main contribution'), false);
+  assert.equal(detail.patch.includes('not-for-display'), false);
+  const rootSha = (await gitOk(root, ['rev-list', '--max-parents=0', 'HEAD'])).trim();
+  const rootDetail = await workbench.commitDetail('P', undefined, rootSha);
+  assert.ok(rootDetail.files.length > 0); assert.match(rootDetail.patch, /^diff --git /m);
+}));
+
+test('comparison headers remove Unicode checkout roots for text and binary files', () => withTmpWorkspace(async ws => {
+  const project = '中文專案'; const projects = new ProjectLedger(ws); const tasks = new TaskLedger(ws);
+  await projects.create({ name: project });
+  const left = await tasks.create(project, { title: 'left' }); const right = await tasks.create(project, { title: 'right' });
+  const wt = new WorktreeService({ ws, projects, tasks, diffBytes: 100_000 });
+  const a = await wt.prepare(project, left.id); const b = await wt.prepare(project, right.id);
+  const names = ['solution.txt', 'quote"file.txt', 'control\tfile.txt', 'binary.bin'];
+  for (const name of names) {
+    await fs.writeFile(path.join(a, name), name.endsWith('.bin') ? Buffer.from([0, 1]) : 'left\n');
+    await fs.writeFile(path.join(b, name), name.endsWith('.bin') ? Buffer.from([0, 2]) : 'right\n');
+  }
+  const workbench = new GitWorkbench({ ws, projects, tasks, isRunning: () => false });
+  const result = await workbench.compareTasks(project, left.id, right.id);
+  const patch = result.files.find(file => file.path === 'solution.txt')!.patch;
+  assert.match(patch, /^diff --git a\/solution\.txt b\/solution\.txt$/m);
+  assert.match(patch, /^--- a\/solution\.txt$/m); assert.match(patch, /^\+\+\+ b\/solution\.txt$/m);
+  assert.match(result.files.find(file => file.path === 'quote"file.txt')!.patch, /^diff --git "a\/quote\\"file.txt" "b\/quote\\"file.txt"$/m);
+  assert.match(result.files.find(file => file.path === 'control\tfile.txt')!.patch, /^diff --git "a\/control\\tfile.txt" "b\/control\\tfile.txt"$/m);
+  assert.match(result.files.find(file => file.path === 'binary.bin')!.patch, /^Binary files a\/binary.bin and b\/binary.bin differ$/m);
+  for (const file of result.files) assert.equal(file.patch.includes(ws.root), false);
+}));
+
 test('人工暫存、取消、提交、fetch與非強制push僅使用tmp bare remote', () => withTmpWorkspace(async ws => {
   const projects = new ProjectLedger(ws); const tasks = new TaskLedger(ws);
   await projects.create({ name: 'P' }); const root = ws.projectDir('P');
