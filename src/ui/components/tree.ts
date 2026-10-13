@@ -92,10 +92,20 @@ export function tree(context: ViewContext): HTMLElement {
     details.addEventListener('toggle', () => { if (details.open) for (const other of document.querySelectorAll<HTMLDetailsElement>('details.context-menu[open]')) if (other !== details) other.open = false; });
     return details;
   }
-  function badges(p: ProjectView, tasks: TaskView[]): HTMLElement[] {
+  /**
+   * Task rows spell their notice out; project rows sum several kinds, so they show colour-coded counts only and keep
+   * the words in the tooltip/name, leaving room for the project name in a narrow sidebar.
+   */
+  function badges(p: ProjectView, tasks: TaskView[], compact = false): HTMLElement[] {
     const node = el('span', 'badges');
     const counts = [tasks.filter(task => unread(p.id, task.id)).length, tasks.filter(needsReply).length, tasks.filter(task => task.confirm && !needsReply(task)).length];
-    (['tree.unread', 'tree.reply', 'tree.confirm'] as const).forEach((key, i) => { if (counts[i]) node.append(el('span', `badge badge-${i}`, `${t(key)}${counts[i]! > 1 ? ' ' + counts[i] : ''}`)); });
+    (['tree.unread', 'tree.reply', 'tree.confirm'] as const).forEach((key, i) => {
+      const count = counts[i]!; if (!count) return;
+      const label = `${t(key)}${count > 1 ? ' ' + count : ''}`;
+      const badge = el('span', `badge badge-${i}`, compact ? String(count) : label);
+      if (compact) { badge.title = label; badge.setAttribute('role', 'img'); badge.setAttribute('aria-label', label); }
+      node.append(badge);
+    });
     return node.childNodes.length ? [node] : [];
   }
   function toggle(key: string, hasChildren: boolean, attention: boolean): HTMLButtonElement {
@@ -177,7 +187,7 @@ export function tree(context: ViewContext): HTMLElement {
       const mark = el('span', 'tree-warning', '⚠'); const label = t('project.bodyMissing', { path: p.bodyPath });
       mark.title = label; mark.setAttribute('role', 'img'); mark.setAttribute('aria-label', label); missing.push(mark);
     }
-    line.append(toggle(key, true, attention), el('span', `dot ${projectTone}`), title, ...missing, ...badges(p, p.tasks), menu([
+    line.append(toggle(key, true, attention), el('span', `dot ${projectTone}`), title, ...missing, ...badges(p, p.tasks, true), menu([
       { label: t('common.rename'), action: async () => { const name = await renameModal(p.name); if (name) { await request('/api/project/update', { project: p.id, patch: { name } }); await refresh(); } } },
       { label: t(p.pinned ? 'tree.unpin' : 'tree.pin'), action: async () => { await request('/api/pin', { project: p.id, pinned: !p.pinned }); await refresh(); } },
       { label: t('tree.up'), action: () => move(p, -1) }, { label: t('tree.down'), action: () => move(p, 1) },

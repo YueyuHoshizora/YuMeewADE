@@ -426,11 +426,7 @@ export function taskView(
     live.append(
       row(
         el('span', 'dot running'),
-        el(
-          'strong',
-          '',
-          `${aiLabel(busy.ai)} · ${modelLabel(context.state, busy.ai, busy.model)} · ${effortLabel(busy.effort)}`
-        ),
+        el('strong', '', [aiLabel(busy.ai), modelLabel(context.state, busy.ai, busy.model), effortLabel(busy.effort)].filter(Boolean).join(' · ')),
         el('span', 'live-time')
       ),
       liveBody);

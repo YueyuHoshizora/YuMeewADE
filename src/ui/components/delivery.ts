@@ -1,6 +1,6 @@
 import type { GitFileDiff, GitWorkbenchStatus, ProjectView, TaskSections, TaskView, VerificationHistoryEntry, VerifyStatus } from '../../shared/types.ts';
 import { api, query, request } from '../api.ts';
-import { t } from '../i18n/index.ts';
+import { getLocale, t } from '../i18n/index.ts';
 import { button, el, errorMessage, field, input, row, setLocked, taskHash, type ViewContext } from './dom.ts';
 import { readonlyDiffView, verificationStatusView } from './verification-view.ts';
 
@@ -80,6 +80,12 @@ export function openDeliveryReview(context: ViewContext, initialProject: Project
     target.append(list);
     if (values.length > 200) target.append(el('p', 'muted', t('delivery.more', { n: values.length - 200 })));
   }
+  /** Record sections with content keep their heading and list; empty ones are named together on one line instead of a "none" each. */
+  function textLists(target: HTMLElement, sections: [title: string, values: string[]][]): void {
+    const empty: string[] = [];
+    for (const [title, values] of sections) { if (values.length) textList(target, title, values); else empty.push(title); }
+    if (empty.length) target.append(el('p', 'muted', t('delivery.emptySections', { list: new Intl.ListFormat(getLocale(), { type: 'conjunction' }).format(empty) })));
+  }
   async function load(): Promise<void> {
     if (!alive || submitting) return;
     const snapshot = current();
@@ -102,10 +108,12 @@ export function openDeliveryReview(context: ViewContext, initialProject: Project
         const sections = await request<TaskSections>(query('/api/task/sections', ids));
         if (!active()) return;
         claims.replaceChildren(el('h3', '', t('delivery.claims')), el('p', 'muted', t('delivery.claimHint')));
-        textList(claims, t('tasks.doneSection'), sections.done);
-        textList(claims, t('delivery.unfinished'), task.steps.filter(step => !step.done).map(step => step.text));
-        textList(claims, t('tasks.next'), sections.next);
-        textList(claims, t('tasks.cautions'), sections.cautions);
+        textLists(claims, [
+          [t('tasks.doneSection'), sections.done],
+          [t('delivery.unfinished'), task.steps.filter(step => !step.done).map(step => step.text)],
+          [t('tasks.next'), sections.next],
+          [t('tasks.cautions'), sections.cautions],
+        ]);
       } catch (error) { if (active()) { claims.replaceChildren(el('h3', '', t('delivery.claims'))); failure(claims, error); } }
     })());
     jobs.push((async () => {

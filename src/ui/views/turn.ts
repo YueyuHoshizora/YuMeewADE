@@ -44,7 +44,8 @@ export function turnView(context: ViewContext): View {
     hint.textContent = t(selected === 'reply' ? 'turn.replyHint' : 'turn.confirmHint');
     list.replaceChildren(...(selected === 'reply' ? reply : confirm).map(({ project, task, waiting }) => {
       const item = el('div', 'turn-item'); item.append(el('p', 'muted', project.name), link(task.title, taskHash(project.id, task.id), 'turn-title'));
-      if (selected === 'reply') item.append(el('p', '', waiting ? t('permission.waiting') : task.question));
+      // A reply happens on the task page, where the question card and approvals are; give it the same weight as review.
+      if (selected === 'reply') item.append(el('p', '', waiting ? t('permission.waiting') : task.question), row(button(t('focus.attend'), () => { location.hash = taskHash(project.id, task.id); }, 'primary')));
       else {
         // Progress and the AI's own "next" line help decide between approving and asking to continue.
         const progress = [task.steps.length ? t('task.steps', { done: task.steps.filter(step => step.done).length, total: task.steps.length }) : '', task.next ? labelValue(t('tasks.next'), task.next) : ''].filter(Boolean);
