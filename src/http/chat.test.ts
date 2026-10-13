@@ -44,6 +44,10 @@ test('quickstart creates current-phase task, saves selection; settings and roles
     await s.api('POST', '/api/project/new', { name: 'P' });
     const result = await s.api('POST', '/api/start', { project: 'P', text: 'Make this', ai: 'mock', model: 'custom', effort: 'high' }); assert.equal(result.status, 200);
     const task = (result.json as { task: Task }).task; assert.equal(task.phase, '計畫'); assert.equal(task.title, 'Make this'); await s.app.runner.whenIdle();
+    // A long first line is cut at 40 code units; an emoji straddling the cut is dropped whole, not saved as U+FFFD.
+    const long = await s.api('POST', '/api/start/prepare', { project: 'P', text: `${'a'.repeat(39)}😀 finish`, ai: 'mock' });
+    assert.equal((long.json as { task: Task }).task.title, 'a'.repeat(39));
+    assert.equal((await s.app.tasks.get('P', (long.json as { task: Task }).task.id)).title, 'a'.repeat(39));
     assert.equal((await s.api('POST', '/api/settings', { fullAccess: { codex: false } })).status, 200);
     assert.equal((await s.api('POST', '/api/roles', { roles: [{ name: '人工', job: 'verify', main: { cli: '人', model: '', effort: '' } }] })).status, 200);
     const ai = await s.api('GET', '/api/ai'); assert.equal(ai.status, 200); assert.ok(Array.isArray(ai.json));

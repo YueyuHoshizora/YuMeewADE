@@ -89,7 +89,9 @@ export function registerChatRoutes(router: Router, app: App): void {
     if (!text.trim() && !pics?.length) throw new AppError('bad_request');
     const ai = reqString(body, 'ai', 100); const model = optModel(body) ?? ''; const effort = optEffort(body) ?? '';
     const bodyPath = app.projects.bodyPath(project);
-    const task = await app.tasks.create(p, { title: text.trim().split('\n')[0]?.slice(0, 40) || '看圖片', phase: app.projects.currentPhase(project), cli: ai, model, effort, workspace: bodyPath === app.ws.projectDir(p) || await isRepo(bodyPath) ? 'isolated' : 'direct' });
+    // The first line, cut to 40 code units without leaving half a surrogate pair (which would be saved as U+FFFD).
+    const line = text.trim().split('\n')[0]?.slice(0, 40) ?? ''; const title = /[\uD800-\uDBFF]$/.test(line) ? line.slice(0, -1) : line;
+    const task = await app.tasks.create(p, { title: title || '看圖片', phase: app.projects.currentPhase(project), cli: ai, model, effort, workspace: bodyPath === app.ws.projectDir(p) || await isRepo(bodyPath) ? 'isolated' : 'direct' });
     await writeJson(app.ws.startPickFile(p), { ai, model, effort });
     if (pics?.length) {
       const file = draftFile(app.ws, p);
