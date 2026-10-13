@@ -128,3 +128,15 @@ test('a message appended after a write was cut short (disk full, crash) is kept,
   await store.append('P', task.id, row('after'));
   assert.deepEqual((await store.readLog('P', task.id)).map(r => r.text), ['before', 'after']);
 }));
+
+test('append positions count parsed rows rather than physical JSONL lines', () => withTmpWorkspace(async ws => {
+  await new ProjectLedger(ws).create({ name: 'P' });
+  const task = await new TaskLedger(ws).create('P', { title: 'T', workspace: 'direct' });
+  const store = new ChatStore(ws);
+  const row: ChatRow = { role: 'event', at: 'now', text: 'one', tool: true, request: 'same' };
+  assert.equal(await store.append('P', task.id, row), 0);
+  await fs.appendFile(ws.chatFile('P', task.id, 'jsonl'), 'bad line\nnull\n\n');
+  assert.equal(await store.append('P', task.id, { ...row, text: 'two' }), 1);
+  assert.equal(await store.append('P', task.id, { ...row, text: 'three' }), 2);
+  assert.deepEqual((await store.readLog('P', task.id)).map(row => row.text), ['one', 'two', 'three']);
+}));

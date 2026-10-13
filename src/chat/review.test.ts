@@ -79,8 +79,9 @@ test('stop while user transcript append is pending prevents provider launch', { 
   const release = Promise.withResolvers<void>();
   const append = store.append.bind(store);
   store.append = async (p, t, row) => {
-    await append(p, t, row);
+    const position = await append(p, t, row);
     if (row.role === 'user') { entered.resolve(); await release.promise; }
+    return position;
   };
   let launches = 0;
   const provider: CliProvider = { name: 'review-test', dangerous: false, supportsReadonly: true, readonlyEnforcement: 'tool-allowlist', available: async () => true,

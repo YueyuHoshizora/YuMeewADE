@@ -220,19 +220,22 @@ export class ChatRunner extends EventEmitter {
     }
   }
 
-  async snapshot(p: string, t: string): Promise<{
+  async snapshot(p: string, t: string, captured?: () => void): Promise<{
     rows: ChatRow[]; start: number; busy: Busy | null; partial: string; queue: QueueItem[];
   }> {
     await this.deps.tasks.get(p, t);
-    const s = this.slots.get(`${p}\0${t}`);
     const rows = await this.deps.store.readLog(p, t);
+    const queue = await this.deps.store.readQueue(p, t);
+    const s = this.slots.get(`${p}\0${t}`);
     const start = Math.max(0, rows.length - HISTORY_PAGE);
+    // No await after this boundary: buffered state events are reflected in this capture.
+    captured?.();
     return {
       rows: rows.slice(start),
       start,
-      busy: s?.busy ?? null,
+      busy: s?.busy ? structuredClone(s.busy) : null,
       partial: s?.partial ?? '',
-      queue: await this.deps.store.readQueue(p, t),
+      queue,
     };
   }
 
@@ -444,9 +447,9 @@ export class ChatRunner extends EventEmitter {
         const q = await this.deps.store.updateQueue(p, t, q => { dequeued = q.find(x => x.id === input.fromQueue); return q.filter(x => x.id !== input.fromQueue); });
         this.publish(p, t, { event: 'queue', data: q });
       }
-      await this.deps.store.append(p, t, user);
+      const position = await this.deps.store.append(p, t, user);
       appended = true;
-      this.publish(p, t, { event: 'row', data: user });
+      this.publish(p, t, { event: 'row', data: { ...user, position } });
       this.publish(p, t, { event: 'busy', data: s.busy });
       s.text = item.text;
       s.partial = '';
@@ -481,7 +484,7 @@ export class ChatRunner extends EventEmitter {
       if (appended && !launched) {
         // Clients already saw the instruction and `busy`; record the failed turn and end it so nothing waits on a run that never started.
         const row: ChatRow = { at: new Date().toISOString(), role: 'assistant', ai: item.ai, model: item.model ?? '', effort: item.effort ?? '', text: '', ms: 0, request: item.id, error: 'internal' };
-        try { await this.deps.store.append(p, t, row); this.publish(p, t, { event: 'row', data: row }); }
+        try { const position = await this.deps.store.append(p, t, row); this.publish(p, t, { event: 'row', data: { ...row, position } }); }
         catch (appendError) { log.error('對話收尾失敗', appendError, { project: p, task: t }); }
         // A failed turn is a finished reply like any other: it needs the human's attention until the page is seen.
         if (await this.persistedUnread(p, t)) this.unreadTasks.set(`${p}\0${t}`, { project: p, task: t });
@@ -511,7 +514,7 @@ export class ChatRunner extends EventEmitter {
       { at: item.at, role: 'user', text: item.text, to: item.ai, request: item.id, ...(item.model === undefined ? {} : { model: item.model }), ...(item.effort === undefined ? {} : { effort: item.effort }) },
       { at: new Date().toISOString(), role: 'event', ai: item.ai, request: item.id, fast: next ?? null, text: next === undefined ? `${item.ai} Fast 模式依 CLI 自身設定` : `${item.ai} Fast 模式${next ? '開啟' : '關閉'}，本作業之後的指示適用` },
     ];
-    for (const row of rows) { await this.deps.store.append(p, t, row); this.publish(p, t, { event: 'row', data: row }); }
+    for (const row of rows) { const position = await this.deps.store.append(p, t, row); this.publish(p, t, { event: 'row', data: { ...row, position } }); }
     await this.deps.oplog.record({ action: 'chat', project: p, task: t });
     this.deps.onChanged(p, t);
     // A queued /fast ran in place of a turn; whatever was queued behind it still has to start.
@@ -643,8 +646,8 @@ export class ChatRunner extends EventEmitter {
           };
           writes = writes.then(async () => {
             if (writeFailure) return;
-            await this.deps.store.append(p, t, row);
-            this.publish(p, t, { event: 'row', data: row });
+            const position = await this.deps.store.append(p, t, row);
+            this.publish(p, t, { event: 'row', data: { ...row, position } });
           }).catch(err => { writeFailure ??= { error: err }; });
         }
       });
@@ -683,9 +686,9 @@ export class ChatRunner extends EventEmitter {
         ...(usage ? { usage } : {}),
         ...(turn ? { after: turn.after, ...(turn.changes ? { changes: turn.changes } : {}) } : {}),
       };
-      await this.deps.store.append(p, t, row);
+      const position = await this.deps.store.append(p, t, row);
       persisted = true;
-      this.publish(p, t, { event: 'row', data: row });
+      this.publish(p, t, { event: 'row', data: { ...row, position } });
       delete meta.running;
       if (error && !outcome.stopped) {
         if (opts.resumeId && !opts.standalone) {
@@ -736,9 +739,13 @@ export class ChatRunner extends EventEmitter {
       try { await this.deps.store.writeMeta(p, t, meta); }
       catch (cleanupError) { log.error('對話收尾失敗', cleanupError, { project: p, task: t }); }
       if (!persisted) {
-        try { await this.deps.store.append(p, t, row); }
-        catch (appendError) { log.error('對話收尾失敗', appendError, { project: p, task: t }); }
-        this.publish(p, t, { event: 'row', data: row });
+        try {
+          const position = await this.deps.store.append(p, t, row);
+          this.publish(p, t, { event: 'row', data: { ...row, position } });
+        } catch (appendError) {
+          log.error('對話收尾失敗', appendError, { project: p, task: t });
+          this.publish(p, t, { event: 'row', data: row });
+        }
       }
     } finally {
       try { if (launched) await this.deps.onCompleted?.({ requestId: item.id, ...(sid ? { sessionId: sid } : {}), project: p, task: t, ai: item.ai, account: opts.accountId ?? 'default', usage: usage ?? null }); }
@@ -849,8 +856,8 @@ export class ChatRunner extends EventEmitter {
         at: new Date().toISOString(), role: 'event', rollback: true, request,
         text: `人把工作副本還原到指示「${row.text.slice(0, 120)}」開始之前；該指示及之後的檔案變更都已丟棄，重新確認檔案現況再繼續。`,
       };
-      await this.deps.store.append(p, t, note);
-      this.publish(p, t, { event: 'row', data: note });
+      const position = await this.deps.store.append(p, t, note);
+      this.publish(p, t, { event: 'row', data: { ...note, position } });
       await this.deps.oplog.record({ action: 'chatrollback', project: p, task: t });
       this.deps.onChanged(p, t);
     });

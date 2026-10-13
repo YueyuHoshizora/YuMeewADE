@@ -503,7 +503,7 @@ test('啟動前追加失敗不留下 running marker 或中斷回覆', () => with
 test('queued instruction that fails before its turn starts stays queued with the error', () => withTmpWorkspace(async ws => {
   const s = await setup(ws, { chunkMs: 5 });
   const append = s.store.append.bind(s.store);
-  s.store.append = async (p, t, row) => { if (row.role === 'user' && row.text === 'queued') throw new Error('disk failure'); await append(p, t, row); };
+  s.store.append = async (p, t, row) => { if (row.role === 'user' && row.text === 'queued') throw new Error('disk failure'); return append(p, t, row); };
   await s.send('slow [slow]'); const queued = await s.send('queued', { mode: 'queue' });
   await s.runner.whenIdle();
   assert.deepEqual((await s.store.readQueue('P', s.task.id)).map(item => [item.id, item.error]), [[queued.request, 'internal']]);
@@ -605,7 +605,7 @@ test('terminal persistence and marker cleanup fail independently without losing 
     const writeMeta = s.store.writeMeta.bind(s.store);
     s.store.append = async (p, t, row) => {
       if (row.role === 'event' || (failure === 'append' && row.role === 'assistant')) throw new Error('disk failure');
-      await append(p, t, row);
+      return append(p, t, row);
     };
     s.store.writeMeta = async (p, t, meta) => {
       if (failure === 'meta' && !meta.running) throw new Error('disk failure');
@@ -615,6 +615,9 @@ test('terminal persistence and marker cleanup fail independently without losing 
     assert.equal(s.runner.isRunning('P', s.task.id), false);
     assert.ok(s.events.some(e => e.event === 'idle'));
     assert.ok(s.events.some(e => e.event === 'row' && e.data.role === 'assistant' && e.data.error === 'internal'));
+    const failedRow = s.events.find(e => e.event === 'row' && e.data.role === 'assistant' && e.data.error === 'internal');
+    assert.ok(failedRow?.event === 'row');
+    assert.equal(failedRow.data.position, failure === 'append' ? undefined : 1);
     if (failure === 'meta') assert.equal((await s.store.readLog('P', s.task.id)).at(-1)?.role, 'assistant');
     else assert.equal((await s.store.readMeta('P', s.task.id)).running, undefined);
     await fs.rm(ws.projectDir('P'), { recursive: true });
@@ -630,7 +633,7 @@ test('transient terminal append or metadata failure clears marker without duplic
       appendFailed = true;
       throw new Error('transient disk failure');
     }
-    await append(p, t, row);
+    return append(p, t, row);
   };
   await s.send('append failure'); await s.runner.whenIdle();
   assert.equal((await s.store.readMeta('P', s.task.id)).running, undefined);

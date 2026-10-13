@@ -16,6 +16,7 @@ interface Conn {
 
 export class SseHub {
   private readonly conns = new Set<Conn>();
+  private readonly listeners = new Map<string, Set<(event: ChatEvent | GlobalEvent) => void>>();
   private readonly limit: number;
   private readonly heartbeat: NodeJS.Timeout;
 
@@ -32,7 +33,7 @@ export class SseHub {
   }
 
   /** 開啟一條流並先送 ready；超過上限回 503。 */
-  open(req: IncomingMessage, res: ServerResponse, key: string, ready: ChatEvent | GlobalEvent): void {
+  open(req: IncomingMessage, res: ServerResponse, key: string, ready: ChatEvent | GlobalEvent, replay: readonly (ChatEvent | GlobalEvent)[] = []): void {
     if (this.conns.size >= this.limit) throw new AppError('unavailable', 'sse_limit');
     res.writeHead(200, {
       'Content-Type': 'text/event-stream; charset=utf-8',
@@ -46,10 +47,23 @@ export class SseHub {
     this.conns.add(conn);
     res.write(`retry: 2000\n`);
     this.write(conn, format(ready));
+    for (const event of replay) this.write(conn, format(event));
     req.on('close', () => this.conns.delete(conn));
   }
 
+  /** Observe publishes before opening a connection, so async snapshots cannot lose events. */
+  subscribe(key: string, listener: (event: ChatEvent | GlobalEvent) => void): () => void {
+    let listeners = this.listeners.get(key);
+    if (!listeners) { listeners = new Set(); this.listeners.set(key, listeners); }
+    listeners.add(listener);
+    return () => {
+      listeners.delete(listener);
+      if (!listeners.size) this.listeners.delete(key);
+    };
+  }
+
   publish(key: string, ev: ChatEvent | GlobalEvent): void {
+    for (const listener of this.listeners.get(key) ?? []) listener(ev);
     const payload = format(ev);
     for (const c of this.conns) if (c.key === key) this.write(c, payload);
   }

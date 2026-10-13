@@ -205,7 +205,7 @@ HTTP JSON 加 SSE，桌面版與網頁版完全相同。型別定義在 [`src/sh
 |---|---|
 | `GET /api/state` | 整體狀態：專案（含作業與計算欄位）、排序、執行中、未讀、AI 與模型、額度與輸出速度、設定、角色、上限；`unreadable` 列出格式錯誤而暫時略過的台帳檔（相對工作區根目錄），修正後自動恢復 |
 | `GET /api/events` | SSE（全域）：`changed` 時重抓 `/api/state`；`usage` 帶最新額度與輸出速度 |
-| `GET /api/chat/stream?project=&task=` | SSE（單一作業）：`snapshot`（最後 200 列與 `start`）／`busy`／`delta`／`row`／`queue`／`idle` |
+| `GET /api/chat/stream?project=&task=` | SSE（單一作業）：`snapshot`（最後 200 列與 `start`）／`busy`／`delta`／`row`（帶解析後紀錄的絕對 `position`；寫入失敗則省略，畫面仍顯示）／`queue`／`idle`。快照期間的事件會補送，已在快照內的不重複 |
 | `GET /api/chat/history?project=&task=&before=` | 補讀 `before` 之前的 200 列對話 |
 | `GET /api/chat/export?project=&task=&tools=` | 下載對話 Markdown（開頭附作業紀錄：步驟勾選清單與做了什麼／下一步／注意／備註中有內容的段落；`tools=1` 含工具呼叫；不含工作區絕對路徑） |
 | `GET /api/search?q=&project=&task=` | 搜尋作業標題、作業紀錄（做了什麼／下一步／注意／備註，每個作業最多一筆 `kind: record`）與對話內容（最多 50 筆）；可選 `project`（及 `task`）只搜尋該專案或作業，名稱不合法回 400、不存在回 404，`task` 必須搭配 `project` |

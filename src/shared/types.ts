@@ -576,7 +576,8 @@ export type ChatEvent =
   | { event: 'approvals'; data: ToolApproval[] }
   /** 增量文字（客戶端自行累加到 partial）。 */
   | { event: 'delta'; data: { request: string; text: string } }
-  | { event: 'row'; data: ChatRow }
+  /** Absolute parsed-log index; absent only for a reply that failed to persist. */
+  | { event: 'row'; data: ChatRow & { position?: number } }
   | { event: 'queue'; data: QueueItem[] }
   | { event: 'idle'; data: { request: string } };
 

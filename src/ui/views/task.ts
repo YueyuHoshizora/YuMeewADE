@@ -51,6 +51,7 @@ export function taskView(
   let alive = true;
   let rows: ChatRow[] = [];
   const history = new HistoryWindow();
+  let transientIndex = -1;
   let loadingHistory: Promise<void> | null = null;
   const requestedIndex = params.has('index') ? Number(params.get('index')) : -1;
   let focusIndex = Number.isSafeInteger(requestedIndex) && requestedIndex >= 0 ? requestedIndex : -1;
@@ -1042,6 +1043,7 @@ export function taskView(
       case 'snapshot':
         history.reset({ rows: event.data.rows, start: event.data.start });
         rows = history.rows;
+        transientIndex = -1;
         earlier.hidden = history.start === 0;
         busy = event.data.busy;
         partial = event.data.partial;
@@ -1076,12 +1078,14 @@ export function taskView(
         }
         break;
       case 'row':
-        rows.push(event.data);
+        if (event.data.position !== undefined && event.data.position < history.start + rows.length) break;
+        // Failed persistence stays visible, but never becomes part of indexed history.
+        if (event.data.position !== undefined) rows.push(event.data);
         if (event.data.role === 'assistant' && event.data.request === busy?.request) {
           partial = '';
           removeLive();
         }
-        appendWindowRow(event.data, history.start + rows.length - 1);
+        appendWindowRow(event.data, event.data.position ?? transientIndex--);
         renderQuestion();
         follow();
         break;

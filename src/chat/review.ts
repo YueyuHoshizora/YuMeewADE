@@ -49,8 +49,8 @@ export class ReviewService {
     return true;
   }
   private async append(project: string, task: string, row: ChatRow): Promise<void> {
-    await this.deps.store.append(project, task, row);
-    this.deps.publish(project, task, { event: 'row', data: row });
+    const position = await this.deps.store.append(project, task, row);
+    this.deps.publish(project, task, { event: 'row', data: { ...row, position } });
   }
   private file(project: string, task: string): string { return path.join(this.deps.ws.projectDir(project), '.ai', 'reviews', `${task}.json`); }
   private async cwd(project: string, task: string): Promise<string> {

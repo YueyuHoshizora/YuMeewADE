@@ -4,7 +4,7 @@ import path from 'node:path';
 import type { App } from '../../server/app.ts';
 import { AppError } from '../../shared/errors.ts';
 import { withFileLocks, writeJson } from '../../shared/fsx.ts';
-import { SEND_MODES, type StartInput, type SendInput, type StartResult, type Task } from '../../shared/types.ts';
+import { SEND_MODES, type ChatEvent, type GlobalEvent, type StartInput, type SendInput, type StartResult, type Task } from '../../shared/types.ts';
 import { isRepo } from '../../git/git.ts';
 import { IMAGE_TYPES, saveUpload, uploadPath } from '../../chat/attachments.ts';
 import { formatTranscript } from '../../chat/export.ts';
@@ -47,9 +47,25 @@ export function registerChatRoutes(router: Router, app: App): void {
   });
   router.get('/api/chat/stream', async ({ query, req, res }) => {
     const p = reqString(query, 'project', 100); const t = reqString(query, 'task', 100);
-    const snapshot = await app.runner.snapshot(p, t);
-    // Read only once the stream that shows it is open: a connection refused at the SSE limit delivers nothing.
-    app.sse.open(req, res, taskKey(p, t), { event: 'snapshot', data: snapshot });
+    let buffered: ChatEvent[] = [];
+    const collect = (event: ChatEvent | GlobalEvent) => {
+      // This subscription is to a task key, which only carries chat events.
+      buffered.push(structuredClone(event) as ChatEvent);
+    };
+    const unsubscribe = app.sse.subscribe(taskKey(p, t), collect);
+    try {
+      const snapshot = await app.runner.snapshot(p, t, () => {
+        // State events before the synchronous capture are already represented by it.
+        buffered = buffered.filter(event => event.event === 'row');
+      });
+      // No await between opening and replay: new events now flow through the hub.
+      const end = snapshot.start + snapshot.rows.length;
+      const replay = buffered.filter(event => event.event !== 'row' || event.data.position === undefined || event.data.position >= end);
+      app.sse.open(req, res, taskKey(p, t), { event: 'snapshot', data: snapshot }, replay);
+    } finally {
+      unsubscribe();
+    }
+    // A connection refused at the SSE limit delivers nothing and must stay unread.
     await app.runner.markRead(p, t);
   });
   router.post('/api/chat/send', async ({ body, ip }) => {

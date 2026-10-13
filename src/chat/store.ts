@@ -84,12 +84,13 @@ export class ChatStore {
     }
   }
 
-  append(project: string, task: string, row: ChatRow): Promise<void> {
+  append(project: string, task: string, row: ChatRow): Promise<number> {
     const file = this.ws.chatFile(project, task, 'jsonl');
     const metaFile = this.ws.chatFile(project, task, 'json');
     return withFileLocks([this.ws.projectFile(project), file, metaFile], async () => {
       await fs.access(this.ws.projectFile(project));
       await fs.access(this.ws.taskFile(project, task));
+      const position = (await this.readLog(project, task)).length;
       await appendLine(file, JSON.stringify(row));
       if (row.role === 'assistant') {
         const meta = await this.readMeta(project, task);
@@ -97,6 +98,7 @@ export class ChatStore {
         meta.unread = true;
         await writeJson(metaFile, meta);
       }
+      return position;
     });
   }
 

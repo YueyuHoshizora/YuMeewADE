@@ -450,7 +450,7 @@ electron 44.7.0、vite 8.3.4、electron-builder 26.15.3、typescript 7.0.2、@ty
 - 模型清單讀 CLI 自己的快取（codex `models_cache.json`、claude `cache/model-catalog/`），每個模型的思考強度選項也從快取取得。
 
 ### B.4 協定
-以 `src/shared/types.ts` 與 `README.md`「協定摘要」為準。全域 SSE 發 `changed`（客戶端重抓 `GET /api/state`）與 `usage`（額度／速度完整清單，見 B.6）；作業 SSE 先送 `snapshot`（只含最後 `HISTORY_PAGE`＝200 列與 `start`），再送 `busy`／`delta`／`row`／`queue`／`idle`；較早的列以 `GET /api/chat/history?before=` 分頁補讀。跨專案搜尋 `GET /api/search?q=`（作業標題＋user／assistant 文字，上限 50 筆）。舊端點（`/api/bootstrap`、`/api/tasks`、`/api/worktree/*`、`/api/chat/queue/*`）已移除。
+以 `src/shared/types.ts` 與 `README.md`「協定摘要」為準。全域 SSE 發 `changed`（客戶端重抓 `GET /api/state`）與 `usage`（額度／速度完整清單，見 B.6）；作業 SSE 先送 `snapshot`（只含最後 `HISTORY_PAGE`＝200 列與 `start`），再送 `busy`／`delta`／`row`／`queue`／`idle`。`row` 帶解析後紀錄的絕對索引 `position`（與 `snapshot.start`、歷史分頁同一座標系）；寫入失敗的回覆沒有 `position`，開著的視窗仍顯示，但不算進歷史索引。訂閱在讀快照前就開始，快照期間的事件於連線開通後補送，已含在快照裡的狀態事件與列不重複。較早的列以 `GET /api/chat/history?before=` 分頁補讀。跨專案搜尋 `GET /api/search?q=`（作業標題＋user／assistant 文字，上限 50 筆）。舊端點（`/api/bootstrap`、`/api/tasks`、`/api/worktree/*`、`/api/chat/queue/*`）已移除。
 
 ### B.5 第三輪修正（自我檢討後）
 - 正確性：A.9「續聊失敗處理」補上實作（先前每輪都保存 session 並推進 `seen`）；adapter 在 exit 0 但沒有收到 claude `result`／codex `turn.completed` 時判為失敗（3.3 fail-closed）；`meta.running` 只在啟動前寫檔都成功後才保留；未閉合的 `[[question]]` 只解析問題與連續選項，其後正文保留；上傳圖片比對檔頭。
