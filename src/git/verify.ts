@@ -140,9 +140,9 @@ export class VerifyService {
     this.runs.set(key, entry);
     const done = (async () => {
       await this.opts.beforeRun?.(project);
-      const { cwd } = await this.context(project, task, false);
+      const { cwd, env } = await this.context(project, task, false);
       if (this.closed || this.opts.isRunning(project, task)) throw new AppError('conflict');
-      return this.executeCommand(cwd, command, entry, this.opts.config.limits.verifySeconds * 1000, args, stdoutBytes);
+      return this.executeCommand(cwd, command, entry, this.opts.config.limits.verifySeconds * 1000, args, stdoutBytes, env);
     })().finally(() => this.runs.delete(key));
     entry.done = done;
     return done;
@@ -164,11 +164,11 @@ export class VerifyService {
     const [workspace, body, ledger] = await Promise.all([fs.realpath(ws.root), fs.realpath(projects.bodyPath(project)).catch(() => null), fs.realpath(ws.projectDir(projectId))]);
     if (!cwd || !(await fs.stat(cwd).catch(() => null))?.isDirectory() || (!isInside(workspace, cwd) && !(body && (cwd === body || isInside(body, cwd))))) throw new AppError('bad_request');
     const model = parseVerificationInputModel(project.verificationInputs);
-    // Checks run with `cli.envPassthrough` on top of the minimal environment: a pass only holds for the same names and
-    // values. Hashed, so values never reach the history file; omitted when empty, so default setups keep their passes.
-    const passthrough = this.opts.config.cli.envPassthrough;
-    const environment = passthrough.length ? [createHash('sha256').update(JSON.stringify(passthrough.map(name => [name, process.env[name] ?? null]))).digest('hex')] : [];
-    return { cwd, checks, model, ledgerData: path.join(ledger, '.ai'), configuration: JSON.stringify([project.verify, checks, project.requireVerification, model, ...environment]) };
+    // A pass only holds for the same effective minimal environment, including inherited variables and passthroughs.
+    // Hash in stable key order so environment values never reach the history file.
+    const env = minimalEnv(this.opts.config.cli.envPassthrough);
+    const environment = createHash('sha256').update(JSON.stringify(Object.keys(env).sort().map(name => [name, env[name]]))).digest('hex');
+    return { cwd, checks, model, env, ledgerData: path.join(ledger, '.ai'), configuration: JSON.stringify([project.verify, checks, project.requireVerification, model, environment]) };
   }
 
   private async execute(projectId: string, taskId: string, entry: { stop?: (() => void) | undefined; cancelled?: boolean }): Promise<VerifyResult> {
@@ -186,7 +186,7 @@ export class VerifyService {
       const steps = [];
       for (const check of context.checks) {
         if (this.closed || entry.cancelled || Date.now() >= deadline) break;
-        const result = await this.executeCommand(context.cwd, check.command, entry, Math.max(1, deadline - Date.now()));
+        const result = await this.executeCommand(context.cwd, check.command, entry, Math.max(1, deadline - Date.now()), undefined, 0, context.env);
         steps.push({ name: check.name, command: check.command, ...result });
         if (result.timedOut || this.closed) break;
       }
@@ -215,15 +215,16 @@ export class VerifyService {
     } finally { entry.stop = undefined; }
   }
 
-  private async executeCommand(cwd: string, command: string, entry: { stop?: (() => void) | undefined; cancelled?: boolean }, timeoutMs: number, args?: string[], stdoutBytes = 0): Promise<FrameworkRunResult> {
+  private async executeCommand(cwd: string, command: string, entry: { stop?: (() => void) | undefined; cancelled?: boolean }, timeoutMs: number, args?: string[], stdoutBytes = 0, env = minimalEnv(this.opts.config.cli.envPassthrough)): Promise<FrameworkRunResult> {
     if (entry.cancelled) return { ok: false, exitCode: null, timedOut: false, ms: 0, output: '', truncated: false };
     const { config } = this.opts;
     const started = Date.now();
-    const env = minimalEnv(config.cli.envPassthrough);
     const tail = Buffer.alloc(config.limits.verifyOutputBytes);
     let position = 0;
     let size = 0;
     let truncated = false;
+    const stdoutDecoder = new TextDecoder('utf-8', { ignoreBOM: true });
+    const stderrDecoder = new TextDecoder('utf-8', { ignoreBOM: true });
     const stdout: Buffer[] = []; let stdoutSize = 0; let stdoutTruncated = false;
     let timedOut = false;
     let stopped = false;
@@ -233,6 +234,8 @@ export class VerifyService {
     const { promise, resolve, reject } = Promise.withResolvers<FrameworkRunResult>();
     const finish = (exitCode: number | null) => {
       if (settled) return;
+      capture(stdoutDecoder.decode());
+      capture(stderrDecoder.decode());
       settled = true;
       clearTimeout(timer); clearTimeout(bound);
       const bytes = size < tail.length ? tail.subarray(0, size) : Buffer.concat([tail.subarray(position), tail.subarray(0, position)], size);
@@ -245,8 +248,9 @@ export class VerifyService {
     const child = spawnCli(args ? command : process.platform === 'win32' ? env['ComSpec'] || 'cmd.exe' : 'sh', args ?? (process.platform === 'win32' ? ['/d', '/s', '/c', `"${command}"`] : ['-c', command]), {
       cwd, env, stdio: ['ignore', 'pipe', 'pipe'], windowsHide: true, detached: process.platform !== 'win32', ...(!args && process.platform === 'win32' ? { windowsVerbatimArguments: true } : {}),
     });
-    const capture = (chunk: Buffer) => {
-      if (settled) return;
+    const capture = (text: string) => {
+      if (settled || !text) return;
+      const chunk = Buffer.from(text);
       if (size + chunk.length > tail.length) truncated = true;
       if (chunk.length >= tail.length) {
         chunk.copy(tail, 0, chunk.length - tail.length);
@@ -275,9 +279,11 @@ export class VerifyService {
         if (chunk.length > room) stdoutTruncated = true;
         if (room > 0) { const kept = chunk.subarray(0, room); stdout.push(kept); stdoutSize += kept.length; }
       }
-      capture(chunk);
+      capture(stdoutDecoder.decode(chunk, { stream: true }));
     });
-    child.stderr!.on('data', capture);
+    child.stderr!.on('data', (chunk: Buffer) => capture(stderrDecoder.decode(chunk, { stream: true })));
+    child.stdout!.on('end', () => capture(stdoutDecoder.decode()));
+    child.stderr!.on('end', () => capture(stderrDecoder.decode()));
     child.on('error', error => {
       if (args && (error as NodeJS.ErrnoException).code === 'ENOENT') {
         settled = true; clearTimeout(timer); clearTimeout(bound); reject(new AppError('unavailable', 'cli_unavailable', { field: command }));
