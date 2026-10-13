@@ -31,7 +31,8 @@ export function geminiInput(opts: SendOptions): string {
 function record(value: unknown): Record<string, unknown> | undefined {
   return value && typeof value === 'object' && !Array.isArray(value) ? value as Record<string, unknown> : undefined;
 }
-function count(value: unknown): number { return typeof value === 'number' && Number.isSafeInteger(value) && value >= 0 ? value : 0; }
+/** A reported count, or null when it is missing or not a count: an unmeasured value is never published as zero. */
+function count(value: unknown): number | null { return typeof value === 'number' && Number.isSafeInteger(value) && value >= 0 ? value : null; }
 
 function toolLabel(info: Record<string, unknown> | undefined, fallback: unknown): string {
   const name = typeof info?.['name'] === 'string' ? info['name'] : typeof fallback === 'string' ? fallback : 'tool';
@@ -44,11 +45,9 @@ export function createGeminiParser(onEvent: (ev: CliEvent) => void, now: () => n
   const started = now();
   let terminal = false;
   let text = '';
-  let input = 0;
   let output = 0;
-  let cached = 0;
   const tools = new Set<number>();
-  const measured = new Map<number, { input: number; output: number; cached: number }>();
+  const measured = new Map<number, { input: number | null; output: number; cached: number | null }>();
   return obj => {
     if (terminal) return;
     if (obj['event'] === 'step_update') {
@@ -64,14 +63,18 @@ export function createGeminiParser(onEvent: (ev: CliEvent) => void, now: () => n
           if (typeof index !== 'number' || !Number.isSafeInteger(index) || index < 0 ||
               typeof tokens !== 'number' || !Number.isSafeInteger(tokens) || tokens < 0) return;
           const previous = measured.get(index);
-          const current = { input: count(usage['input_tokens']), output: tokens, cached: count(usage['cache_read_tokens']) };
-          input += current.input - (previous?.input ?? 0);
+          // Cache reads are optional (absent = none); input is required for a complete turn usage.
+          const current = { input: count(usage['input_tokens']), output: tokens, cached: usage['cache_read_tokens'] === undefined ? 0 : count(usage['cache_read_tokens']) };
           output += current.output - (previous?.output ?? 0);
-          cached += current.cached - (previous?.cached ?? 0);
           measured.set(index, current);
           // Usage is a replaceable snapshot: publishing it as soon as a step is measured keeps it when the turn later
-          // fails, is stopped or never sends a result.
-          if (input + output > 0) onEvent({ type: 'usage', usage: { input, output, ...(cached ? { cached } : {}) } satisfies TurnUsage });
+          // fails, is stopped or never sends a result. A correction to zero is published too, replacing the old value;
+          // a step without a valid input count leaves the turn's usage unknown rather than counted as zero.
+          const steps = [...measured.values()];
+          if (steps.every(step => step.input !== null && step.cached !== null)) {
+            const input = steps.reduce((sum, step) => sum + step.input!, 0); const cached = steps.reduce((sum, step) => sum + step.cached!, 0);
+            onEvent({ type: 'usage', usage: { input, output, ...(cached ? { cached } : {}) } satisfies TurnUsage });
+          }
           // step_update carries snapshots: replaying or correcting a step must not add it twice.
           if (previous?.output === current.output) return;
           const at = now();

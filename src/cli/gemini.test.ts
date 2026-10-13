@@ -58,6 +58,19 @@ test('usage already measured survives a failed or unfinished turn', () => {
   assert.equal(events.filter(ev => ev.type === 'error').length, 1);
 });
 
+test('a step without a valid input count leaves the usage unknown, and a correction to zero replaces the old usage', () => {
+  for (const usage of [{ output_tokens: 5 }, { input_tokens: 'unknown', output_tokens: 5 }, { input_tokens: 10, output_tokens: 5, cache_read_tokens: -1 }]) {
+    const events: CliEvent[] = [];
+    createGeminiParser(ev => events.push(ev), () => 100)(step({ step_index: 1, state: 'DONE', step_type: 'agent_response', usage }));
+    assert.deepEqual(events.filter(ev => ev.type === 'usage'), [], JSON.stringify(usage));
+  }
+  const events: CliEvent[] = [];
+  const parse = createGeminiParser(ev => events.push(ev), () => 100);
+  parse(step({ step_index: 1, state: 'DONE', step_type: 'agent_response', usage: { input_tokens: 10, output_tokens: 5, cache_read_tokens: 2 } }));
+  parse(step({ step_index: 1, state: 'DONE', step_type: 'agent_response', usage: { input_tokens: 0, output_tokens: 0, cache_read_tokens: 0 } }));
+  assert.deepEqual(events.filter(ev => ev.type === 'usage').at(-1), { type: 'usage', usage: { input: 0, output: 0 } });
+});
+
 test('args honor permission mode, model, effort, resume and extra directories; the prompt only travels over stdin', () => {
   const base = { prompt: 'secret prompt', cwd: '/w' };
   assert.deepEqual(geminiArgs(cfg, { ...base, fullAccess: true }), [...cfg.fullAccessArgs, ...cfg.baseArgs]);
