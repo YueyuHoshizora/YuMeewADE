@@ -12,6 +12,8 @@ export const ja: Record<MessageKey, string> = {
 'usage.accountHelp': 'アカウント追加では、App が管理する独立フォルダーで各 CLI 自身の OAuth ログインを実行します（ブラウザが開きます）。CLI の既定ログインは読み取りません。認証情報は App のローカル SQLite に取り込み、OS の安全なストレージで暗号化します。利用枠の取得と会話にはこの認証情報を使用します。',
 'usage.accountNotice': 'フッターには各 AI の使用中アカウントだけを表示します。切り替えは次の指示から有効で、実行中の作業は変わりません。取得に対応した利用枠は既定で 1 分ごとに更新し（limits.usagePollSeconds で変更可）、使い切った時と回復した時に通知します。取得失敗時は前回のデータを保持し、リアルタイムの値ではありません。',
 'usage.refresh': '利用枠を今すぐ取得', 'usage.ready': '取得成功', 'usage.unavailable': '現在取得できません', 'usage.noData': '利用枠データはまだありません。手動で取得するか次の更新をお待ちください',
+'usage.authRequired': '再ログインが必要です',
+'usage.authHelp': '認証情報の更新が拒否されました。アカウント管理から再度ログインを追加してください。',
 'usage.prepaidBalance': 'プリペイド残高 {balance}',
 'update.title': '新しいバージョンがあります',
 'update.available': 'v{version} に更新できます',

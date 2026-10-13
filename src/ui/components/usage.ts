@@ -38,6 +38,7 @@ function usageItem(ai: string, name: string | undefined, usage: AiUsage | undefi
   if (name) item.append(el('span', 'usage-account', name));
   if (onDetails) item.setAttribute('aria-label', t('usage.openDetails', { ai: aiLabel(ai) }));
   if (usage?.status === 'unavailable') item.append(el('span', 'usage-unavailable', t('usage.unavailable')));
+  if (usage?.status === 'auth_required') item.append(el('span', 'usage-unavailable', t('usage.authRequired')));
   if (!usage?.quotaAt) {
     const none = el('span', 'usage-none', '—'); none.title = t('usage.noData'); item.append(none);
   } else {

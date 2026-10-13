@@ -83,6 +83,11 @@ export interface CliProvider {
   quota?(configDir?: string): Promise<Extract<CliEvent, { type: 'quota' }> | null>;
 }
 
+/** OAuth explicitly rejected the saved login; only a new login can authorize quota queries. */
+export class QuotaAuthenticationRequired extends Error {
+  constructor() { super('Account login required.'); }
+}
+
 /** The quota endpoint throttled this account; querying again before `retryAt` (epoch ms) only extends the throttle. */
 export class QuotaRateLimited extends Error {
   readonly retryAt: number;

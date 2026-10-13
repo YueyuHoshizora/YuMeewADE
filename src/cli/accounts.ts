@@ -5,8 +5,9 @@ import path from 'node:path';
 import type { CredentialVault } from '../credentials/vault.ts';
 import type { CliCommandConfig } from '../shared/config.ts';
 import { AppError } from '../shared/errors.ts';
-import { acquireWorkspaceLock } from '../shared/fsx.ts';
-import { ClaudeCliProvider, claudeClientVersion, fetchClaudeQuota } from './claude.ts';
+import { acquireWorkspaceLock, replaceFile } from '../shared/fsx.ts';
+import { ClaudeCliProvider, ClaudeQuotaAuthInvalid, claudeClientVersion, fetchClaudeQuota } from './claude.ts';
+import { refreshClaudeCredentials } from './claude-refresh.ts';
 import { claudeCredentialToken, readClaudeCredentialRecord, readKeychain } from './claude-credentials.ts';
 import { CodexCliProvider } from './codex.ts';
 import { GeminiCliProvider } from './gemini.ts';
@@ -15,6 +16,7 @@ import { parseGrokCredentials } from './grok-credentials.ts';
 import { fetchGrokQuota } from './grok-quota.ts';
 import { captureCommand, minimalEnv } from './process.ts';
 import type { CliProvider, CliRun, RunOutcome, SendOptions, CliEvent } from './provider.ts';
+import { QuotaAuthenticationRequired, QuotaRateLimited } from './provider.ts';
 import { readCredentialFile as readBounded } from './credential-file.ts';
 
 const MAX_BYTES = 1024 * 1024;
@@ -106,6 +108,8 @@ export class CredentialAccounts {
   private readonly stops = new Set<() => void>();
   private readonly runtimes = new Map<string, RuntimeLease>();
   private readonly operations = new Set<Promise<unknown>>();
+  private readonly quotaQueries = new Map<string, Promise<Extract<CliEvent, { type: 'quota' }> | null>>();
+  private readonly rejectedRefreshTokens = new Map<string, string>();
   private closed = false;
   /**
    * The account (its source directory) whose login the default slot holds. OAuth refresh tokens rotate, so two copies
@@ -184,6 +188,7 @@ export class CredentialAccounts {
     await this.serial(profile, async () => {
       try {
         const lease = this.runtimes.get(profile.runtime);
+        if (replace && this.runtimes.has(this.executionProfile(profile).runtime)) throw new Error(FAILURE);
         if (lease?.removed || (replace && lease)) throw new Error(FAILURE);
         const current = await this.readRecord(profile.ai, this.record(profile));
         if (current !== null && !replace) { validate(profile.ai, current); return; }
@@ -243,11 +248,13 @@ export class CredentialAccounts {
   async remove(ai: string, configDir?: string): Promise<void> {
     const profile = this.profile(ai, configDir);
     await this.serial(profile, async () => {
+      if (this.executionProfile(profile).key !== profile.key && this.runtimes.has(this.executionProfile(profile).runtime)) throw new Error(FAILURE);
       const lease = this.runtimes.get(profile.runtime);
       if (lease) {
         if (configDir === undefined) throw new Error(FAILURE);
         // Delete authorization now; the existing consumer can finish, but cannot resurrect the record on release.
         await this.vault.remove(profile.ai, profile.key);
+        this.rejectedRefreshTokens.delete(profile.runtime);
         lease.removed = true;
         return;
       }
@@ -258,6 +265,7 @@ export class CredentialAccounts {
       // Either way the slot no longer holds a registered account; settings replaces or empties its copy.
       if (configDir === undefined || this.linked.get(profile.ai) === profile.source) this.linked.delete(profile.ai);
       await this.vault.remove(profile.ai, profile.key);
+      this.rejectedRefreshTokens.delete(profile.runtime);
       if (configDir === undefined) this.owners.delete(profile.ai);
     });
   }
@@ -274,7 +282,7 @@ export class CredentialAccounts {
     let holder: string | undefined;
     await this.serial(slot, async () => {
       try {
-        if (this.runtimes.has(slot.runtime)) throw new Error(FAILURE);
+        if (this.runtimes.has(slot.runtime) || this.runtimes.has(source.runtime)) throw new Error(FAILURE);
         previous = await this.readRecord(slot.ai, slot.key);
         holder = this.owners.get(slot.ai);
         // Re-selecting the linked account keeps the slot's copy: its own record is the older one.
@@ -334,6 +342,11 @@ export class CredentialAccounts {
     return this.linked.get(profile.ai) === profile.source ? this.profile(profile.ai).key : profile.key;
   }
 
+  /** Aliases of one vault row must also share one native auth store and its refresh lock. */
+  private executionProfile(profile: Profile): Profile {
+    return this.record(profile) === profile.key ? profile : this.profile(profile.ai);
+  }
+
   /** Gives the slot's record back to the linked account as its own; the caller holds the slot's queue and ends or moves the link. */
   private async handBack(slot: Profile): Promise<void> {
     const shared = await this.readRecord(slot.ai, slot.key);
@@ -366,11 +379,12 @@ export class CredentialAccounts {
 
   /** Preparation and flush are locked; native callbacks share their account's auth store. */
   async withEnv<T>(ai: string, configDir: string | undefined, callback: (env: NodeJS.ProcessEnv) => Promise<T>, signal?: AbortSignal): Promise<T> {
-    const profile = this.profile(ai, configDir);
+    const requested = this.profile(ai, configDir);
+    const profile = this.executionProfile(requested);
     const operation = (async () => {
       if (signal?.aborted || this.closed) throw new Error(FAILURE);
       const acquiring = this.serial(profile, async () => {
-        if (signal?.aborted || this.closed) throw new Error(FAILURE);
+        if (signal?.aborted || this.closed || this.record(requested) !== profile.key) throw new Error(FAILURE);
         return this.acquire(profile);
       });
       const aborted = Promise.withResolvers<null>();
@@ -387,7 +401,7 @@ export class CredentialAccounts {
         if (signal?.aborted || this.closed) throw new Error(FAILURE);
         return await callback(lease.env);
       } catch (error) {
-        if (error instanceof AppError) throw error;
+        if (error instanceof AppError || error instanceof QuotaAuthenticationRequired || error instanceof QuotaRateLimited) throw error;
         throw new Error(FAILURE);
       } finally { await this.release(profile, lease); }
     })();
@@ -465,6 +479,36 @@ export class CredentialAccounts {
         }
       }
     }, true);
+  }
+
+  private claudeQuotaCredential(profile: Profile, rejectedToken?: string): Promise<string> {
+    return this.serial(profile, async () => {
+      const lease = this.runtimes.get(profile.runtime);
+      if (!lease || lease.removed) throw new Error(FAILURE);
+      let text = lease.service ? await readKeychain(lease.service, lease.env) ?? await readBounded(lease.authFile) : await readBounded(lease.authFile);
+      const value = validate('claude', text);
+      if (!accessExpired('claude', text) && (rejectedToken === undefined || claudeCredentialToken(text, false) !== rejectedToken)) return text;
+      // A native process may already be rotating this token. Never race its refresh or overwrite its result.
+      if (lease.refs !== 1) throw new Error(FAILURE);
+      const oauth = value['claudeAiOauth'];
+      const refreshToken = object(oauth) && typeof oauth['refreshToken'] === 'string' ? oauth['refreshToken'] : '';
+      const fingerprint = createHash('sha256').update(refreshToken).digest('hex');
+      if (this.rejectedRefreshTokens.get(profile.runtime) === fingerprint) throw new QuotaAuthenticationRequired();
+      try { text = await refreshClaudeCredentials(text); }
+      catch (error) {
+        if (error instanceof QuotaAuthenticationRequired) this.rejectedRefreshTokens.set(profile.runtime, fingerprint);
+        throw error;
+      }
+      this.rejectedRefreshTokens.delete(profile.runtime);
+      validate('claude', text);
+      const temporary = `${lease.authFile}.${randomUUID()}.tmp`;
+      try {
+        await fs.writeFile(temporary, text, { mode: 0o600, flag: 'wx' });
+        await replaceFile(temporary, lease.authFile);
+      } finally { await fs.rm(temporary, { force: true }); }
+      // release() encrypts the renewal before the quota query settles; a crash recovers the new managed file.
+      return text;
+    });
   }
 
   /**
@@ -570,24 +614,44 @@ export class CredentialAccounts {
       supportsApprovals: base.supportsApprovals === true,
       ...(base.readonlyEnforcement ? { readonlyEnforcement: base.readonlyEnforcement } : {}),
       available: () => base.available(),
-      quota: async (configDir) => {
-        if (ai === 'gemini') return this.withEnv(ai, configDir, env => factory(env).quota!(env['HOME']));
-        if (ai === 'codex') return this.withEnv(ai, configDir, env => factory(env).quota!(env['CODEX_HOME']));
-        const profile = this.profile(ai, configDir);
-        return this.track((async () => {
+      quota: (configDir) => {
+        const requested = this.profile(ai, configDir);
+        const recordKey = this.record(requested);
+        const owner = recordKey === this.profile(ai).key ? this.owners.get(ai) : undefined;
+        const key = JSON.stringify([ai, recordKey, owner]);
+        const pending = this.quotaQueries.get(key);
+        if (pending) return pending;
+        const query = this.track((async () => {
           if (this.closed) throw new Error(FAILURE);
+          if (ai === 'gemini') return this.withEnv(ai, configDir, env => factory(env).quota!(env['HOME']));
+          if (ai === 'codex') return this.withEnv(ai, configDir, env => factory(env).quota!(env['CODEX_HOME']));
+          if (ai === 'claude') return this.withEnv(ai, configDir, async () => {
+            const profile = this.executionProfile(requested);
+            let text = await this.claudeQuotaCredential(profile);
+            const version = await claudeClientVersion(config.command, this.env);
+            for (let attempt = 0; ; attempt++) {
+              try { return await fetchClaudeQuota({}, 15_000, undefined, async () => claudeCredentialToken(text), version); }
+              catch (error) {
+                if (!(error instanceof ClaudeQuotaAuthInvalid)) throw error;
+                if (attempt === 1) throw new QuotaAuthenticationRequired();
+                text = await this.claudeQuotaCredential(profile, claudeCredentialToken(text, false));
+              }
+            }
+          });
+          const profile = this.profile(ai, configDir);
           let text = await this.credential(profile);
           if (config.authRefreshArgs.length && accessExpired(ai, text)) {
-            // Only the CLI may refresh OAuth; running it under a lease flushes the refreshed record back into the vault.
             await this.withEnv(ai, configDir, async env => {
               const result = await captureCommand({ command: config.command, args: config.authRefreshArgs, env, timeoutMs: 60_000, maxOutputBytes: MAX_BYTES });
               if (!result.ok) throw new Error(FAILURE);
             });
             text = await this.credential(profile);
           }
-          if (ai === 'claude') return fetchClaudeQuota({}, 15_000, undefined, async () => claudeCredentialToken(text), await claudeClientVersion(config.command, this.env));
           return fetchGrokQuota(undefined, this.env, { readCredentials: async () => parseGrokCredentials(JSON.parse(text), this.sourceEnv) });
         })());
+        this.quotaQueries.set(key, query);
+        void query.finally(() => { if (this.quotaQueries.get(key) === query) this.quotaQueries.delete(key); }).catch(() => {});
+        return query;
       },
       commands: (cwd, configDir) => this.withEnv(ai, configDir, async env => await factory(env).commands?.(cwd, env[HOME_VARIABLE[ai]]) ?? []),
       resolveCommand: (text, cwd, configDir) => this.withEnv(ai, configDir, async env => {

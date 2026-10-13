@@ -7,8 +7,12 @@ import { quotaCountdown, updateQuotaCountdowns } from './quota-countdown.ts';
 
 function accountUsage(usage: AiUsage | undefined): HTMLElement {
   const node = el('div', 'account-quota');
-  node.append(el('p', '', t(usage?.status === 'ready' ? 'usage.ready' : 'usage.unavailable')));
-  if (!usage?.quotaAt) { node.append(el('p', 'muted', t('usage.noData'))); return node; }
+  node.append(el('p', '', t(usage?.status === 'ready' ? 'usage.ready' : usage?.status === 'auth_required' ? 'usage.authRequired' : 'usage.unavailable')));
+  if (usage?.status === 'auth_required') node.append(el('p', 'muted', t('usage.authHelp')));
+  if (!usage?.quotaAt) {
+    if (usage?.status !== 'auth_required') node.append(el('p', 'muted', t('usage.noData')));
+    return node;
+  }
   node.append(el('p', 'muted', t('usage.quotaAt', { at: localTime(usage.quotaAt) })));
   for (const window of usage.windows) {
     if (usage.ai === 'grok' && window.label === 'on-demand') continue;

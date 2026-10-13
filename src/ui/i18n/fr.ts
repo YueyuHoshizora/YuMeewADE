@@ -12,6 +12,8 @@ export const fr: Record<MessageKey, string> = {
 'usage.accountHelp': 'L’ajout d’un compte lance la connexion OAuth propre à la CLI (ouvre le navigateur) dans un dossier isolé géré par l’App ; la connexion par défaut de la CLI n’est jamais lue. Les identifiants sont importés dans la base SQLite locale de l’App, chiffrés via le stockage sécurisé du système ; quotas et conversations les utilisent.',
 'usage.accountNotice': 'Le pied de page affiche seulement le compte actif de chaque IA. Un changement ne concerne que les prochaines instructions, jamais les tâches en cours. Les quotas pris en charge sont consultés chaque minute par défaut (réglable via limits.usagePollSeconds), avec des alertes à leur épuisement et à leur rétablissement. Une requête échouée conserve les dernières données ; ce quota n’est pas en temps réel.',
 'usage.refresh': 'Actualiser le quota maintenant', 'usage.ready': 'Requête réussie', 'usage.unavailable': 'Requête indisponible', 'usage.noData': 'Pas encore de données de quota ; actualiser manuellement ou attendre la prochaine mise à jour',
+'usage.authRequired': 'Reconnexion nécessaire',
+'usage.authHelp': 'Le renouvellement a été refusé. Ajoutez une nouvelle connexion dans la gestion des comptes.',
 'usage.prepaidBalance': 'Solde prépayé {balance}',
 'update.title': 'Mise à jour disponible',
 'update.available': 'Mise à jour v{version}',

@@ -24,7 +24,7 @@ export interface CliCommandConfig {
   readonlyArgs?: string[];
   /** 查詢帳號額度的子命令（Codex：app-server）；直接使用 API 的 adapter 不需要子命令。 */
   quotaArgs: string[];
-  /** 已存憑證的存取權杖過期時，在帳號租用環境中執行、讓 CLI 自行換發權杖的唯讀子命令；空陣列表示不換發。 */
+  /** Grok 的原生唯讀換發命令；[] 停用。Claude 由核心自動換發，Codex／Gemini 由原生查詢換發，不使用此欄位。 */
   authRefreshArgs: string[];
   /** 新增帳號時在獨立設定資料夾內執行的 OAuth 登入子命令（由 CLI 自行開啟瀏覽器）。 */
   loginArgs: string[];
@@ -86,7 +86,7 @@ export const DEFAULT_CONFIG: Config = {
       approvalArgs: ['--input-format', 'stream-json', '--permission-prompt-tool', 'stdio'],
       readonlyArgs: ['--restricted', '--safe-mode', '--tools', 'Read,Glob,Grep', '--allowedTools', 'Read,Glob,Grep', '--permission-mode', 'dontAsk', '--permission-prompts', 'none', '--strict-mcp-config', '--disable-slash-commands', '--no-session-persistence', '-p', '--output-format', 'stream-json', '--verbose', '--include-partial-messages'],
       quotaArgs: [],
-      authRefreshArgs: ['-p', '/usage', '--output-format', 'json'],
+      authRefreshArgs: [],
       loginArgs: ['auth', 'login'],
       commandsArgs: [],
       slashArgs: [],

@@ -1,5 +1,5 @@
 // 帳戶額度與即時輸出速度只存記憶體；不同 CLI 設定目錄的查詢與回合事件各自隔離。
-import { QuotaRateLimited, type CliEvent, type CliProvider } from '../cli/provider.ts';
+import { QuotaAuthenticationRequired, QuotaRateLimited, type CliEvent, type CliProvider } from '../cli/provider.ts';
 import { log } from '../shared/log.ts';
 import type { AiUsage, Settings, UsageState } from '../shared/types.ts';
 
@@ -152,6 +152,7 @@ export class UsageBoard {
       }
       const query = (async () => {
         let fresh = false;
+        let status: AiUsage['status'] = 'unavailable';
         try {
           const quota = await provider.quota!(configDir);
           this.retryAt.delete(key);
@@ -163,6 +164,7 @@ export class UsageBoard {
             const quotaAt = this.items.get(key)?.quotaAt;
             fresh = !!quotaAt && this.now() - Date.parse(quotaAt) < THROTTLED_FRESH_MS;
           } else {
+            if (error instanceof QuotaAuthenticationRequired) status = 'auth_required';
             // 憑證錯誤與遠端回應可能含敏感資料，不記錄例外內容。
             log.warn('查詢帳戶額度失敗', { ai, account: id });
           }
@@ -170,8 +172,8 @@ export class UsageBoard {
         // 限流不代表額度未知：近期讀數照常顯示，等 Retry-After 後再查。
         if (fresh || this.closed || !this.targets?.has(key)) return;
         const previous = this.items.get(key);
-        this.items.set(key, previous ? { ...previous, status: 'unavailable' }
-          : { ai, account: id, status: 'unavailable', windows: [], limited: false, quotaAt: null });
+        this.items.set(key, previous ? { ...previous, status }
+          : { ai, account: id, status, windows: [], limited: false, quotaAt: null });
         this.onChange(this.snapshot());
       })().finally(() => { this.queries.delete(key); });
       this.queries.set(key, query);

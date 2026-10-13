@@ -142,6 +142,11 @@ export function claudeClientVersion(command: string, env: NodeJS.ProcessEnv): Pr
   return pending;
 }
 
+/** Only a rejected usage access token warrants refreshing and retrying the quota request. */
+export class ClaudeQuotaAuthInvalid extends Error {
+  constructor() { super('claude quota authentication invalid (401)'); this.name = 'ClaudeQuotaAuthInvalid'; }
+}
+
 /** 向 Anthropic 查帳號目前的 5 小時／7 天用量與重置券；憑證只用於這個請求，不寫日誌。 */
 export async function fetchClaudeQuota(env: NodeJS.ProcessEnv, timeoutMs = 15_000, url = OAUTH_USAGE_URL, readToken = readClaudeToken, clientVersion?: string): Promise<{ type: 'quota'; windows: QuotaWindow[]; limited: boolean; at: string; resetCredits?: ResetCredits; extraUsage?: ExtraUsage; cloudCredits?: CloudCredits } | null> {
   const token = await readToken(env);
@@ -152,6 +157,7 @@ export async function fetchClaudeQuota(env: NodeJS.ProcessEnv, timeoutMs = 15_00
   });
   // The endpoint is shared with the CLI's own usage polling and throttles hard (429 with Retry-After of minutes).
   if (res.status === 429) throw new QuotaRateLimited(retryAfterAt(res.headers.get('retry-after'), Date.now()));
+  if (res.status === 401) throw new ClaudeQuotaAuthInvalid();
   if (!res.ok) throw new Error(`usage endpoint ${res.status}`);
   const body: unknown = await res.json();
   const quota = claudeOauthQuota(body);

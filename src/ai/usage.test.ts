@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
-import { QuotaRateLimited, type CliEvent, type CliProvider } from '../cli/provider.ts';
+import { QuotaAuthenticationRequired, QuotaRateLimited, type CliEvent, type CliProvider } from '../cli/provider.ts';
 import type { UsageState } from '../shared/types.ts';
 import { UsageBoard } from './usage.ts';
 import { createClaudeParser } from '../cli/claude.ts';
@@ -338,5 +338,28 @@ test('a throttled account keeps its recent reading, is not re-queried before Ret
     await empty.load(providers);
     assert.deepEqual(empty.snapshot().ais.map(item => item.status), ['unavailable']);
     empty.close();
+  } finally { board.close(); }
+});
+
+test('rejected login is distinct from transient failure, preserves old readings, and clears on recovery', async () => {
+  const board = new UsageBoard(() => {});
+  let error: Error | undefined;
+  const provider: CliProvider = {
+    name: 'claude', dangerous: false, available: async () => true, send: () => { throw new Error('unused'); },
+    quota: async () => { if (error) throw error; return quota('2026-10-13T10:00:00Z', 30); },
+  };
+  try {
+    await board.load({ claude: provider });
+    error = new QuotaAuthenticationRequired();
+    await board.load({ claude: provider });
+    assert.equal(board.snapshot().ais[0]?.status, 'auth_required');
+    assert.equal(board.snapshot().ais[0]?.windows[0]?.usedPercent, 30);
+    assert.equal(board.snapshot().ais[0]?.quotaAt, '2026-10-13T10:00:00Z');
+    error = new Error('temporary network failure');
+    await board.load({ claude: provider });
+    assert.equal(board.snapshot().ais[0]?.status, 'unavailable');
+    error = undefined;
+    await board.load({ claude: provider });
+    assert.equal(board.snapshot().ais[0]?.status, 'ready');
   } finally { board.close(); }
 });

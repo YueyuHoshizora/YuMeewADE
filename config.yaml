@@ -31,7 +31,7 @@ cli:
     # Review is independent of fullAccess. Verified restricted tool allowlist only; not an OS sandbox.
     # Empty/modified unverified profiles disable review rather than weaken it.
     readonlyArgs: [--restricted, --safe-mode, --tools, 'Read,Glob,Grep', --allowedTools, 'Read,Glob,Grep', --permission-mode, dontAsk, --permission-prompts, none, --strict-mcp-config, --disable-slash-commands, --no-session-persistence, -p, --output-format, stream-json, --verbose, --include-partial-messages]
-    authRefreshArgs: [-p, /usage, --output-format, json]  # 存取權杖過期時讓 CLI 換發（唯讀，不啟動模型回合）
+    authRefreshArgs: []  # Claude 由核心自動更新 OAuth；不再透過 CLI /usage 觸發
     loginArgs: [auth, login]                          # 新增帳號時的 OAuth 登入子命令
     mcpListArgs: [mcp, list]
     mcpAddArgs: [mcp, add, --scope, user]

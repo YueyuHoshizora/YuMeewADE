@@ -12,6 +12,8 @@ export const en: Record<MessageKey, string> = {
 'usage.accountHelp': 'Adding an account runs the CLI’s own OAuth sign-in (opens the browser) in an isolated folder managed by the App; the CLI’s default login is never read. Credentials are imported into the App’s local SQLite database with OS-backed encryption; quota queries and chats use them.',
 'usage.accountNotice': 'The footer shows only each AI’s active account. Switching affects future instructions only, never running tasks. Supported quotas are queried every minute by default (adjust with limits.usagePollSeconds), with alerts when exhausted or recovered. Failed queries retain the last data; this is not live quota.',
 'usage.refresh': 'Refresh quota now', 'usage.ready': 'Query succeeded', 'usage.unavailable': 'Query unavailable', 'usage.noData': 'No quota data yet; refresh manually or wait for the next update',
+'usage.authRequired': 'Sign-in required',
+'usage.authHelp': 'Credential renewal was rejected. Add a new login in account management.',
 'usage.prepaidBalance': 'Prepaid balance {balance}',
 'update.title': 'Update available',
 'update.available': 'Update v{version}',

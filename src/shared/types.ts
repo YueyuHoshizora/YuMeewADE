@@ -304,7 +304,7 @@ export interface AiUsage {
   /** default 代表 CLI 目前的預設設定目錄。 */
   account: string;
   /** 查詢失敗仍保留上次數值，但不能當成目前可用額度。 */
-  status: 'ready' | 'unavailable';
+  status: 'ready' | 'unavailable' | 'auth_required';
   windows: QuotaWindow[];
   /** CLI 回報目前已達上限。 */
   limited: boolean;

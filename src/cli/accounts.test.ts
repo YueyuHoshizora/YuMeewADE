@@ -8,6 +8,7 @@ import { DEFAULT_CONFIG } from '../shared/config.ts';
 import { CredentialAccounts } from './accounts.ts';
 import { createProviders } from './providers.ts';
 import { App } from '../server/app.ts';
+import { QuotaAuthenticationRequired } from './provider.ts';
 
 const codexRecord = (name: string) => JSON.stringify({ tokens: { access_token: `${name}-access`, refresh_token: `${name}-refresh`, id_token: `${name}-id`, account_id: name }, last_refresh: '2026-10-01T00:00:00Z', extension: { preserved: true } });
 const grokRecord = (name: string) => JSON.stringify({ 'https://auth.x.ai::b1a00492-073a-47ea-816f-4c329264a828': { key: `${name}-token`, auth_mode: 'oidc', user_id: name, create_time: '2026-10-01T00:00:00Z', expires_at: '2099-01-01T00:00:00Z', oidc_issuer: 'https://auth.x.ai', refresh_token: `${name}-refresh`, extension: { preserved: true } } });
@@ -410,37 +411,30 @@ test('quota consumes vault data directly after original changes and missing cred
   } finally { await f.cleanup(); }
 });
 
-for (const ai of ['claude', 'grok'] as const) test(`${ai} quota renews expired credentials, persists renewal and fails closed on refresh errors`, async t => {
+test('Grok quota renews expired credentials through its configured native command', async t => {
   const f = await fixture();
   try {
-    const credential = (token: string, expires: string) => ai === 'claude'
-      ? JSON.stringify({ claudeAiOauth: { accessToken: `${token}-token`, refreshToken: 'fixture-refresh', expiresAt: Date.parse(expires) } })
-      : grokRecord(token).replace('2099-01-01T00:00:00Z', expires);
-    const expired = credential('stale', '2020-01-01T00:00:00Z');
-    const renewed = credential('renewed', '2099-01-01T00:00:00Z');
-    const source = await f.source(ai, path.join(f.root, `.${ai}`), expired);
-    await f.accounts.import(ai);
+    const expired = grokRecord('stale').replace('2099-01-01T00:00:00Z', '2020-01-01T00:00:00Z');
+    const renewed = grokRecord('renewed');
+    const source = await f.source('grok', path.join(f.root, '.grok'), expired);
+    await f.accounts.import('grok');
     const cli = path.join(f.root, 'renew.ts');
-    const authPath = ai === 'claude' ? "path.join(process.env.CLAUDE_CONFIG_DIR!, '.credentials.json')" : 'process.env.GROK_AUTH_PATH!';
-    await fs.writeFile(cli, `import fs from 'node:fs'; import path from 'node:path'; fs.writeFileSync(${authPath}, ${JSON.stringify(renewed)});`);
+    await fs.writeFile(cli, `import fs from 'node:fs'; fs.writeFileSync(process.env.GROK_AUTH_PATH!, ${JSON.stringify(renewed)});`);
     const tokens: string[] = [];
     t.mock.method(globalThis, 'fetch', async (_url: unknown, init: RequestInit) => {
       tokens.push((init.headers as Record<string, string>)['Authorization']!);
-      return Response.json(ai === 'claude' ? { five_hour: { utilization: 30, resets_at: '2099-01-01T00:00:00Z' } } : { config: { creditUsagePercent: 30 } });
+      return Response.json({ config: { creditUsagePercent: 30 } });
     });
-    const provider = f.accounts.provider(ai, { ...DEFAULT_CONFIG.cli[ai], command: process.execPath, authRefreshArgs: [cli] });
+    const provider = f.accounts.provider('grok', { ...DEFAULT_CONFIG.cli.grok, command: process.execPath, authRefreshArgs: [cli] });
     assert.equal((await provider.quota!())?.windows[0]?.usedPercent, 30);
-    // A persisted renewal remains usable even when the refresh command later fails.
     await fs.writeFile(cli, 'process.exit(3);');
     assert.equal((await provider.quota!())?.windows[0]?.usedPercent, 30);
     assert.deepEqual(tokens, ['Bearer renewed-token', 'Bearer renewed-token']);
     assert.equal(await fs.readFile(source, 'utf8'), expired);
-    await f.accounts.import(ai, undefined, true);
+    await f.accounts.import('grok', undefined, true);
     await assert.rejects(provider.quota!(), { message: 'Account credentials unavailable.' });
-    assert.deepEqual(tokens, ['Bearer renewed-token', 'Bearer renewed-token']);
-    await f.accounts.withEnv(ai, undefined, async env => {
-      const file = ai === 'claude' ? path.join(env['CLAUDE_CONFIG_DIR']!, '.credentials.json') : env['GROK_AUTH_PATH']!;
-      assert.equal(await fs.readFile(file, 'utf8'), expired);
+    await f.accounts.withEnv('grok', undefined, async env => {
+      assert.equal(await fs.readFile(env['GROK_AUTH_PATH']!, 'utf8'), expired);
     });
   } finally { await f.cleanup(); }
 });
@@ -608,5 +602,159 @@ test('stop during blocked asynchronous preparation resolves promptly; close drai
     for (const directory of await fs.readdir(providerDirectory)) {
       await assert.rejects(fs.access(path.join(providerDirectory, directory, 'auth.json')));
     }
+  } finally { await f.cleanup(); }
+});
+
+test('Claude quota shares one renewal across selected/default aliases and persists the rotated record', async t => {
+  const f = await fixture();
+  try {
+    const home = path.join(f.root, 'selected');
+    const original = JSON.stringify({ extension: 'retained', claudeAiOauth: { accessToken: 'old', refreshToken: 'old-refresh', expiresAt: 1, scopes: ['user:profile'] } });
+    const source = await f.source('claude', home, original);
+    await f.accounts.import('claude', home);
+    await f.accounts.activate('claude', home);
+    let refreshes = 0;
+    let queries = 0;
+    t.mock.method(globalThis, 'fetch', async (url: string, init: RequestInit) => {
+      if (url.endsWith('/oauth/token')) {
+        refreshes++;
+        assert.equal(JSON.parse(String(init.body)).refresh_token, 'old-refresh');
+        return Response.json({ access_token: 'new', refresh_token: 'rotated', expires_in: 3600 });
+      }
+      queries++;
+      assert.equal((init.headers as Record<string, string>)['Authorization'], 'Bearer new');
+      return Response.json({ five_hour: { utilization: 27, resets_at: '2099-01-01T00:00:00Z' } });
+    });
+    const provider = f.accounts.provider('claude', { ...DEFAULT_CONFIG.cli.claude, command: process.execPath });
+    const quotas = await Promise.all([provider.quota!(), provider.quota!(home)]);
+    assert.deepEqual(quotas.map(quota => quota?.windows[0]?.usedPercent), [27, 27]);
+    assert.equal(refreshes, 1);
+    assert.equal(queries, 1);
+    await f.accounts.withEnv('claude', home, async env => {
+      const record = JSON.parse(await fs.readFile(path.join(env['CLAUDE_CONFIG_DIR']!, '.credentials.json'), 'utf8'));
+      assert.equal(record.extension, 'retained');
+      assert.equal(record.claudeAiOauth.refreshToken, 'rotated');
+      assert.equal(record.claudeAiOauth.accessToken, 'new');
+    });
+    assert.equal((await provider.quota!())?.windows[0]?.usedPercent, 27);
+    assert.equal(refreshes, 1);
+    assert.equal(await fs.readFile(source, 'utf8'), original);
+  } finally { await f.cleanup(); }
+});
+
+test('Claude quota refreshes a rejected token once, not on unrelated failures, and retains invalid-grant credentials', async t => {
+  const f = await fixture();
+  try {
+    const original = JSON.stringify({ claudeAiOauth: { accessToken: 'old', refreshToken: 'refresh', expiresAt: Date.now() + 3600_000 } });
+    await f.source('claude', path.join(f.root, '.claude'), original);
+    await f.accounts.import('claude');
+    let status = 401;
+    let refreshes = 0;
+    let queries = 0;
+    let invalid = false;
+    t.mock.method(globalThis, 'fetch', async (url: string) => {
+      if (url.endsWith('/oauth/token')) {
+        refreshes++;
+        return invalid ? Response.json({ error: 'invalid_grant' }, { status: 400 })
+          : Response.json({ access_token: 'new', refresh_token: 'rotated', expires_in: 3600 });
+      }
+      queries++;
+      return Response.json({}, { status });
+    });
+    const provider = f.accounts.provider('claude', { ...DEFAULT_CONFIG.cli.claude, command: process.execPath });
+    await assert.rejects(provider.quota!(), QuotaAuthenticationRequired);
+    assert.equal(refreshes, 1);
+    assert.equal(queries, 2);
+    status = 403;
+    await assert.rejects(provider.quota!(), /Account credentials unavailable/);
+    assert.equal(refreshes, 1);
+    status = 401;
+    invalid = true;
+    await assert.rejects(provider.quota!(), QuotaAuthenticationRequired);
+    assert.equal(refreshes, 2);
+    await assert.rejects(provider.quota!(), QuotaAuthenticationRequired);
+    assert.equal(refreshes, 2, 'a rejected refresh token is not submitted again');
+    await f.accounts.withEnv('claude', undefined, async env => {
+      const record = JSON.parse(await fs.readFile(path.join(env['CLAUDE_CONFIG_DIR']!, '.credentials.json'), 'utf8'));
+      assert.equal(record.claudeAiOauth.accessToken, 'new');
+      assert.equal(record.claudeAiOauth.refreshToken, 'rotated');
+    });
+    await f.source('claude', path.join(f.root, '.claude'), JSON.stringify({ claudeAiOauth: { accessToken: 'login', refreshToken: 'new-login-refresh', expiresAt: 1 } }));
+    await f.accounts.import('claude', undefined, true);
+    invalid = false;
+    await assert.rejects(provider.quota!(), QuotaAuthenticationRequired);
+    assert.equal(refreshes, 4, 'new login credentials may refresh again, with at most one usage retry');
+  } finally { await f.cleanup(); }
+});
+
+test('linked native leases share refresh writes and prevent switching an account still in use', async () => {
+  const f = await fixture();
+  try {
+    const home = path.join(f.root, 'selected');
+    await f.source('codex', home, codexRecord('old'));
+    await f.accounts.import('codex', home);
+    await f.accounts.activate('codex', home);
+    await f.accounts.withEnv('codex', home, async selected => {
+      await f.accounts.withEnv('codex', undefined, async slot => {
+        assert.equal(slot['CODEX_HOME'], selected['CODEX_HOME']);
+        await fs.writeFile(path.join(slot['CODEX_HOME']!, 'auth.json'), codexRecord('rotated'));
+      });
+      assert.equal(await fs.readFile(path.join(selected['CODEX_HOME']!, 'auth.json'), 'utf8'), codexRecord('rotated'));
+      await assert.rejects(f.accounts.activate('codex', home), /Account credentials unavailable/);
+    });
+    await f.accounts.withEnv('codex', undefined, async env => {
+      assert.equal(await fs.readFile(path.join(env['CODEX_HOME']!, 'auth.json'), 'utf8'), codexRecord('rotated'));
+    });
+  } finally { await f.cleanup(); }
+});
+
+test('Gemini concurrent alias queries perform one native renewal and reuse its persisted token', async () => {
+  const f = await fixture();
+  try {
+    const home = path.join(f.root, 'selected');
+    await fs.mkdir(path.dirname(geminiToken(home)), { recursive: true });
+    const original = geminiRecord('expired').replace('2030-01-01T00:00:00Z', '2020-01-01T00:00:00Z');
+    await fs.writeFile(geminiToken(home), original);
+    await f.accounts.import('gemini', home);
+    await f.accounts.activate('gemini', home);
+    const marker = path.join(f.root, 'refresh-used');
+    const cli = path.join(f.root, 'gemini-quota.ts');
+    await fs.writeFile(cli, `import fs from 'node:fs'; import path from 'node:path';
+const file = path.join(process.env.HOME!, '.gemini', 'antigravity-cli', 'antigravity-oauth-token');
+const record = JSON.parse(fs.readFileSync(file, 'utf8'));
+if (record.token.access_token === 'expired') {
+  fs.writeFileSync(${JSON.stringify(marker)}, 'rotated', { flag: 'wx' });
+  record.token.access_token = 'fresh'; record.token.refresh_token = 'rotated';
+  record.token.expiry = '2099-01-01T00:00:00Z';
+  fs.writeFileSync(file, JSON.stringify(record));
+}
+if (record.token.access_token !== 'fresh' || process.env.SSH_TTY !== 'yumeewade-cli') process.exit(3);
+console.log(JSON.stringify({status:'SUCCESS',command:{name:'usage',data:{groups:[{name:'Gemini',buckets:[{name:'Weekly',remaining_fraction:0.75,reset_time:'2099-01-01T00:00:00Z'}]}]}}}));
+`);
+    const provider = f.accounts.provider('gemini', { ...DEFAULT_CONFIG.cli.gemini, command: process.execPath, quotaArgs: [cli] });
+    const quotas = await Promise.all([provider.quota!(), provider.quota!(home)]);
+    assert.deepEqual(quotas.map(quota => quota?.windows[0]?.usedPercent), [25, 25]);
+    assert.equal((await provider.quota!(home))?.windows[0]?.usedPercent, 25);
+    await f.accounts.withEnv('gemini', undefined, async env => {
+      const record = JSON.parse(await fs.readFile(geminiToken(env['HOME']!), 'utf8'));
+      assert.equal(record.token.refresh_token, 'rotated');
+    });
+    assert.equal(await fs.readFile(geminiToken(home), 'utf8'), original);
+  } finally { await f.cleanup(); }
+});
+
+test('Claude quota never rotates credentials concurrently with a native consumer', async t => {
+  const f = await fixture();
+  try {
+    await f.source('claude', path.join(f.root, '.claude'), JSON.stringify({ claudeAiOauth: { accessToken: 'old', refreshToken: 'old-refresh', expiresAt: 1 } }));
+    await f.accounts.import('claude');
+    t.mock.method(globalThis, 'fetch', async () => assert.fail('must not race native refresh'));
+    const provider = f.accounts.provider('claude', { ...DEFAULT_CONFIG.cli.claude, command: process.execPath });
+    await f.accounts.withEnv('claude', undefined, async env => {
+      await assert.rejects(provider.quota!(), /Account credentials unavailable/);
+      const file = path.join(env['CLAUDE_CONFIG_DIR']!, '.credentials.json');
+      const record = JSON.parse(await fs.readFile(file, 'utf8'));
+      assert.equal(record.claudeAiOauth.refreshToken, 'old-refresh');
+    });
   } finally { await f.cleanup(); }
 });

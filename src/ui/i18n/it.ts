@@ -12,6 +12,8 @@ export const it: Record<MessageKey, string> = {
 'usage.accountHelp': 'Aggiungere un account avvia l’accesso OAuth della CLI (apre il browser) in una cartella isolata gestita dall’App; l’accesso predefinito della CLI non viene mai letto. Le credenziali sono importate nel database SQLite locale dell’App e cifrate tramite l’archiviazione sicura del sistema; quote e conversazioni le usano.',
 'usage.accountNotice': 'Il piè di pagina mostra solo l’account attivo di ogni IA. Il cambio riguarda solo le istruzioni future, mai le attività in corso. Le quote supportate vengono interrogate ogni minuto per impostazione predefinita (regolabile con limits.usagePollSeconds), con avvisi quando si esauriscono o si ripristinano. Le richieste fallite conservano gli ultimi dati; non è una quota in tempo reale.',
 'usage.refresh': 'Aggiorna quota ora', 'usage.ready': 'Richiesta riuscita', 'usage.unavailable': 'Richiesta non disponibile', 'usage.noData': 'Nessun dato sulla quota; aggiorna manualmente o attendi il prossimo aggiornamento',
+'usage.authRequired': 'Accedi di nuovo',
+'usage.authHelp': 'Il rinnovo è stato rifiutato. Aggiungi un nuovo accesso nella gestione degli account.',
 'usage.prepaidBalance': 'Saldo prepagato {balance}',
 'update.title': 'Aggiornamento disponibile',
 'update.available': 'Aggiornamento v{version}',
