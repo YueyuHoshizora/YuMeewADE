@@ -5,7 +5,8 @@ import { t } from '../i18n/index.ts';
 import { area, button, el, field, input, row, run, setLocked, showError } from './dom.ts';
 
 export function embeddedPreviewWorkbench(context: WorkbenchPanelContext): HTMLElement {
-  const root = el('section', 'embedded-preview-panel');
+  // Collapsed below the editor until needed; it opens by itself when a preview is already running for this scope.
+  const root = el('details', 'disclosure embedded-preview-panel');
   const command = input('node');
   const args = area('["server.mjs","--host","{host}","--port","{port}"]');
   const status = el('p');
@@ -63,8 +64,8 @@ export function embeddedPreviewWorkbench(context: WorkbenchPanelContext): HTMLEl
     })(); }, 700);
   }
   window.addEventListener('yumeewade:workspace-changed', () => { stopped = true; if (timer !== undefined) window.clearTimeout(timer); frame.removeAttribute('src'); }, { once: true });
-  root.append(el('h3', '', t('preview.title')), el('p', 'warning', t('preview.security')), field(t('preview.command'), command), field(t('preview.args'), args), row(start, stop, reload, external), status, field(t('preview.url'), url), frame, output);
+  root.append(el('summary', '', t('preview.title')), el('p', 'warning', t('preview.security')), field(t('preview.command'), command), field(t('preview.args'), args), row(start, stop, reload, external), status, field(t('preview.url'), url), frame, output);
   render();
-  void run(async () => { const views = await request<EmbeddedPreviewState[]>(query('/api/embedded-preview/list', scope)); if (stopped) return; current = views.find(view => ['starting', 'running'].includes(view.state)) ?? views.at(-1); render(); poll(); });
+  void run(async () => { const views = await request<EmbeddedPreviewState[]>(query('/api/embedded-preview/list', scope)); if (stopped) return; current = views.find(view => ['starting', 'running'].includes(view.state)) ?? views.at(-1); if (current?.state === 'starting' || current?.state === 'running') root.open = true; render(); poll(); });
   return root;
 }

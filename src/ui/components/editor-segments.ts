@@ -7,7 +7,7 @@ type Segment = EditorSegment & { path: string };
 export function encodingPicker(): HTMLSelectElement { const picker = el('select'); picker.setAttribute('aria-label', t('editorFront.encoding')); for (const value of ['UTF8', 'UTF8-BOM', 'UTF16LE', 'UTF16BE']) { const option = el('option', '', value); option.value = value; picker.append(option); } return picker; }
 export function segmentPanel(context: WorkbenchPanelContext): HTMLElement {
   const ids = { project: context.project, ...(context.task ? { task: context.task } : {}) };
-  const node = el('details'); node.append(el('summary', '', t('editorFront.segment')));
+  const node = el('details', 'disclosure'); node.append(el('summary', '', t('editorFront.segment')));
   const path = input('', t('ew.path')); const offset = input('0', t('editorFront.offset')); offset.type = 'number'; offset.min = '0'; offset.step = '1';
   const length = input('65536', t('editorFront.length')); length.type = 'number'; length.min = '4'; length.max = '262144'; length.step = '1';
   const text = area(''); text.setAttribute('aria-label', t('editor.content')); text.readOnly = true;

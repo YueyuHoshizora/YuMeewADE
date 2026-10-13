@@ -7,7 +7,8 @@ import { el, button, area, confirmModal, errorMessage, input, setLocked, UserErr
 import { confirmUsageRound } from './usage-history.ts';
 export function mountEditorProposals(context: WorkbenchPanelContext): HTMLElement {
   const { project, task, editor } = context;
-  const node = el('section'); const instruction = area('', t('proposal.instruction'));
+  // Collapsed below the editor; existing proposals open it so pending edits are never tucked away.
+  const node = el('details', 'disclosure'); const instruction = area('', t('proposal.instruction'));
   const provider = el('select'); provider.setAttribute('aria-label', t('ai.label')); const model = input('', t('proposal.model'));
   const effort = input('', t('proposal.effort'));
   const files = el('fieldset'); const results = el('div'); const status = el('p'); status.setAttribute('role', 'status');
@@ -107,12 +108,13 @@ export function mountEditorProposals(context: WorkbenchPanelContext): HTMLElemen
     finally { busy = false; setLocked(generate, !provider.options.length); }
   });
   setLocked(generate, true); refreshFiles();
-  node.append(el('h3', '', t('proposal.title')), el('p', '', t('proposal.note')), files, button(t('proposalMulti.refresh'), refreshFiles, 'subtle'), provider, model, effort, instruction, generate, button(t('proposal.stop'), async () => { await request('/api/editor/proposals/stop', { project, task }); }, 'subtle'), status, results);
+  node.append(el('summary', '', t('proposal.title')), el('p', '', t('proposal.note')), files, button(t('proposalMulti.refresh'), refreshFiles, 'subtle'), provider, model, effort, instruction, generate, button(t('proposal.stop'), async () => { await request('/api/editor/proposals/stop', { project, task }); }, 'subtle'), status, results);
   void request<{ providers: ProviderCapability[] }>('/api/ai/capabilities').then(({ providers }) => {
     for (const capability of providers.filter(p => p.readonly && p.ai !== 'mock')) { const option = el('option'); option.value = capability.ai; option.textContent = `${capability.ai} · ${capability.enforcement}`; provider.append(option); }
     setLocked(generate, !provider.options.length); if (!provider.options.length) status.textContent = t('cap.no');
   }).catch(() => { status.textContent = t('cap.no'); });
   void request<{ proposals: EditorProposal[] }>(query('/api/editor/proposals', { project, task })).then(({ proposals }) => {
+    if (proposals.length) node.open = true;
     for (const proposal of proposals.reverse()) { results.append(render(proposal)); announce(proposal); }
   }).catch(error => { status.textContent = errorMessage(error); });
   return node;

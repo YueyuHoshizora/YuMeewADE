@@ -657,3 +657,11 @@ body.terminal-dock-open { grid-template-rows: 64px minmax(0, 1fr) var(--terminal
 /* The task title grows with its text and wraps; the header buttons move below a long title instead of clipping it. */
 textarea.title-input { field-sizing: content; width: auto; flex: 1 1 auto; min-width: min(220px, 100%); min-height: 0; resize: none; overflow: hidden; line-height: 1.35; overflow-wrap: anywhere; }
 .search-page input[type="search"] { width: 100%; max-width: 640px; }
+.editor-layout-tools { margin: 0; padding: 4px 10px; }
+.editor-layout-tools[open] > .row { margin-top: 6px; }
+/* Extension panels sit side by side while collapsed; an opened one takes the whole row. */
+.editor-extension-panels > details { margin: 8px 0 0; }
+.editor-extension-panels > details[open] { flex-basis: 100%; }
+/* Tabs size to their name, so they line up as a strip and each ⋯ menu opens beside its own tab. */
+.editor-tab { position: relative; display: inline-flex; gap: 2px; flex-wrap: nowrap; margin: 0 6px 4px 0; vertical-align: top; }
+.editor-tab > button.subtle { padding: 2px 7px; }

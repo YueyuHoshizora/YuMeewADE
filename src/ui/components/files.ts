@@ -3,7 +3,7 @@ import { query, request } from '../api.ts';
 import { isolateHistory } from '@codemirror/commands';
 import { completionChanges } from './editor-completion.ts';
 import { t } from '../i18n/index.ts';
-import { el, input, area, button, row, confirmModal, errorMessage, readLocal, run, storeLocal, toast, UserError } from './dom.ts';
+import { el, input, area, button, row, confirmModal, disclosure, errorMessage, iconButton, readLocal, run, storeLocal, toast, UserError } from './dom.ts';
 import { EditorContent } from './editor-engine.ts';
 import { FilePreview, isImage } from './file-preview.ts';
 import { selectionMention } from './editor-mention.ts';
@@ -289,11 +289,17 @@ export function openFileBrowser(project: string, task: string, workspace = activ
   function refreshTabs(): void {
     for (const [index, view] of views.entries()) view.tabs.replaceChildren(...paneTabs[index]!.filter(tab => buffers.has(tab.path)).map(tab => {
       const buffer = buffers.get(tab.path)!;
-      return row(button(`${tab.pinned ? '● ' : ''}${tab.preview ? '◇ ' : ''}${tab.path}${dirty(buffer) ? ' *' : ''}`, () => activate(tab.path, index)),
+      // Each open tab keeps its name and close button in view; pinning and bulk close live behind ⋯, like the project tree.
+      const more = disclosure('⋯',
         button(t(tab.pinned ? 'editorFront.unpin' : 'editorFront.pin'), () => { if (editReserved) return; tab.pinned = !tab.pinned; tab.preview = false; persist(); refreshTabs(); }),
-        button(t('common.close'), () => closeTabs(index, [tab.path])),
         button(t('editorFront.closeOthers'), () => closeTabs(index, paneTabs[index]!.filter(other => other.path !== tab.path && !other.pinned).map(other => other.path))),
         button(t('editorFront.closeRight'), () => closeTabs(index, paneTabs[index]!.slice(paneTabs[index]!.indexOf(tab) + 1).filter(other => !other.pinned).map(other => other.path))));
+      more.className = 'context-menu'; more.querySelector('summary')!.setAttribute('aria-label', t('common.actions'));
+      for (const item of more.querySelectorAll('button')) item.addEventListener('click', () => { more.open = false; });
+      const line = row(button(`${tab.pinned ? '● ' : ''}${tab.preview ? '◇ ' : ''}${tab.path}${dirty(buffer) ? ' *' : ''}`, () => activate(tab.path, index)),
+        iconButton('×', `${t('common.close')} ${tab.path}`, () => closeTabs(index, [tab.path]), 'subtle'), more);
+      line.classList.add('editor-tab');
+      return line;
     }));
     if (splitLabel) splitLabel.hidden = views.length !== 2;
   }
@@ -806,8 +812,10 @@ export function openFileBrowser(project: string, task: string, workspace = activ
     if (views.length === 2) splitResize.value = views[0]!.node.style.flex || '50';
     try { if (storageBase) localStorage.setItem(`${storageBase}:layout`, JSON.stringify(layout)); } catch { output.append(el('p', 'warning', t('ew.recoveryLimit'))); }
   }
-  dialog.append(row(el('h2', '', t('files.title')), dock, resizeLabel), actions, filter);
-  dialog.prepend(row(treeLabel, splitLabel));
+  // Dock side and pane sizes are set once and rarely touched; keep them in one disclosure instead of a slider row above the tree.
+  const layoutTools = disclosure(t('ew.layout'), row(dock, resizeLabel, treeLabel, splitLabel));
+  layoutTools.classList.add('editor-layout-tools');
+  dialog.append(row(el('h2', '', t('files.title')), layoutTools), actions, filter);
   dialog.append(conflictHost);
   const body = el('div', 'editor-workbench-body'); body.append(results, panes); dialog.append(body, output, panelHost);
   (workbenchMount ?? document.body).append(dialog);

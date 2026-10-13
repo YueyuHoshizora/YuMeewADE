@@ -112,7 +112,8 @@ export function embeddedDebugger(project: string, task: string, open?: (path: st
 
 export function debuggerWorkbench(context: { project: string; task: string; open: (path: string, line: number) => void }): HTMLElement {
   const panel = embeddedDebugger(context.project, context.task, context.open);
-  const runs = el('select'); const node = el('section');
+  // Collapsed below the editor until the reader opens it; a launch or attach happens from inside, so it is open by then.
+  const runs = el('select'); const node = el('details', 'disclosure');
   const attach = button(t('debug.attach'), async () => { if (runs.value) await panel.attach(runs.value); });
   async function refresh(): Promise<void> {
     const list = await request<ExecutionRun[]>(query('/api/execution/list', { project: context.project, task: context.task }));
@@ -147,7 +148,7 @@ export function debuggerWorkbench(context: { project: string; task: string; open
     return { adapter: json<string[]>(adapter, value => strings(value) && (value as string[]).length > 0, t('execution.argsInvalid')), type: type.value, program: program.value, args: json<string[]>(args, strings, t('execution.argsInvalid')), breakpoints: json<NonNullable<DapLaunch['breakpoints']>>(launchBreakpoints, points, t('dap.breakpointsInvalid')), stopOnEntry: stop.checked };
   }
   refreshConfigurations();
-  node.append(el('h3', '', t('dap.title')), el('p', '', t('dap.install')), field(t('dap.type'), type), field(t('dap.adapter'), adapter), el('p', '', t('dap.examples')), field(t('dap.program'), program), field(t('dap.args'), args), field(t('dap.initialBreakpoints'), launchBreakpoints), field(t('dap.stopOnEntry'), stop), field(t('dap.name'), name), save, field(t('dap.saved'), saved), choose, remove, button(t('dap.launch'), () => panel.launch(configuration())));
+  node.append(el('summary', '', t('dap.title')), el('p', '', t('dap.install')), field(t('dap.type'), type), field(t('dap.adapter'), adapter), el('p', '', t('dap.examples')), field(t('dap.program'), program), field(t('dap.args'), args), field(t('dap.initialBreakpoints'), launchBreakpoints), field(t('dap.stopOnEntry'), stop), field(t('dap.name'), name), save, field(t('dap.saved'), saved), choose, remove, button(t('dap.launch'), () => panel.launch(configuration())));
   node.append(field(t('debug.run'), runs), button(t('debug.refresh'), refresh), attach, panel.node);
   const observer = new MutationObserver(() => { if (!node.isConnected) { observer.disconnect(); panel.dispose(); } });
   queueMicrotask(() => { if (node.isConnected) observer.observe(document.body, { childList: true, subtree: true }); });
