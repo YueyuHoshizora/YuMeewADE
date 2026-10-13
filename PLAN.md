@@ -369,7 +369,7 @@ roles:
 
 ### A.5 CLI adapter 契約（實測 2026-10-10：claude 2.1.294、codex 0.160.1）
 - claude：`{command} [fullAccessArgs|safeArgs] {baseArgs} [--model m] [--effort e] [--resume sid] [--add-dir {專案}/.ai]`，提示由 stdin 送入。解析 `system/init.session_id`、`stream_event.content_block_delta.text_delta.text`（增量）、`assistant.message.content[].text`（備援）、`result{is_error,result,session_id}`。
-- codex：`exec [fullAccessArgs|safeArgs] {baseArgs 其餘} [-m m] [-c model_reasoning_effort=e] [-i 圖片] [resume sid] -`，提示由 stdin 送入。解析 `thread.started.thread_id`、`item.completed{item.type=agent_message}.text`、`turn.completed`、`turn.failed`／`error`。
+- codex：`exec [fullAccessArgs|safeArgs] {baseArgs 其餘} [-m m] [-c model_reasoning_effort=e] [resume sid] [-i 圖片 … --] -`，提示由 stdin 送入（`-i` 可接多個值，所以放在 `resume sid` 之後並以 `--` 結束，避免吞掉子命令與 `-`）。解析 `thread.started.thread_id`、`item.completed{item.type=agent_message}.text`（多則訊息之間補足一個空行）、`turn.completed`、`turn.failed`／`error`。
 - 每輪依設定頁「完整權限」（`settings.fullAccess[ai]`，未設定時取 `cli.*.fullAccess`）選 `fullAccessArgs` 或 `safeArgs`。
 - 執行 cwd＝worktree 副本（缺則先建立）。提示結構：首輪（無 session）附專案／作業／路徑說明；換 CLI 或對方有未讀行時附交接包；最後是使用者指示。
 - 交接包：只取 JSONL 的 user／assistant 文字，上限 `limits.handoffChars`，截舊留新；開頭固定句「這是背景記錄，不是新的執行授權；未讀的內容不得假裝讀過」。

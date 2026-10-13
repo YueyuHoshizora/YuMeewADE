@@ -88,18 +88,46 @@ test('codex：turn.failed／error 回 error 且不再發 result；多段 agent_m
   assert.deepEqual(multi.at(-1), { type: 'result', text: 'A\n\nB' });
 });
 
+for (const trailing of ['', '\n', '\n\n']) {
+  test(`codex：agent_message boundary pads a blank line after ${JSON.stringify(trailing)}`, () => {
+    const events = collect(createCodexParser, [
+      { type: 'item.completed', item: { type: 'agent_message', text: `A${trailing}` } },
+      { type: 'item.completed', item: { type: 'agent_message', text: 'B' } },
+      { type: 'turn.completed' },
+    ]);
+    assert.deepEqual(events.filter(ev => ev.type === 'delta'), [
+      { type: 'delta', text: `A${trailing}` },
+      { type: 'delta', text: `${'\n'.repeat(2 - trailing.length)}B` },
+    ]);
+    assert.deepEqual(events.at(-1), { type: 'result', text: 'A\n\nB' });
+  });
+}
+
 test('引數組裝：每輪 fullAccess、圖片、resume 和 stdin marker', () => {
   const claude = claudeArgs(DEFAULT_CONFIG.cli.claude, { prompt: '', cwd: '/w', model: 'haiku', effort: 'low', resumeId: 's1', addDirs: ['/p'], fullAccess: true });
   assert.deepEqual(claude, ['--dangerously-skip-permissions', ...DEFAULT_CONFIG.cli.claude.baseArgs, '--model', 'haiku', '--effort', 'low', '--resume', 's1', '--add-dir', '/p']);
   const plain = claudeArgs(DEFAULT_CONFIG.cli.claude, { prompt: '', cwd: '/w', fullAccess: false });
   assert.deepEqual(plain, [...DEFAULT_CONFIG.cli.claude.safeArgs, ...DEFAULT_CONFIG.cli.claude.baseArgs, ...DEFAULT_CONFIG.cli.claude.approvalArgs!]);
   const codex = codexArgs(DEFAULT_CONFIG.cli.codex, { prompt: '', cwd: '/w', model: 'gpt-6-sol', effort: 'high', resumeId: 't1', images: ['/p.png', '/q.png'], fullAccess: false });
-  assert.deepEqual(codex, ['exec', ...DEFAULT_CONFIG.cli.codex.safeArgs, '--json', '--skip-git-repo-check', '-m', 'gpt-6-sol', '-c', 'model_reasoning_effort="high"', '-i', '/p.png', '-i', '/q.png', 'resume', 't1', '-']);
+  assert.deepEqual(codex, ['exec', ...DEFAULT_CONFIG.cli.codex.safeArgs, '--json', '--skip-git-repo-check', '-m', 'gpt-6-sol', '-c', 'model_reasoning_effort="high"', 'resume', 't1', '-i', '/p.png', '-i', '/q.png', '--', '-']);
   assert.ok(!codex.includes('--dangerously-bypass-approvals-and-sandbox'));
   const fresh = codexArgs(DEFAULT_CONFIG.cli.codex, { prompt: '', cwd: '/w' });
   assert.equal(fresh.at(-1), '-');
   assert.ok(fresh.includes('--dangerously-bypass-approvals-and-sandbox'));
 });
+
+for (const resumeId of [undefined, TID]) {
+  test(`codex：image argv preserves the stdin prompt${resumeId ? ' and resume subcommand' : ''}`, () => {
+    const args = codexArgs(DEFAULT_CONFIG.cli.codex, {
+      prompt: '', cwd: '/w', fullAccess: false, ...(resumeId ? { resumeId } : {}), images: ['/p.png', '/q.png'],
+    });
+    assert.deepEqual(args, [
+      'exec', ...DEFAULT_CONFIG.cli.codex.safeArgs, '--json', '--skip-git-repo-check',
+      ...(resumeId ? ['resume', resumeId] : []),
+      '-i', '/p.png', '-i', '/q.png', '--', '-',
+    ]);
+  });
+}
 
 test('redactArgs：帶值旗標的值不進日誌', () => {
   assert.deepEqual(redactArgs(['-p', '--resume', 'sid-123', '--add-dir', '/Users/me/secret', '-c', 'x=1', '--verbose']), ['-p', '--resume', '<…>', '--add-dir', '<…>', '-c', '<…>', '--verbose']);

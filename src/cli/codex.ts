@@ -27,8 +27,10 @@ export function codexArgs(cfg: CliCommandConfig, opts: SendOptions): string[] {
   if (!opts.readonly) args.splice(args[0] === 'exec' ? 1 : 0, 0, ...((opts.fullAccess ?? cfg.fullAccess) ? cfg.fullAccessArgs : cfg.safeArgs));
   if (opts.model) args.push('-m', opts.model);
   if (opts.effort) args.push('-c', `model_reasoning_effort=${JSON.stringify(opts.effort)}`);
-  for (const image of opts.images ?? []) args.push('-i', image);
   if (opts.resumeId) args.push('resume', opts.resumeId);
+  for (const image of opts.images ?? []) args.push('-i', image);
+  // exec's variadic image option must not consume the stdin prompt marker.
+  if (opts.images?.length) args.push('--');
   args.push('-');
   return args;
 }
@@ -225,7 +227,8 @@ export function createCodexParser(onEvent: (ev: CliEvent) => void, now: () => nu
   let started: number | null = null;
   const commands = new Set<string>();
   const appendText = (text: string) => {
-    const delta = (streamed && !streamed.endsWith('\n') ? '\n\n' : '') + text;
+    const separator = !streamed || streamed.endsWith('\n\n') ? '' : streamed.endsWith('\n') ? '\n' : '\n\n';
+    const delta = separator + text;
     streamed += delta;
     onEvent({ type: 'delta', text: delta });
   };
