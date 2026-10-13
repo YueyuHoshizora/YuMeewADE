@@ -1,5 +1,5 @@
 import { basicSetup } from 'codemirror';
-import { EditorState, EditorSelection, Compartment } from '@codemirror/state';
+import { EditorState, EditorSelection, Compartment, Prec } from '@codemirror/state';
 import { EditorView, keymap, rectangularSelection, crosshairCursor, gutter, GutterMarker, ViewPlugin, Decoration, WidgetType, type DecorationSet } from '@codemirror/view';
 import { indentWithTab, isolateHistory } from '@codemirror/commands';
 import { javascript } from '@codemirror/lang-javascript';
@@ -110,7 +110,8 @@ export class EditorContent {
     this.view = new EditorView({ parent, state: this.state(''), });
     this.view.contentDOM.setAttribute('aria-label', label);
     this.view.dom.addEventListener('focusin', () => this.onfocus?.());
-    this.view.dom.addEventListener('keydown', event => this.onkeydown?.(event));
+    // Keys typed in the editor's own panels (search, go to line) bypass the content handler below.
+    this.view.dom.addEventListener('keydown', event => { if (!(event.target instanceof Node && this.view.contentDOM.contains(event.target))) this.onkeydown?.(event); });
     this.view.scrollDOM.addEventListener('scroll', () => this.onscroll?.());
     window.addEventListener('yumeewade:editor-preferences', this.refreshPreferences);
   }
@@ -169,6 +170,9 @@ export class EditorContent {
       basicSetup, syntaxHighlighting(appHighlight), rectangularSelection(), crosshairCursor(), editorPhrases(),
       EditorView.clickAddsSelectionRange.of(event => event.altKey || event.metaKey || event.ctrlKey),
       keymap.of([indentWithTab]), this.language.of([]), this.editable.of(EditorState.readOnly.of(true)), this.preferences.of(this.preferenceExtensions()),
+      // App shortcuts (save / send selection) run before basicSetup's keymaps; a handled one (default prevented) stops
+      // there, so e.g. Mod-Shift-l does not also select every match and turn the next keystroke into a multi-edit.
+      Prec.highest(EditorView.domEventHandlers({ keydown: event => { this.onkeydown?.(event); return event.defaultPrevented; } })),
       this.debug.of(this.debugExtensions()),
       this.proposals.of([]),
       this.inlays.of([]),
