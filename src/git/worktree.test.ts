@@ -8,7 +8,7 @@ import { CompletionStore } from '../ledger/completion.ts';
 import { AppError } from '../shared/errors.ts';
 import { withTmpWorkspace } from '../testing/tmp.ts';
 import { commitAll, git, gitOk } from './git.ts';
-import { MergeConflictError, WorktreeService } from './worktree.ts';
+import { copyLocalSecrets, MergeConflictError, WorktreeService } from './worktree.ts';
 
 // All fixtures exercise real repositories, linked worktrees and on-disk ledgers.
 test('isolated prepare, preview, diff, merge and automatic cleanup', () => withTmpWorkspace(async ws => {
@@ -761,4 +761,23 @@ test('merge retains initialized submodules and still completes and approves the 
   assert.equal(done.workdir, dir);
   assert.equal(done.state, '完成');
   assert.equal(await new CompletionStore(ws).isApproved('P', task.id), true);
+}));
+
+test('prepare skips secrets in uninitialized submodules so local initialization succeeds', () => withTmpWorkspace(async (ws, tmp) => {
+  const projects = new ProjectLedger(ws); const tasks = new TaskLedger(ws);
+  await projects.create({ name: 'P' });
+  const repo = ws.projectDir('P');
+  await addLocalSubmodule(repo, tmp);
+  await fs.writeFile(path.join(repo, 'lib/.env.local'), 'TOKEN=module-private\n');
+  await fs.writeFile(path.join(repo, '.env.local'), 'TOKEN=root-private\n');
+  const task = await tasks.create('P', { title: 'Submodule copy' });
+  const wt = new WorktreeService({ ws, projects, tasks, diffBytes: 100_000 });
+  const dir = await wt.prepare('P', task.id);
+  assert.equal(await fs.readFile(path.join(dir, '.env.local'), 'utf8'), 'TOKEN=root-private\n');
+  assert.deepEqual(await fs.readdir(path.join(dir, 'lib')), []);
+  await gitOk(dir, ['-c', 'protocol.file.allow=always', 'submodule', 'update', '--init']);
+  assert.equal(await fs.readFile(path.join(dir, 'lib/module.txt'), 'utf8'), 'module\n');
+  await fs.rm(path.join(repo, '.env.local'));
+  assert.deepEqual(await copyLocalSecrets(repo, dir), ['lib/.env.local']);
+  assert.equal(await fs.readFile(path.join(dir, 'lib/.env.local'), 'utf8'), 'TOKEN=module-private\n');
 }));

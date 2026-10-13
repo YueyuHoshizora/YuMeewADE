@@ -539,6 +539,7 @@ async function mergeHead(dir: string): Promise<string | null> {
 /** Copy untracked local settings without logging contents or following either side's symlinks. */
 export async function copyLocalSecrets(repo: string, dir: string): Promise<string[]> {
   const tracked = new Set(splitNull(await gitOk(repo, ['ls-files', '-z'])));
+  const modules = new Set(await gitlinkPaths(dir));
   const root = await fs.realpath(dir);
   if ((await fs.lstat(dir)).isSymbolicLink()) throw new AppError('conflict', 'archive_unsafe_path');
   const copied: string[] = [];
@@ -558,7 +559,14 @@ export async function copyLocalSecrets(repo: string, dir: string): Promise<strin
       const file = path.join(relative, entry.name);
       const source = path.join(repo, file);
       const stat = await fs.lstat(source);
-      if (stat.isDirectory()) await visit(file);
+      if (stat.isDirectory()) {
+        if (modules.has(file)) {
+          // Leave uninitialized gitlinks empty so a later explicit submodule update can clone into them.
+          if (!(await pathExists(path.join(dir, file, '.git')))) continue;
+          for (const child of await gitlinkPaths(path.join(dir, file))) modules.add(path.join(file, child));
+        }
+        await visit(file);
+      }
       else if (stat.isFile() && isLocalSecret(file) && !tracked.has(file)) {
         const parent = await destinationParent(file);
         const destination = path.join(parent, entry.name);
