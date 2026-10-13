@@ -262,22 +262,24 @@ export function projectView(context: ViewContext, project: ProjectView, params: 
   rules.rows = 12;
   rules.maxLength = 20000;
   rules.disabled = true;
-  // The text as last read or saved; the core refuses the save if the file changed since (another window, hand or AI edit).
-  let rulesLoaded = '';
+  // `rulesLoaded` is the text as last read or saved, which the core compares against the file before saving (another
+  // window, hand or AI edit); `rulesShown` is what the textarea made of it (it turns CRLF into LF), for spotting user edits.
+  let rulesLoaded = ''; let rulesShown = '';
   const rulesBox = disclosure(t('project.rules'), el('p', 'muted', t('project.rulesHint')), rules, button(t('common.save'), async () => {
     const text = rules.value;
     await request('/api/project/rules', { project: project.id, text, previous: rulesLoaded });
-    rulesLoaded = text;
+    rulesLoaded = text; rulesShown = text;
     toast(t('common.saved'));
   }));
   let rulesLoading = false;
   rulesBox.addEventListener('toggle', () => {
     // Reopening reloads unedited rules, so an AI or hand edit made meanwhile shows up instead of a stale copy that can no longer be saved.
-    if (!rulesBox.open || rulesLoading || (!rules.disabled && rules.value !== rulesLoaded)) return;
+    if (!rulesBox.open || rulesLoading || (!rules.disabled && rules.value !== rulesShown)) return;
     rulesLoading = true;
     void run(async () => {
       try {
         rules.value = rulesLoaded = (await request<{ text: string }>(query('/api/project/rules', { project: project.id }))).text;
+        rulesShown = rules.value;
         rules.disabled = false;
       } finally { rulesLoading = false; }
     });
