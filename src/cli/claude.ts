@@ -183,7 +183,8 @@ export function createClaudeParser(onEvent: (ev: CliEvent) => void, now: () => n
   let sessionId = '';
   const runId = randomUUID();
   let sampleIndex = 0;
-  const messages = new Map<string, { runId: string; started: number; usage: Record<string, unknown>; output: number }>();
+  const messages = new Map<string, { runId: string; started: number; usage: Record<string, unknown>; measured: TurnUsage | undefined; output: number }>();
+  const completedUsage: TurnUsage = { input: 0, output: 0 };
   const tools = new Set<string>();
   const handleTool = (block: Record<string, unknown>) => {
     const name = block['name'];
@@ -237,6 +238,7 @@ export function createClaudeParser(onEvent: (ev: CliEvent) => void, now: () => n
           messages.set(key, {
             runId: `${runId}:${++sampleIndex}`, started: now(), output: -1,
             usage: usage && typeof usage === 'object' ? { ...usage as Record<string, unknown> } : {},
+            measured: parseUsage(usage),
           });
         }
         if (e['type'] === 'message_delta') {
@@ -244,7 +246,19 @@ export function createClaudeParser(onEvent: (ev: CliEvent) => void, now: () => n
           const sample = messages.get(key);
           if (sample && value && typeof value === 'object') Object.assign(sample.usage, value);
           const usage = parseUsage(sample?.usage ?? value);
-          if (usage) onEvent({ type: 'usage', usage });
+          if (usage) {
+            if (sample) sample.measured = usage;
+            // Each delta replaces its message's cumulative sample; completed and interleaved messages remain counted.
+            const total = { ...completedUsage };
+            const samples = sample ? messages.values() : [{ measured: usage }, ...messages.values()];
+            for (const active of samples) {
+              if (!active.measured) continue;
+              total.input += active.measured.input;
+              total.output += active.measured.output;
+              if (active.measured.cached !== undefined) total.cached = (total.cached ?? 0) + active.measured.cached;
+            }
+            onEvent({ type: 'usage', usage: total });
+          }
           const exact = value && typeof value === 'object' && 'output_tokens' in value ? value.output_tokens : undefined;
           const at = now();
           const spanMs = sample ? at - sample.started : 0;
@@ -255,7 +269,15 @@ export function createClaudeParser(onEvent: (ev: CliEvent) => void, now: () => n
             onEvent({ type: 'tokens', runId: sample.runId, count: exact, spanMs, at });
           }
         }
-        if (e['type'] === 'message_stop') messages.delete(key);
+        if (e['type'] === 'message_stop') {
+          const usage = messages.get(key)?.measured;
+          if (usage) {
+            completedUsage.input += usage.input;
+            completedUsage.output += usage.output;
+            if (usage.cached !== undefined) completedUsage.cached = (completedUsage.cached ?? 0) + usage.cached;
+          }
+          messages.delete(key);
+        }
         if (e['type'] === 'content_block_delta') {
           const delta = e['delta'];
           if (key || !delta || typeof delta !== 'object') return;
