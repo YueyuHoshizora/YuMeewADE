@@ -92,10 +92,11 @@ export function tree(context: ViewContext): HTMLElement {
     details.addEventListener('toggle', () => { if (details.open) for (const other of document.querySelectorAll<HTMLDetailsElement>('details.context-menu[open]')) if (other !== details) other.open = false; });
     return details;
   }
-  function badges(p: ProjectView, tasks: TaskView[]): HTMLElement {
+  function badges(p: ProjectView, tasks: TaskView[]): HTMLElement[] {
     const node = el('span', 'badges');
     const counts = [tasks.filter(task => unread(p.id, task.id)).length, tasks.filter(needsReply).length, tasks.filter(task => task.confirm && !needsReply(task)).length];
-    (['tree.unread', 'tree.reply', 'tree.confirm'] as const).forEach((key, i) => { if (counts[i]) node.append(el('span', `badge badge-${i}`, `${t(key)}${counts[i]! > 1 ? ' ' + counts[i] : ''}`)); }); return node;
+    (['tree.unread', 'tree.reply', 'tree.confirm'] as const).forEach((key, i) => { if (counts[i]) node.append(el('span', `badge badge-${i}`, `${t(key)}${counts[i]! > 1 ? ' ' + counts[i] : ''}`)); });
+    return node.childNodes.length ? [node] : [];
   }
   function toggle(key: string, hasChildren: boolean, attention: boolean): HTMLButtonElement {
     if (attention && !seenAttention.has(key)) { collapsed.delete(key); seenAttention.add(key); }
@@ -124,7 +125,8 @@ export function tree(context: ViewContext): HTMLElement {
     const title = link(`${task.parent ? '↳ ' : ''}${task.title}`, taskHash(p.id, task.id), 'tree-title');
     title.append(metadataBadge(task));
     if (location.hash === title.hash) line.classList.add('selected');
-    line.append(toggle(key, !!children.length, attention), el('span', `dot ${tone(p.id, task)}`), title, menu([
+    // Notices sit on the row itself: on their own line they doubled the height of every task with something unread.
+    line.append(toggle(key, !!children.length, attention), el('span', `dot ${tone(p.id, task)}`), title, ...badges(p, [task]), menu([
       { label: t('common.rename'), action: async () => { const title = await renameModal(task.title); if (title) { await request('/api/task/update', { project: p.id, task: task.id, patch: { title } }); await refresh(); } } },
       { label: t('tree.subtask'), action: () => { location.hash = `${projectHash(p.id)}?parent=${encodeURIComponent(task.id)}#add`; } },
       { label: t('tree.newBranch'), action: () => { location.hash = `${projectHash(p.id)}?derived=${encodeURIComponent(task.id)}#add`; } },
@@ -132,7 +134,6 @@ export function tree(context: ViewContext): HTMLElement {
     ]));
     wrap.append(line);
     if (task.kind === 'derived') wrap.append(el('div', 'branch-label', t('tree.branch', { source: (task.derivedFrom ? taskIndex(p).byId.get(task.derivedFrom)?.title : undefined) ?? task.derivedFrom })));
-    const notices = badges(p, [task]); if (notices.childNodes.length) wrap.append(notices);
     const nest = el('div', 'tree-children');
     nests.set(key, nest);
     for (const c of children) nest.append(taskNode(p, c, next));
@@ -176,7 +177,7 @@ export function tree(context: ViewContext): HTMLElement {
       const mark = el('span', 'tree-warning', '⚠'); const label = t('project.bodyMissing', { path: p.bodyPath });
       mark.title = label; mark.setAttribute('role', 'img'); mark.setAttribute('aria-label', label); missing.push(mark);
     }
-    line.append(toggle(key, true, attention), el('span', `dot ${projectTone}`), title, ...missing, menu([
+    line.append(toggle(key, true, attention), el('span', `dot ${projectTone}`), title, ...missing, ...badges(p, p.tasks), menu([
       { label: t('common.rename'), action: async () => { const name = await renameModal(p.name); if (name) { await request('/api/project/update', { project: p.id, patch: { name } }); await refresh(); } } },
       { label: t(p.pinned ? 'tree.unpin' : 'tree.pin'), action: async () => { await request('/api/pin', { project: p.id, pinned: !p.pinned }); await refresh(); } },
       { label: t('tree.up'), action: () => move(p, -1) }, { label: t('tree.down'), action: () => move(p, 1) },
@@ -192,7 +193,7 @@ export function tree(context: ViewContext): HTMLElement {
       } },
       { label: t('common.archive'), action: async () => { if (await archiveFlow('/api/project/archive', { project: p.id }, p.name, 'archive_project_has_worktrees')) await refresh(); } },
     ]));
-    wrap.append(line); const notices = badges(p, p.tasks); if (notices.childNodes.length) wrap.append(notices);
+    wrap.append(line);
     const nest = el('div', 'tree-children');
     nests.set(key, nest);
     const tasks = p.tasks.filter(t => !t.parent || !taskIndex(p).byId.has(t.parent));

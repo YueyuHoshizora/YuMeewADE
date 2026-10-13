@@ -51,6 +51,7 @@ import * as projectDetails from './project-details.ts';
 import * as labelValue from './label-value.ts';
 import * as taskFocus from './task-focus.ts';
 import * as delivery from './delivery.ts';
+import * as focusUi from './focus-ui.ts';
 
 export const featureZhTW = {
   ...archive.featureZhTW,
@@ -107,6 +108,7 @@ export const featureZhTW = {
   ...labelValue.featureZhTW,
   ...taskFocus.featureZhTW,
   ...delivery.featureZhTW,
+  ...focusUi.featureZhTW,
 };
 export const featureZhCN = {
   ...archive.featureZhCN,
@@ -163,6 +165,7 @@ export const featureZhCN = {
   ...labelValue.featureZhCN,
   ...taskFocus.featureZhCN,
   ...delivery.featureZhCN,
+  ...focusUi.featureZhCN,
 };
 export const featureEn = {
   ...archive.featureEn,
@@ -219,6 +222,7 @@ export const featureEn = {
   ...labelValue.featureEn,
   ...taskFocus.featureEn,
   ...delivery.featureEn,
+  ...focusUi.featureEn,
 };
 export const featureJa = {
   ...archive.featureJa,
@@ -275,6 +279,7 @@ export const featureJa = {
   ...labelValue.featureJa,
   ...taskFocus.featureJa,
   ...delivery.featureJa,
+  ...focusUi.featureJa,
 };
 export const featureDe = {
   ...archive.featureDe,
@@ -331,6 +336,7 @@ export const featureDe = {
   ...labelValue.featureDe,
   ...taskFocus.featureDe,
   ...delivery.featureDe,
+  ...focusUi.featureDe,
 };
 export const featureFr = {
   ...archive.featureFr,
@@ -387,6 +393,7 @@ export const featureFr = {
   ...labelValue.featureFr,
   ...taskFocus.featureFr,
   ...delivery.featureFr,
+  ...focusUi.featureFr,
 };
 export const featureIt = {
   ...archive.featureIt,
@@ -443,4 +450,5 @@ export const featureIt = {
   ...labelValue.featureIt,
   ...taskFocus.featureIt,
   ...delivery.featureIt,
+  ...focusUi.featureIt,
 };

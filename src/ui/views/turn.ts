@@ -14,11 +14,31 @@ export function turnView(context: ViewContext): View {
   const welcome = el('section', 'card welcome');
   welcome.append(el('h2', '', t('turn.welcomeTitle')), el('p', 'muted', t('turn.welcomeBody')), row(button(t('project.new'), () => { location.hash = '#/new'; }, 'primary'), button(t('project.openExisting'), () => openProjectFromFolder(context))));
   const heading = el('h1', '', t('nav.turn'));
+  // Nothing waiting: say so plainly and offer the work in progress, instead of two zero tabs over an empty list.
+  const clear = el('section', 'turn-clear');
   node.append(onboardingBanner(context));
+  function recentWork(): HTMLElement[] {
+    const running = new Set(context.state.running.map(r => `${r.project}/${r.task}`));
+    const items = context.state.projects.flatMap(project => project.tasks.filter(task => task.state !== '完成').map(task => ({ project, task, running: running.has(`${project.id}/${task.id}`) })));
+    items.sort((a, b) => Number(b.running) - Number(a.running) || b.task.updated.localeCompare(a.task.updated));
+    return items.slice(0, 6).map(({ project, task, running }) => {
+      const item = el('li', 'turn-recent-item');
+      item.append(link(task.title, taskHash(project.id, task.id), 'turn-title'), el('span', 'muted', project.name), el('span', `state-chip${running ? ' running' : ''}`, running ? t('overview.running') : t(`state.${task.state}`)));
+      return item;
+    });
+  }
   function render(): void {
     const empty = !context.state.projects.length;
-    welcome.hidden = !empty; for (const part of [heading, tabs, hint, list]) part.hidden = empty;
     const { reply, confirm } = turnItems(context.state);
+    const settled = !empty && !reply.length && !confirm.length;
+    welcome.hidden = !empty; heading.hidden = empty; for (const part of [tabs, hint, list]) part.hidden = empty || settled;
+    clear.hidden = !settled;
+    if (settled) {
+      const recent = recentWork(); const items = el('ul', 'turn-recent');
+      items.append(...recent);
+      clear.replaceChildren(el('h2', '', t('turn.clearTitle')), el('p', 'muted', t('turn.clearBody')), ...(recent.length ? [el('h3', '', t('turn.recent')), items] : []));
+      return;
+    }
     if (!picked) selected = !reply.length && confirm.length ? 'confirm' : 'reply';
     tabs.replaceChildren(button(t('turn.reply', { n: reply.length }), () => { selected = 'reply'; picked = true; render(); }, selected === 'reply' ? 'active' : ''), button(t('turn.confirm', { n: confirm.length }), () => { selected = 'confirm'; picked = true; render(); }, selected === 'confirm' ? 'active' : ''));
     hint.textContent = t(selected === 'reply' ? 'turn.replyHint' : 'turn.confirmHint');
@@ -37,6 +57,6 @@ export function turnView(context: ViewContext): View {
       return item;
     })); if (!list.childNodes.length) list.append(el('p', 'empty', t('common.empty')));
   }
-  node.append(welcome, heading, tabs, hint, list); render();
+  node.append(welcome, heading, clear, tabs, hint, list); render();
   return { node, update: state => { context.state = state; review?.update(); render(); }, dispose: () => review?.dispose() };
 }

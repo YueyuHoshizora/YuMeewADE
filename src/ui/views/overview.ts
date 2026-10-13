@@ -1,5 +1,5 @@
 import { TASK_STATES } from '../../shared/types.ts';
-import { t } from '../i18n/index.ts';
+import { getLocale, t } from '../i18n/index.ts';
 import { el, field, link, projectHash, row, select, taskHash, type View, type ViewContext } from '../components/dom.ts';
 import { metadataBadge } from '../components/task-metadata.ts';
 import { aggregateOverview, type OverviewTask } from './overview-logic.ts';
@@ -21,8 +21,20 @@ export function overviewView(context: ViewContext): View {
     const tags = select([{ value: '', label: t('overview.allTags') }, ...data.tags.map(value => ({ value, label: value }))], tag);
     tags.onchange = () => { tag = tags.value; render(); };
     const refocus = filter.contains(document.activeElement);
-    filter.replaceChildren(field(t('overview.tagFilter'), tags));
+    // A tag filter with no tags offers only "all tags"; show it once there is something to filter by.
+    filter.replaceChildren(...(data.tags.length ? [field(t('overview.tagFilter'), tags)] : []));
     if (refocus) tags.focus();
+    // What needs a person comes first; groups with nothing in them shrink to one line instead of a card each.
+    const quiet: string[] = [];
+    content.replaceChildren();
+    for (const [title, items] of [
+      [t('overview.waiting'), data.waiting], [t('overview.running'), data.running], [t('overview.overdue'), data.overdue],
+      [t('overview.upcoming'), data.upcoming], [t('overview.unread'), data.unread],
+    ] as const) {
+      if (!items.length) { quiet.push(title); continue; }
+      const section = el('section', 'overview-card'); section.append(el('h2', '', `${title} · ${items.length}`), lists(items)); content.append(section);
+    }
+    if (quiet.length) content.append(el('p', 'muted overview-quiet overview-wide', t('overview.nothing', { list: new Intl.ListFormat(getLocale(), { type: 'conjunction' }).format(quiet) })));
     const totals = el('section', 'overview-card overview-wide'); totals.append(el('h2', '', t('overview.states')));
     const counts = el('div', 'overview-counts');
     for (const state of TASK_STATES) {
@@ -30,13 +42,7 @@ export function overviewView(context: ViewContext): View {
       details.open = opened.has(state);
       details.ontoggle = () => { if (details.open) opened.add(state); else opened.delete(state); };
     }
-    totals.append(counts); content.replaceChildren(totals);
-    for (const [title, items] of [
-      [t('overview.overdue'), data.overdue], [t('overview.upcoming'), data.upcoming],
-      [t('overview.waiting'), data.waiting], [t('overview.running'), data.running], [t('overview.unread'), data.unread],
-    ] as const) {
-      const section = el('section', 'overview-card'); section.append(el('h2', '', `${title} · ${items.length}`), lists(items)); content.append(section);
-    }
+    totals.append(counts); content.append(totals);
     const projects = el('section', 'overview-card overview-wide'); projects.append(el('h2', '', t('overview.projects')));
     for (const { project, done, total } of data.projects) {
       const progress = el('progress'); progress.max = total || 1; progress.value = done;

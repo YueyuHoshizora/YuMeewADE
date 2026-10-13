@@ -97,7 +97,12 @@ function drawShell(): void {
   if (!state) return;
   const { reply, confirm } = turnItems(state); const replies = reply.length; const confirmations = confirm.length;
   const menu = button('☰', () => document.body.classList.toggle('sidebar-open'), 'menu-toggle'); menu.setAttribute('aria-label', t('nav.menu'));
-  header.replaceChildren(menu, link(t('app.title'), '#/turn', 'brand'), el('span', 'version', `v${state.version}`), ...(visibleUpdate(state.update) ? [updateChip(state.update!, state.version, drawShell)] : []), el('span', 'spacer'), link(`${t('nav.turn')} · ${t('tree.reply')} ${replies} · ${t('tree.confirm')} ${confirmations}`, '#/turn', 'turn-button'), link(t('nav.settings'), '#/settings', 'settings-button'));
+  // Zero counts are noise; the button shows one total only when something is waiting, the breakdown stays in its name.
+  const turn = link(t('nav.turn'), '#/turn', 'turn-button'); const waiting = replies + confirmations;
+  const breakdown = `${t('nav.turn')} · ${t('tree.reply')} ${replies} · ${t('tree.confirm')} ${confirmations}`;
+  turn.title = breakdown; turn.setAttribute('aria-label', breakdown);
+  if (waiting) turn.append(el('span', 'turn-count', String(waiting)));
+  header.replaceChildren(menu, link(t('app.title'), '#/turn', 'brand'), el('span', 'version', `v${state.version}`), ...(visibleUpdate(state.update) ? [updateChip(state.update!, state.version, drawShell)] : []), el('span', 'spacer'), turn, link(t('nav.settings'), '#/settings', 'settings-button'));
   header.append(button(t('terminalDock.toggle'), toggleTerminalDock, 'terminal-toggle'));
   const searching = document.activeElement instanceof HTMLInputElement && document.activeElement.classList.contains('tree-search'); const top = sidebar.scrollTop;
   const shell = { state, refresh };
