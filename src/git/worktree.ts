@@ -390,6 +390,10 @@ export class WorktreeService {
       leftover.push(entry.slice(3));
       if (entry[0] === 'R' || entry[0] === 'C' || entry[1] === 'R' || entry[1] === 'C') i++;
     }
+    // Git refuses non-force removal even for clean initialized submodules; preserve and report them.
+    for (const module of await gitlinkPaths(dir)) {
+      if (await pathExists(path.join(dir, module, '.git')) && !leftover.includes(module)) leftover.push(module);
+    }
     if (leftover.length === 0) {
       // A concurrent external edit makes the non-force removal fail instead of discarding work.
       await gitOk(repo, ['worktree', 'remove', dir]);
@@ -510,6 +514,12 @@ async function deadGitfile(dir: string): Promise<boolean> {
   return match !== null && !(await pathExists(path.resolve(dir, match[1]!.trim())));
 }
 function splitNull(value: string): string[] { return value.split('\0').filter(Boolean); }
+/** Gitlinks from the index, not .gitmodules (which can be stale or locally edited). */
+async function gitlinkPaths(dir: string): Promise<string[]> {
+  return splitNull(await gitOk(dir, ['ls-files', '--stage', '-z']))
+    .filter(entry => entry.startsWith('160000 '))
+    .map(entry => entry.slice(entry.indexOf('\t') + 1));
+}
 /** Something untracked already sits at `file` (a repository path), or a non-directory blocks one of its parent folders. */
 async function occupied(repo: string, file: string): Promise<boolean> {
   const parts = file.split('/');

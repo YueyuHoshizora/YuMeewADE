@@ -729,3 +729,36 @@ test('secret aliases are excluded from file listings and reads', () => withTmpWo
   }
   assert.equal((await wt.readFile('P', task.id, 'public-alias.txt')).text, 'public\n');
 }));
+
+async function addLocalSubmodule(repo: string, tmp: string): Promise<void> {
+  const source = path.join(tmp, 'module-source');
+  await fs.mkdir(source);
+  await gitOk(source, ['init', '-q']);
+  await fs.writeFile(path.join(source, 'module.txt'), 'module\n');
+  await commitAll(source, 'module');
+  await gitOk(repo, ['-c', 'protocol.file.allow=always', 'submodule', 'add', '-q', source, 'lib']);
+  await commitAll(repo, 'submodule');
+}
+
+test('merge retains initialized submodules and still completes and approves the task', () => withTmpWorkspace(async (ws, tmp) => {
+  const projects = new ProjectLedger(ws); const tasks = new TaskLedger(ws);
+  await projects.create({ name: 'P' });
+  const repo = ws.projectDir('P');
+  await addLocalSubmodule(repo, tmp);
+  const task = await tasks.create('P', { title: 'Submodule merge' });
+  const wt = new WorktreeService({ ws, projects, tasks, diffBytes: 100_000 });
+  const dir = await wt.prepare('P', task.id);
+  await gitOk(dir, ['-c', 'protocol.file.allow=always', 'submodule', 'update', '--init']);
+  await fs.writeFile(path.join(dir, 'feature.txt'), 'feature\n');
+  const result = await wt.merge('P', task.id);
+  assert.equal(result.merged, true);
+  assert.deepEqual(result.leftover, ['lib']);
+  assert.equal(await fs.readFile(path.join(repo, 'feature.txt'), 'utf8'), 'feature\n');
+  assert.equal((await gitOk(repo, ['log', '-1', '--format=%P'])).trim().split(' ').length, 2);
+  assert.equal(await fs.readFile(path.join(dir, 'lib/module.txt'), 'utf8'), 'module\n');
+  assert.equal((await git(repo, ['rev-parse', '--verify', `refs/heads/${wt.branch(task.id)}`])).code, 0);
+  const done = await tasks.get('P', task.id);
+  assert.equal(done.workdir, dir);
+  assert.equal(done.state, '完成');
+  assert.equal(await new CompletionStore(ws).isApproved('P', task.id), true);
+}));
