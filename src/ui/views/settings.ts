@@ -52,7 +52,8 @@ export function settingsView(context: ViewContext, redraw: () => void): View {
   const aiSection = card(t('settings.ais'));
   for (const info of state.ais.filter(ai => ai.name !== 'mock')) {
     const access = input(); access.type = 'checkbox'; access.checked = state.settings.fullAccess[info.name] ?? info.fullAccess;
-    access.onchange = () => { void run(async () => { access.disabled = true; try { await api.settings({ fullAccess: { ...context.state.settings.fullAccess, [info.name]: access.checked } }); await context.refresh(); } catch (error) { access.checked = !access.checked; throw error; } finally { access.disabled = false; } }); };
+    // Only this AI's value is sent: the core merges per AI, and a cached copy of the others would undo newer changes.
+    access.onchange = () => { void run(async () => { access.disabled = true; try { await api.settings({ fullAccess: { [info.name]: access.checked } }); await context.refresh(); } catch (error) { access.checked = !access.checked; throw error; } finally { access.disabled = false; } }); };
     const panel = el('div', 'ai-panel'); const status = el('p', 'muted', `${t(info.available ? 'ai.installed' : 'ai.missing')} · ${info.version || '—'} · ${t('ai.models', { n: info.models.length })}`);
     const source = el('p', 'muted', t('ai.source', { source: sourceLabel(info.source), at: localTime(info.refreshedAt) }));
     panel.append(el('h3', '', aiLabel(info.name)), status, source, row(
@@ -84,10 +85,14 @@ export function settingsView(context: ViewContext, redraw: () => void): View {
     };
     const key = (settings: Settings) => JSON.stringify(current(settings));
     let shown = '';
+    // Changes to this AI's lists run one at a time, each from the state the previous one left: two quick clicks would
+    // otherwise both start from the same list and the second would undo the first.
+    let queue: Promise<unknown> = Promise.resolve();
+    const serially = (work: () => Promise<void>): Promise<void> => { const next = queue.then(work, work); queue = next.catch(() => undefined); return next; };
     async function save(patch: { hidden?: string[]; order?: string[] }): Promise<void> {
       const saved = await api.settings({
-        ...(patch.hidden ? { hiddenModels: { ...context.state.settings.hiddenModels, [info.name]: patch.hidden } } : {}),
-        ...(patch.order ? { modelOrder: { ...context.state.settings.modelOrder, [info.name]: patch.order } } : {}),
+        ...(patch.hidden ? { hiddenModels: { [info.name]: patch.hidden } } : {}),
+        ...(patch.order ? { modelOrder: { [info.name]: patch.order } } : {}),
       });
       // Our own change is already on screen; marking it shown keeps the refresh from redrawing away keyboard focus.
       shown = key(saved);
@@ -97,15 +102,17 @@ export function settingsView(context: ViewContext, redraw: () => void): View {
       const { hidden, order } = current(context.state.settings); shown = key(context.state.settings);
       list.replaceChildren(...order.map((id, at) => {
         const model = info.models.find(m => m.id === id)!; const check = input(); check.type = 'checkbox'; check.checked = !hidden.includes(id);
-        check.onchange = () => { void run(async () => {
+        check.onchange = () => { void run(() => serially(async () => {
           const latest = current(context.state.settings).hidden.filter(v => v !== id);
           try { await save({ hidden: check.checked ? latest : [...latest, id] }); } catch (error) { check.checked = !check.checked; throw error; }
-        }); };
+        })); };
         async function move(direction: number): Promise<void> {
-          const latest = current(context.state.settings).order; const from = latest.indexOf(id); const to = from + direction;
-          if (from < 0 || to < 0 || to >= latest.length) return;
-          [latest[from], latest[to]] = [latest[to]!, latest[from]!];
-          await save({ order: latest }); render();
+          await serially(async () => {
+            const latest = current(context.state.settings).order; const from = latest.indexOf(id); const to = from + direction;
+            if (from < 0 || to < 0 || to >= latest.length) return;
+            [latest[from], latest[to]] = [latest[to]!, latest[from]!];
+            await save({ order: latest }); render();
+          });
           // Keep focus on the moved model; at the top or bottom its same-direction button is disabled, so use the other one.
           const own = (key: 'tree.up' | 'tree.down') => list.querySelector<HTMLButtonElement>(`button[aria-label="${CSS.escape(labelValue(t(key), model.label))}"]`);
           const same = own(direction < 0 ? 'tree.up' : 'tree.down');
