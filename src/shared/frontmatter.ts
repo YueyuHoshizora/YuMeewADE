@@ -11,20 +11,36 @@ export interface Frontmatter {
 }
 
 const FENCE = '---';
+// Keep the existing normalized body API (notes conflict checks depend on it), while retaining source bytes for writes.
+interface SourceFormat { eol: string; body: string; rawBody: string }
+const sourceFormats = new WeakMap<string[], SourceFormat>();
 
 export function parseFrontmatter(text: string): Frontmatter {
   // A byte order mark from a Windows editor would hide the opening fence; rewrites drop it.
-  const rows = text.replace(/^\uFEFF/, '').split(/\r?\n/);
+  text = text.replace(/^\uFEFF/, '');
+  const rows = text.split(/\r?\n/);
   if (rows[0] !== FENCE) throw new YamlError('檔案必須以 --- 開頭', 1);
   const end = rows.indexOf(FENCE, 1);
   if (end < 0) throw new YamlError('frontmatter 缺少結尾 ---', rows.length);
   const headerLines = rows.slice(1, end);
   const data = parseYamlMap(headerLines.join('\n'));
-  return { data, headerLines, body: rows.slice(end + 1).join('\n') };
+  const body = rows.slice(end + 1).join('\n');
+  let crlf = 0, lf = 0, line = 0, bodyStart = text.length;
+  for (const match of text.matchAll(/\r?\n/g)) {
+    if (match[0] === '\r\n') crlf++; else lf++;
+    if (line++ === end) bodyStart = match.index + match[0].length;
+  }
+  const eol = crlf > lf ? '\r\n' : '\n';
+  const rawBody = text.slice(bodyStart);
+  sourceFormats.set(headerLines, { eol, body, rawBody });
+  return { data, headerLines, body };
 }
 
 export function serializeFrontmatter(headerLines: string[], body: string): string {
-  return [FENCE, ...headerLines, FENCE, body].join('\n');
+  const source = sourceFormats.get(headerLines);
+  const eol = source?.eol ?? '\n';
+  const writtenBody = source && body === source.body ? source.rawBody : body.replace(/\r?\n/g, eol);
+  return [FENCE, ...headerLines, FENCE, writtenBody].join(eol);
 }
 
 /**
@@ -55,9 +71,31 @@ function topLevelRanges(headerLines: string[]): Map<string, [number, number]> {
   return ranges;
 }
 
+/** Same scalar quoting rules as the YAML subset; comment text itself is never scanned for quotes. */
+function inlineComment(raw: string): string {
+  let quote: '"' | "'" | null = null;
+  let previous = '';
+  for (let i = 0; i < raw.length; i++) {
+    const ch = raw[i]!;
+    if (quote) {
+      if (ch === '\\' && quote === '"') i++;
+      else if (ch === "'" && quote === "'" && raw[i + 1] === "'") i++;
+      else if (ch === quote) quote = null;
+    } else if ((ch === '"' || ch === "'") && ['', ':', '-', '?', '[', '{', ','].includes(previous)) {
+      quote = ch;
+    } else if (ch === '#' && i > 0 && /\s/.test(raw[i - 1]!)) {
+      return raw.slice(i - 1);
+    }
+    if (ch !== ' ' && ch !== '\t') previous = ch;
+  }
+  return '';
+}
+
 /** 以新值覆寫指定頂層鍵；不存在的鍵補在最後。回傳新的 headerLines。 */
 export function patchHeaderLines(headerLines: string[], patch: Record<string, YamlValue>): string[] {
   const out = [...headerLines];
+  const source = sourceFormats.get(headerLines);
+  if (source) sourceFormats.set(out, source);
   const ranges = topLevelRanges(out);
   // 由後往前替換，避免行號位移
   const existing = Object.entries(patch)
@@ -66,7 +104,7 @@ export function patchHeaderLines(headerLines: string[], patch: Record<string, Ya
   for (const [key, value] of existing) {
     const [start, end] = ranges.get(key) as [number, number];
     const old = out[start] ?? '';
-    const comment = /\s#(?![^"']*["'])[^"']*$/.exec(old)?.[0] ?? '';
+    const comment = inlineComment(old);
     const fresh = stringifyYaml({ [key]: value });
     if (fresh.length === 1 && comment) fresh[0] = `${fresh[0]}${comment}`;
     out.splice(start, end - start, ...fresh);

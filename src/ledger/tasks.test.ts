@@ -204,3 +204,28 @@ test('closed list-continuation fences never expose or edit example steps or head
     }
   }
 }));
+
+test('task metadata, step and memo writes preserve CRLF style and untouched body bytes', () => withTmpWorkspace(async ws => {
+  await new ProjectLedger(ws).create({ name: 'P' });
+  const ledger = new TaskLedger(ws); const task = await ledger.create('P', { title: 'T' });
+  const body = '## Steps\r\n- [ ] ship\r\n## Unknown\r\n\tkeep trailing  \r\n## Memo\r\n- old\r\n';
+  await fs.writeFile(ws.taskFile('P', task.id), `---\r\ntitle: Original\r\n---\r\n${body}`);
+  await ledger.update('P', task.id, { title: 'Renamed' });
+  assert.equal((await ledger.readRaw('P', task.id)).split('---\r\n').at(-1), body);
+  await ledger.setStep('P', task.id, 0, true, 'ship');
+  assert.equal((await ledger.readRaw('P', task.id)).split('---\r\n').at(-1), body.replace('- [ ] ship', '- [x] ship'));
+  await ledger.appendMemo('P', task.id, 'new memo');
+  const written = await ledger.readRaw('P', task.id);
+  assert.equal(written.replace(/\r\n/g, '').includes('\n'), false);
+  assert.ok(written.includes('\tkeep trailing  \r\n'));
+  assert.equal((await ledger.get('P', task.id)).steps[0]?.done, true);
+  assert.match((await ledger.get('P', task.id)).memo, /new memo$/);
+}));
+
+test('task renaming preserves inline instructions containing both quote styles', () => withTmpWorkspace(async ws => {
+  await new ProjectLedger(ws).create({ name: 'P' });
+  const ledger = new TaskLedger(ws); const task = await ledger.create('P', { title: 'T' });
+  await fs.writeFile(ws.taskFile('P', task.id), `---\ntitle: Original # don't lose "this instruction"\n---\nbody\n`);
+  await ledger.update('P', task.id, { title: 'Renamed' });
+  assert.ok((await ledger.readRaw('P', task.id)).includes(`title: Renamed # don't lose "this instruction"\n`));
+}));

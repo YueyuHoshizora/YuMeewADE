@@ -65,3 +65,24 @@ test('a ledger file saved with a UTF-8 byte order mark still parses', () => {
   assert.equal(parsed.data['name'], 'P');
   assert.equal(parsed.body, 'body');
 });
+
+test('metadata rewrites preserve mixed body bytes and dominant CRLF; edited bodies keep CRLF', () => {
+  const body = '## Unknown\r\n\tkeep trailing  \r\none LF line\nlast\r\n';
+  const fm = parseFrontmatter(`\uFEFF---\r\ntitle: Original\r\n---\r\n${body}`);
+  const lines = patchHeaderLines(fm.headerLines, { title: 'Renamed' });
+  assert.equal(serializeFrontmatter(lines, fm.body), `---\r\ntitle: Renamed\r\n---\r\n${body}`);
+  assert.equal(serializeFrontmatter(lines, '## Steps\n- [x] done\n'), '---\r\ntitle: Renamed\r\n---\r\n## Steps\r\n- [x] done\r\n');
+});
+
+test('inline comments retain apostrophes and quotes without mistaking quoted hashes for comments', () => {
+  for (const scalar of ['Original', "Bob's task", '"has # inside and \\"escaped\\""', "'has # inside and ''escaped'''"]) {
+    for (const comment of ["don't lose this", 'keep "quoted" instruction', `don't lose "either" quote`]) {
+      const fm = parseFrontmatter(`---\ntitle: ${scalar} # ${comment}\n---\nbody\n`);
+      const text = serializeFrontmatter(patchHeaderLines(fm.headerLines, { title: 'Renamed' }), fm.body);
+      assert.equal(text, `---\ntitle: Renamed # ${comment}\n---\nbody\n`);
+      assert.equal(parseFrontmatter(text).data['title'], 'Renamed');
+    }
+  }
+  const noComment = patchHeaderLines(['title: "has # inside"'], { title: 'Renamed' });
+  assert.deepEqual(noComment, ['title: Renamed']);
+});
