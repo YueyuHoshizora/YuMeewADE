@@ -50,9 +50,11 @@ export class CareService {
   /** One schedule per real workspace: opening it through a symlinked path must find the same file (PLAN: canonical root). */
   private async locateSchedule(): Promise<void> {
     const canonical = this.scheduleFile(await fs.realpath(this.options.ws.root).catch(() => path.resolve(this.options.ws.root)));
-    // A schedule saved under the alias path (before canonical keys) is still read once, then saved canonically.
+    // A schedule saved under the alias path (before canonical keys) is read once and saved canonically right away, so the
+    // same workspace opened later through its real path keeps it. A failed save leaves the next open to try again.
     if (canonical !== this.lifecycleFile && await fs.lstat(canonical).then(() => false, () => true) && await fs.lstat(this.lifecycleFile).then(() => true, () => false)) {
-      const legacy = this.lifecycleFile; this.lifecycleFile = canonical; return this.readSchedule(legacy);
+      const legacy = this.lifecycleFile; this.lifecycleFile = canonical;
+      await this.readSchedule(legacy); await this.saveLifecycle().catch(() => undefined); return;
     }
     this.lifecycleFile = canonical; return this.readSchedule(canonical);
   }

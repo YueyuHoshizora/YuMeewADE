@@ -1,4 +1,5 @@
 import assert from 'node:assert/strict';
+import { createHash } from 'node:crypto';
 import { promises as fs } from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
@@ -90,5 +91,23 @@ test('a workspace opened through a symlinked path keeps the same backup schedule
     assert.equal(viaAlias.scheduleStatus().schedule.intervalHours, 5);
     await viaAlias.setSchedule({ enabled: true, intervalHours: 6, retention: 3, includeExternal: false }); await viaAlias.close();
     assert.equal((await fs.readdir(directory)).filter(name => name.startsWith('schedule-')).length, 1);
+  } finally { await fs.rm(temporary, { recursive: true, force: true }); }
+});
+
+test('a schedule saved under the alias path before canonical keys survives reopening through the real path', async () => {
+  const temporary = await fs.mkdtemp(path.join(os.tmpdir(), 'care-legacy-'));
+  try {
+    const ws = new Workspace(path.join(temporary, 'workspace')); await ws.init();
+    const alias = path.join(temporary, 'alias'); await fs.symlink(ws.root, alias);
+    const directory = path.join(temporary, 'private');
+    const options = { ws, config: { ...DEFAULT_CONFIG, workspace: { root: ws.root } }, catalog: { list: async () => [] }, settings: { get: async () => settings }, version: '1.0.0', privateDirectory: directory, loginState: async () => 'unknown' as const, counts: async () => ({ projects: 0, tasks: 0, running: 0 }), reserve: async <T>(work: () => Promise<T>): Promise<T> => work() };
+    const original = new CareService(options); await original.init();
+    await original.setSchedule({ enabled: true, intervalHours: 5, retention: 3, includeExternal: false }); await original.close();
+    // Older versions keyed the file by the path the workspace was opened through.
+    const [file] = (await fs.readdir(directory)).filter(name => name.startsWith('schedule-'));
+    await fs.rename(path.join(directory, file!), path.join(directory, `schedule-${createHash('sha256').update(path.resolve(alias)).digest('hex')}.json`));
+    const viaAlias = new CareService({ ...options, ws: new Workspace(alias) }); await viaAlias.init(); await viaAlias.close();
+    const viaReal = new CareService(options); await viaReal.init();
+    try { assert.deepEqual(viaReal.scheduleStatus().schedule, { enabled: true, intervalHours: 5, retention: 3, includeExternal: false }); } finally { await viaReal.close(); }
   } finally { await fs.rm(temporary, { recursive: true, force: true }); }
 });
