@@ -47,7 +47,7 @@
     "@lezer/highlight": "1.2.5",
     "@types/node": "24.19.1",
     "codemirror": "6.0.2",
-    "electron": "44.7.0",
+    "electron": "44.9.1",
     "electron-builder": "26.15.3",
     "typescript": "7.0.2",
     "vite": "8.3.4"
